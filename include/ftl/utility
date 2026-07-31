@@ -1,0 +1,79 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_UTILITY_HEADER
+#define FTL_UTILITY_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <type_traits>
+#else
+#include <ftl/type_traits>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+template<class First, class Second>
+struct pair {
+    First first;
+    Second second;
+};
+
+template<class First, class Second>
+pair(First, Second) -> pair<First, Second>;
+
+template<class T>
+constexpr remove_reference_t<T>&& move(T&& value) noexcept {
+    return static_cast<remove_reference_t<T>&&>(value);
+}
+
+template<class T>
+constexpr T&& forward(remove_reference_t<T>& value) noexcept {
+    return static_cast<T&&>(value);
+}
+
+template<class T>
+constexpr T&& forward(remove_reference_t<T>&& value) noexcept {
+    static_assert(!is_lvalue_reference_v<T>);
+    return static_cast<T&&>(value);
+}
+
+template<class T>
+constexpr void swap(T& left, T& right)
+    noexcept(is_nothrow_move_constructible_v<T> &&
+             is_nothrow_move_assignable_v<T>) {
+    T temporary = move(left);
+    left = move(right);
+    right = move(temporary);
+}
+
+template<class T, size_t N>
+constexpr void swap(T (&left)[N], T (&right)[N])
+    noexcept(noexcept(swap(left[0], right[0]))) {
+    for (size_t i = 0; i < N; ++i)
+        swap(left[i], right[i]);
+}
+
+template<class T, class U = T>
+constexpr T exchange(T& object, U&& replacement)
+    noexcept(is_nothrow_move_constructible_v<T> &&
+             is_nothrow_assignable_v<T&, U>) {
+    T old = move(object);
+    object = forward<U>(replacement);
+    return old;
+}
+
+template<class T>
+constexpr add_const_t<T>& as_const(T& value) noexcept {
+    return value;
+}
+
+template<class T>
+void as_const(const T&&) = delete;
+
+template<class Enum>
+constexpr underlying_type_t<Enum> to_underlying(Enum value) noexcept {
+    return static_cast<underlying_type_t<Enum>>(value);
+}
+
+FTL_END_NAMESPACE
+
+#endif // FTL_UTILITY_HEADER

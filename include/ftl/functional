@@ -1,0 +1,229 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_FUNCTIONAL_HEADER
+#define FTL_FUNCTIONAL_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <type_traits>
+#include <utility>
+#include <detail/rapidhash>
+#else
+#include <ftl/type_traits>
+#include <ftl/utility>
+#include <ftl/detail/rapidhash>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+template<class T>
+class reference_wrapper;
+
+namespace detail {
+template<class T>
+constexpr T* functional_addressof(T& value) noexcept {
+#if defined(_MSC_VER) || __has_builtin(__builtin_addressof)
+    return __builtin_addressof(value);
+#else
+    return &value;
+#endif
+}
+
+template<class>
+inline constexpr bool is_reference_wrapper_v = false;
+template<class T>
+inline constexpr bool is_reference_wrapper_v<reference_wrapper<T>> = true;
+
+template<class Member, class Object, class... Args>
+constexpr decltype(auto) invoke_member_function(
+    Member member, Object&& object, Args&&... args) {
+    if constexpr (is_reference_wrapper_v<remove_cvref_t<Object>>)
+        return (object.get().*member)(forward<Args>(args)...);
+    else if constexpr (requires {
+        (forward<Object>(object).*member)(forward<Args>(args)...);
+    })
+        return (forward<Object>(object).*member)(forward<Args>(args)...);
+    else
+        return ((*forward<Object>(object)).*member)(forward<Args>(args)...);
+}
+
+template<class Member, class Object>
+constexpr decltype(auto) invoke_member_object(
+    Member member, Object&& object) {
+    if constexpr (is_reference_wrapper_v<remove_cvref_t<Object>>)
+        return object.get().*member;
+    else if constexpr (requires { forward<Object>(object).*member; })
+        return forward<Object>(object).*member;
+    else
+        return (*forward<Object>(object)).*member;
+}
+}
+
+template<class Callable, class... Args>
+constexpr decltype(auto) invoke(Callable&& callable, Args&&... args)
+    noexcept(noexcept([](Callable&& function, Args&&... values)
+        -> decltype(auto) {
+        if constexpr (is_member_function_pointer_v<remove_cvref_t<Callable>>)
+            return detail::invoke_member_function(
+                forward<Callable>(function), forward<Args>(values)...);
+        else if constexpr (
+            is_member_object_pointer_v<remove_cvref_t<Callable>>)
+            return detail::invoke_member_object(
+                forward<Callable>(function), forward<Args>(values)...);
+        else
+            return forward<Callable>(function)(forward<Args>(values)...);
+    }(forward<Callable>(callable), forward<Args>(args)...))) {
+    if constexpr (is_member_function_pointer_v<remove_cvref_t<Callable>>)
+        return detail::invoke_member_function(
+            forward<Callable>(callable), forward<Args>(args)...);
+    else if constexpr (is_member_object_pointer_v<remove_cvref_t<Callable>>)
+        return detail::invoke_member_object(
+            forward<Callable>(callable), forward<Args>(args)...);
+    else
+        return forward<Callable>(callable)(forward<Args>(args)...);
+}
+
+template<class Callable, class... Args>
+struct invoke_result {
+    using type = decltype(invoke(
+        declval<Callable>(), declval<Args>()...));
+};
+
+template<class Callable, class... Args>
+using invoke_result_t = typename invoke_result<Callable, Args...>::type;
+
+template<class Callable, class... Args>
+inline constexpr bool is_invocable_v =
+    requires { invoke(declval<Callable>(), declval<Args>()...); };
+
+template<class Result, class Callable, class... Args>
+inline constexpr bool is_invocable_r_v =
+    is_void_v<Result>
+        ? is_invocable_v<Callable, Args...>
+        : requires {
+            static_cast<Result>(
+                invoke(declval<Callable>(), declval<Args>()...));
+        };
+
+template<class Callable, class... Args>
+inline constexpr bool is_nothrow_invocable_v =
+    is_invocable_v<Callable, Args...> &&
+    noexcept(invoke(declval<Callable>(), declval<Args>()...));
+
+template<class Callable, class... Args>
+struct is_invocable : bool_constant<is_invocable_v<Callable, Args...>> {};
+
+template<class Result, class Callable, class... Args>
+struct is_invocable_r
+    : bool_constant<is_invocable_r_v<Result, Callable, Args...>> {};
+
+template<class Callable, class... Args>
+struct is_nothrow_invocable
+    : bool_constant<is_nothrow_invocable_v<Callable, Args...>> {};
+
+template<class T>
+class reference_wrapper {
+public:
+    using type = T;
+
+    constexpr reference_wrapper(T& value) noexcept
+        : pointer{detail::functional_addressof(value)} {}
+    reference_wrapper(T&&) = delete;
+
+    constexpr operator T&() const noexcept { return *pointer; }
+    constexpr T& get() const noexcept { return *pointer; }
+
+    template<class... Args>
+    constexpr invoke_result_t<T&, Args...> operator()(Args&&... args) const
+        noexcept(is_nothrow_invocable_v<T&, Args...>) {
+        return invoke(get(), forward<Args>(args)...);
+    }
+
+private:
+    T* pointer;
+};
+
+template<class T>
+reference_wrapper(T&) -> reference_wrapper<T>;
+
+template<class T>
+constexpr reference_wrapper<T> ref(T& value) noexcept {
+    return reference_wrapper<T>{value};
+}
+template<class T>
+void ref(const T&&) = delete;
+template<class T>
+constexpr reference_wrapper<T> ref(reference_wrapper<T> value) noexcept {
+    return value;
+}
+
+template<class T>
+constexpr reference_wrapper<const T> cref(const T& value) noexcept {
+    return reference_wrapper<const T>{value};
+}
+template<class T>
+void cref(const T&&) = delete;
+template<class T>
+constexpr reference_wrapper<const T>
+cref(reference_wrapper<T> value) noexcept {
+    return {value.get()};
+}
+
+template<class T>
+struct hash;
+
+namespace detail {
+constexpr size_t rapid_hash_word(unsigned long long value) noexcept {
+    return ftl_rapidhash::rapidhash_t<unsigned long long>{}(value);
+}
+
+inline size_t rapid_hash_object(const void* object, size_t length) noexcept {
+    return static_cast<size_t>(ftl_rapidhash::rapidhash(object, length));
+}
+}
+
+template<class T>
+    requires (is_integral_v<T> || is_enum_v<T>)
+struct hash<T> {
+    constexpr size_t operator()(T value) const noexcept {
+        return ftl_rapidhash::rapidhash_t<T>{}(value);
+    }
+};
+
+template<class T>
+struct hash<T*> {
+    size_t operator()(T* value) const noexcept {
+        return detail::rapid_hash_object(&value, sizeof(value));
+    }
+};
+
+template<>
+struct hash<nullptr_t> {
+    constexpr size_t operator()(nullptr_t) const noexcept {
+        return detail::rapid_hash_word(0);
+    }
+};
+
+#define FTL_DETAIL_FLOAT_HASH(T)                                      \
+    template<> struct hash<T> {                                      \
+        size_t operator()(T value) const noexcept {                   \
+            if (value == static_cast<T>(0))                           \
+                return detail::rapid_hash_word(0);                    \
+            return detail::rapid_hash_object(&value, sizeof(value));  \
+        }                                                            \
+    }
+FTL_DETAIL_FLOAT_HASH(float);
+FTL_DETAIL_FLOAT_HASH(double);
+FTL_DETAIL_FLOAT_HASH(long double);
+#undef FTL_DETAIL_FLOAT_HASH
+
+template<class Character, class Traits>
+struct hash<basic_string_view<Character, Traits>> {
+    constexpr size_t operator()(
+        basic_string_view<Character, Traits> value) const noexcept {
+        return static_cast<size_t>(ftl_rapidhash::rapidhash(value));
+    }
+};
+
+FTL_END_NAMESPACE
+
+#endif // FTL_FUNCTIONAL_HEADER

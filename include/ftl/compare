@@ -1,0 +1,197 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_COMPARE_HEADER
+#define FTL_COMPARE_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <type_traits>
+#include <utility>
+#define FTL_COMPARE_BEGIN_NAMESPACE namespace std {
+#define FTL_COMPARE_END_NAMESPACE }
+#else
+#include <ftl/type_traits>
+#include <ftl/utility>
+#define FTL_COMPARE_BEGIN_NAMESPACE namespace ftl {
+#define FTL_COMPARE_END_NAMESPACE }
+#endif
+
+FTL_COMPARE_BEGIN_NAMESPACE
+
+class weak_ordering;
+class partial_ordering;
+
+class strong_ordering {
+    constexpr explicit strong_ordering(signed char value) : state{value} {}
+public:
+    static const strong_ordering less;
+    static const strong_ordering equal;
+    static const strong_ordering equivalent;
+    static const strong_ordering greater;
+
+    constexpr operator weak_ordering() const noexcept;
+    friend constexpr bool
+    operator==(strong_ordering, strong_ordering) noexcept = default;
+    friend constexpr bool operator==(strong_ordering, int) noexcept;
+    friend constexpr bool operator<(strong_ordering value, int) noexcept {
+        return value.state < 0;
+    }
+    friend constexpr bool operator>(strong_ordering value, int) noexcept {
+        return value.state > 0;
+    }
+    friend constexpr bool operator<=(strong_ordering value, int) noexcept {
+        return value.state <= 0;
+    }
+    friend constexpr bool operator>=(strong_ordering value, int) noexcept {
+        return value.state >= 0;
+    }
+    friend constexpr strong_ordering
+    operator<=>(strong_ordering value, int) noexcept { return value; }
+    friend constexpr strong_ordering
+    operator<=>(int, strong_ordering value) noexcept {
+        return strong_ordering{static_cast<signed char>(-value.state)};
+    }
+private:
+    signed char state;
+};
+
+class weak_ordering {
+    constexpr explicit weak_ordering(signed char value) : state{value} {}
+    friend class strong_ordering;
+public:
+    static const weak_ordering less;
+    static const weak_ordering equivalent;
+    static const weak_ordering greater;
+
+    constexpr operator partial_ordering() const noexcept;
+    friend constexpr bool
+    operator==(weak_ordering, weak_ordering) noexcept = default;
+    friend constexpr bool operator==(weak_ordering, int) noexcept;
+    friend constexpr bool operator<(weak_ordering value, int) noexcept {
+        return value.state < 0;
+    }
+    friend constexpr bool operator>(weak_ordering value, int) noexcept {
+        return value.state > 0;
+    }
+    friend constexpr bool operator<=(weak_ordering value, int) noexcept {
+        return value.state <= 0;
+    }
+    friend constexpr bool operator>=(weak_ordering value, int) noexcept {
+        return value.state >= 0;
+    }
+    friend constexpr weak_ordering
+    operator<=>(weak_ordering value, int) noexcept { return value; }
+    friend constexpr weak_ordering
+    operator<=>(int, weak_ordering value) noexcept {
+        return weak_ordering{static_cast<signed char>(-value.state)};
+    }
+private:
+    signed char state;
+};
+
+class partial_ordering {
+    constexpr explicit partial_ordering(signed char value) : state{value} {}
+    friend class weak_ordering;
+public:
+    static const partial_ordering less;
+    static const partial_ordering equivalent;
+    static const partial_ordering greater;
+    static const partial_ordering unordered;
+
+    friend constexpr bool
+    operator==(partial_ordering, partial_ordering) noexcept = default;
+    friend constexpr bool operator==(partial_ordering value, int) noexcept {
+        return value.state == 0;
+    }
+    friend constexpr bool operator<(partial_ordering value, int) noexcept {
+        return value.state == -1;
+    }
+    friend constexpr bool operator>(partial_ordering value, int) noexcept {
+        return value.state == 1;
+    }
+    friend constexpr bool operator<=(partial_ordering value, int) noexcept {
+        return value.state == -1 || value.state == 0;
+    }
+    friend constexpr bool operator>=(partial_ordering value, int) noexcept {
+        return value.state == 1 || value.state == 0;
+    }
+    friend constexpr partial_ordering
+    operator<=>(partial_ordering value, int) noexcept { return value; }
+    friend constexpr partial_ordering
+    operator<=>(int, partial_ordering value) noexcept {
+        return value.state == 2
+            ? value
+            : partial_ordering{
+                static_cast<signed char>(-value.state)};
+    }
+private:
+    signed char state;
+};
+
+inline constexpr strong_ordering strong_ordering::less{-1};
+inline constexpr strong_ordering strong_ordering::equal{0};
+inline constexpr strong_ordering strong_ordering::equivalent{0};
+inline constexpr strong_ordering strong_ordering::greater{1};
+inline constexpr weak_ordering weak_ordering::less{-1};
+inline constexpr weak_ordering weak_ordering::equivalent{0};
+inline constexpr weak_ordering weak_ordering::greater{1};
+inline constexpr partial_ordering partial_ordering::less{-1};
+inline constexpr partial_ordering partial_ordering::equivalent{0};
+inline constexpr partial_ordering partial_ordering::greater{1};
+inline constexpr partial_ordering partial_ordering::unordered{2};
+
+constexpr strong_ordering::operator weak_ordering() const noexcept {
+    return weak_ordering{state};
+}
+constexpr weak_ordering::operator partial_ordering() const noexcept {
+    return partial_ordering{state};
+}
+constexpr bool operator==(strong_ordering value, int) noexcept {
+    return value.state == 0;
+}
+constexpr bool operator==(weak_ordering value, int) noexcept {
+    return value.state == 0;
+}
+
+template<class... T>
+struct common_comparison_category {
+    using type =
+        conditional_t<(is_same_v<T, strong_ordering> && ...),
+                      strong_ordering,
+        conditional_t<((is_same_v<T, strong_ordering> ||
+                        is_same_v<T, weak_ordering>) && ...),
+                      weak_ordering,
+        conditional_t<((is_same_v<T, strong_ordering> ||
+                        is_same_v<T, weak_ordering> ||
+                        is_same_v<T, partial_ordering>) && ...),
+                      partial_ordering, void>>>;
+};
+template<class... T>
+using common_comparison_category_t =
+    typename common_comparison_category<T...>::type;
+
+struct compare_three_way {
+    using is_transparent = void;
+    template<class T, class U>
+    constexpr auto operator()(T&& left, U&& right) const
+#ifdef FTL_REPLACE_STL
+        noexcept(noexcept(forward<T>(left) <=> forward<U>(right)))
+        -> decltype(forward<T>(left) <=> forward<U>(right)) {
+        return forward<T>(left) <=> forward<U>(right);
+#else
+        noexcept(noexcept(forward<T>(left) < forward<U>(right)) &&
+                 noexcept(forward<T>(left) == forward<U>(right))) {
+        if (forward<T>(left) < forward<U>(right))
+            return strong_ordering::less;
+        if (forward<T>(left) == forward<U>(right))
+            return strong_ordering::equal;
+        return strong_ordering::greater;
+#endif
+    }
+};
+
+FTL_COMPARE_END_NAMESPACE
+
+#undef FTL_COMPARE_BEGIN_NAMESPACE
+#undef FTL_COMPARE_END_NAMESPACE
+
+#endif // FTL_COMPARE_HEADER

@@ -1,0 +1,93 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CSTDDEF_HEADER
+#define FTL_CSTDDEF_HEADER
+
+#ifdef FTL_REPLACE_STL
+#define FTL_CSTDDEF_BEGIN_NAMESPACE namespace std {
+#define FTL_CSTDDEF_END_NAMESPACE }
+#else
+#define FTL_CSTDDEF_BEGIN_NAMESPACE namespace ftl {
+#define FTL_CSTDDEF_END_NAMESPACE }
+#endif
+
+FTL_CSTDDEF_BEGIN_NAMESPACE
+
+using size_t = decltype(sizeof(0));
+using ptrdiff_t = decltype(static_cast<int*>(nullptr) -
+                           static_cast<int*>(nullptr));
+using nullptr_t = decltype(nullptr);
+
+struct alignas(long double) alignas(void*) max_align_t {};
+
+enum class byte : unsigned char {};
+
+// ponytail: language-only constraint accepts integer-like user types; use
+// is_integral once cstddef/type_traits share a cycle-free internal core.
+template<class Integer>
+    requires requires(Integer value) { value & 1; }
+constexpr byte operator<<(byte value, Integer shift) noexcept {
+    return byte(static_cast<unsigned char>(value) << shift);
+}
+
+template<class Integer>
+    requires requires(Integer value) { value & 1; }
+constexpr byte operator>>(byte value, Integer shift) noexcept {
+    return byte(static_cast<unsigned char>(value) >> shift);
+}
+
+constexpr byte operator|(byte left, byte right) noexcept {
+    return byte(static_cast<unsigned char>(left) |
+                static_cast<unsigned char>(right));
+}
+
+constexpr byte operator&(byte left, byte right) noexcept {
+    return byte(static_cast<unsigned char>(left) &
+                static_cast<unsigned char>(right));
+}
+
+constexpr byte operator^(byte left, byte right) noexcept {
+    return byte(static_cast<unsigned char>(left) ^
+                static_cast<unsigned char>(right));
+}
+
+constexpr byte operator~(byte value) noexcept {
+    return byte(~static_cast<unsigned char>(value));
+}
+
+template<class Integer>
+    requires requires(Integer value) { value & 1; }
+constexpr byte& operator<<=(byte& value, Integer shift) noexcept {
+    return value = value << shift;
+}
+
+template<class Integer>
+    requires requires(Integer value) { value & 1; }
+constexpr byte& operator>>=(byte& value, Integer shift) noexcept {
+    return value = value >> shift;
+}
+
+constexpr byte& operator|=(byte& left, byte right) noexcept {
+    return left = left | right;
+}
+
+constexpr byte& operator&=(byte& left, byte right) noexcept {
+    return left = left & right;
+}
+
+constexpr byte& operator^=(byte& left, byte right) noexcept {
+    return left = left ^ right;
+}
+
+template<class Integer>
+    requires requires(Integer value) { value & 1; }
+constexpr Integer to_integer(byte value) noexcept {
+    return Integer(value);
+}
+
+FTL_CSTDDEF_END_NAMESPACE
+
+#undef FTL_CSTDDEF_BEGIN_NAMESPACE
+#undef FTL_CSTDDEF_END_NAMESPACE
+
+#endif // FTL_CSTDDEF_HEADER

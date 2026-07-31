@@ -1,0 +1,351 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_EXCEPTION_HEADER
+#define FTL_EXCEPTION_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <type_traits>
+#include <utility>
+#define FTL_EXCEPTION_BEGIN_NAMESPACE namespace std {
+#define FTL_EXCEPTION_END_NAMESPACE }
+#else
+#include <ftl/type_traits>
+#include <ftl/utility>
+#define FTL_EXCEPTION_BEGIN_NAMESPACE namespace ftl {
+#define FTL_EXCEPTION_END_NAMESPACE }
+#endif
+
+#if defined(_MSC_VER)
+#if defined(_DEBUG)
+#pragma comment(lib, "msvcprtd")
+#else
+#pragma comment(lib, "msvcprt")
+#endif
+
+extern "C" {
+struct __std_exception_data {
+    const char* _What;
+    bool _DoFree;
+};
+void __cdecl __std_exception_copy(
+    const __std_exception_data*, __std_exception_data*);
+void __cdecl __std_exception_destroy(__std_exception_data*);
+int __cdecl __uncaught_exceptions();
+}
+
+extern "C++" {
+void __cdecl __ExceptionPtrCreate(void*) noexcept;
+void __cdecl __ExceptionPtrDestroy(void*) noexcept;
+void __cdecl __ExceptionPtrCopy(void*, const void*) noexcept;
+void __cdecl __ExceptionPtrAssign(void*, const void*) noexcept;
+bool __cdecl __ExceptionPtrCompare(const void*, const void*) noexcept;
+bool __cdecl __ExceptionPtrToBool(const void*) noexcept;
+void __cdecl __ExceptionPtrSwap(void*, void*) noexcept;
+void __cdecl __ExceptionPtrCurrentException(void*) noexcept;
+[[noreturn]] void __cdecl __ExceptionPtrRethrow(const void*);
+}
+
+using ftl_runtime_terminate_handler = void(__cdecl*)();
+extern "C" {
+[[noreturn]] void __cdecl terminate() noexcept;
+ftl_runtime_terminate_handler __cdecl set_terminate(
+    ftl_runtime_terminate_handler) noexcept;
+ftl_runtime_terminate_handler __cdecl _get_terminate() noexcept;
+}
+#else
+namespace __cxxabiv1 {
+extern "C" {
+void* __cxa_current_primary_exception() noexcept;
+[[noreturn]] void __cxa_rethrow_primary_exception(void*);
+void __cxa_increment_exception_refcount(void*) noexcept;
+void __cxa_decrement_exception_refcount(void*) noexcept;
+unsigned int __cxa_uncaught_exceptions() noexcept;
+}
+}
+
+#ifndef FTL_REPLACE_STL
+namespace std {
+using terminate_handler = void(*)();
+terminate_handler set_terminate(terminate_handler) noexcept;
+terminate_handler get_terminate() noexcept;
+[[noreturn]] void terminate() noexcept;
+}
+#endif
+#endif
+
+FTL_EXCEPTION_BEGIN_NAMESPACE
+
+#if defined(FTL_REPLACE_STL) && !defined(_MSC_VER)
+class exception {
+public:
+    exception() noexcept;
+    exception(const exception&) noexcept;
+    exception& operator=(const exception&) noexcept;
+    virtual ~exception();
+    [[nodiscard]] virtual const char* what() const noexcept;
+};
+
+class bad_exception : public exception {
+public:
+    bad_exception() noexcept;
+    ~bad_exception() override;
+    [[nodiscard]] const char* what() const noexcept override;
+};
+#elif defined(FTL_REPLACE_STL) && defined(_MSC_VER)
+class exception {
+public:
+    exception() noexcept : data{} {}
+    exception(const exception& other) noexcept : data{} {
+        __std_exception_copy(&other.data, &data);
+    }
+    exception& operator=(const exception& other) noexcept {
+        if (this != &other) {
+            __std_exception_destroy(&data);
+            __std_exception_copy(&other.data, &data);
+        }
+        return *this;
+    }
+    virtual ~exception() noexcept {
+        __std_exception_destroy(&data);
+    }
+    [[nodiscard]] virtual const char* what() const noexcept {
+        return data._What ? data._What : "Unknown exception";
+    }
+
+protected:
+    exception(const char* message, int) noexcept
+        : data{message, false} {}
+
+private:
+    __std_exception_data data;
+};
+
+class bad_exception : public exception {
+public:
+    bad_exception() noexcept : exception("bad exception", 1) {}
+};
+#else
+class exception {
+public:
+    constexpr exception() noexcept = default;
+    constexpr exception(const exception&) noexcept = default;
+    constexpr exception& operator=(const exception&) noexcept = default;
+    virtual ~exception() = default;
+    [[nodiscard]] virtual const char* what() const noexcept {
+        return "exception";
+    }
+};
+
+class bad_exception : public exception {
+public:
+    [[nodiscard]] const char* what() const noexcept override {
+        return "bad exception";
+    }
+};
+#endif
+
+using terminate_handler = void(*)();
+
+#if defined(_MSC_VER)
+inline terminate_handler set_terminate(terminate_handler handler) noexcept {
+    return ::set_terminate(handler);
+}
+[[nodiscard]] inline terminate_handler get_terminate() noexcept {
+    return ::_get_terminate();
+}
+[[noreturn]] inline void terminate() noexcept { ::terminate(); }
+inline int uncaught_exceptions() noexcept {
+    return ::__uncaught_exceptions();
+}
+#elif defined(FTL_REPLACE_STL)
+terminate_handler set_terminate(terminate_handler) noexcept;
+[[nodiscard]] terminate_handler get_terminate() noexcept;
+[[noreturn]] void terminate() noexcept;
+int uncaught_exceptions() noexcept;
+#else
+inline terminate_handler set_terminate(terminate_handler handler) noexcept {
+    return ::std::set_terminate(handler);
+}
+[[nodiscard]] inline terminate_handler get_terminate() noexcept {
+    return ::std::get_terminate();
+}
+[[noreturn]] inline void terminate() noexcept {
+    ::std::terminate();
+}
+inline int uncaught_exceptions() noexcept {
+    return int(__cxxabiv1::__cxa_uncaught_exceptions());
+}
+#endif
+
+class exception_ptr {
+public:
+#if defined(_MSC_VER)
+    exception_ptr() noexcept { __ExceptionPtrCreate(this); }
+    exception_ptr(nullptr_t) noexcept { __ExceptionPtrCreate(this); }
+    exception_ptr(const exception_ptr& other) noexcept {
+        __ExceptionPtrCopy(this, &other);
+    }
+    exception_ptr& operator=(const exception_ptr& other) noexcept {
+        __ExceptionPtrAssign(this, &other);
+        return *this;
+    }
+    exception_ptr& operator=(nullptr_t) noexcept {
+        exception_ptr empty;
+        __ExceptionPtrAssign(this, &empty);
+        return *this;
+    }
+    ~exception_ptr() { __ExceptionPtrDestroy(this); }
+    explicit operator bool() const noexcept {
+        return __ExceptionPtrToBool(this);
+    }
+    friend bool operator==(
+        const exception_ptr& left,
+        const exception_ptr& right) noexcept {
+        return __ExceptionPtrCompare(&left, &right);
+    }
+    friend void swap(exception_ptr& left, exception_ptr& right) noexcept {
+        __ExceptionPtrSwap(&left, &right);
+    }
+
+private:
+    void* data1{};
+    void* data2{};
+#else
+    constexpr exception_ptr() noexcept = default;
+    constexpr exception_ptr(nullptr_t) noexcept {}
+    exception_ptr(const exception_ptr& other) noexcept
+        : object{other.object} {
+        if (object)
+            __cxxabiv1::__cxa_increment_exception_refcount(object);
+    }
+    exception_ptr& operator=(const exception_ptr& other) noexcept {
+        exception_ptr(other).swap(*this);
+        return *this;
+    }
+    exception_ptr& operator=(nullptr_t) noexcept {
+        exception_ptr{}.swap(*this);
+        return *this;
+    }
+    ~exception_ptr() {
+        if (object)
+            __cxxabiv1::__cxa_decrement_exception_refcount(object);
+    }
+    explicit operator bool() const noexcept { return object != nullptr; }
+    friend bool operator==(
+        exception_ptr left, exception_ptr right) noexcept {
+        return left.object == right.object;
+    }
+    friend void swap(exception_ptr& left, exception_ptr& right) noexcept {
+        left.swap(right);
+    }
+
+private:
+    explicit exception_ptr(void* value) noexcept : object{value} {}
+    void swap(exception_ptr& other) noexcept {
+        void* temporary = object;
+        object = other.object;
+        other.object = temporary;
+    }
+    void* object{};
+    friend exception_ptr current_exception() noexcept;
+    friend void rethrow_exception(exception_ptr);
+#endif
+};
+
+inline bool operator==(const exception_ptr& value, nullptr_t) noexcept {
+    return !value;
+}
+
+[[nodiscard]] inline exception_ptr current_exception() noexcept {
+#if defined(_MSC_VER)
+    exception_ptr result;
+    __ExceptionPtrCurrentException(&result);
+    return result;
+#else
+    return exception_ptr{
+        __cxxabiv1::__cxa_current_primary_exception()};
+#endif
+}
+
+[[noreturn]] inline void rethrow_exception(exception_ptr value) {
+#if defined(_MSC_VER)
+    __ExceptionPtrRethrow(&value);
+#else
+    if (!value.object)
+        terminate();
+    __cxxabiv1::__cxa_rethrow_primary_exception(value.object);
+#endif
+}
+
+template<class Exception, class... Args>
+exception_ptr make_exception_ptr(Args&&... args) noexcept {
+    try {
+        throw Exception(forward<Args>(args)...);
+    } catch (...) {
+        return current_exception();
+    }
+}
+
+class nested_exception {
+public:
+    nested_exception() noexcept : pointer{current_exception()} {}
+    nested_exception(const nested_exception&) noexcept = default;
+    nested_exception& operator=(const nested_exception&) noexcept = default;
+    virtual ~nested_exception() = default;
+
+    [[noreturn]] void rethrow_nested() const {
+        if (pointer)
+            rethrow_exception(pointer);
+        terminate();
+    }
+
+    [[nodiscard]] exception_ptr nested_ptr() const noexcept {
+        return pointer;
+    }
+
+private:
+    exception_ptr pointer;
+};
+
+namespace detail {
+template<class T>
+class nested_exception_wrapper : public T, public nested_exception {
+public:
+    template<class U>
+    explicit nested_exception_wrapper(U&& value)
+        : T(forward<U>(value)) {}
+};
+}
+
+template<class T>
+[[noreturn]] void throw_with_nested(T&& value) {
+    using U = decay_t<T>;
+    if constexpr (is_class_v<U> && !is_final_v<U> &&
+                  !is_base_of_v<nested_exception, U>)
+        throw detail::nested_exception_wrapper<U>{forward<T>(value)};
+    else
+        throw forward<T>(value);
+}
+
+template<class T>
+void rethrow_if_nested(const T& value) {
+    if constexpr (is_polymorphic_v<T>) {
+#if defined(_MSC_VER) || __has_builtin(__builtin_addressof)
+        const auto* nested =
+            dynamic_cast<const nested_exception*>(
+                __builtin_addressof(value));
+#else
+        const auto* nested =
+            dynamic_cast<const nested_exception*>(&value);
+#endif
+        if (nested)
+            nested->rethrow_nested();
+    }
+}
+
+FTL_EXCEPTION_END_NAMESPACE
+
+#undef FTL_EXCEPTION_BEGIN_NAMESPACE
+#undef FTL_EXCEPTION_END_NAMESPACE
+
+#endif // FTL_EXCEPTION_HEADER

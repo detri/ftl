@@ -1,0 +1,137 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_BIT_HEADER
+#define FTL_BIT_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <type_traits>
+#else
+#include <ftl/type_traits>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+enum class endian {
+#if defined(_WIN32) || defined(__LITTLE_ENDIAN__) || \
+    (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+    little = 0,
+    big = 1,
+    native = little
+#else
+    little = 0,
+    big = 1,
+    native = big
+#endif
+};
+
+template<class To, class From>
+constexpr To bit_cast(const From& value) noexcept
+    requires (sizeof(To) == sizeof(From) &&
+              is_trivially_copyable_v<To> &&
+              is_trivially_copyable_v<From>) {
+    return __builtin_bit_cast(To, value);
+}
+
+namespace detail {
+template<class T>
+concept bit_unsigned =
+    is_unsigned_v<T> && !is_same_v<remove_cv_t<T>, bool>;
+}
+
+template<detail::bit_unsigned T>
+constexpr T rotl(T value, int shift) noexcept;
+template<detail::bit_unsigned T>
+constexpr T rotr(T value, int shift) noexcept;
+
+template<detail::bit_unsigned T>
+constexpr T rotl(T value, int shift) noexcept {
+    constexpr int digits = int(sizeof(T) * 8);
+    const int amount = shift % digits;
+    return amount == 0 ? value
+         : amount > 0 ? T((value << amount) | (value >> (digits - amount)))
+                      : rotr(value, -amount);
+}
+
+template<detail::bit_unsigned T>
+constexpr T rotr(T value, int shift) noexcept {
+    constexpr int digits = int(sizeof(T) * 8);
+    const int amount = shift % digits;
+    return amount == 0 ? value
+         : amount > 0 ? T((value >> amount) | (value << (digits - amount)))
+                      : rotl(value, -amount);
+}
+
+template<detail::bit_unsigned T>
+constexpr int countl_zero(T value) noexcept {
+    int count = 0;
+    for (T mask = T(1) << (sizeof(T) * 8 - 1);
+         mask && !(value & mask); mask >>= 1)
+        ++count;
+    return count;
+}
+
+template<detail::bit_unsigned T>
+constexpr int countl_one(T value) noexcept {
+    return countl_zero(T(~value));
+}
+
+template<detail::bit_unsigned T>
+constexpr int countr_zero(T value) noexcept {
+    if (!value)
+        return int(sizeof(T) * 8);
+    int count = 0;
+    while (!(value & 1)) {
+        value >>= 1;
+        ++count;
+    }
+    return count;
+}
+
+template<detail::bit_unsigned T>
+constexpr int countr_one(T value) noexcept {
+    return countr_zero(T(~value));
+}
+
+template<detail::bit_unsigned T>
+constexpr int popcount(T value) noexcept {
+    int count = 0;
+    while (value) {
+        value &= T(value - 1);
+        ++count;
+    }
+    return count;
+}
+
+template<detail::bit_unsigned T>
+constexpr bool has_single_bit(T value) noexcept {
+    return value && !(value & T(value - 1));
+}
+
+template<detail::bit_unsigned T>
+constexpr int bit_width(T value) noexcept {
+    return int(sizeof(T) * 8) - countl_zero(value);
+}
+
+template<detail::bit_unsigned T>
+constexpr T bit_floor(T value) noexcept {
+    return value ? T(T(1) << (bit_width(value) - 1)) : T(0);
+}
+
+template<detail::bit_unsigned T>
+constexpr T bit_ceil(T value) noexcept {
+    return value <= 1 ? T(1) : T(T(1) << bit_width(T(value - 1)));
+}
+
+template<detail::bit_unsigned T>
+constexpr T byteswap(T value) noexcept {
+    T result = 0;
+    for (size_t index = 0; index < sizeof(T); ++index) {
+        result = T((result << 8) | (value & T(0xff)));
+        value >>= 8;
+    }
+    return result;
+}
+
+FTL_END_NAMESPACE
+
+#endif // FTL_BIT_HEADER

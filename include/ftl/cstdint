@@ -1,0 +1,71 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CSTDINT_HEADER
+#define FTL_CSTDINT_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <cstddef>
+#define FTL_CSTDINT_BEGIN_NAMESPACE namespace std {
+#define FTL_CSTDINT_END_NAMESPACE }
+#else
+#include <ftl/cstddef>
+#define FTL_CSTDINT_BEGIN_NAMESPACE namespace ftl {
+#define FTL_CSTDINT_END_NAMESPACE }
+#endif
+
+FTL_CSTDINT_BEGIN_NAMESPACE
+
+using int8_t = signed char;
+using uint8_t = unsigned char;
+using int16_t = short;
+using uint16_t = unsigned short;
+using int32_t = int;
+using uint32_t = unsigned int;
+#if defined(_MSC_VER)
+using int64_t = long long;
+using uint64_t = unsigned long long;
+#else
+using int64_t = long;
+using uint64_t = unsigned long;
+#endif
+
+using int_least8_t = int8_t;
+using uint_least8_t = uint8_t;
+using int_least16_t = int16_t;
+using uint_least16_t = uint16_t;
+using int_least32_t = int32_t;
+using uint_least32_t = uint32_t;
+using int_least64_t = int64_t;
+using uint_least64_t = uint64_t;
+
+using int_fast8_t = int8_t;
+using uint_fast8_t = uint8_t;
+using int_fast16_t = int32_t;
+using uint_fast16_t = uint32_t;
+using int_fast32_t = int32_t;
+using uint_fast32_t = uint32_t;
+using int_fast64_t = int64_t;
+using uint_fast64_t = uint64_t;
+
+#if defined(_WIN64)
+using intptr_t = long long;
+using uintptr_t = unsigned long long;
+#elif defined(_WIN32)
+using intptr_t = int;
+using uintptr_t = unsigned int;
+#elif __SIZEOF_POINTER__ == 8
+using intptr_t = long;
+using uintptr_t = unsigned long;
+#else
+using intptr_t = int;
+using uintptr_t = unsigned int;
+#endif
+using intmax_t = int64_t;
+using uintmax_t = uint64_t;
+
+FTL_CSTDINT_END_NAMESPACE
+
+#undef FTL_CSTDINT_BEGIN_NAMESPACE
+#undef FTL_CSTDINT_END_NAMESPACE
+
+#endif // FTL_CSTDINT_HEADER

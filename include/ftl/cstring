@@ -1,0 +1,39 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CSTRING_HEADER
+#define FTL_CSTRING_HEADER
+
+extern "C" {
+void* memcpy(void* destination, const void* source, decltype(sizeof(0))) noexcept;
+void* memmove(void* destination, const void* source, decltype(sizeof(0))) noexcept;
+void* memset(void* destination, int value, decltype(sizeof(0))) noexcept;
+int memcmp(const void* left, const void* right, decltype(sizeof(0))) noexcept;
+const void* memchr(const void* data, int value, decltype(sizeof(0))) noexcept;
+decltype(sizeof(0)) strlen(const char* string) noexcept;
+int strcmp(const char* left, const char* right) noexcept;
+int strncmp(const char* left, const char* right, decltype(sizeof(0))) noexcept;
+char* strcpy(char* destination, const char* source) noexcept;
+char* strncpy(
+    char* destination, const char* source, decltype(sizeof(0))) noexcept;
+}
+
+#ifdef FTL_REPLACE_STL
+namespace std {
+#else
+namespace ftl {
+#endif
+
+using ::memcpy;
+using ::memmove;
+using ::memset;
+using ::memcmp;
+using ::memchr;
+using ::strlen;
+using ::strcmp;
+using ::strncmp;
+using ::strcpy;
+using ::strncpy;
+
+} // namespace std or ftl
+
+#endif // FTL_CSTRING_HEADER

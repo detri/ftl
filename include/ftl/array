@@ -1,0 +1,141 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_ARRAY_HEADER
+#define FTL_ARRAY_HEADER
+
+#if defined(_MSC_VER) && !defined(__clang__)
+extern "C" void __cdecl __fastfail(unsigned int);
+#pragma intrinsic(__fastfail)
+#define FTL_ARRAY_TRAP() __fastfail(7)
+#else
+#define FTL_ARRAY_TRAP() __builtin_trap()
+#endif
+
+#ifdef FTL_REPLACE_STL
+#include <cstddef>
+#include <utility>
+#else
+#include <ftl/cstddef>
+#include <ftl/utility>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+namespace detail {
+template<class T, size_t N>
+constexpr void array_swap(T (&left)[N], T (&right)[N])
+    noexcept(noexcept(swap(left, right))) {
+    swap(left, right);
+}
+}
+
+template<class T, size_t N>
+struct array {
+    using value_type             = T;
+    using size_type              = size_t;
+    using difference_type        = ptrdiff_t;
+    using reference              = T&;
+    using const_reference        = const T&;
+    using pointer                = T*;
+    using const_pointer          = const T*;
+    using iterator               = T*;
+    using const_iterator         = const T*;
+
+    T elements[N];
+
+    // ponytail: bounds errors fast-fail until <stdexcept> provides out_of_range.
+    constexpr reference at(size_type index) {
+        if (index >= N)
+            FTL_ARRAY_TRAP();
+        return elements[index];
+    }
+    constexpr const_reference at(size_type index) const {
+        if (index >= N)
+            FTL_ARRAY_TRAP();
+        return elements[index];
+    }
+    constexpr reference operator[](size_type index) noexcept {
+        return elements[index];
+    }
+    constexpr const_reference operator[](size_type index) const noexcept {
+        return elements[index];
+    }
+    constexpr reference front() noexcept { return elements[0]; }
+    constexpr const_reference front() const noexcept { return elements[0]; }
+    constexpr reference back() noexcept { return elements[N - 1]; }
+    constexpr const_reference back() const noexcept { return elements[N - 1]; }
+    constexpr pointer data() noexcept { return elements; }
+    constexpr const_pointer data() const noexcept { return elements; }
+    constexpr iterator begin() noexcept { return elements; }
+    constexpr const_iterator begin() const noexcept { return elements; }
+    constexpr const_iterator cbegin() const noexcept { return elements; }
+    constexpr iterator end() noexcept { return elements + N; }
+    constexpr const_iterator end() const noexcept { return elements + N; }
+    constexpr const_iterator cend() const noexcept { return elements + N; }
+    [[nodiscard]] static constexpr bool empty() noexcept { return false; }
+    [[nodiscard]] static constexpr size_type size() noexcept { return N; }
+    [[nodiscard]] static constexpr size_type max_size() noexcept { return N; }
+
+    constexpr void fill(const T& value) {
+        for (auto& element : elements)
+            element = value;
+    }
+    constexpr void swap(array& other)
+        noexcept(noexcept(detail::array_swap(elements, other.elements))) {
+        detail::array_swap(elements, other.elements);
+    }
+};
+
+template<class T>
+struct array<T, 0> {
+    using value_type             = T;
+    using size_type              = size_t;
+    using difference_type        = ptrdiff_t;
+    using reference              = T&;
+    using const_reference        = const T&;
+    using pointer                = T*;
+    using const_pointer          = const T*;
+    using iterator               = T*;
+    using const_iterator         = const T*;
+
+    constexpr reference at(size_type) { FTL_ARRAY_TRAP(); }
+    constexpr const_reference at(size_type) const { FTL_ARRAY_TRAP(); }
+    constexpr reference operator[](size_type) noexcept { FTL_ARRAY_TRAP(); }
+    constexpr const_reference operator[](size_type) const noexcept {
+        FTL_ARRAY_TRAP();
+    }
+    constexpr reference front() noexcept { FTL_ARRAY_TRAP(); }
+    constexpr const_reference front() const noexcept { FTL_ARRAY_TRAP(); }
+    constexpr reference back() noexcept { FTL_ARRAY_TRAP(); }
+    constexpr const_reference back() const noexcept { FTL_ARRAY_TRAP(); }
+    constexpr pointer data() noexcept { return nullptr; }
+    constexpr const_pointer data() const noexcept { return nullptr; }
+    constexpr iterator begin() noexcept { return nullptr; }
+    constexpr const_iterator begin() const noexcept { return nullptr; }
+    constexpr const_iterator cbegin() const noexcept { return nullptr; }
+    constexpr iterator end() noexcept { return nullptr; }
+    constexpr const_iterator end() const noexcept { return nullptr; }
+    constexpr const_iterator cend() const noexcept { return nullptr; }
+    [[nodiscard]] static constexpr bool empty() noexcept { return true; }
+    [[nodiscard]] static constexpr size_type size() noexcept { return 0; }
+    [[nodiscard]] static constexpr size_type max_size() noexcept { return 0; }
+    constexpr void fill(const T&) noexcept {}
+    constexpr void swap(array&) noexcept {}
+};
+
+template<class T, size_t N>
+array(T (&)[N]) -> array<T, N>;
+
+template<class T, size_t N>
+constexpr bool operator==(const array<T, N>& left,
+                          const array<T, N>& right) {
+    for (size_t index = 0; index < N; ++index)
+        if (!(left[index] == right[index]))
+            return false;
+    return true;
+}
+
+FTL_END_NAMESPACE
+
+#undef FTL_ARRAY_TRAP
+#endif // FTL_ARRAY_HEADER

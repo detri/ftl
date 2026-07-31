@@ -1,0 +1,1247 @@
+// Freestanding Template Library
+// Copyright (c) 2026 Aaron Dosser
+//
+// SPDX-License-Identifier: MIT
+//
+// This software is licensed under the MIT License.
+// See the LICENSE file in the project root for the full license text.
+#ifndef FTL_TYPE_TRAITS_HEADER
+#define FTL_TYPE_TRAITS_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <cstddef>
+#else
+#include <ftl/cstddef>
+#endif
+
+#ifdef FTL_REPLACE_STL
+#define FTL_BEGIN_NAMESPACE namespace std {
+#else
+#define FTL_BEGIN_NAMESPACE namespace ftl {
+#endif
+
+#ifdef FTL_REPLACE_STL
+#define FTL_END_NAMESPACE } // namespace std
+#else
+#define FTL_END_NAMESPACE } // namespace ftl
+#endif
+
+#ifndef __has_builtin
+#define __has_builtin(x) 0
+#endif
+
+#if defined(_MSC_VER) && !defined(__clang__)
+#define FTL_NATIVE_MSVC 1
+#else
+#define FTL_NATIVE_MSVC 0
+#endif
+
+#if defined(_MSC_VER)
+#define FTL_NO_UNIQUE_ADDRESS [[msvc::no_unique_address]]
+#else
+#define FTL_NO_UNIQUE_ADDRESS [[no_unique_address]]
+#endif
+
+#if FTL_NATIVE_MSVC && _MSC_VER >= 1950
+#define FTL_NATIVE_MSVC_CXX23_TRAITS 1
+#else
+#define FTL_NATIVE_MSVC_CXX23_TRAITS 0
+#endif
+
+#if __has_builtin(__is_same) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_SAME 1
+#define FTL_IS_SAME(A, B) __is_same(A, B)
+#else
+#define FTL_HAS_IS_SAME 0
+#endif
+
+#if __has_builtin(__is_union) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_UNION 1
+#define FTL_IS_UNION(T) __is_union(T)
+#else
+#define FTL_HAS_IS_UNION 0
+#endif
+
+#if __has_builtin(__is_class) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_CLASS 1
+#define FTL_IS_CLASS(T) __is_class(T)
+#else
+#define FTL_HAS_IS_CLASS 0
+#endif
+
+#if __has_builtin(__is_enum) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_ENUM 1
+#define FTL_IS_ENUM(T) __is_enum(T)
+#else
+#define FTL_HAS_IS_ENUM 0
+#endif
+
+#if __has_builtin(__is_abstract) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_ABSTRACT 1
+#define FTL_IS_ABSTRACT(T) __is_abstract(T)
+#else
+#define FTL_HAS_IS_ABSTRACT 0
+#endif
+
+#if __has_builtin(__is_aggregate) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_AGGREGATE 1
+#define FTL_IS_AGGREGATE(T) __is_aggregate(T)
+#else
+#define FTL_HAS_IS_AGGREGATE 0
+#endif
+
+#if __has_builtin(__is_base_of) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_BASE_OF 1
+#define FTL_IS_BASE_OF(Base, Derived) __is_base_of(Base, Derived)
+#else
+#define FTL_HAS_IS_BASE_OF 0
+#endif
+
+#if __has_builtin(__is_empty) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_EMPTY 1
+#define FTL_IS_EMPTY(T) __is_empty(T)
+#else
+#define FTL_HAS_IS_EMPTY 0
+#endif
+
+#if __has_builtin(__is_final) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_FINAL 1
+#define FTL_IS_FINAL(T) __is_final(T)
+#else
+#define FTL_HAS_IS_FINAL 0
+#endif
+
+#if __has_builtin(__is_polymorphic) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_POLYMORPHIC 1
+#define FTL_IS_POLYMORPHIC(T) __is_polymorphic(T)
+#else
+#define FTL_HAS_IS_POLYMORPHIC 0
+#endif
+
+#if __has_builtin(__has_virtual_destructor) || FTL_NATIVE_MSVC
+#define FTL_HAS_HAS_VIRTUAL_DESTRUCTOR 1
+#define FTL_HAS_VIRTUAL_DESTRUCTOR(T) __has_virtual_destructor(T)
+#else
+#define FTL_HAS_HAS_VIRTUAL_DESTRUCTOR 0
+#endif
+
+#if __has_builtin(__is_standard_layout) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_STANDARD_LAYOUT 1
+#define FTL_IS_STANDARD_LAYOUT(T) __is_standard_layout(T)
+#else
+#define FTL_HAS_IS_STANDARD_LAYOUT 0
+#endif
+
+#if __has_builtin(__is_trivial) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_TRIVIAL 1
+#define FTL_IS_TRIVIAL(T) __is_trivial(T)
+#else
+#define FTL_HAS_IS_TRIVIAL 0
+#endif
+
+#if __has_builtin(__is_trivially_copyable) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_TRIVIALLY_COPYABLE 1
+#define FTL_IS_TRIVIALLY_COPYABLE(T) __is_trivially_copyable(T)
+#else
+#define FTL_HAS_IS_TRIVIALLY_COPYABLE 0
+#endif
+
+#if __has_builtin(__has_unique_object_representations) || FTL_NATIVE_MSVC
+#define FTL_HAS_HAS_UNIQUE_OBJECT_REPRESENTATIONS 1
+#define FTL_HAS_UNIQUE_OBJECT_REPRESENTATIONS(T) __has_unique_object_representations(T)
+#else
+#define FTL_HAS_HAS_UNIQUE_OBJECT_REPRESENTATIONS 0
+#endif
+
+#if __has_builtin(__is_constructible) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_CONSTRUCTIBLE 1
+#define FTL_IS_CONSTRUCTIBLE(...) __is_constructible(__VA_ARGS__)
+#else
+#define FTL_HAS_IS_CONSTRUCTIBLE 0
+#endif
+
+#if __has_builtin(__is_assignable) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_ASSIGNABLE 1
+#define FTL_IS_ASSIGNABLE(To, From) __is_assignable(To, From)
+#else
+#define FTL_HAS_IS_ASSIGNABLE 0
+#endif
+
+#if __has_builtin(__is_destructible) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_DESTRUCTIBLE 1
+#define FTL_IS_DESTRUCTIBLE(T) __is_destructible(T)
+#else
+#define FTL_HAS_IS_DESTRUCTIBLE 0
+#endif
+
+#if __has_builtin(__is_trivially_constructible) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_TRIVIALLY_CONSTRUCTIBLE 1
+#define FTL_IS_TRIVIALLY_CONSTRUCTIBLE(...) __is_trivially_constructible(__VA_ARGS__)
+#else
+#define FTL_HAS_IS_TRIVIALLY_CONSTRUCTIBLE 0
+#endif
+
+#if __has_builtin(__is_trivially_assignable) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_TRIVIALLY_ASSIGNABLE 1
+#define FTL_IS_TRIVIALLY_ASSIGNABLE(To, From) __is_trivially_assignable(To, From)
+#else
+#define FTL_HAS_IS_TRIVIALLY_ASSIGNABLE 0
+#endif
+
+#if __has_builtin(__is_trivially_destructible) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_TRIVIALLY_DESTRUCTIBLE 1
+#define FTL_IS_TRIVIALLY_DESTRUCTIBLE(T) __is_trivially_destructible(T)
+#else
+#define FTL_HAS_IS_TRIVIALLY_DESTRUCTIBLE 0
+#endif
+
+#if __has_builtin(__is_nothrow_constructible) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_NOTHROW_CONSTRUCTIBLE 1
+#define FTL_IS_NOTHROW_CONSTRUCTIBLE(...) __is_nothrow_constructible(__VA_ARGS__)
+#else
+#define FTL_HAS_IS_NOTHROW_CONSTRUCTIBLE 0
+#endif
+
+#if __has_builtin(__is_nothrow_assignable) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_NOTHROW_ASSIGNABLE 1
+#define FTL_IS_NOTHROW_ASSIGNABLE(To, From) __is_nothrow_assignable(To, From)
+#else
+#define FTL_HAS_IS_NOTHROW_ASSIGNABLE 0
+#endif
+
+#if __has_builtin(__is_nothrow_destructible) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_NOTHROW_DESTRUCTIBLE 1
+#define FTL_IS_NOTHROW_DESTRUCTIBLE(T) __is_nothrow_destructible(T)
+#else
+#define FTL_HAS_IS_NOTHROW_DESTRUCTIBLE 0
+#endif
+
+#if __has_builtin(__underlying_type) || FTL_NATIVE_MSVC
+#define FTL_HAS_UNDERLYING_TYPE 1
+#define FTL_UNDERLYING_TYPE(T) __underlying_type(T)
+#else
+#define FTL_HAS_UNDERLYING_TYPE 0
+#endif
+
+#if __has_builtin(__is_layout_compatible)
+#define FTL_HAS_IS_LAYOUT_COMPATIBLE 1
+#define FTL_IS_LAYOUT_COMPATIBLE(T, U) __is_layout_compatible(T, U)
+#else
+#define FTL_HAS_IS_LAYOUT_COMPATIBLE 0
+#endif
+
+#if __has_builtin(__is_pointer_interconvertible_base_of)
+#define FTL_HAS_IS_POINTER_INTERCONVERTIBLE_BASE_OF 1
+#define FTL_IS_POINTER_INTERCONVERTIBLE_BASE_OF(T, U) __is_pointer_interconvertible_base_of(T, U)
+#else
+#define FTL_HAS_IS_POINTER_INTERCONVERTIBLE_BASE_OF 0
+#endif
+
+#if __has_builtin(__builtin_is_implicit_lifetime) || FTL_NATIVE_MSVC_CXX23_TRAITS
+#define FTL_HAS_IS_IMPLICIT_LIFETIME 1
+#define FTL_IS_IMPLICIT_LIFETIME(T) __builtin_is_implicit_lifetime(T)
+#else
+#define FTL_HAS_IS_IMPLICIT_LIFETIME 0
+#endif
+
+#if __has_builtin(__reference_constructs_from_temporary) || FTL_NATIVE_MSVC_CXX23_TRAITS
+#define FTL_HAS_REFERENCE_CONSTRUCTS_FROM_TEMPORARY 1
+#define FTL_REFERENCE_CONSTRUCTS_FROM_TEMPORARY(T, U) __reference_constructs_from_temporary(T, U)
+#else
+#define FTL_HAS_REFERENCE_CONSTRUCTS_FROM_TEMPORARY 0
+#endif
+
+#if __has_builtin(__reference_converts_from_temporary) || FTL_NATIVE_MSVC_CXX23_TRAITS
+#define FTL_HAS_REFERENCE_CONVERTS_FROM_TEMPORARY 1
+#define FTL_REFERENCE_CONVERTS_FROM_TEMPORARY(T, U) __reference_converts_from_temporary(T, U)
+#else
+#define FTL_HAS_REFERENCE_CONVERTS_FROM_TEMPORARY 0
+#endif
+
+#if __has_builtin(__is_convertible)
+#define FTL_HAS_IS_CONVERTIBLE 1
+#define FTL_IS_CONVERTIBLE(From, To) __is_convertible(From, To)
+#elif __has_builtin(__is_convertible_to) || FTL_NATIVE_MSVC
+#define FTL_HAS_IS_CONVERTIBLE 1
+#define FTL_IS_CONVERTIBLE(From, To) __is_convertible_to(From, To)
+#else
+#define FTL_HAS_IS_CONVERTIBLE 0
+#endif
+
+#if defined(_MSVC_LANG)
+#define FTL_CPLUSPLUS _MSVC_LANG
+#else
+#define FTL_CPLUSPLUS __cplusplus
+#endif
+
+#if FTL_CPLUSPLUS < 202302L
+#error "FTL requires C++23 or later"
+#endif
+
+#if !FTL_HAS_IS_UNION              || \
+    !FTL_HAS_IS_CLASS              || \
+    !FTL_HAS_IS_ENUM               || \
+    !FTL_HAS_IS_ABSTRACT           || \
+    !FTL_HAS_IS_AGGREGATE          || \
+    !FTL_HAS_IS_BASE_OF            || \
+    !FTL_HAS_IS_EMPTY              || \
+    !FTL_HAS_IS_FINAL              || \
+    !FTL_HAS_IS_POLYMORPHIC        || \
+    !FTL_HAS_IS_STANDARD_LAYOUT    || \
+    !FTL_HAS_IS_TRIVIAL            || \
+    !FTL_HAS_IS_TRIVIALLY_COPYABLE || \
+    !FTL_HAS_IS_CONSTRUCTIBLE      || \
+    !FTL_HAS_IS_ASSIGNABLE         || \
+    !FTL_HAS_IS_CONVERTIBLE
+#error "FTL requires compiler support for its core type-trait intrinsics"
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+template<bool Value>
+struct bool_constant {
+    static constexpr bool value = Value;
+    using value_type = bool;
+    using type       = bool_constant;
+
+    constexpr operator value_type() const noexcept { return value; }
+    constexpr value_type operator()() const noexcept { return value; }
+};
+
+using true_type  = bool_constant<true>;
+using false_type = bool_constant<false>;
+
+template<bool Condition, class IfTrue, class IfFalse>
+struct conditional {
+    using type = IfFalse;
+};
+
+template<class IfTrue, class IfFalse>
+struct conditional<true, IfTrue, IfFalse> {
+    using type = IfTrue;
+};
+
+template<bool Condition, class IfTrue, class IfFalse>
+using conditional_t = typename conditional<Condition, IfTrue, IfFalse>::type;
+
+template<class, class>
+struct is_same : false_type {};
+
+template<class T>
+struct is_same<T, T> : true_type {};
+
+template<class T, class U>
+inline constexpr bool is_same_v = is_same<T, U>::value;
+
+template<class T>
+struct remove_const {
+    using type = T;
+};
+
+template<class T>
+struct remove_const<const T> {
+    using type = T;
+};
+
+template<class T>
+using remove_const_t = typename remove_const<T>::type;
+
+template<class T>
+struct remove_volatile {
+    using type = T;
+};
+
+template<class T>
+struct remove_volatile<volatile T> {
+    using type = T;
+};
+
+template<class T>
+using remove_volatile_t = typename remove_volatile<T>::type;
+
+template<class T>
+struct remove_cv {
+    using type = T;
+};
+
+template<class T>
+struct remove_cv<const T> {
+    using type = T;
+};
+
+template<class T>
+struct remove_cv<volatile T> {
+    using type = T;
+};
+
+template<class T>
+struct remove_cv<const volatile T> {
+    using type = T;
+};
+
+template<class T>
+using remove_cv_t = typename remove_cv<T>::type;
+
+template<class T>
+struct remove_reference {
+    using type = T;
+};
+
+template<class T>
+struct remove_reference<T&> {
+    using type = T;
+};
+
+template<class T>
+struct remove_reference<T&&> {
+    using type = T;
+};
+
+template<class T>
+using remove_reference_t = typename remove_reference<T>::type;
+
+template<class T>
+struct remove_cvref {
+    using type = remove_cv_t<remove_reference_t<T>>;
+};
+
+template<class T>
+using remove_cvref_t = typename remove_cvref<T>::type;
+
+template<class T>
+struct type_identity {
+    using type = T;
+};
+
+template<class T>
+using type_identity_t = typename type_identity<T>::type;
+
+template<bool Condition, class T = void>
+struct enable_if {};
+
+template<class T>
+struct enable_if<true, T> {
+    using type = T;
+};
+
+template<bool Condition, class T = void>
+using enable_if_t = typename enable_if<Condition, T>::type;
+
+template<class...>
+using void_t = void;
+
+template<class T>
+struct is_void : is_same<remove_cv_t<T>, void> {};
+
+template<class T>
+inline constexpr bool is_void_v = is_void<T>::value;
+
+template<class>
+struct is_const : false_type {};
+
+template<class T>
+struct is_const<const T> : true_type {};
+
+template<class T>
+inline constexpr bool is_const_v = is_const<T>::value;
+
+template<class>
+struct is_volatile : false_type {};
+
+template<class T>
+struct is_volatile<volatile T> : true_type {};
+
+template<class T>
+inline constexpr bool is_volatile_v = is_volatile<T>::value;
+
+template<class>
+struct is_pointer : false_type {};
+
+template<class T>
+struct is_pointer<T*> : true_type {};
+
+template<class T>
+struct is_pointer<T* const> : true_type {};
+
+template<class T>
+struct is_pointer<T* volatile> : true_type {};
+
+template<class T>
+struct is_pointer<T* const volatile> : true_type {};
+
+template<class T>
+inline constexpr bool is_pointer_v = is_pointer<T>::value;
+
+template<class T>
+struct remove_pointer {
+    using type = T;
+};
+
+template<class T>
+struct remove_pointer<T*> {
+    using type = T;
+};
+
+template<class T>
+struct remove_pointer<T* const> {
+    using type = T;
+};
+
+template<class T>
+struct remove_pointer<T* volatile> {
+    using type = T;
+};
+
+template<class T>
+struct remove_pointer<T* const volatile> {
+    using type = T;
+};
+
+template<class T>
+using remove_pointer_t = typename remove_pointer<T>::type;
+
+template<class>
+struct is_lvalue_reference : false_type {};
+
+template<class T>
+struct is_lvalue_reference<T&> : true_type {};
+
+template<class T>
+inline constexpr bool is_lvalue_reference_v = is_lvalue_reference<T>::value;
+
+template<class>
+struct is_rvalue_reference : false_type {};
+
+template<class T>
+struct is_rvalue_reference<T&&> : true_type {};
+
+template<class T>
+inline constexpr bool is_rvalue_reference_v = is_rvalue_reference<T>::value;
+
+template<class T>
+struct is_reference
+    : bool_constant<is_lvalue_reference_v<T> || is_rvalue_reference_v<T>> {};
+
+template<class T>
+inline constexpr bool is_reference_v = is_reference<T>::value;
+
+template<class>
+struct is_array : false_type {};
+
+template<class T>
+struct is_array<T[]> : true_type {};
+
+template<class T, size_t N>
+struct is_array<T[N]> : true_type {};
+
+template<class T>
+inline constexpr bool is_array_v = is_array<T>::value;
+
+template<class>
+struct is_bounded_array : false_type {};
+
+template<class T, size_t N>
+struct is_bounded_array<T[N]> : true_type {};
+
+template<class T>
+inline constexpr bool is_bounded_array_v = is_bounded_array<T>::value;
+
+template<class>
+struct is_unbounded_array : false_type {};
+
+template<class T>
+struct is_unbounded_array<T[]> : true_type {};
+
+template<class T>
+inline constexpr bool is_unbounded_array_v = is_unbounded_array<T>::value;
+
+template<class>
+struct is_function : false_type {};
+
+#define FTL_DETAIL_IS_FUNCTION(CV_REF, NOEXCEPT_SPEC)            \
+    template<class R, class... Args>                             \
+    struct is_function<R(Args...) CV_REF NOEXCEPT_SPEC>          \
+        : true_type {};                                          \
+    template<class R, class... Args>                             \
+    struct is_function<R(Args..., ...) CV_REF NOEXCEPT_SPEC>     \
+        : true_type {}
+
+FTL_DETAIL_IS_FUNCTION(, );
+FTL_DETAIL_IS_FUNCTION(const, );
+FTL_DETAIL_IS_FUNCTION(volatile, );
+FTL_DETAIL_IS_FUNCTION(const volatile, );
+FTL_DETAIL_IS_FUNCTION(&, );
+FTL_DETAIL_IS_FUNCTION(const &, );
+FTL_DETAIL_IS_FUNCTION(volatile &, );
+FTL_DETAIL_IS_FUNCTION(const volatile &, );
+FTL_DETAIL_IS_FUNCTION(&&, );
+FTL_DETAIL_IS_FUNCTION(const &&, );
+FTL_DETAIL_IS_FUNCTION(volatile &&, );
+FTL_DETAIL_IS_FUNCTION(const volatile &&, );
+FTL_DETAIL_IS_FUNCTION(, noexcept);
+FTL_DETAIL_IS_FUNCTION(const, noexcept);
+FTL_DETAIL_IS_FUNCTION(volatile, noexcept);
+FTL_DETAIL_IS_FUNCTION(const volatile, noexcept);
+FTL_DETAIL_IS_FUNCTION(&, noexcept);
+FTL_DETAIL_IS_FUNCTION(const &, noexcept);
+FTL_DETAIL_IS_FUNCTION(volatile &, noexcept);
+FTL_DETAIL_IS_FUNCTION(const volatile &, noexcept);
+FTL_DETAIL_IS_FUNCTION(&&, noexcept);
+FTL_DETAIL_IS_FUNCTION(const &&, noexcept);
+FTL_DETAIL_IS_FUNCTION(volatile &&, noexcept);
+FTL_DETAIL_IS_FUNCTION(const volatile &&, noexcept);
+
+#undef FTL_DETAIL_IS_FUNCTION
+
+template<class T>
+inline constexpr bool is_function_v = is_function<T>::value;
+
+template<class T>
+struct remove_extent {
+    using type = T;
+};
+
+template<class T>
+struct remove_extent<T[]> {
+    using type = T;
+};
+
+template<class T, size_t N>
+struct remove_extent<T[N]> {
+    using type = T;
+};
+
+template<class T>
+using remove_extent_t = typename remove_extent<T>::type;
+
+template<class T>
+struct remove_all_extents {
+    using type = T;
+};
+
+template<class T>
+struct remove_all_extents<T[]> {
+    using type = typename remove_all_extents<T>::type;
+};
+
+template<class T, size_t N>
+struct remove_all_extents<T[N]> {
+    using type = typename remove_all_extents<T>::type;
+};
+
+template<class T>
+using remove_all_extents_t = typename remove_all_extents<T>::type;
+
+template<class T>
+struct rank : bool_constant<false> {
+    static constexpr size_t value = 0;
+};
+
+template<class T>
+struct rank<T[]> {
+    static constexpr size_t value = rank<T>::value + 1;
+};
+
+template<class T, size_t N>
+struct rank<T[N]> {
+    static constexpr size_t value = rank<T>::value + 1;
+};
+
+template<class T>
+inline constexpr size_t rank_v = rank<T>::value;
+
+template<class T, unsigned Dimension = 0>
+struct extent {
+    static constexpr size_t value = 0;
+};
+
+template<class T>
+struct extent<T[], 0> {
+    static constexpr size_t value = 0;
+};
+
+template<class T, unsigned Dimension>
+struct extent<T[], Dimension> : extent<T, Dimension - 1> {};
+
+template<class T, size_t N>
+struct extent<T[N], 0> {
+    static constexpr size_t value = N;
+};
+
+template<class T, size_t N, unsigned Dimension>
+struct extent<T[N], Dimension> : extent<T, Dimension - 1> {};
+
+template<class T, unsigned Dimension = 0>
+inline constexpr size_t extent_v = extent<T, Dimension>::value;
+
+template<class T>
+struct is_object
+    : bool_constant<!is_reference_v<T> && !is_void_v<T> && !is_function_v<T>> {};
+
+template<class T>
+inline constexpr bool is_object_v = is_object<T>::value;
+
+template<class T>
+struct add_const {
+    using type = const T;
+};
+
+template<class T>
+using add_const_t = typename add_const<T>::type;
+
+template<class T>
+struct add_volatile {
+    using type = volatile T;
+};
+
+template<class T>
+using add_volatile_t = typename add_volatile<T>::type;
+
+template<class T>
+struct add_cv {
+    using type = const volatile T;
+};
+
+template<class T>
+using add_cv_t = typename add_cv<T>::type;
+
+namespace detail {
+template<class T>
+auto try_add_lvalue_reference(int) -> type_identity<T&>;
+template<class T>
+auto try_add_lvalue_reference(...) -> type_identity<T>;
+template<class T>
+auto try_add_rvalue_reference(int) -> type_identity<T&&>;
+template<class T>
+auto try_add_rvalue_reference(...) -> type_identity<T>;
+}
+
+template<class T>
+struct add_lvalue_reference : decltype(detail::try_add_lvalue_reference<T>(0)) {};
+
+template<class T>
+using add_lvalue_reference_t = typename add_lvalue_reference<T>::type;
+
+template<class T>
+struct add_rvalue_reference : decltype(detail::try_add_rvalue_reference<T>(0)) {};
+
+template<class T>
+using add_rvalue_reference_t = typename add_rvalue_reference<T>::type;
+
+template<class T>
+add_rvalue_reference_t<T> declval() noexcept;
+
+template<class T>
+struct add_pointer {
+    using type = remove_reference_t<T>*;
+};
+
+template<class T>
+using add_pointer_t = typename add_pointer<T>::type;
+
+template<class T>
+struct decay {
+private:
+    using U = remove_reference_t<T>;
+public:
+    using type = conditional_t<is_array_v<U>, add_pointer_t<remove_extent_t<U>>,
+                 conditional_t<is_function_v<U>, add_pointer_t<U>, remove_cv_t<U>>>;
+};
+
+template<class T>
+using decay_t = typename decay<T>::type;
+
+template<class>
+struct is_member_pointer_impl : false_type {};
+
+template<class Member, class Class>
+struct is_member_pointer_impl<Member Class::*> : true_type {};
+
+template<class T>
+struct is_member_pointer : is_member_pointer_impl<remove_cv_t<T>> {};
+
+template<class T>
+inline constexpr bool is_member_pointer_v = is_member_pointer<T>::value;
+
+template<class>
+struct is_member_function_pointer_impl : false_type {};
+
+template<class Member, class Class>
+struct is_member_function_pointer_impl<Member Class::*> : is_function<Member> {};
+
+template<class T>
+struct is_member_function_pointer
+    : is_member_function_pointer_impl<remove_cv_t<T>> {};
+
+template<class T>
+inline constexpr bool is_member_function_pointer_v =
+    is_member_function_pointer<T>::value;
+
+template<class T>
+struct is_member_object_pointer
+    : bool_constant<is_member_pointer_v<T> && !is_member_function_pointer_v<T>> {};
+
+template<class T>
+inline constexpr bool is_member_object_pointer_v =
+    is_member_object_pointer<T>::value;
+
+#if FTL_HAS_IS_UNION
+template<class T>
+inline constexpr bool is_union_v = bool(FTL_IS_UNION(T));
+#endif
+
+#if FTL_HAS_IS_CLASS
+template<class T>
+inline constexpr bool is_class_v = bool(FTL_IS_CLASS(T));
+#endif
+
+#if FTL_HAS_IS_ENUM
+template<class T>
+inline constexpr bool is_enum_v = bool(FTL_IS_ENUM(T));
+#endif
+
+#if FTL_HAS_IS_ABSTRACT
+template<class T>
+inline constexpr bool is_abstract_v = bool(FTL_IS_ABSTRACT(T));
+#endif
+
+#if FTL_HAS_IS_AGGREGATE
+template<class T>
+inline constexpr bool is_aggregate_v = bool(FTL_IS_AGGREGATE(T));
+#endif
+
+#if FTL_HAS_IS_BASE_OF
+template<class Base, class Derived>
+inline constexpr bool is_base_of_v = bool(FTL_IS_BASE_OF(Base, Derived));
+#endif
+
+#if FTL_HAS_IS_EMPTY
+template<class T>
+inline constexpr bool is_empty_v = bool(FTL_IS_EMPTY(T));
+#endif
+
+#if FTL_HAS_IS_FINAL
+template<class T>
+inline constexpr bool is_final_v = bool(FTL_IS_FINAL(T));
+#endif
+
+#if FTL_HAS_IS_POLYMORPHIC
+template<class T>
+inline constexpr bool is_polymorphic_v = bool(FTL_IS_POLYMORPHIC(T));
+#endif
+
+#if FTL_HAS_HAS_VIRTUAL_DESTRUCTOR
+template<class T>
+inline constexpr bool has_virtual_destructor_v =
+    bool(FTL_HAS_VIRTUAL_DESTRUCTOR(T));
+#endif
+
+#if FTL_HAS_IS_STANDARD_LAYOUT
+template<class T>
+inline constexpr bool is_standard_layout_v = bool(FTL_IS_STANDARD_LAYOUT(T));
+#endif
+
+#if FTL_HAS_IS_TRIVIAL
+template<class T>
+inline constexpr bool is_trivial_v = bool(FTL_IS_TRIVIAL(T));
+#endif
+
+#if FTL_HAS_IS_TRIVIALLY_COPYABLE
+template<class T>
+inline constexpr bool is_trivially_copyable_v =
+    bool(FTL_IS_TRIVIALLY_COPYABLE(T));
+#endif
+
+#if FTL_HAS_HAS_UNIQUE_OBJECT_REPRESENTATIONS
+template<class T>
+inline constexpr bool has_unique_object_representations_v =
+    bool(FTL_HAS_UNIQUE_OBJECT_REPRESENTATIONS(T));
+#endif
+
+#if FTL_HAS_IS_CONSTRUCTIBLE
+template<class T, class... Args>
+inline constexpr bool is_constructible_v =
+    bool(FTL_IS_CONSTRUCTIBLE(T, Args...));
+#endif
+
+#if FTL_HAS_IS_ASSIGNABLE
+template<class To, class From>
+inline constexpr bool is_assignable_v = bool(FTL_IS_ASSIGNABLE(To, From));
+#endif
+
+#if FTL_HAS_IS_DESTRUCTIBLE
+template<class T>
+inline constexpr bool is_destructible_v = bool(FTL_IS_DESTRUCTIBLE(T));
+#endif
+
+#if FTL_HAS_IS_TRIVIALLY_CONSTRUCTIBLE
+template<class T, class... Args>
+inline constexpr bool is_trivially_constructible_v =
+    bool(FTL_IS_TRIVIALLY_CONSTRUCTIBLE(T, Args...));
+#endif
+
+#if FTL_HAS_IS_TRIVIALLY_ASSIGNABLE
+template<class To, class From>
+inline constexpr bool is_trivially_assignable_v =
+    bool(FTL_IS_TRIVIALLY_ASSIGNABLE(To, From));
+#endif
+
+#if FTL_HAS_IS_TRIVIALLY_DESTRUCTIBLE
+template<class T>
+inline constexpr bool is_trivially_destructible_v =
+    bool(FTL_IS_TRIVIALLY_DESTRUCTIBLE(T));
+#endif
+
+#if FTL_HAS_IS_NOTHROW_CONSTRUCTIBLE
+template<class T, class... Args>
+inline constexpr bool is_nothrow_constructible_v =
+    bool(FTL_IS_NOTHROW_CONSTRUCTIBLE(T, Args...));
+#endif
+
+#if FTL_HAS_IS_NOTHROW_ASSIGNABLE
+template<class To, class From>
+inline constexpr bool is_nothrow_assignable_v =
+    bool(FTL_IS_NOTHROW_ASSIGNABLE(To, From));
+#endif
+
+#if FTL_HAS_IS_NOTHROW_DESTRUCTIBLE
+template<class T>
+inline constexpr bool is_nothrow_destructible_v =
+    bool(FTL_IS_NOTHROW_DESTRUCTIBLE(T));
+#endif
+
+#if FTL_HAS_IS_LAYOUT_COMPATIBLE
+template<class T, class U>
+inline constexpr bool is_layout_compatible_v =
+    bool(FTL_IS_LAYOUT_COMPATIBLE(T, U));
+#endif
+
+#if FTL_HAS_IS_POINTER_INTERCONVERTIBLE_BASE_OF
+template<class Base, class Derived>
+inline constexpr bool is_pointer_interconvertible_base_of_v =
+    bool(FTL_IS_POINTER_INTERCONVERTIBLE_BASE_OF(Base, Derived));
+#endif
+
+#if FTL_HAS_IS_IMPLICIT_LIFETIME
+template<class T>
+inline constexpr bool is_implicit_lifetime_v =
+    bool(FTL_IS_IMPLICIT_LIFETIME(T));
+#endif
+
+#if FTL_HAS_REFERENCE_CONSTRUCTS_FROM_TEMPORARY
+template<class T, class U>
+inline constexpr bool reference_constructs_from_temporary_v =
+    bool(FTL_REFERENCE_CONSTRUCTS_FROM_TEMPORARY(T, U));
+#endif
+
+#if FTL_HAS_REFERENCE_CONVERTS_FROM_TEMPORARY
+template<class T, class U>
+inline constexpr bool reference_converts_from_temporary_v =
+    bool(FTL_REFERENCE_CONVERTS_FROM_TEMPORARY(T, U));
+#endif
+
+#if FTL_HAS_IS_CONVERTIBLE
+template<class From, class To>
+inline constexpr bool is_convertible_v = bool(FTL_IS_CONVERTIBLE(From, To));
+#endif
+
+#if FTL_HAS_UNDERLYING_TYPE
+template<class T>
+struct underlying_type {
+    using type = FTL_UNDERLYING_TYPE(T);
+};
+
+template<class T>
+using underlying_type_t = typename underlying_type<T>::type;
+#endif
+
+template<class T>
+struct is_integral : false_type {};
+
+#define FTL_DETAIL_INTEGRAL(T) \
+    template<> struct is_integral<T> : true_type {}; \
+    template<> struct is_integral<const T> : true_type {}; \
+    template<> struct is_integral<volatile T> : true_type {}; \
+    template<> struct is_integral<const volatile T> : true_type {}
+
+FTL_DETAIL_INTEGRAL(bool);
+FTL_DETAIL_INTEGRAL(char);
+FTL_DETAIL_INTEGRAL(signed char);
+FTL_DETAIL_INTEGRAL(unsigned char);
+FTL_DETAIL_INTEGRAL(wchar_t);
+FTL_DETAIL_INTEGRAL(char8_t);
+FTL_DETAIL_INTEGRAL(char16_t);
+FTL_DETAIL_INTEGRAL(char32_t);
+FTL_DETAIL_INTEGRAL(short);
+FTL_DETAIL_INTEGRAL(unsigned short);
+FTL_DETAIL_INTEGRAL(int);
+FTL_DETAIL_INTEGRAL(unsigned int);
+FTL_DETAIL_INTEGRAL(long);
+FTL_DETAIL_INTEGRAL(unsigned long);
+FTL_DETAIL_INTEGRAL(long long);
+FTL_DETAIL_INTEGRAL(unsigned long long);
+#undef FTL_DETAIL_INTEGRAL
+
+template<class T>
+inline constexpr bool is_integral_v = is_integral<T>::value;
+
+template<class T>
+struct is_floating_point : false_type {};
+
+#define FTL_DETAIL_FLOAT(T) \
+    template<> struct is_floating_point<T> : true_type {}; \
+    template<> struct is_floating_point<const T> : true_type {}; \
+    template<> struct is_floating_point<volatile T> : true_type {}; \
+    template<> struct is_floating_point<const volatile T> : true_type {}
+FTL_DETAIL_FLOAT(float);
+FTL_DETAIL_FLOAT(double);
+FTL_DETAIL_FLOAT(long double);
+#undef FTL_DETAIL_FLOAT
+
+template<class T>
+inline constexpr bool is_floating_point_v = is_floating_point<T>::value;
+
+template<class T>
+struct is_arithmetic : bool_constant<is_integral_v<T> || is_floating_point_v<T>> {};
+
+template<class T>
+inline constexpr bool is_arithmetic_v = is_arithmetic<T>::value;
+
+template<class T>
+struct is_fundamental
+    : bool_constant<is_arithmetic_v<T> || is_void_v<T> ||
+                    is_same_v<remove_cv_t<T>, decltype(nullptr)>> {};
+
+template<class T>
+inline constexpr bool is_fundamental_v = is_fundamental<T>::value;
+
+template<class T>
+struct is_null_pointer
+    : is_same<remove_cv_t<T>, decltype(nullptr)> {};
+
+template<class T>
+inline constexpr bool is_null_pointer_v = is_null_pointer<T>::value;
+
+template<class T>
+struct is_scalar
+    : bool_constant<is_arithmetic_v<T> || is_enum_v<T> || is_pointer_v<T> ||
+                    is_member_pointer_v<T> ||
+                    is_same_v<remove_cv_t<T>, decltype(nullptr)>> {};
+
+template<class T>
+inline constexpr bool is_scalar_v = is_scalar<T>::value;
+
+template<class T>
+struct is_compound : bool_constant<!is_fundamental_v<T>> {};
+
+template<class T>
+inline constexpr bool is_compound_v = is_compound<T>::value;
+
+namespace detail {
+template<class T, bool = is_arithmetic_v<T>>
+struct is_signed : false_type {};
+
+template<class T>
+struct is_signed<T, true> : bool_constant<T(-1) < T(0)> {};
+}
+
+template<class T>
+struct is_signed : detail::is_signed<T> {};
+
+template<class T>
+inline constexpr bool is_signed_v = is_signed<T>::value;
+
+template<class T>
+struct is_unsigned
+    : bool_constant<is_arithmetic_v<T> && !is_signed_v<T>> {};
+
+template<class T>
+inline constexpr bool is_unsigned_v = is_unsigned<T>::value;
+
+template<class T>
+struct make_unsigned;
+
+#define FTL_DETAIL_MAKE_UNSIGNED(FROM, TO)              \
+    template<> struct make_unsigned<FROM> { using type = TO; }; \
+    template<> struct make_unsigned<const FROM> { using type = const TO; }; \
+    template<> struct make_unsigned<volatile FROM> { using type = volatile TO; }; \
+    template<> struct make_unsigned<const volatile FROM> { \
+        using type = const volatile TO; \
+    }
+
+FTL_DETAIL_MAKE_UNSIGNED(char, unsigned char);
+FTL_DETAIL_MAKE_UNSIGNED(signed char, unsigned char);
+FTL_DETAIL_MAKE_UNSIGNED(unsigned char, unsigned char);
+FTL_DETAIL_MAKE_UNSIGNED(short, unsigned short);
+FTL_DETAIL_MAKE_UNSIGNED(unsigned short, unsigned short);
+FTL_DETAIL_MAKE_UNSIGNED(int, unsigned int);
+FTL_DETAIL_MAKE_UNSIGNED(unsigned int, unsigned int);
+FTL_DETAIL_MAKE_UNSIGNED(long, unsigned long);
+FTL_DETAIL_MAKE_UNSIGNED(unsigned long, unsigned long);
+FTL_DETAIL_MAKE_UNSIGNED(long long, unsigned long long);
+FTL_DETAIL_MAKE_UNSIGNED(unsigned long long, unsigned long long);
+using unsigned_wchar_t =
+    conditional_t<sizeof(wchar_t) == sizeof(unsigned short),
+                  unsigned short, unsigned int>;
+FTL_DETAIL_MAKE_UNSIGNED(wchar_t, unsigned_wchar_t);
+FTL_DETAIL_MAKE_UNSIGNED(char8_t, unsigned char);
+FTL_DETAIL_MAKE_UNSIGNED(char16_t, unsigned short);
+FTL_DETAIL_MAKE_UNSIGNED(char32_t, unsigned int);
+#undef FTL_DETAIL_MAKE_UNSIGNED
+
+template<class T>
+using make_unsigned_t = typename make_unsigned<T>::type;
+
+constexpr bool is_constant_evaluated() noexcept {
+    if consteval {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+template<class...>
+struct conjunction : true_type {};
+
+template<class T>
+struct conjunction<T> : T {};
+
+template<class T, class... Rest>
+struct conjunction<T, Rest...>
+    : conditional_t<bool(T::value), conjunction<Rest...>, T> {};
+
+template<class...>
+struct disjunction : false_type {};
+
+template<class T>
+struct disjunction<T> : T {};
+
+template<class T, class... Rest>
+struct disjunction<T, Rest...>
+    : conditional_t<bool(T::value), T, disjunction<Rest...>> {};
+
+template<class T>
+struct negation : bool_constant<!bool(T::value)> {};
+
+template<class... T>
+inline constexpr bool conjunction_v = conjunction<T...>::value;
+
+template<class... T>
+inline constexpr bool disjunction_v = disjunction<T...>::value;
+
+template<class T>
+inline constexpr bool negation_v = negation<T>::value;
+
+#define FTL_DETAIL_UNARY_TRAIT(NAME) \
+    template<class T> struct NAME : bool_constant<NAME##_v<T>> {}
+#define FTL_DETAIL_BINARY_TRAIT(NAME) \
+    template<class T, class U> struct NAME : bool_constant<NAME##_v<T, U>> {}
+
+FTL_DETAIL_UNARY_TRAIT(is_union);
+FTL_DETAIL_UNARY_TRAIT(is_class);
+FTL_DETAIL_UNARY_TRAIT(is_enum);
+FTL_DETAIL_UNARY_TRAIT(is_abstract);
+FTL_DETAIL_UNARY_TRAIT(is_aggregate);
+FTL_DETAIL_UNARY_TRAIT(is_empty);
+FTL_DETAIL_UNARY_TRAIT(is_final);
+FTL_DETAIL_UNARY_TRAIT(is_polymorphic);
+FTL_DETAIL_UNARY_TRAIT(is_standard_layout);
+FTL_DETAIL_UNARY_TRAIT(is_trivial);
+FTL_DETAIL_UNARY_TRAIT(is_trivially_copyable);
+FTL_DETAIL_BINARY_TRAIT(is_base_of);
+FTL_DETAIL_BINARY_TRAIT(is_assignable);
+FTL_DETAIL_BINARY_TRAIT(is_convertible);
+#undef FTL_DETAIL_UNARY_TRAIT
+#undef FTL_DETAIL_BINARY_TRAIT
+
+template<class T, class... Args>
+struct is_constructible : bool_constant<is_constructible_v<T, Args...>> {};
+
+template<class T>
+struct is_destructible : bool_constant<is_destructible_v<T>> {};
+
+template<class T, class... Args>
+struct is_nothrow_constructible
+    : bool_constant<is_nothrow_constructible_v<T, Args...>> {};
+
+template<class T, class U>
+struct is_nothrow_assignable : bool_constant<is_nothrow_assignable_v<T, U>> {};
+
+template<class T>
+struct is_nothrow_destructible : bool_constant<is_nothrow_destructible_v<T>> {};
+
+template<class T, class... Args>
+struct is_trivially_constructible
+    : bool_constant<is_trivially_constructible_v<T, Args...>> {};
+
+template<class T, class U>
+struct is_trivially_assignable
+    : bool_constant<is_trivially_assignable_v<T, U>> {};
+
+template<class T>
+struct is_trivially_destructible
+    : bool_constant<is_trivially_destructible_v<T>> {};
+
+template<class T>
+struct is_default_constructible : is_constructible<T> {};
+
+template<class T>
+struct is_copy_constructible : is_constructible<T, const T&> {};
+
+template<class T>
+struct is_move_constructible : is_constructible<T, T&&> {};
+
+template<class T>
+inline constexpr bool is_default_constructible_v = is_default_constructible<T>::value;
+template<class T>
+inline constexpr bool is_copy_constructible_v = is_copy_constructible<T>::value;
+template<class T>
+inline constexpr bool is_move_constructible_v = is_move_constructible<T>::value;
+
+template<class T>
+struct is_nothrow_default_constructible : is_nothrow_constructible<T> {};
+
+template<class T>
+struct is_nothrow_copy_constructible
+    : is_nothrow_constructible<T, const T&> {};
+
+template<class T>
+struct is_nothrow_move_constructible : is_nothrow_constructible<T, T&&> {};
+
+template<class T>
+inline constexpr bool is_nothrow_default_constructible_v =
+    is_nothrow_default_constructible<T>::value;
+template<class T>
+inline constexpr bool is_nothrow_copy_constructible_v =
+    is_nothrow_copy_constructible<T>::value;
+template<class T>
+inline constexpr bool is_nothrow_move_constructible_v =
+    is_nothrow_move_constructible<T>::value;
+
+template<class T>
+struct is_copy_assignable : is_assignable<T&, const T&> {};
+
+template<class T>
+struct is_move_assignable : is_assignable<T&, T&&> {};
+
+template<class T>
+inline constexpr bool is_copy_assignable_v = is_copy_assignable<T>::value;
+template<class T>
+inline constexpr bool is_move_assignable_v = is_move_assignable<T>::value;
+
+template<class T>
+struct is_nothrow_copy_assignable : is_nothrow_assignable<T&, const T&> {};
+
+template<class T>
+struct is_nothrow_move_assignable : is_nothrow_assignable<T&, T&&> {};
+
+template<class T>
+inline constexpr bool is_nothrow_copy_assignable_v =
+    is_nothrow_copy_assignable<T>::value;
+template<class T>
+inline constexpr bool is_nothrow_move_assignable_v =
+    is_nothrow_move_assignable<T>::value;
+
+FTL_END_NAMESPACE
+
+#endif // FTL_TYPE_TRAITS_HEADER

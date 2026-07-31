@@ -1,0 +1,111 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_NEW_HEADER
+#define FTL_NEW_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <cstddef>
+#include <exception>
+#define FTL_NEW_BEGIN_NAMESPACE namespace std {
+#define FTL_NEW_END_NAMESPACE }
+#define FTL_NEW_NAMESPACE std
+#else
+#include <ftl/cstddef>
+#include <ftl/exception>
+#define FTL_NEW_BEGIN_NAMESPACE namespace ftl {
+#define FTL_NEW_END_NAMESPACE }
+#define FTL_NEW_NAMESPACE ftl
+#endif
+
+FTL_NEW_BEGIN_NAMESPACE
+
+enum class align_val_t : size_t {};
+
+struct nothrow_t {
+    explicit nothrow_t() = default;
+};
+
+inline constexpr nothrow_t nothrow{};
+
+struct destroying_delete_t {
+    explicit destroying_delete_t() = default;
+};
+
+inline constexpr destroying_delete_t destroying_delete{};
+
+class bad_alloc : public exception {
+public:
+    [[nodiscard]] const char* what() const noexcept override {
+        return "bad allocation";
+    }
+};
+
+class bad_array_new_length : public bad_alloc {
+public:
+    [[nodiscard]] const char* what() const noexcept override {
+        return "bad array new length";
+    }
+};
+
+template<class T>
+[[nodiscard]] constexpr T* launder(T* pointer) noexcept {
+#if defined(_MSC_VER)
+    return pointer;
+#elif __has_builtin(__builtin_launder)
+    return __builtin_launder(pointer);
+#else
+    return pointer;
+#endif
+}
+
+FTL_NEW_END_NAMESPACE
+
+[[nodiscard]] void* operator new(decltype(sizeof(0)));
+[[nodiscard]] void* operator new[](decltype(sizeof(0)));
+[[nodiscard]] void* operator new(decltype(sizeof(0)),
+                                 FTL_NEW_NAMESPACE::align_val_t);
+[[nodiscard]] void* operator new[](decltype(sizeof(0)),
+                                   FTL_NEW_NAMESPACE::align_val_t);
+[[nodiscard]] void* operator new(
+    decltype(sizeof(0)), const FTL_NEW_NAMESPACE::nothrow_t&) noexcept;
+[[nodiscard]] void* operator new[](
+    decltype(sizeof(0)), const FTL_NEW_NAMESPACE::nothrow_t&) noexcept;
+[[nodiscard]] void* operator new(
+    decltype(sizeof(0)), FTL_NEW_NAMESPACE::align_val_t,
+    const FTL_NEW_NAMESPACE::nothrow_t&) noexcept;
+[[nodiscard]] void* operator new[](
+    decltype(sizeof(0)), FTL_NEW_NAMESPACE::align_val_t,
+    const FTL_NEW_NAMESPACE::nothrow_t&) noexcept;
+void operator delete(void*) noexcept;
+void operator delete[](void*) noexcept;
+void operator delete(void*, decltype(sizeof(0))) noexcept;
+void operator delete[](void*, decltype(sizeof(0))) noexcept;
+void operator delete(void*, FTL_NEW_NAMESPACE::align_val_t) noexcept;
+void operator delete[](void*, FTL_NEW_NAMESPACE::align_val_t) noexcept;
+void operator delete(
+    void*, const FTL_NEW_NAMESPACE::nothrow_t&) noexcept;
+void operator delete[](
+    void*, const FTL_NEW_NAMESPACE::nothrow_t&) noexcept;
+void operator delete(
+    void*, FTL_NEW_NAMESPACE::align_val_t,
+    const FTL_NEW_NAMESPACE::nothrow_t&) noexcept;
+void operator delete[](
+    void*, FTL_NEW_NAMESPACE::align_val_t,
+    const FTL_NEW_NAMESPACE::nothrow_t&) noexcept;
+
+[[nodiscard]] inline void* operator new(decltype(sizeof(0)), void* place) noexcept {
+    return place;
+}
+
+[[nodiscard]] inline void* operator new[](decltype(sizeof(0)), void* place) noexcept {
+    return place;
+}
+
+inline void operator delete(void*, void*) noexcept {}
+inline void operator delete[](void*, void*) noexcept {}
+
+#undef FTL_NEW_BEGIN_NAMESPACE
+#undef FTL_NEW_END_NAMESPACE
+#undef FTL_NEW_NAMESPACE
+
+#endif // FTL_NEW_HEADER

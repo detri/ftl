@@ -1,0 +1,233 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_ATOMIC_HEADER
+#define FTL_ATOMIC_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <type_traits>
+#define FTL_ATOMIC_BEGIN_NAMESPACE namespace std {
+#define FTL_ATOMIC_END_NAMESPACE }
+#else
+#include <ftl/type_traits>
+#define FTL_ATOMIC_BEGIN_NAMESPACE namespace ftl {
+#define FTL_ATOMIC_END_NAMESPACE }
+#endif
+
+FTL_ATOMIC_BEGIN_NAMESPACE
+
+enum class memory_order : unsigned char {
+    relaxed,
+    consume,
+    acquire,
+    release,
+    acq_rel,
+    seq_cst
+};
+
+inline constexpr memory_order memory_order_relaxed = memory_order::relaxed;
+inline constexpr memory_order memory_order_consume = memory_order::consume;
+inline constexpr memory_order memory_order_acquire = memory_order::acquire;
+inline constexpr memory_order memory_order_release = memory_order::release;
+inline constexpr memory_order memory_order_acq_rel = memory_order::acq_rel;
+inline constexpr memory_order memory_order_seq_cst = memory_order::seq_cst;
+
+namespace detail {
+#if defined(_MSC_VER) && !defined(__clang__)
+extern "C" char _InterlockedExchangeAdd8(char volatile*, char);
+extern "C" short _InterlockedExchangeAdd16(short volatile*, short);
+extern "C" long _InterlockedExchangeAdd(long volatile*, long);
+extern "C" __int64 _InterlockedExchangeAdd64(__int64 volatile*, __int64);
+extern "C" char _InterlockedCompareExchange8(
+    char volatile*, char, char);
+extern "C" short _InterlockedCompareExchange16(
+    short volatile*, short, short);
+extern "C" long _InterlockedCompareExchange(
+    long volatile*, long, long);
+extern "C" __int64 _InterlockedCompareExchange64(
+    __int64 volatile*, __int64, __int64);
+#pragma intrinsic(_InterlockedExchangeAdd8)
+#pragma intrinsic(_InterlockedExchangeAdd16)
+#pragma intrinsic(_InterlockedExchangeAdd)
+#pragma intrinsic(_InterlockedExchangeAdd64)
+#pragma intrinsic(_InterlockedCompareExchange8)
+#pragma intrinsic(_InterlockedCompareExchange16)
+#pragma intrinsic(_InterlockedCompareExchange)
+#pragma intrinsic(_InterlockedCompareExchange64)
+
+template<class T>
+T exchange_add(T volatile* value, T amount) noexcept {
+    if constexpr (sizeof(T) == 1)
+        return T(_InterlockedExchangeAdd8(
+            reinterpret_cast<char volatile*>(value), char(amount)));
+    else if constexpr (sizeof(T) == 2)
+        return T(_InterlockedExchangeAdd16(
+            reinterpret_cast<short volatile*>(value), short(amount)));
+    else if constexpr (sizeof(T) == 4)
+        return T(_InterlockedExchangeAdd(
+            reinterpret_cast<long volatile*>(value), long(amount)));
+    else
+        return T(_InterlockedExchangeAdd64(
+            reinterpret_cast<__int64 volatile*>(value), __int64(amount)));
+}
+
+template<class T>
+T compare_exchange(T volatile* value, T desired, T expected) noexcept {
+    if constexpr (sizeof(T) == 1)
+        return T(_InterlockedCompareExchange8(
+            reinterpret_cast<char volatile*>(value),
+            char(desired), char(expected)));
+    else if constexpr (sizeof(T) == 2)
+        return T(_InterlockedCompareExchange16(
+            reinterpret_cast<short volatile*>(value),
+            short(desired), short(expected)));
+    else if constexpr (sizeof(T) == 4)
+        return T(_InterlockedCompareExchange(
+            reinterpret_cast<long volatile*>(value),
+            long(desired), long(expected)));
+    else
+        return T(_InterlockedCompareExchange64(
+            reinterpret_cast<__int64 volatile*>(value),
+            __int64(desired), __int64(expected)));
+}
+#endif
+}
+
+template<class T>
+class atomic {
+    static_assert(is_integral_v<T> && sizeof(T) <= 8);
+
+public:
+    using value_type = T;
+    static constexpr bool is_always_lock_free = true;
+
+    constexpr atomic() noexcept = default;
+    constexpr atomic(T desired) noexcept : value{desired} {}
+    atomic(const atomic&) = delete;
+    atomic& operator=(const atomic&) = delete;
+
+    [[nodiscard]] constexpr bool is_lock_free() const noexcept {
+        return true;
+    }
+
+    void store(
+        T desired, memory_order order = memory_order_seq_cst) noexcept {
+#if defined(_MSC_VER) && !defined(__clang__)
+        (void)order;
+        T expected = load(memory_order_relaxed);
+        while (!compare_exchange_weak(
+            expected, desired, memory_order_seq_cst,
+            memory_order_relaxed)) {}
+#else
+        __atomic_store_n(&value, desired, int(order));
+#endif
+    }
+
+    [[nodiscard]] T load(
+        memory_order order = memory_order_seq_cst) const noexcept {
+#if defined(_MSC_VER) && !defined(__clang__)
+        (void)order;
+        return detail::compare_exchange(
+            const_cast<T volatile*>(&value), T{}, T{});
+#else
+        return __atomic_load_n(&value, int(order));
+#endif
+    }
+
+    operator T() const noexcept { return load(); }
+
+    T exchange(
+        T desired, memory_order order = memory_order_seq_cst) noexcept {
+        T expected = load(memory_order_relaxed);
+        while (!compare_exchange_weak(
+            expected, desired, order, memory_order_relaxed)) {}
+        return expected;
+    }
+
+    bool compare_exchange_weak(
+        T& expected, T desired,
+        memory_order success, memory_order failure) noexcept {
+#if defined(_MSC_VER) && !defined(__clang__)
+        (void)success;
+        (void)failure;
+        const T observed =
+            detail::compare_exchange(&value, desired, expected);
+        if (observed == expected)
+            return true;
+        expected = observed;
+        return false;
+#else
+        return __atomic_compare_exchange_n(
+            &value, &expected, desired, true,
+            int(success), int(failure));
+#endif
+    }
+
+    bool compare_exchange_weak(
+        T& expected, T desired,
+        memory_order order = memory_order_seq_cst) noexcept {
+        return compare_exchange_weak(expected, desired, order,
+            order == memory_order_release ? memory_order_relaxed :
+            order == memory_order_acq_rel ? memory_order_acquire : order);
+    }
+
+    bool compare_exchange_strong(
+        T& expected, T desired,
+        memory_order success, memory_order failure) noexcept {
+#if defined(_MSC_VER) && !defined(__clang__)
+        return compare_exchange_weak(
+            expected, desired, success, failure);
+#else
+        return __atomic_compare_exchange_n(
+            &value, &expected, desired, false,
+            int(success), int(failure));
+#endif
+    }
+
+    bool compare_exchange_strong(
+        T& expected, T desired,
+        memory_order order = memory_order_seq_cst) noexcept {
+        return compare_exchange_strong(expected, desired, order,
+            order == memory_order_release ? memory_order_relaxed :
+            order == memory_order_acq_rel ? memory_order_acquire : order);
+    }
+
+    T fetch_add(
+        T amount, memory_order order = memory_order_seq_cst) noexcept
+        requires (!is_same_v<remove_cv_t<T>, bool>) {
+#if defined(_MSC_VER) && !defined(__clang__)
+        (void)order;
+        return detail::exchange_add(&value, amount);
+#else
+        return __atomic_fetch_add(&value, amount, int(order));
+#endif
+    }
+
+    T fetch_sub(
+        T amount, memory_order order = memory_order_seq_cst) noexcept
+        requires (!is_same_v<remove_cv_t<T>, bool>) {
+        return fetch_add(T(0) - amount, order);
+    }
+
+private:
+    alignas(sizeof(T)) T volatile value{};
+};
+
+using atomic_bool = atomic<bool>;
+using atomic_char = atomic<char>;
+using atomic_schar = atomic<signed char>;
+using atomic_uchar = atomic<unsigned char>;
+using atomic_short = atomic<short>;
+using atomic_ushort = atomic<unsigned short>;
+using atomic_int = atomic<int>;
+using atomic_uint = atomic<unsigned int>;
+using atomic_long = atomic<long>;
+using atomic_ulong = atomic<unsigned long>;
+using atomic_llong = atomic<long long>;
+using atomic_ullong = atomic<unsigned long long>;
+
+FTL_ATOMIC_END_NAMESPACE
+
+#undef FTL_ATOMIC_BEGIN_NAMESPACE
+#undef FTL_ATOMIC_END_NAMESPACE
+
+#endif // FTL_ATOMIC_HEADER
