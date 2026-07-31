@@ -21,10 +21,20 @@ if(BUILD_TESTING)
     set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
     set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(googletest)
-    target_compile_options(
-        gtest PUBLIC
-        "$<$<CXX_COMPILER_ID:Clang>:-Wno-character-conversion>"
+    include(CheckCXXCompilerFlag)
+
+    check_cxx_compiler_flag(
+            "-Wno-character-conversion"
+            FTL_HAS_WNO_CHARACTER_CONVERSION
     )
+
+    if(FTL_HAS_WNO_CHARACTER_CONVERSION)
+        target_compile_options(
+                gtest
+                PRIVATE
+                "-Wno-character-conversion"
+        )
+    endif()
     include(GoogleTest)
 
     function(add_ftl_test header)

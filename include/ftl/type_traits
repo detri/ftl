@@ -191,6 +191,9 @@
 #if __has_builtin(__is_trivially_destructible) || FTL_NATIVE_MSVC
 #define FTL_HAS_IS_TRIVIALLY_DESTRUCTIBLE 1
 #define FTL_IS_TRIVIALLY_DESTRUCTIBLE(T) __is_trivially_destructible(T)
+#elif defined(__GNUC__)
+#define FTL_HAS_IS_TRIVIALLY_DESTRUCTIBLE 1
+#define FTL_IS_TRIVIALLY_DESTRUCTIBLE(T) __has_trivial_destructor(T)
 #else
 #define FTL_HAS_IS_TRIVIALLY_DESTRUCTIBLE 0
 #endif
@@ -274,7 +277,7 @@
 #define FTL_CPLUSPLUS __cplusplus
 #endif
 
-#if FTL_CPLUSPLUS < 202302L
+#if FTL_CPLUSPLUS < 202100L
 #error "FTL requires C++23 or later"
 #endif
 
@@ -785,6 +788,84 @@ template<class T>
 inline constexpr bool is_member_object_pointer_v =
     is_member_object_pointer<T>::value;
 
+namespace detail {
+
+template<class T>
+auto test_destructible(int)
+    -> decltype(declval<T&>().~T(), true_type{});
+
+template<class>
+auto test_destructible(...) -> false_type;
+
+template<class T>
+struct destructible_fallback
+    : decltype(test_destructible<T>(0)) {};
+
+template<class T>
+struct destructible_fallback<T&> : true_type {};
+
+template<class T>
+struct destructible_fallback<T&&> : true_type {};
+
+template<class T>
+struct destructible_fallback<T[]> : false_type {};
+
+template<class T, size_t N>
+struct destructible_fallback<T[N]>
+    : destructible_fallback<T> {};
+
+template<>
+struct destructible_fallback<void> : false_type {};
+
+template<>
+struct destructible_fallback<const void> : false_type {};
+
+template<>
+struct destructible_fallback<volatile void> : false_type {};
+
+template<>
+struct destructible_fallback<const volatile void> : false_type {};
+
+template<class T, bool Destructible>
+struct nothrow_destructible_object_fallback : false_type {};
+
+template<class T>
+struct nothrow_destructible_object_fallback<T, true>
+    : bool_constant<noexcept(declval<T&>().~T())> {};
+
+template<class T>
+struct nothrow_destructible_fallback
+    : nothrow_destructible_object_fallback<
+          T,
+          destructible_fallback<T>::value> {};
+
+template<class T>
+struct nothrow_destructible_fallback<T&> : true_type {};
+
+template<class T>
+struct nothrow_destructible_fallback<T&&> : true_type {};
+
+template<class T>
+struct nothrow_destructible_fallback<T[]> : false_type {};
+
+template<class T, size_t N>
+struct nothrow_destructible_fallback<T[N]>
+    : nothrow_destructible_fallback<T> {};
+
+template<>
+struct nothrow_destructible_fallback<void> : false_type {};
+
+template<>
+struct nothrow_destructible_fallback<const void> : false_type {};
+
+template<>
+struct nothrow_destructible_fallback<volatile void> : false_type {};
+
+template<>
+struct nothrow_destructible_fallback<const volatile void> : false_type {};
+
+} // namespace detail
+
 #if FTL_HAS_IS_UNION
 template<class T>
 inline constexpr bool is_union_v = bool(FTL_IS_UNION(T));
@@ -869,10 +950,18 @@ template<class To, class From>
 inline constexpr bool is_assignable_v = bool(FTL_IS_ASSIGNABLE(To, From));
 #endif
 
-#if FTL_HAS_IS_DESTRUCTIBLE
 template<class T>
-inline constexpr bool is_destructible_v = bool(FTL_IS_DESTRUCTIBLE(T));
+struct is_destructible
+#if FTL_HAS_IS_DESTRUCTIBLE
+    : bool_constant<bool(FTL_IS_DESTRUCTIBLE(T))>
+#else
+    : detail::is_destructible_fallback<T>
 #endif
+{};
+
+template<class T>
+inline constexpr bool is_destructible_v =
+    is_destructible<T>::value;
 
 #if FTL_HAS_IS_TRIVIALLY_CONSTRUCTIBLE
 template<class T, class... Args>
@@ -886,11 +975,18 @@ inline constexpr bool is_trivially_assignable_v =
     bool(FTL_IS_TRIVIALLY_ASSIGNABLE(To, From));
 #endif
 
+template<class T>
+struct is_trivially_destructible
 #if FTL_HAS_IS_TRIVIALLY_DESTRUCTIBLE
+    : bool_constant<bool(FTL_IS_TRIVIALLY_DESTRUCTIBLE(T))>
+#else
+    : false_type
+#endif
+{};
+
 template<class T>
 inline constexpr bool is_trivially_destructible_v =
-    bool(FTL_IS_TRIVIALLY_DESTRUCTIBLE(T));
-#endif
+    is_trivially_destructible<T>::value;
 
 #if FTL_HAS_IS_NOTHROW_CONSTRUCTIBLE
 template<class T, class... Args>
@@ -904,11 +1000,18 @@ inline constexpr bool is_nothrow_assignable_v =
     bool(FTL_IS_NOTHROW_ASSIGNABLE(To, From));
 #endif
 
+template<class T>
+struct is_nothrow_destructible
 #if FTL_HAS_IS_NOTHROW_DESTRUCTIBLE
+    : bool_constant<bool(FTL_IS_NOTHROW_DESTRUCTIBLE(T))>
+#else
+    : detail::nothrow_destructible_fallback<T>
+#endif
+{};
+
 template<class T>
 inline constexpr bool is_nothrow_destructible_v =
-    bool(FTL_IS_NOTHROW_DESTRUCTIBLE(T));
-#endif
+    is_nothrow_destructible<T>::value;
 
 #if FTL_HAS_IS_LAYOUT_COMPATIBLE
 template<class T, class U>
@@ -1157,18 +1260,12 @@ FTL_DETAIL_BINARY_TRAIT(is_convertible);
 template<class T, class... Args>
 struct is_constructible : bool_constant<is_constructible_v<T, Args...>> {};
 
-template<class T>
-struct is_destructible : bool_constant<is_destructible_v<T>> {};
-
 template<class T, class... Args>
 struct is_nothrow_constructible
     : bool_constant<is_nothrow_constructible_v<T, Args...>> {};
 
 template<class T, class U>
 struct is_nothrow_assignable : bool_constant<is_nothrow_assignable_v<T, U>> {};
-
-template<class T>
-struct is_nothrow_destructible : bool_constant<is_nothrow_destructible_v<T>> {};
 
 template<class T, class... Args>
 struct is_trivially_constructible
@@ -1177,10 +1274,6 @@ struct is_trivially_constructible
 template<class T, class U>
 struct is_trivially_assignable
     : bool_constant<is_trivially_assignable_v<T, U>> {};
-
-template<class T>
-struct is_trivially_destructible
-    : bool_constant<is_trivially_destructible_v<T>> {};
 
 template<class T>
 struct is_default_constructible : is_constructible<T> {};
