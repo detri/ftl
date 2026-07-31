@@ -9,6 +9,9 @@
 #define FTL_EXCEPTION_BEGIN_NAMESPACE namespace std {
 #define FTL_EXCEPTION_END_NAMESPACE }
 #else
+#ifndef _MSC_VER
+#include <exception>
+#endif
 #include <ftl/type_traits>
 #include <ftl/utility>
 #define FTL_EXCEPTION_BEGIN_NAMESPACE namespace ftl {
@@ -53,16 +56,6 @@ ftl_runtime_terminate_handler __cdecl set_terminate(
 ftl_runtime_terminate_handler __cdecl _get_terminate() noexcept;
 }
 #else
-namespace __cxxabiv1 {
-extern "C" {
-void* __cxa_current_primary_exception() noexcept;
-[[noreturn]] void __cxa_rethrow_primary_exception(void*);
-void __cxa_increment_exception_refcount(void*) noexcept;
-void __cxa_decrement_exception_refcount(void*) noexcept;
-unsigned int __cxa_uncaught_exceptions() noexcept;
-}
-}
-
 #ifndef FTL_REPLACE_STL
 namespace std {
 using terminate_handler = void(*)();
@@ -75,22 +68,29 @@ terminate_handler get_terminate() noexcept;
 
 FTL_EXCEPTION_BEGIN_NAMESPACE
 
+#if defined(FTL_REPLACE_STL) && !defined(_MSC_VER)
+namespace __exception_ptr { class exception_ptr; }
+using exception_ptr = __exception_ptr::exception_ptr;
+#elif !defined(_MSC_VER)
+using exception_ptr = ::std::exception_ptr;
+#else
 class exception_ptr;
+#endif
 [[noreturn]] void rethrow_exception(exception_ptr);
 
 #if defined(FTL_REPLACE_STL) && !defined(_MSC_VER)
 class exception {
 public:
-    exception() noexcept;
-    exception(const exception&) noexcept;
-    exception& operator=(const exception&) noexcept;
+    constexpr exception() noexcept = default;
+    constexpr exception(const exception&) noexcept = default;
+    constexpr exception& operator=(const exception&) noexcept = default;
     virtual ~exception();
     [[nodiscard]] virtual const char* what() const noexcept;
 };
 
 class bad_exception : public exception {
 public:
-    bad_exception() noexcept;
+    constexpr bad_exception() noexcept = default;
     ~bad_exception() override;
     [[nodiscard]] const char* what() const noexcept override;
 };
@@ -127,6 +127,9 @@ class bad_exception : public exception {
 public:
     bad_exception() noexcept : exception("bad exception", 1) {}
 };
+#elif !defined(_MSC_VER)
+using exception = ::std::exception;
+using bad_exception = ::std::bad_exception;
 #else
 class exception {
 public:
@@ -176,13 +179,40 @@ inline terminate_handler set_terminate(terminate_handler handler) noexcept {
     ::std::terminate();
 }
 inline int uncaught_exceptions() noexcept {
-    return int(__cxxabiv1::__cxa_uncaught_exceptions());
+    return ::std::uncaught_exceptions();
 }
 #endif
 
+#if defined(FTL_REPLACE_STL) && !defined(_MSC_VER)
+namespace __exception_ptr {
 class exception_ptr {
 public:
-#if defined(_MSC_VER)
+    constexpr exception_ptr() noexcept = default;
+    constexpr exception_ptr(nullptr_t) noexcept {}
+    exception_ptr(const exception_ptr&) noexcept;
+    exception_ptr& operator=(const exception_ptr& other) noexcept {
+        exception_ptr(other).swap(*this);
+        return *this;
+    }
+    ~exception_ptr() noexcept;
+    explicit operator bool() const noexcept { return object != nullptr; }
+    void swap(exception_ptr& other) noexcept {
+        void* temporary = object;
+        object = other.object;
+        other.object = temporary;
+    }
+    friend bool operator==(
+        const exception_ptr& left, const exception_ptr& right) noexcept {
+        return left.object == right.object;
+    }
+
+private:
+    void* object{};
+};
+}
+#elif defined(_MSC_VER)
+class exception_ptr {
+public:
     exception_ptr() noexcept { __ExceptionPtrCreate(this); }
     exception_ptr(nullptr_t) noexcept { __ExceptionPtrCreate(this); }
     exception_ptr(const exception_ptr& other) noexcept {
@@ -213,72 +243,36 @@ public:
 private:
     void* data1{};
     void* data2{};
-#else
-    constexpr exception_ptr() noexcept = default;
-    constexpr exception_ptr(nullptr_t) noexcept {}
-    exception_ptr(const exception_ptr& other) noexcept
-        : object{other.object} {
-        if (object)
-            __cxxabiv1::__cxa_increment_exception_refcount(object);
-    }
-    exception_ptr& operator=(const exception_ptr& other) noexcept {
-        exception_ptr(other).swap(*this);
-        return *this;
-    }
-    exception_ptr& operator=(nullptr_t) noexcept {
-        exception_ptr{}.swap(*this);
-        return *this;
-    }
-    ~exception_ptr() {
-        if (object)
-            __cxxabiv1::__cxa_decrement_exception_refcount(object);
-    }
-    explicit operator bool() const noexcept { return object != nullptr; }
-    friend bool operator==(
-        exception_ptr left, exception_ptr right) noexcept {
-        return left.object == right.object;
-    }
-    friend void swap(exception_ptr& left, exception_ptr& right) noexcept {
-        left.swap(right);
-    }
-
-private:
-    explicit exception_ptr(void* value) noexcept : object{value} {}
-    void swap(exception_ptr& other) noexcept {
-        void* temporary = object;
-        object = other.object;
-        other.object = temporary;
-    }
-    void* object{};
-    friend exception_ptr current_exception() noexcept;
-    friend void rethrow_exception(exception_ptr);
-#endif
 };
+#endif
 
 inline bool operator==(const exception_ptr& value, nullptr_t) noexcept {
     return !value;
 }
 
+#if defined(FTL_REPLACE_STL) && !defined(_MSC_VER)
+[[nodiscard]] exception_ptr current_exception() noexcept;
+#else
 [[nodiscard]] inline exception_ptr current_exception() noexcept {
 #if defined(_MSC_VER)
     exception_ptr result;
     __ExceptionPtrCurrentException(&result);
     return result;
 #else
-    return exception_ptr{
-        __cxxabiv1::__cxa_current_primary_exception()};
+    return ::std::current_exception();
 #endif
 }
+#endif
 
+#if !defined(FTL_REPLACE_STL) || defined(_MSC_VER)
 [[noreturn]] inline void rethrow_exception(exception_ptr value) {
 #if defined(_MSC_VER)
     __ExceptionPtrRethrow(&value);
 #else
-    if (!value.object)
-        terminate();
-    __cxxabiv1::__cxa_rethrow_primary_exception(value.object);
+    ::std::rethrow_exception(value);
 #endif
 }
+#endif
 
 template<class Exception, class... Args>
 exception_ptr make_exception_ptr(Args&&... args) noexcept {
