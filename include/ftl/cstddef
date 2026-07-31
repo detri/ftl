@@ -18,7 +18,10 @@ using ptrdiff_t = decltype(static_cast<int*>(nullptr) -
                            static_cast<int*>(nullptr));
 using nullptr_t = decltype(nullptr);
 
-struct alignas(long double) alignas(void*) max_align_t {};
+union max_align_t {
+    long double long_double;
+    void* pointer;
+};
 
 enum class byte : unsigned char {};
 

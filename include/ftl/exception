@@ -248,7 +248,7 @@ private:
     }
     void* object{};
     friend exception_ptr current_exception() noexcept;
-    friend void rethrow_exception(exception_ptr);
+    [[noreturn]] friend void rethrow_exception(exception_ptr);
 #endif
 };
 
