@@ -8,6 +8,7 @@
 #include <utility>
 #define FTL_EXCEPTION_BEGIN_NAMESPACE namespace std {
 #define FTL_EXCEPTION_END_NAMESPACE }
+#define FTL_EXCEPTION_NAMESPACE std
 #else
 #ifndef _MSC_VER
 #include <exception>
@@ -16,6 +17,7 @@
 #include <ftl/utility>
 #define FTL_EXCEPTION_BEGIN_NAMESPACE namespace ftl {
 #define FTL_EXCEPTION_END_NAMESPACE }
+#define FTL_EXCEPTION_NAMESPACE ftl
 #endif
 
 #if defined(_MSC_VER)
@@ -55,15 +57,6 @@ ftl_runtime_terminate_handler __cdecl set_terminate(
     ftl_runtime_terminate_handler) noexcept;
 ftl_runtime_terminate_handler __cdecl _get_terminate() noexcept;
 }
-#else
-#ifndef FTL_REPLACE_STL
-namespace std {
-using terminate_handler = void(*)();
-terminate_handler set_terminate(terminate_handler) noexcept;
-terminate_handler get_terminate() noexcept;
-[[noreturn]] void terminate() noexcept;
-}
-#endif
 #endif
 
 FTL_EXCEPTION_BEGIN_NAMESPACE
@@ -292,7 +285,7 @@ public:
 
     [[noreturn]] void rethrow_nested() const {
         if (pointer)
-            rethrow_exception(pointer);
+            FTL_EXCEPTION_NAMESPACE::rethrow_exception(pointer);
         terminate();
     }
 
@@ -344,5 +337,6 @@ FTL_EXCEPTION_END_NAMESPACE
 
 #undef FTL_EXCEPTION_BEGIN_NAMESPACE
 #undef FTL_EXCEPTION_END_NAMESPACE
+#undef FTL_EXCEPTION_NAMESPACE
 
 #endif // FTL_EXCEPTION_HEADER
