@@ -955,7 +955,7 @@ struct is_destructible
 #if FTL_HAS_IS_DESTRUCTIBLE
     : bool_constant<bool(FTL_IS_DESTRUCTIBLE(T))>
 #else
-    : detail::is_destructible_fallback<T>
+    : detail::destructible_fallback<T>
 #endif
 {};
 
