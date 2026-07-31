@@ -75,6 +75,9 @@ terminate_handler get_terminate() noexcept;
 
 FTL_EXCEPTION_BEGIN_NAMESPACE
 
+class exception_ptr;
+[[noreturn]] void rethrow_exception(exception_ptr);
+
 #if defined(FTL_REPLACE_STL) && !defined(_MSC_VER)
 class exception {
 public:
@@ -248,7 +251,7 @@ private:
     }
     void* object{};
     friend exception_ptr current_exception() noexcept;
-    [[noreturn]] friend void rethrow_exception(exception_ptr);
+    friend void rethrow_exception(exception_ptr);
 #endif
 };
 
