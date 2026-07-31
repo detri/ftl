@@ -270,7 +270,7 @@ inline bool operator==(const exception_ptr& value, nullptr_t) noexcept {
 template<class Exception, class... Args>
 exception_ptr make_exception_ptr(Args&&... args) noexcept {
     try {
-        throw Exception(forward<Args>(args)...);
+        throw Exception(FTL_EXCEPTION_NAMESPACE::forward<Args>(args)...);
     } catch (...) {
         return current_exception();
     }
@@ -303,7 +303,7 @@ class nested_exception_wrapper : public T, public nested_exception {
 public:
     template<class U>
     explicit nested_exception_wrapper(U&& value)
-        : T(forward<U>(value)) {}
+        : T(FTL_EXCEPTION_NAMESPACE::forward<U>(value)) {}
 };
 }
 
@@ -312,9 +312,10 @@ template<class T>
     using U = decay_t<T>;
     if constexpr (is_class_v<U> && !is_final_v<U> &&
                   !is_base_of_v<nested_exception, U>)
-        throw detail::nested_exception_wrapper<U>{forward<T>(value)};
+        throw detail::nested_exception_wrapper<U>{
+            FTL_EXCEPTION_NAMESPACE::forward<T>(value)};
     else
-        throw forward<T>(value);
+        throw FTL_EXCEPTION_NAMESPACE::forward<T>(value);
 }
 
 template<class T>
