@@ -93,7 +93,8 @@ void operator delete[](
     void*, FTL_NEW_NAMESPACE::align_val_t,
     const FTL_NEW_NAMESPACE::nothrow_t&) noexcept;
 
-#if !defined(_NEW) && !defined(_NEW_)
+#if !defined(_NEW) && !defined(_NEW_) && \
+    !defined(_LIBCPP___NEW_PLACEMENT_NEW_DELETE_H)
 [[nodiscard]] inline void* operator new(decltype(sizeof(0)), void* place) noexcept {
     return place;
 }

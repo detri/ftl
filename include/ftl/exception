@@ -74,9 +74,9 @@ class exception_ptr;
 #if defined(FTL_REPLACE_STL) && !defined(_MSC_VER)
 class exception {
 public:
-    constexpr exception() noexcept = default;
-    constexpr exception(const exception&) noexcept = default;
-    constexpr exception& operator=(const exception&) noexcept = default;
+    exception() noexcept = default;
+    exception(const exception&) noexcept = default;
+    exception& operator=(const exception&) noexcept = default;
     virtual ~exception();
     [[nodiscard]] virtual const char* what() const noexcept;
 };

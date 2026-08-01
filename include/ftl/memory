@@ -858,17 +858,15 @@ struct replace_allocator_value<Allocator<U, Args...>, T> {
     using type = Allocator<T, Args...>;
 };
 
-template<class Allocator, class T,
-         bool = requires {
-             typename Allocator::template rebind<T>::other;
-         }>
+template<class Allocator, class T, class = void>
 struct allocator_rebind {
     using type =
         typename replace_allocator_value<Allocator, T>::type;
 };
 
 template<class Allocator, class T>
-struct allocator_rebind<Allocator, T, true> {
+struct allocator_rebind<Allocator, T, void_t<
+    typename Allocator::template rebind<T>::other>> {
     using type = typename Allocator::template rebind<T>::other;
 };
 
