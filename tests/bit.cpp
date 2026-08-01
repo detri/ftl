@@ -16,6 +16,9 @@ static_assert(tested::rotl(tested::uint8_t{1}, 1) == 2);
 static_assert(tested::popcount(0xf0u) == 4);
 static_assert(tested::bit_ceil(5u) == 8);
 static_assert(tested::countl_zero(0u) == tested::numeric_limits<unsigned>::digits);
+#ifndef FTL_REPLACE_STL
+static_assert(!noexcept(tested::bit_ceil(5u)));
+#endif
 
 template<class T>
 concept has_bit_width = requires(T value) { tested::bit_width(value); };

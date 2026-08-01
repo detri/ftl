@@ -1958,8 +1958,14 @@ constexpr bool is_corresponding_member(Member1 Class1::* left,
 #endif
 }
 
-#ifndef __cpp_lib_integral_constant
-#define __cpp_lib_integral_constant 201304L
+#ifndef __cpp_lib_integral_constant_callable
+#define __cpp_lib_integral_constant_callable 201304L
+#endif
+#ifndef __cpp_lib_is_null_pointer
+#define __cpp_lib_is_null_pointer 201309L
+#endif
+#ifndef __cpp_lib_is_final
+#define __cpp_lib_is_final 201402L
 #endif
 #ifndef __cpp_lib_transformation_trait_aliases
 #define __cpp_lib_transformation_trait_aliases 201304L
@@ -1990,6 +1996,12 @@ constexpr bool is_corresponding_member(Member1 Class1::* left,
 #endif
 #ifndef __cpp_lib_is_nothrow_convertible
 #define __cpp_lib_is_nothrow_convertible 201806L
+#endif
+#ifndef __cpp_lib_type_identity
+#define __cpp_lib_type_identity 201806L
+#endif
+#ifndef __cpp_lib_common_reference
+#define __cpp_lib_common_reference 202302L
 #endif
 #ifndef __cpp_lib_remove_cvref
 #define __cpp_lib_remove_cvref 201711L

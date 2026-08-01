@@ -48,11 +48,12 @@ concept bit_unsigned = is_integral_v<T> && is_unsigned_v<T> &&
 }
 
 template<detail::bit_unsigned T>
-constexpr T rotl(T value, int shift) noexcept;
+[[nodiscard]] constexpr T rotl(T value, int shift) noexcept;
 template<detail::bit_unsigned T>
-constexpr T rotr(T value, int shift) noexcept;
+[[nodiscard]] constexpr T rotr(T value, int shift) noexcept;
 
 template<detail::bit_unsigned T>
+[[nodiscard]]
 constexpr T rotl(T value, int shift) noexcept {
     constexpr int digits = numeric_limits<T>::digits;
     const int amount = shift % digits;
@@ -62,6 +63,7 @@ constexpr T rotl(T value, int shift) noexcept {
 }
 
 template<detail::bit_unsigned T>
+[[nodiscard]]
 constexpr T rotr(T value, int shift) noexcept {
     constexpr int digits = numeric_limits<T>::digits;
     const int amount = shift % digits;
@@ -73,7 +75,7 @@ constexpr T rotr(T value, int shift) noexcept {
 template<detail::bit_unsigned T>
 constexpr int countl_zero(T value) noexcept {
     int count = 0;
-    for (T mask = T(1) << (sizeof(T) * 8 - 1);
+    for (T mask = T(1) << (numeric_limits<T>::digits - 1);
          mask && !(value & mask); mask >>= 1)
         ++count;
     return count;
@@ -127,7 +129,7 @@ constexpr T bit_floor(T value) noexcept {
 }
 
 template<detail::bit_unsigned T>
-constexpr T bit_ceil(T value) noexcept {
+constexpr T bit_ceil(T value) {
     return value <= 1 ? T(1) : T(T(1) << bit_width(T(value - 1)));
 }
 

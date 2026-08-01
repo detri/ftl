@@ -19,12 +19,6 @@ enum float_round_style {
     round_toward_neg_infinity = 3
 };
 
-enum float_denorm_style {
-    denorm_indeterminate = -1,
-    denorm_absent = 0,
-    denorm_present = 1
-};
-
 template<class T> struct numeric_limits {
     static constexpr bool is_specialized = false;
     static constexpr T min() noexcept { return T(); }
@@ -38,8 +32,6 @@ template<class T> struct numeric_limits {
     static constexpr int min_exponent = 0, min_exponent10 = 0;
     static constexpr int max_exponent = 0, max_exponent10 = 0;
     static constexpr bool has_infinity = false, has_quiet_NaN = false, has_signaling_NaN = false;
-    static constexpr float_denorm_style has_denorm = denorm_absent;
-    static constexpr bool has_denorm_loss = false;
     static constexpr T infinity() noexcept { return T(); }
     static constexpr T quiet_NaN() noexcept { return T(); }
     static constexpr T signaling_NaN() noexcept { return T(); }
@@ -67,8 +59,6 @@ template<class T> struct integral_limits {
     static constexpr int min_exponent = 0, min_exponent10 = 0;
     static constexpr int max_exponent = 0, max_exponent10 = 0;
     static constexpr bool has_infinity = false, has_quiet_NaN = false, has_signaling_NaN = false;
-    static constexpr float_denorm_style has_denorm = denorm_absent;
-    static constexpr bool has_denorm_loss = false;
     static constexpr T infinity() noexcept { return T(0); }
     static constexpr T quiet_NaN() noexcept { return T(0); }
     static constexpr T signaling_NaN() noexcept { return T(0); }
@@ -114,8 +104,6 @@ template<> struct numeric_limits<bool> {
     static constexpr int min_exponent = 0, min_exponent10 = 0;
     static constexpr int max_exponent = 0, max_exponent10 = 0;
     static constexpr bool has_infinity = false, has_quiet_NaN = false, has_signaling_NaN = false;
-    static constexpr float_denorm_style has_denorm = denorm_absent;
-    static constexpr bool has_denorm_loss = false;
     static constexpr bool infinity() noexcept { return false; }
     static constexpr bool quiet_NaN() noexcept { return false; }
     static constexpr bool signaling_NaN() noexcept { return false; }
@@ -163,8 +151,6 @@ template<> struct floating_values<long double> : floating_values<double> {};
     static constexpr int min_exponent = P##_MIN_EXP__, min_exponent10 = P##_MIN_10_EXP__; \
     static constexpr int max_exponent = P##_MAX_EXP__, max_exponent10 = P##_MAX_10_EXP__; \
     static constexpr bool has_infinity = true, has_quiet_NaN = true, has_signaling_NaN = true; \
-    static constexpr float_denorm_style has_denorm = denorm_present; \
-    static constexpr bool has_denorm_loss = false; \
     static constexpr T infinity() noexcept { return FTL_FLOAT_INFINITY(T, IEC); } \
     static constexpr T quiet_NaN() noexcept { return FTL_FLOAT_QUIET_NAN(T, IEC); } \
     static constexpr T signaling_NaN() noexcept { return FTL_FLOAT_SIGNALING_NAN(T, IEC); } \
@@ -235,12 +221,12 @@ template<> struct numeric_limits<decltype(0.0##SUFFIX)> { \
     static constexpr int max_exponent = P##_MAX_EXP__, max_exponent10 = P##_MAX_10_EXP__; \
     static constexpr bool has_infinity = P##_HAS_INFINITY__; \
     static constexpr bool has_quiet_NaN = P##_HAS_QUIET_NAN__; \
-    static constexpr bool has_signaling_NaN = has_quiet_NaN; \
-    static constexpr float_denorm_style has_denorm = P##_HAS_DENORM__ ? denorm_present : denorm_absent; \
-    static constexpr bool has_denorm_loss = false; \
+    static constexpr bool has_signaling_NaN = P##_IS_IEC_60559__; \
     static constexpr T infinity() noexcept { return static_cast<T>(__builtin_huge_val()); } \
     static constexpr T quiet_NaN() noexcept { return static_cast<T>(__builtin_nan("")); } \
-    static constexpr T signaling_NaN() noexcept { return static_cast<T>(__builtin_nans("")); } \
+    static constexpr T signaling_NaN() noexcept { \
+        return has_signaling_NaN ? static_cast<T>(__builtin_nans("")) : T(0); \
+    } \
     static constexpr T denorm_min() noexcept { return P##_DENORM_MIN__; } \
     static constexpr bool is_iec559 = P##_IS_IEC_60559__; \
     static constexpr bool is_bounded = true, is_modulo = false; \

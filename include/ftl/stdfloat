@@ -27,5 +27,4 @@ using bfloat16_t = decltype(0.0bf16);
 
 }
 
-#define __cpp_lib_stdfloat 202306L
 #endif

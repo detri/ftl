@@ -19,4 +19,13 @@ static_assert(tested::numeric_limits<float>::is_iec559);
 static_assert(tested::numeric_limits<float>::epsilon() > 0);
 static_assert(tested::numeric_limits<double>::infinity() > tested::numeric_limits<double>::max());
 
+#ifndef FTL_REPLACE_STL
+template<class T>
+concept has_obsolete_denorm_members = requires {
+    T::has_denorm;
+    T::has_denorm_loss;
+};
+static_assert(!has_obsolete_denorm_members<tested::numeric_limits<float>>);
+#endif
+
 bool ftl_test() { return true; }
