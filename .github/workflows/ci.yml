@@ -37,10 +37,10 @@ jobs:
             build_dir: build-gcc
 
           - name: Linux Clang
-            os: ubuntu-latest
+            os: ubuntu-26.04
             compiler: clang
-            cc: clang-19
-            cxx: clang++-19
+            cc: clang-20
+            cxx: clang++-20
             build_dir: build-clang
 
           - name: macOS AppleClang
