@@ -3,6 +3,10 @@
 #ifndef FTL_CSTDDEF_HEADER
 #define FTL_CSTDDEF_HEADER
 
+#ifndef __cpp_lib_byte
+#define __cpp_lib_byte 201603L
+#endif
+
 #ifdef FTL_REPLACE_STL
 #define FTL_CSTDDEF_BEGIN_NAMESPACE namespace std {
 #define FTL_CSTDDEF_END_NAMESPACE }
