@@ -179,7 +179,10 @@ template<class F, class I1, class I2 = I1> concept indirect_strict_weak_order = 
 template<class F, class... Is> requires (indirectly_readable<Is> && ...) && invocable<F, iter_reference_t<Is>...>
 using indirect_result_t = invoke_result_t<F, iter_reference_t<Is>...>;
 
+#ifndef FTL_DETAIL_IDENTITY_DEFINED
+#define FTL_DETAIL_IDENTITY_DEFINED
 struct identity { using is_transparent = void; template<class T> constexpr T&& operator()(T&& value) const noexcept { return static_cast<T&&>(value); } };
+#endif
 template<indirectly_readable I, indirectly_regular_unary_invocable<I> Proj> struct projected {
     using value_type = remove_cvref_t<indirect_result_t<Proj&, I>>;
     indirect_result_t<Proj&, I> operator*() const;

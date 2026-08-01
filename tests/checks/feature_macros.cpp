@@ -33,6 +33,10 @@
 #if __cpp_lib_forward_like != 202207L
 #error <utility> must advertise forward_like
 #endif
+#if __cpp_lib_invoke_r != 202106L || __cpp_lib_bind_back != 202202L || \
+    __cpp_lib_move_only_function != 202110L
+#error <functional> must advertise its completed C++23 facilities
+#endif
 #if __cpp_lib_unreachable != 202202L
 #error <utility> must advertise unreachable
 #endif
