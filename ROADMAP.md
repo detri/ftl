@@ -112,6 +112,8 @@ dependency order, not hundreds of individual overloads.
 | `<cstdlib>` | Stage 1.5 |
 | `<cinttypes>` | Stage 1.5 |
 | `<iterator>` | Stage 2.1 |
+| `<array>` | Stage 2.2 |
+| `<tuple>` | Stage 2.2 |
 
 ### Seeded headers
 
@@ -122,7 +124,6 @@ synopses:
 |---|---|---|
 | `<cstring>` | common byte/string operations | complete C++23 C-string synopsis |
 | `<atomic>` | integral atomics and memory orders | generic/pointer atomics, `atomic_ref`, flag, fences, wait/notify, lock-free rules |
-| `<array>` | storage and basic access/modifiers | reverse iteration, tuple protocol, `get`, `to_array`, full comparisons |
 | `<string_view>` | basic `string_view` operations | full `basic_string_view`, traits integration, searches, iterators, literals, I/O/hash integration |
 | `<functional>` | invoke/reference wrappers and hashing | `function`, binders, ranges helpers, arithmetic/comparison functors, full synopsis |
 | `<memory>` | allocators, lifetime algorithms, unique/shared ownership | full pointer utilities, allocator protocol, casts, overwrite/array forms, conformance/ABI audit |
@@ -143,7 +144,7 @@ remain required when C++23 still specifies them; they are not silently dropped.
 | Area | Absent headers |
 |---|---|
 | Language support | `<coroutine>` |
-| Concepts/types/vocabulary | `<any>`, `<bitset>`, `<expected>`, `<ratio>`, `<tuple>`, `<variant>` |
+| Concepts/types/vocabulary | `<any>`, `<bitset>`, `<expected>`, `<ratio>`, `<variant>` |
 | Iteration/ranges | `<ranges>`, `<span>`, `<mdspan>`, `<generator>` |
 | Algorithms/numerics | `<algorithm>`, `<numeric>`, `<numbers>`, `<random>`, `<valarray>`, `<execution>` |
 | Dynamic allocation | `<memory_resource>`, `<scoped_allocator>` |

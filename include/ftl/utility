@@ -81,6 +81,15 @@ template<size_t Index, class... Types>
 constexpr const tuple_element_t<Index, tuple<Types...>>&&
 get(const tuple<Types...>&&) noexcept;
 
+template<size_t Index, class T, size_t Size>
+constexpr T& get(array<T, Size>&) noexcept;
+template<size_t Index, class T, size_t Size>
+constexpr const T& get(const array<T, Size>&) noexcept;
+template<size_t Index, class T, size_t Size>
+constexpr T&& get(array<T, Size>&&) noexcept;
+template<size_t Index, class T, size_t Size>
+constexpr const T&& get(const array<T, Size>&&) noexcept;
+
 namespace detail {
 template<class>
 struct is_pair : false_type {};

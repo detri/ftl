@@ -12,7 +12,11 @@ constexpr bool array_works() {
     other.fill(4);
     values.swap(other);
     return values.size() == 3 && values.front() == 4 &&
-           other.back() == 3 && tested::array<int, 0>{}.empty();
+           *values.rbegin() == 4 && other.back() == 3 &&
+           tested::get<1>(other) == 2 &&
+           tested::to_array({5, 6})[1] == 6 &&
+           tested::array<double, 1>{1.0} < tested::array<double, 1>{2.0} &&
+           tested::array<int, 0>{}.empty();
 }
 
 static_assert(array_works());
