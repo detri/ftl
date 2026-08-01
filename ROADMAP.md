@@ -122,7 +122,8 @@ synopses:
 |---|---|---|
 | `<cstring>` | common byte/string operations | complete C++23 C-string synopsis |
 | `<atomic>` | integral atomics and memory orders | generic/pointer atomics, `atomic_ref`, flag, fences, wait/notify, lock-free rules |
-| `<array>` | storage and basic access/modifiers | reverse iteration, tuple protocol, `get`, `to_array`, full comparisons |
+| `<array>` | C++23 surface except `at()` failure type | replace trap with `out_of_range` after `<stdexcept>` completes |
+| `<tuple>` | non-allocator C++23 tuple/array/pair surface | allocator-extended construction after Stage 2.4; `subrange` tuple-like integration after Stage 2.6 |
 | `<string_view>` | basic `string_view` operations | full `basic_string_view`, traits integration, searches, iterators, literals, I/O/hash integration |
 | `<functional>` | invoke/reference wrappers and hashing | `function`, binders, ranges helpers, arithmetic/comparison functors, full synopsis |
 | `<memory>` | allocators, lifetime algorithms, unique/shared ownership | full pointer utilities, allocator protocol, casts, overwrite/array forms, conformance/ABI audit |
@@ -143,7 +144,7 @@ remain required when C++23 still specifies them; they are not silently dropped.
 | Area | Absent headers |
 |---|---|
 | Language support | `<coroutine>` |
-| Concepts/types/vocabulary | `<any>`, `<bitset>`, `<expected>`, `<ratio>`, `<tuple>`, `<variant>` |
+| Concepts/types/vocabulary | `<any>`, `<bitset>`, `<expected>`, `<ratio>`, `<variant>` |
 | Iteration/ranges | `<ranges>`, `<span>`, `<mdspan>`, `<generator>` |
 | Algorithms/numerics | `<algorithm>`, `<numeric>`, `<numbers>`, `<random>`, `<valarray>`, `<execution>` |
 | Dynamic allocation | `<memory_resource>`, `<scoped_allocator>` |

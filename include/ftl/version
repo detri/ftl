@@ -37,6 +37,11 @@
 #define __cpp_lib_integer_sequence 201304L
 #define __cpp_lib_tuple_element_t 201402L
 #define __cpp_lib_tuples_by_type 201304L
+#define __cpp_lib_array_constexpr 201811L
+#define __cpp_lib_to_array 201907L
+#define __cpp_lib_constexpr_tuple 201811L
+#define __cpp_lib_apply 201603L
+#define __cpp_lib_make_from_tuple 201606L
 #define __cpp_lib_to_underlying 202102L
 #define __cpp_lib_unreachable 202202L
 #define __cpp_lib_forward_like 202207L
