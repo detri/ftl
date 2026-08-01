@@ -144,3 +144,21 @@ jobs:
           --test-dir "${{ matrix.build_dir }}"
           --build-config Release
           --output-on-failure
+
+  ci:
+    name: CI
+    needs: [changes, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required checks
+        shell: bash
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CODE_CHANGED: ${{ needs.changes.outputs.code }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          [[ "$TEST_RESULT" == success ]] ||
+          [[ "$CHANGES_RESULT" == success &&
+             "$CODE_CHANGED" == false &&
+             "$TEST_RESULT" == skipped ]]
