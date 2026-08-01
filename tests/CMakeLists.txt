@@ -79,8 +79,12 @@ function(add_ftl_freestanding_link_check name source)
             /NODEFAULTLIB /ENTRY:ftl_entry /SUBSYSTEM:CONSOLE)
     else()
         target_compile_options(ftl_check_${name} PRIVATE -nostdinc++)
-        target_link_options(ftl_check_${name} PRIVATE
-            -nostdlib "LINKER:-e,$<IF:$<PLATFORM_ID:Darwin>,_ftl_entry,ftl_entry>")
+        if(APPLE)
+            target_link_options(ftl_check_${name} PRIVATE "LINKER:-e,_ftl_entry")
+        else()
+            target_link_options(ftl_check_${name} PRIVATE
+                -nostdlib "LINKER:-e,ftl_entry")
+        endif()
     endif()
 endfunction()
 
