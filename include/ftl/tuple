@@ -61,6 +61,23 @@ constexpr decltype(auto) tuple_apply(F&& function, Tuple&& value,
 template<class... Types>
 class tuple : public detail::tuple_base<index_sequence_for<Types...>, Types...> {
     using base = detail::tuple_base<index_sequence_for<Types...>, Types...>;
+
+    template<class TupleLike, size_t... I>
+    static consteval bool tuple_like_convertible(index_sequence<I...>) {
+        return (is_convertible_v<decltype(get<I>(declval<TupleLike>())), Types> && ...);
+    }
+
+    template<class TupleLike, size_t... I>
+    static consteval bool tuple_like_constructible(index_sequence<I...>) {
+        return (is_constructible_v<Types,
+            decltype(get<I>(declval<TupleLike>()))> && ...);
+    }
+
+    template<class TupleLike, size_t... I>
+    static consteval bool tuple_like_assignable(index_sequence<I...>) {
+        return (is_assignable_v<Types&,
+            decltype(get<I>(declval<TupleLike>()))> && ...);
+    }
 public:
     constexpr explicit(!(detail::implicitly_default_constructible<Types> && ...))
     tuple() requires (is_default_constructible_v<Types> && ...) = default;
@@ -105,17 +122,14 @@ public:
         : tuple(move(other), index_sequence_for<Types...>{}) {}
 
     template<class TupleLike>
-    constexpr explicit(![]<size_t... I>(index_sequence<I...>) {
-        return (is_convertible_v<decltype(get<I>(declval<TupleLike>())), Types> && ...);
-    }(index_sequence_for<Types...>{}))
+    constexpr explicit(!tuple_like_convertible<TupleLike>(
+        index_sequence_for<Types...>{}))
     tuple(TupleLike&& other)
         requires (!detail::is_tuple<remove_cvref_t<TupleLike>>::value &&
                   detail::is_library_pair_like<remove_cvref_t<TupleLike>>::value &&
                   tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(Types) &&
-                  []<size_t... I>(index_sequence<I...>) {
-                      return (is_constructible_v<Types,
-                          decltype(get<I>(declval<TupleLike>()))> && ...);
-                  }(index_sequence_for<Types...>{}))
+                  tuple_like_constructible<TupleLike>(
+                      index_sequence_for<Types...>{}))
         : tuple(forward<TupleLike>(other), index_sequence_for<Types...>{}) {}
 
     template<class... U>
@@ -151,10 +165,8 @@ public:
         requires (!detail::is_tuple<remove_cvref_t<TupleLike>>::value &&
                   detail::is_library_pair_like<remove_cvref_t<TupleLike>>::value &&
                   tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(Types) &&
-                  []<size_t... I>(index_sequence<I...>) {
-                      return (is_assignable_v<Types&,
-                          decltype(get<I>(declval<TupleLike>()))> && ...);
-                  }(index_sequence_for<Types...>{})) {
+                  tuple_like_assignable<TupleLike>(
+                      index_sequence_for<Types...>{})) {
         assign(forward<TupleLike>(other), index_sequence_for<Types...>{}); return *this;
     }
 
