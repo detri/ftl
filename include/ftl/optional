@@ -31,11 +31,6 @@ struct nullopt_t {
 };
 inline constexpr nullopt_t nullopt{nullopt_t::tag{}};
 
-struct in_place_t {
-    explicit in_place_t() = default;
-};
-inline constexpr in_place_t in_place{};
-
 class bad_optional_access : public exception {
 public:
     [[nodiscard]] const char* what() const noexcept override {

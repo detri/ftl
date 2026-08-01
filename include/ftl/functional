@@ -82,44 +82,6 @@ constexpr decltype(auto) invoke(Callable&& callable, Args&&... args)
         return forward<Callable>(callable)(forward<Args>(args)...);
 }
 
-template<class Callable, class... Args>
-struct invoke_result {
-    using type = decltype(invoke(
-        declval<Callable>(), declval<Args>()...));
-};
-
-template<class Callable, class... Args>
-using invoke_result_t = typename invoke_result<Callable, Args...>::type;
-
-template<class Callable, class... Args>
-inline constexpr bool is_invocable_v =
-    requires { invoke(declval<Callable>(), declval<Args>()...); };
-
-template<class Result, class Callable, class... Args>
-inline constexpr bool is_invocable_r_v =
-    is_void_v<Result>
-        ? is_invocable_v<Callable, Args...>
-        : requires {
-            static_cast<Result>(
-                invoke(declval<Callable>(), declval<Args>()...));
-        };
-
-template<class Callable, class... Args>
-inline constexpr bool is_nothrow_invocable_v =
-    is_invocable_v<Callable, Args...> &&
-    noexcept(invoke(declval<Callable>(), declval<Args>()...));
-
-template<class Callable, class... Args>
-struct is_invocable : bool_constant<is_invocable_v<Callable, Args...>> {};
-
-template<class Result, class Callable, class... Args>
-struct is_invocable_r
-    : bool_constant<is_invocable_r_v<Result, Callable, Args...>> {};
-
-template<class Callable, class... Args>
-struct is_nothrow_invocable
-    : bool_constant<is_nothrow_invocable_v<Callable, Args...>> {};
-
 template<class T>
 class reference_wrapper {
 public:

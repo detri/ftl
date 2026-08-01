@@ -4,9 +4,9 @@
 #define FTL_CONCEPTS_HEADER
 
 #ifdef FTL_REPLACE_STL
-#include <utility>
+#include <type_traits>
 #else
-#include <ftl/utility>
+#include <ftl/type_traits>
 #endif
 
 FTL_BEGIN_NAMESPACE
@@ -23,6 +23,26 @@ template<class From, class To>
 concept convertible_to =
     is_convertible_v<From, To> &&
     requires { static_cast<To>(declval<From>()); };
+
+template<class T, class U>
+concept common_reference_with =
+    same_as<common_reference_t<T, U>, common_reference_t<U, T>> &&
+    convertible_to<T, common_reference_t<T, U>> &&
+    convertible_to<U, common_reference_t<T, U>>;
+
+template<class T, class U>
+concept common_with =
+    same_as<common_type_t<T, U>, common_type_t<U, T>> &&
+    requires {
+        static_cast<common_type_t<T, U>>(declval<T>());
+        static_cast<common_type_t<T, U>>(declval<U>());
+    } &&
+    common_reference_with<add_lvalue_reference_t<const T>,
+                          add_lvalue_reference_t<const U>> &&
+    common_reference_with<add_lvalue_reference_t<common_type_t<T, U>>,
+                          common_reference_t<
+                              add_lvalue_reference_t<const T>,
+                              add_lvalue_reference_t<const U>>>;
 
 template<class T>
 concept integral = is_integral_v<T>;
@@ -59,8 +79,10 @@ concept copy_constructible =
 template<class Left, class Right>
 concept assignable_from =
     is_lvalue_reference_v<Left> &&
+    common_reference_with<const remove_reference_t<Left>&,
+                          const remove_reference_t<Right>&> &&
     requires(Left left, Right&& right) {
-        { left = forward<Right>(right) } -> same_as<Left>;
+        { left = static_cast<Right&&>(right) } -> same_as<Left>;
     };
 
 namespace detail {
@@ -71,12 +93,25 @@ template<class T>
 concept boolean_testable =
     boolean_testable_impl<T> &&
     requires(T&& value) {
-        { !forward<T>(value) } -> boolean_testable_impl;
+        { !static_cast<T&&>(value) } -> boolean_testable_impl;
     };
 }
 
+template<class T>
+concept equality_comparable =
+    requires(const remove_reference_t<T>& left,
+             const remove_reference_t<T>& right) {
+        { left == right } -> detail::boolean_testable;
+        { left != right } -> detail::boolean_testable;
+    };
+
 template<class T, class U>
 concept equality_comparable_with =
+    equality_comparable<T> && equality_comparable<U> &&
+    common_reference_with<const remove_reference_t<T>&,
+                          const remove_reference_t<U>&> &&
+    equality_comparable<common_reference_t<
+        const remove_reference_t<T>&, const remove_reference_t<U>&>> &&
     requires(const remove_reference_t<T>& left,
              const remove_reference_t<U>& right) {
         { left == right } -> detail::boolean_testable;
@@ -86,11 +121,22 @@ concept equality_comparable_with =
     };
 
 template<class T>
-concept equality_comparable = equality_comparable_with<T, T>;
+concept totally_ordered =
+    equality_comparable<T> &&
+    requires(const remove_reference_t<T>& left,
+             const remove_reference_t<T>& right) {
+        { left < right } -> detail::boolean_testable;
+        { left > right } -> detail::boolean_testable;
+        { left <= right } -> detail::boolean_testable;
+        { left >= right } -> detail::boolean_testable;
+    };
 
 template<class T, class U>
 concept totally_ordered_with =
+    totally_ordered<T> && totally_ordered<U> &&
     equality_comparable_with<T, U> &&
+    totally_ordered<common_reference_t<
+        const remove_reference_t<T>&, const remove_reference_t<U>&>> &&
     requires(const remove_reference_t<T>& left,
              const remove_reference_t<U>& right) {
         { left < right } -> detail::boolean_testable;
@@ -103,20 +149,60 @@ concept totally_ordered_with =
         { right >= left } -> detail::boolean_testable;
     };
 
-template<class T>
-concept totally_ordered = totally_ordered_with<T, T>;
-
 template<class T, class U>
 concept swappable_with =
+    common_reference_with<T, U> &&
     requires(T&& left, U&& right) {
-        swap(forward<T>(left), forward<T>(left));
-        swap(forward<U>(right), forward<U>(right));
-        swap(forward<T>(left), forward<U>(right));
-        swap(forward<U>(right), forward<T>(left));
+        swap(static_cast<T&&>(left), static_cast<T&&>(left));
+        swap(static_cast<U&&>(right), static_cast<U&&>(right));
+        swap(static_cast<T&&>(left), static_cast<U&&>(right));
+        swap(static_cast<U&&>(right), static_cast<T&&>(left));
     };
 
 template<class T>
 concept swappable = swappable_with<T&, T&>;
+
+template<class T>
+concept movable = is_object_v<T> && move_constructible<T> &&
+                  assignable_from<T&, T> && swappable<T>;
+
+template<class T>
+concept copyable = copy_constructible<T> && movable<T> &&
+                   assignable_from<T&, T&> &&
+                   assignable_from<T&, const T&> &&
+                   assignable_from<T&, const T>;
+
+template<class T>
+concept semiregular = copyable<T> && default_initializable<T>;
+
+template<class T>
+concept regular = semiregular<T> && equality_comparable<T>;
+
+template<class F, class... Args>
+concept invocable = is_invocable_v<F, Args...>;
+
+template<class F, class... Args>
+concept regular_invocable = invocable<F, Args...>;
+
+template<class F, class... Args>
+concept predicate = regular_invocable<F, Args...> &&
+                    detail::boolean_testable<invoke_result_t<F, Args...>>;
+
+template<class Relation, class T, class U>
+concept relation = predicate<Relation, T, T> &&
+                   predicate<Relation, U, U> &&
+                   predicate<Relation, T, U> &&
+                   predicate<Relation, U, T>;
+
+template<class Relation, class T, class U>
+concept equivalence_relation = relation<Relation, T, U>;
+
+template<class Relation, class T, class U>
+concept strict_weak_order = relation<Relation, T, U>;
+
+#ifndef __cpp_lib_concepts
+#define __cpp_lib_concepts 202002L
+#endif
 
 FTL_END_NAMESPACE
 
