@@ -112,8 +112,6 @@ dependency order, not hundreds of individual overloads.
 | `<cstdlib>` | Stage 1.5 |
 | `<cinttypes>` | Stage 1.5 |
 | `<iterator>` | Stage 2.1 |
-| `<array>` | Stage 2.2 |
-| `<tuple>` | Stage 2.2 |
 
 ### Seeded headers
 
@@ -124,6 +122,8 @@ synopses:
 |---|---|---|
 | `<cstring>` | common byte/string operations | complete C++23 C-string synopsis |
 | `<atomic>` | integral atomics and memory orders | generic/pointer atomics, `atomic_ref`, flag, fences, wait/notify, lock-free rules |
+| `<array>` | C++23 surface except `at()` failure type | replace trap with `out_of_range` after `<stdexcept>` completes |
+| `<tuple>` | non-allocator C++23 tuple/array/pair surface | allocator-extended construction after Stage 2.4; `subrange` tuple-like integration after Stage 2.6 |
 | `<string_view>` | basic `string_view` operations | full `basic_string_view`, traits integration, searches, iterators, literals, I/O/hash integration |
 | `<functional>` | invoke/reference wrappers and hashing | `function`, binders, ranges helpers, arithmetic/comparison functors, full synopsis |
 | `<memory>` | allocators, lifetime algorithms, unique/shared ownership | full pointer utilities, allocator protocol, casts, overwrite/array forms, conformance/ABI audit |

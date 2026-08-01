@@ -28,6 +28,17 @@ FTL_BEGIN_NAMESPACE
 
 namespace detail {
 template<class I> using array_reverse_iterator = reverse_iterator<I>;
+template<class T, class U>
+constexpr auto array_compare(const T& left, const U& right) {
+    if constexpr (requires { left <=> right; })
+        return left <=> right;
+    else if (left < right)
+        return weak_ordering::less;
+    else if (right < left)
+        return weak_ordering::greater;
+    else
+        return weak_ordering::equivalent;
+}
 template<class T, size_t N>
 constexpr void array_swap(T (&left)[N], T (&right)[N])
     noexcept(noexcept(swap(left, right))) {
@@ -62,16 +73,16 @@ struct array {
             FTL_ARRAY_TRAP();
         return elements[index];
     }
-    constexpr reference operator[](size_type index) noexcept {
+    constexpr reference operator[](size_type index) {
         return elements[index];
     }
-    constexpr const_reference operator[](size_type index) const noexcept {
+    constexpr const_reference operator[](size_type index) const {
         return elements[index];
     }
-    constexpr reference front() noexcept { return elements[0]; }
-    constexpr const_reference front() const noexcept { return elements[0]; }
-    constexpr reference back() noexcept { return elements[N - 1]; }
-    constexpr const_reference back() const noexcept { return elements[N - 1]; }
+    constexpr reference front() { return elements[0]; }
+    constexpr const_reference front() const { return elements[0]; }
+    constexpr reference back() { return elements[N - 1]; }
+    constexpr const_reference back() const { return elements[N - 1]; }
     constexpr pointer data() noexcept { return elements; }
     constexpr const_pointer data() const noexcept { return elements; }
     constexpr iterator begin() noexcept { return elements; }
@@ -86,9 +97,9 @@ struct array {
     constexpr reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
     constexpr const_reverse_iterator rend() const noexcept { return const_reverse_iterator(begin()); }
     constexpr const_reverse_iterator crend() const noexcept { return const_reverse_iterator(begin()); }
-    [[nodiscard]] static constexpr bool empty() noexcept { return false; }
-    [[nodiscard]] static constexpr size_type size() noexcept { return N; }
-    [[nodiscard]] static constexpr size_type max_size() noexcept { return N; }
+    [[nodiscard]] constexpr bool empty() const noexcept { return false; }
+    constexpr size_type size() const noexcept { return N; }
+    constexpr size_type max_size() const noexcept { return N; }
 
     constexpr void fill(const T& value) {
         for (auto& element : elements)
@@ -116,14 +127,14 @@ struct array<T, 0> {
 
     constexpr reference at(size_type) { FTL_ARRAY_TRAP(); }
     constexpr const_reference at(size_type) const { FTL_ARRAY_TRAP(); }
-    constexpr reference operator[](size_type) noexcept { FTL_ARRAY_TRAP(); }
-    constexpr const_reference operator[](size_type) const noexcept {
+    constexpr reference operator[](size_type) { FTL_ARRAY_TRAP(); }
+    constexpr const_reference operator[](size_type) const {
         FTL_ARRAY_TRAP();
     }
-    constexpr reference front() noexcept { FTL_ARRAY_TRAP(); }
-    constexpr const_reference front() const noexcept { FTL_ARRAY_TRAP(); }
-    constexpr reference back() noexcept { FTL_ARRAY_TRAP(); }
-    constexpr const_reference back() const noexcept { FTL_ARRAY_TRAP(); }
+    constexpr reference front() { FTL_ARRAY_TRAP(); }
+    constexpr const_reference front() const { FTL_ARRAY_TRAP(); }
+    constexpr reference back() { FTL_ARRAY_TRAP(); }
+    constexpr const_reference back() const { FTL_ARRAY_TRAP(); }
     constexpr pointer data() noexcept { return nullptr; }
     constexpr const_pointer data() const noexcept { return nullptr; }
     constexpr iterator begin() noexcept { return nullptr; }
@@ -138,15 +149,16 @@ struct array<T, 0> {
     constexpr reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
     constexpr const_reverse_iterator rend() const noexcept { return const_reverse_iterator(begin()); }
     constexpr const_reverse_iterator crend() const noexcept { return const_reverse_iterator(begin()); }
-    [[nodiscard]] static constexpr bool empty() noexcept { return true; }
-    [[nodiscard]] static constexpr size_type size() noexcept { return 0; }
-    [[nodiscard]] static constexpr size_type max_size() noexcept { return 0; }
+    [[nodiscard]] constexpr bool empty() const noexcept { return true; }
+    constexpr size_type size() const noexcept { return 0; }
+    constexpr size_type max_size() const noexcept { return 0; }
     constexpr void fill(const T&) noexcept {}
     constexpr void swap(array&) noexcept {}
 };
 
-template<class T, size_t N>
-array(T (&)[N]) -> array<T, N>;
+template<class T, class... U>
+    requires (is_same_v<T, U> && ...)
+array(T, U...) -> array<T, 1 + sizeof...(U)>;
 
 template<class T, size_t N>
 constexpr bool operator==(const array<T, N>& left,
@@ -159,16 +171,17 @@ constexpr bool operator==(const array<T, N>& left,
 
 template<class T, size_t N>
 constexpr auto operator<=>(const array<T, N>& left, const array<T, N>& right) {
-    using category = decltype(compare_three_way{}(left[0], right[0]));
+    using category = decltype(detail::array_compare(left[0], right[0]));
     for (size_t index = 0; index < N; ++index)
-        if (category result = compare_three_way{}(left[index], right[index]); result != 0)
+        if (category result = detail::array_compare(left[index], right[index]); result != 0)
             return result;
     return category::equivalent;
 }
 
 template<class T, size_t N>
 constexpr void swap(array<T, N>& left, array<T, N>& right)
-    noexcept(noexcept(left.swap(right))) { left.swap(right); }
+    noexcept(noexcept(left.swap(right)))
+    requires (N == 0 || is_swappable_v<T>) { left.swap(right); }
 
 template<class T, size_t N>
 struct tuple_size<array<T, N>> : integral_constant<size_t, N> {};
@@ -187,6 +200,7 @@ constexpr const T&& get(const array<T, N>&& value) noexcept { return move(get<In
 
 template<class T, size_t N>
 constexpr array<remove_cv_t<T>, N> to_array(T (&value)[N]) {
+    static_assert(!is_array_v<T> && is_constructible_v<T, T&>);
     return [&]<size_t... I>(index_sequence<I...>) {
         return array<remove_cv_t<T>, N>{value[I]...};
     }(make_index_sequence<N>{});
@@ -194,6 +208,7 @@ constexpr array<remove_cv_t<T>, N> to_array(T (&value)[N]) {
 
 template<class T, size_t N>
 constexpr array<remove_cv_t<T>, N> to_array(T (&&value)[N]) {
+    static_assert(!is_array_v<T> && is_move_constructible_v<T>);
     return [&]<size_t... I>(index_sequence<I...>) {
         return array<remove_cv_t<T>, N>{move(value[I])...};
     }(make_index_sequence<N>{});

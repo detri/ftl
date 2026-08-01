@@ -18,6 +18,9 @@ FTL_BEGIN_NAMESPACE
 namespace detail {
 template<class> struct is_tuple : false_type {};
 template<class... T> struct is_tuple<tuple<T...>> : true_type {};
+template<class T>
+struct is_tuple_source : bool_constant<
+    is_pair<T>::value || is_library_pair_like<T>::value> {};
 #if defined(_MSC_VER)
 #define FTL_TUPLE_NO_UNIQUE_ADDRESS [[msvc::no_unique_address]]
 #else
@@ -53,8 +56,15 @@ constexpr auto tuple_equal(const Tuple& left, const Tuple& right,
 
 template<class F, class Tuple, size_t... Index>
 constexpr decltype(auto) tuple_apply(F&& function, Tuple&& value,
-                                     index_sequence<Index...>) {
+                                     index_sequence<Index...>)
+    noexcept(noexcept(detail::invoke(forward<F>(function),
+        get<Index>(forward<Tuple>(value))...))) {
     return detail::invoke(forward<F>(function), get<Index>(forward<Tuple>(value))...);
+}
+
+template<class T, class Tuple, size_t... I>
+consteval bool make_from_tuple_constructible(index_sequence<I...>) {
+    return is_constructible_v<T, decltype(get<I>(declval<Tuple>()))...>;
 }
 }
 
@@ -74,8 +84,25 @@ class tuple : public detail::tuple_base<index_sequence_for<Types...>, Types...> 
     }
 
     template<class TupleLike, size_t... I>
+    static consteval bool tuple_like_dangles(index_sequence<I...>) {
+#if FTL_HAS_REFERENCE_CONSTRUCTS_FROM_TEMPORARY
+        return (reference_constructs_from_temporary_v<Types,
+            decltype(get<I>(declval<TupleLike>()))> || ...);
+#else
+        return false;
+#endif
+    }
+
+    template<class TupleLike, size_t... I>
     static consteval bool tuple_like_assignable(index_sequence<I...>) {
         return (is_assignable_v<Types&,
+            decltype(get<I>(declval<TupleLike>()))> && ...);
+    }
+
+
+    template<class TupleLike, size_t... I>
+    static consteval bool tuple_like_const_assignable(index_sequence<I...>) {
+        return (is_assignable_v<const Types&,
             decltype(get<I>(declval<TupleLike>()))> && ...);
     }
 public:
@@ -90,7 +117,8 @@ public:
     constexpr explicit(!(is_convertible_v<U, Types> && ...))
     tuple(U&&... values)
         requires (sizeof...(U) == sizeof...(Types) && sizeof...(Types) != 0 &&
-                  (is_constructible_v<Types, U> && ...))
+                  (is_constructible_v<Types, U> && ...) &&
+                  !(detail::pair_dangles_v<Types, U&&> || ...))
         : base(forward<U>(values)...) {}
 
     tuple(const tuple&) = default;
@@ -108,17 +136,35 @@ public:
     }
 
     template<class... U>
-    constexpr explicit(!(is_convertible_v<const U&, Types> && ...))
-    tuple(const tuple<U...>& other)
+    constexpr explicit(!tuple_like_convertible<tuple<U...>&>(index_sequence_for<Types...>{}))
+    tuple(tuple<U...>& other)
         requires (sizeof...(U) == sizeof...(Types) &&
-                  (is_constructible_v<Types, const U&> && ...))
+                  tuple_like_constructible<tuple<U...>&>(index_sequence_for<Types...>{}) &&
+                  !tuple_like_dangles<tuple<U...>&>(index_sequence_for<Types...>{}))
         : tuple(other, index_sequence_for<Types...>{}) {}
 
     template<class... U>
-    constexpr explicit(!(is_convertible_v<U, Types> && ...))
+    constexpr explicit(!tuple_like_convertible<const tuple<U...>&>(index_sequence_for<Types...>{}))
+    tuple(const tuple<U...>& other)
+        requires (sizeof...(U) == sizeof...(Types) &&
+                  tuple_like_constructible<const tuple<U...>&>(index_sequence_for<Types...>{}) &&
+                  !tuple_like_dangles<const tuple<U...>&>(index_sequence_for<Types...>{}))
+        : tuple(other, index_sequence_for<Types...>{}) {}
+
+    template<class... U>
+    constexpr explicit(!tuple_like_convertible<tuple<U...>&&>(index_sequence_for<Types...>{}))
     tuple(tuple<U...>&& other)
         requires (sizeof...(U) == sizeof...(Types) &&
-                  (is_constructible_v<Types, U> && ...))
+                  tuple_like_constructible<tuple<U...>&&>(index_sequence_for<Types...>{}) &&
+                  !tuple_like_dangles<tuple<U...>&&>(index_sequence_for<Types...>{}))
+        : tuple(move(other), index_sequence_for<Types...>{}) {}
+
+    template<class... U>
+    constexpr explicit(!tuple_like_convertible<const tuple<U...>&&>(index_sequence_for<Types...>{}))
+    tuple(const tuple<U...>&& other)
+        requires (sizeof...(U) == sizeof...(Types) &&
+                  tuple_like_constructible<const tuple<U...>&&>(index_sequence_for<Types...>{}) &&
+                  !tuple_like_dangles<const tuple<U...>&&>(index_sequence_for<Types...>{}))
         : tuple(move(other), index_sequence_for<Types...>{}) {}
 
     template<class TupleLike>
@@ -126,10 +172,11 @@ public:
         index_sequence_for<Types...>{}))
     tuple(TupleLike&& other)
         requires (!detail::is_tuple<remove_cvref_t<TupleLike>>::value &&
-                  detail::is_library_pair_like<remove_cvref_t<TupleLike>>::value &&
+                  detail::is_tuple_source<remove_cvref_t<TupleLike>>::value &&
                   tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(Types) &&
                   tuple_like_constructible<TupleLike>(
-                      index_sequence_for<Types...>{}))
+                      index_sequence_for<Types...>{}) &&
+                  !tuple_like_dangles<TupleLike>(index_sequence_for<Types...>{}))
         : tuple(forward<TupleLike>(other), index_sequence_for<Types...>{}) {}
 
     template<class... U>
@@ -163,9 +210,19 @@ public:
     template<class TupleLike>
     constexpr tuple& operator=(TupleLike&& other)
         requires (!detail::is_tuple<remove_cvref_t<TupleLike>>::value &&
-                  detail::is_library_pair_like<remove_cvref_t<TupleLike>>::value &&
+                  detail::is_tuple_source<remove_cvref_t<TupleLike>>::value &&
                   tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(Types) &&
                   tuple_like_assignable<TupleLike>(
+                      index_sequence_for<Types...>{})) {
+        assign(forward<TupleLike>(other), index_sequence_for<Types...>{}); return *this;
+    }
+
+    template<class TupleLike>
+    constexpr const tuple& operator=(TupleLike&& other) const
+        requires (!detail::is_tuple<remove_cvref_t<TupleLike>>::value &&
+                  detail::is_tuple_source<remove_cvref_t<TupleLike>>::value &&
+                  tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(Types) &&
+                  tuple_like_const_assignable<TupleLike>(
                       index_sequence_for<Types...>{})) {
         assign(forward<TupleLike>(other), index_sequence_for<Types...>{}); return *this;
     }
@@ -204,7 +261,12 @@ private:
     }
 };
 
+// ponytail: allocator-extended tuple constructors and uses_allocator wait for
+// Stage 2.4's allocator protocol; duplicating that protocol here would invert
+// the roadmap dependency.
+
 template<class... T> tuple(T...) -> tuple<T...>;
+template<class T1, class T2> tuple(pair<T1, T2>) -> tuple<T1, T2>;
 
 template<class... Types>
 struct tuple_size<tuple<Types...>> : integral_constant<size_t, sizeof...(Types)> {};
@@ -244,6 +306,37 @@ template<class T, class... Types> constexpr const T& get(const tuple<Types...>& 
 template<class T, class... Types> constexpr T&& get(tuple<Types...>&& value) noexcept { return move(get<T>(value)); }
 template<class T, class... Types> constexpr const T&& get(const tuple<Types...>&& value) noexcept { return move(get<T>(value)); }
 
+namespace detail {
+template<class T, class U>
+constexpr auto tuple_compare_element(const T& left, const U& right) {
+    if constexpr (requires { left <=> right; })
+        return left <=> right;
+    else if (left < right)
+        return weak_ordering::less;
+    else if (right < left)
+        return weak_ordering::greater;
+    else
+        return weak_ordering::equivalent;
+}
+
+template<class Left, class Right, size_t... I>
+constexpr auto tuple_compare_all(const Left& left, const Right& right,
+                                 index_sequence<I...>) {
+    using category = common_comparison_category_t<
+        decltype(tuple_compare_element(get<I>(left), get<I>(right)))...>;
+    auto compare = [&]<size_t Index>(auto&& self) -> category {
+        if constexpr (Index == sizeof...(I)) return category::equivalent;
+        else {
+            if (category result = tuple_compare_element(
+                    get<Index>(left), get<Index>(right)); result != 0)
+                return result;
+            return self.template operator()<Index + 1>(self);
+        }
+    };
+    return compare.template operator()<0>(compare);
+}
+}
+
 template<class... T, class... U>
 constexpr bool operator==(const tuple<T...>& left, const tuple<U...>& right)
     requires (sizeof...(T) == sizeof...(U)) {
@@ -253,17 +346,25 @@ constexpr bool operator==(const tuple<T...>& left, const tuple<U...>& right)
 template<class... T, class... U>
 constexpr auto operator<=>(const tuple<T...>& left, const tuple<U...>& right)
     requires (sizeof...(T) == sizeof...(U)) {
-    using category = common_comparison_category_t<
-        decltype(compare_three_way{}(declval<const T&>(), declval<const U&>()))...>;
-    auto compare = [&]<size_t Index>(auto&& self) -> category {
-        if constexpr (Index == sizeof...(T)) return category::equivalent;
-        else {
-            if (category result = compare_three_way{}(get<Index>(left), get<Index>(right)); result != 0)
-                return result;
-            return self.template operator()<Index + 1>(self);
-        }
-    };
-    return compare.template operator()<0>(compare);
+    return detail::tuple_compare_all(left, right, index_sequence_for<T...>{});
+}
+
+template<class... T, class TupleLike>
+constexpr bool operator==(const tuple<T...>& left, const TupleLike& right)
+    requires (!detail::is_tuple<remove_cvref_t<TupleLike>>::value &&
+              detail::is_tuple_source<remove_cvref_t<TupleLike>>::value &&
+              tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(T)) {
+    return [&]<size_t... I>(index_sequence<I...>) {
+        return ((get<I>(left) == get<I>(right)) && ...);
+    }(index_sequence_for<T...>{});
+}
+
+template<class... T, class TupleLike>
+constexpr auto operator<=>(const tuple<T...>& left, const TupleLike& right)
+    requires (!detail::is_tuple<remove_cvref_t<TupleLike>>::value &&
+              detail::is_tuple_source<remove_cvref_t<TupleLike>>::value &&
+              tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(T)) {
+    return detail::tuple_compare_all(left, right, index_sequence_for<T...>{});
 }
 
 template<class... T, class... U>
@@ -276,8 +377,78 @@ struct basic_common_reference<tuple<T...>, tuple<U...>, TQual, UQual> {
     using type = tuple<common_reference_t<TQual<T>, UQual<U>>...>;
 };
 
+namespace detail {
+template<class Tuple, class TupleLike, class Sequence> struct tuple_common_type;
+template<class... T, class TupleLike, size_t... I>
+struct tuple_common_type<tuple<T...>, TupleLike, index_sequence<I...>> {
+    using type = tuple<common_type_t<T, tuple_element_t<I, TupleLike>>...>;
+};
+template<class... T, class TupleLike, size_t... I>
+struct tuple_common_type<TupleLike, tuple<T...>, index_sequence<I...>> {
+    using type = tuple<common_type_t<tuple_element_t<I, TupleLike>, T>...>;
+};
+
+template<class Tuple, class TupleLike, template<class> class TQual,
+         template<class> class UQual, class Sequence>
+struct tuple_common_reference;
+template<class... T, class TupleLike, template<class> class TQual,
+         template<class> class UQual, size_t... I>
+struct tuple_common_reference<tuple<T...>, TupleLike, TQual, UQual,
+                              index_sequence<I...>> {
+    using type = tuple<common_reference_t<
+        TQual<T>, UQual<tuple_element_t<I, TupleLike>>>...>;
+};
+template<class... T, class TupleLike, template<class> class TQual,
+         template<class> class UQual, size_t... I>
+struct tuple_common_reference<TupleLike, tuple<T...>, TQual, UQual,
+                              index_sequence<I...>> {
+    using type = tuple<common_reference_t<
+        TQual<tuple_element_t<I, TupleLike>>, UQual<T>>...>;
+};
+}
+
+template<class... T, class TupleLike>
+    requires (!detail::is_tuple<remove_cvref_t<TupleLike>>::value &&
+              detail::is_tuple_source<remove_cvref_t<TupleLike>>::value &&
+              tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(T))
+struct common_type<tuple<T...>, TupleLike>
+    : detail::tuple_common_type<tuple<T...>, remove_cvref_t<TupleLike>,
+                                index_sequence_for<T...>> {};
+
+template<class TupleLike, class... T>
+    requires (!detail::is_tuple<remove_cvref_t<TupleLike>>::value &&
+              detail::is_tuple_source<remove_cvref_t<TupleLike>>::value &&
+              tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(T))
+struct common_type<TupleLike, tuple<T...>>
+    : detail::tuple_common_type<remove_cvref_t<TupleLike>, tuple<T...>,
+                                index_sequence_for<T...>> {};
+
+template<class... T, class TupleLike, template<class> class TQual,
+         template<class> class UQual>
+    requires (!detail::is_tuple<remove_cvref_t<TupleLike>>::value &&
+              detail::is_tuple_source<remove_cvref_t<TupleLike>>::value &&
+              tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(T))
+struct basic_common_reference<tuple<T...>, TupleLike, TQual, UQual>
+    : detail::tuple_common_reference<tuple<T...>, remove_cvref_t<TupleLike>,
+          TQual, UQual, index_sequence_for<T...>> {};
+
+template<class TupleLike, class... T, template<class> class TQual,
+         template<class> class UQual>
+    requires (!detail::is_tuple<remove_cvref_t<TupleLike>>::value &&
+              detail::is_tuple_source<remove_cvref_t<TupleLike>>::value &&
+              tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(T))
+struct basic_common_reference<TupleLike, tuple<T...>, TQual, UQual>
+    : detail::tuple_common_reference<remove_cvref_t<TupleLike>, tuple<T...>,
+          TQual, UQual, index_sequence_for<T...>> {};
+
+// ponytail: ranges::subrange joins tuple-like construction, comparison, and
+// common-reference support when Stage 2.6 completes <ranges>.
+
 template<class... Types>
 constexpr void swap(tuple<Types...>& left, tuple<Types...>& right)
+    noexcept(noexcept(left.swap(right))) requires requires { left.swap(right); } { left.swap(right); }
+template<class... Types>
+constexpr void swap(const tuple<Types...>& left, const tuple<Types...>& right)
     noexcept(noexcept(left.swap(right))) requires requires { left.swap(right); } { left.swap(right); }
 
 template<class... T> constexpr tuple<unwrap_ref_decay_t<T>...> make_tuple(T&&... value) { return {forward<T>(value)...}; }
@@ -297,13 +468,23 @@ constexpr auto tuple_cat_two(Left&& left, Right&& right,
 inline constexpr detail::ignore_t ignore{};
 
 template<class F, class Tuple>
-constexpr decltype(auto) apply(F&& function, Tuple&& value) {
+constexpr decltype(auto) apply(F&& function, Tuple&& value)
+    noexcept(noexcept(detail::tuple_apply(forward<F>(function),
+        forward<Tuple>(value),
+        make_index_sequence<tuple_size_v<remove_reference_t<Tuple>>>{}))) {
     return detail::tuple_apply(forward<F>(function), forward<Tuple>(value),
         make_index_sequence<tuple_size_v<remove_reference_t<Tuple>>>{});
 }
 
 template<class T, class Tuple>
-constexpr T make_from_tuple(Tuple&& value) {
+constexpr T make_from_tuple(Tuple&& value)
+    requires (detail::make_from_tuple_constructible<T, Tuple>(
+        make_index_sequence<tuple_size_v<remove_reference_t<Tuple>>>{})) {
+#if FTL_HAS_REFERENCE_CONSTRUCTS_FROM_TEMPORARY
+    if constexpr (tuple_size_v<remove_reference_t<Tuple>> == 1)
+        static_assert(!reference_constructs_from_temporary_v<
+            T, decltype(get<0>(declval<Tuple>()))>);
+#endif
     return [&]<size_t... I>(index_sequence<I...>) -> T {
         return T(get<I>(forward<Tuple>(value))...);
     }(make_index_sequence<tuple_size_v<remove_reference_t<Tuple>>>{});

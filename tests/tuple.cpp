@@ -8,6 +8,24 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+struct no_throw_call {
+    constexpr int operator()(int value) const noexcept { return value; }
+};
+
+using one_int = tested::tuple<int>;
+static_assert(tested::is_constructible_v<tested::tuple<long>, one_int&>);
+static_assert(tested::is_constructible_v<tested::tuple<long>, const one_int&>);
+static_assert(tested::is_constructible_v<tested::tuple<long>, one_int&&>);
+static_assert(tested::is_constructible_v<tested::tuple<long>, const one_int&&>);
+static_assert(tested::is_same_v<
+    decltype(tested::tuple(tested::pair<int, long>{})),
+    tested::tuple<int, long>>);
+static_assert(tested::is_same_v<
+    tested::common_type_t<tested::tuple<int, short>, tested::array<long, 2>>,
+    tested::tuple<long, long>>);
+static_assert(noexcept(tested::apply(
+    tested::declval<no_throw_call>(), tested::declval<tested::tuple<int>&>())));
+
 constexpr bool tuple_works() {
     tested::tuple<int, long> value{1, 2};
     tested::get<0>(value) = 3;
