@@ -70,6 +70,7 @@ if(BUILD_TESTING)
             type_traits
             utility
             concepts
+            new
             memory
             atomic
             exception
