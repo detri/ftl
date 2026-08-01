@@ -1,0 +1,26 @@
+#ifdef FTL_REPLACE_STL
+#include <version>
+#else
+#include <ftl/version>
+#endif
+
+#if __cpp_lib_bit_cast != 201806L
+#error wrong bit_cast feature-test macro
+#endif
+#if __cpp_lib_byteswap != 202110L
+#error wrong byteswap feature-test macro
+#endif
+#if __cpp_lib_source_location != 201907L
+#error wrong source_location feature-test macro
+#endif
+#if __cpp_lib_integral_constant_callable != 201304L || \
+    __cpp_lib_integer_sequence != 201304L || \
+    __cpp_lib_type_identity != 201806L || \
+    __cpp_lib_common_reference != 202302L
+#error missing completed-foundation feature-test macro
+#endif
+#ifdef __cpp_lib_stdfloat
+#error N4950 does not define __cpp_lib_stdfloat
+#endif
+
+bool ftl_test() { return true; }

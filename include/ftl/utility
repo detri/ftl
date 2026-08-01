@@ -708,8 +708,17 @@ constexpr bool in_range(T value) noexcept {
 #ifndef __cpp_lib_exchange_function
 #define __cpp_lib_exchange_function 201304L
 #endif
+#ifndef __cpp_lib_integer_sequence
+#define __cpp_lib_integer_sequence 201304L
+#endif
+#ifndef __cpp_lib_tuples_by_type
+#define __cpp_lib_tuples_by_type 201304L
+#endif
 #ifndef __cpp_lib_as_const
 #define __cpp_lib_as_const 201510L
+#endif
+#ifndef __cpp_lib_constexpr_utility
+#define __cpp_lib_constexpr_utility 201811L
 #endif
 #ifndef __cpp_lib_integer_comparison_functions
 #define __cpp_lib_integer_comparison_functions 202002L

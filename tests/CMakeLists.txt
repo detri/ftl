@@ -132,6 +132,10 @@ foreach(header IN ITEMS
         cstdint
         cstring
         bit
+        limits
+        version
+        source_location
+        stdfloat
         string_view)
     add_ftl_test(${header})
 endforeach()

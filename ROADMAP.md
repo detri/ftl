@@ -89,6 +89,15 @@ dependency order, not hundreds of individual overloads.
 | `<cstddef>` | Stage 1.1 |
 | `<cstdint>` | Stage 1.1 |
 | `<initializer_list>` | Stage 1.1 |
+| `<type_traits>` | Stage 1.2 |
+| `<utility>` | Stage 1.2 |
+| `<concepts>` | Stage 1.2 |
+| `<compare>` | Stage 1.2 |
+| `<limits>` | Stage 1.3 |
+| `<bit>` | Stage 1.3 |
+| `<version>` | Stage 1.3 |
+| `<source_location>` | Stage 1.3 |
+| `<stdfloat>` | Stage 1.3 |
 
 ### Seeded headers
 
@@ -97,14 +106,9 @@ synopses:
 
 | Header | Implemented direction | Major remaining groups |
 |---|---|---|
-| `<type_traits>` | broad trait foundation | full C++23 synopsis, edge cases, compiler matrix |
-| `<utility>` | move/forward/swap/exchange helpers | `pair`, integer sequences, comparison helpers, full synopsis |
-| `<concepts>` | common language concepts | common-reference/common-type and remaining comparison/object concepts |
-| `<compare>` | ordering categories, `compare_three_way` | named predicates, fallback comparators, concepts, full customization rules |
 | `<new>` | allocation declarations and helpers | complete replaceable forms, handlers, alignment/lifetime audit |
 | `<exception>` | base exceptions, exception state/nesting | complete ABI/runtime behavior on all toolchains |
 | `<cstring>` | common byte/string operations | complete C++23 C-string synopsis |
-| `<bit>` | C++20 bit operations and `byteswap` | conformance/edge-case and feature-macro audit |
 | `<atomic>` | integral atomics and memory orders | generic/pointer atomics, `atomic_ref`, flag, fences, wait/notify, lock-free rules |
 | `<array>` | storage and basic access/modifiers | reverse iteration, tuple protocol, `get`, `to_array`, full comparisons |
 | `<string_view>` | basic `string_view` operations | full `basic_string_view`, traits integration, searches, iterators, literals, I/O/hash integration |
@@ -126,8 +130,8 @@ remain required when C++23 still specifies them; they are not silently dropped.
 
 | Area | Absent headers |
 |---|---|
-| Language support | `<cassert>`, `<cerrno>`, `<cfloat>`, `<climits>`, `<csetjmp>`, `<csignal>`, `<cstdarg>`, `<cstdlib>`, `<coroutine>`, `<source_location>`, `<typeinfo>`, `<version>` |
-| Concepts/types/vocabulary | `<any>`, `<bitset>`, `<expected>`, `<limits>`, `<ratio>`, `<stdfloat>`, `<tuple>`, `<typeindex>`, `<variant>` |
+| Language support | `<cassert>`, `<cerrno>`, `<cfloat>`, `<climits>`, `<csetjmp>`, `<csignal>`, `<cstdarg>`, `<cstdlib>`, `<coroutine>`, `<typeinfo>` |
+| Concepts/types/vocabulary | `<any>`, `<bitset>`, `<expected>`, `<ratio>`, `<tuple>`, `<typeindex>`, `<variant>` |
 | Iteration/ranges | `<iterator>`, `<ranges>`, `<span>`, `<mdspan>`, `<generator>` |
 | Algorithms/numerics | `<algorithm>`, `<numeric>`, `<numbers>`, `<random>`, `<valarray>`, `<execution>` |
 | Dynamic allocation | `<memory_resource>`, `<scoped_allocator>` |
