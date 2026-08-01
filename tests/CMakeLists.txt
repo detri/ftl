@@ -141,6 +141,16 @@ foreach(header IN ITEMS
         version
         source_location
         stdfloat
+        cassert
+        cerrno
+        cfloat
+        climits
+        cstdarg
+        csetjmp
+        csignal
+        cstdlib
+        cinttypes
+        c_headers
         string_view)
     add_ftl_test(${header})
 endforeach()

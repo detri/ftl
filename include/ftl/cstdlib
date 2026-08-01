@@ -1,0 +1,165 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CSTDLIB_HEADER
+#define FTL_CSTDLIB_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <cstddef>
+#define FTL_CSTDLIB_BEGIN namespace std {
+#define FTL_CSTDLIB_END }
+#else
+#include <ftl/cstddef>
+#define FTL_CSTDLIB_BEGIN namespace ftl {
+#define FTL_CSTDLIB_END }
+#endif
+
+extern "C" {
+[[noreturn]] void abort() noexcept;
+int atexit(void (*)());
+int at_quick_exit(void (*)());
+[[noreturn]] void exit(int);
+[[noreturn]] void _Exit(int) noexcept;
+[[noreturn]] void quick_exit(int) noexcept;
+char* getenv(const char*);
+int system(const char*);
+void* calloc(decltype(sizeof(0)), decltype(sizeof(0)));
+void free(void*);
+void* malloc(decltype(sizeof(0)));
+void* realloc(void*, decltype(sizeof(0)));
+double atof(const char*);
+int atoi(const char*);
+long atol(const char*);
+long long atoll(const char*);
+double strtod(const char*, char**);
+float strtof(const char*, char**);
+long double strtold(const char*, char**);
+long strtol(const char*, char**, int);
+long long strtoll(const char*, char**, int);
+unsigned long strtoul(const char*, char**, int);
+unsigned long long strtoull(const char*, char**, int);
+int mblen(const char*, decltype(sizeof(0)));
+int mbtowc(wchar_t*, const char*, decltype(sizeof(0)));
+int wctomb(char*, wchar_t);
+decltype(sizeof(0)) mbstowcs(wchar_t*, const char*, decltype(sizeof(0)));
+decltype(sizeof(0)) wcstombs(char*, const wchar_t*, decltype(sizeof(0)));
+void* bsearch(const void*, const void*, decltype(sizeof(0)),
+              decltype(sizeof(0)), int (*)(const void*, const void*));
+void qsort(void*, decltype(sizeof(0)), decltype(sizeof(0)),
+           int (*)(const void*, const void*));
+int rand();
+void srand(unsigned);
+#if defined(_WIN32)
+void* _aligned_malloc(decltype(sizeof(0)), decltype(sizeof(0)));
+void* _aligned_realloc(void*, decltype(sizeof(0)), decltype(sizeof(0)));
+void _aligned_free(void*);
+int ___mb_cur_max_func();
+#elif defined(__APPLE__)
+void* aligned_alloc(decltype(sizeof(0)), decltype(sizeof(0)));
+int ___mb_cur_max();
+#else
+void* aligned_alloc(decltype(sizeof(0)), decltype(sizeof(0)));
+decltype(sizeof(0)) __ctype_get_mb_cur_max() noexcept;
+#endif
+}
+
+#define EXIT_SUCCESS 0
+#define EXIT_FAILURE 1
+#if defined(_WIN32)
+#define RAND_MAX 0x7fff
+#define MB_CUR_MAX static_cast<decltype(sizeof(0))>(::___mb_cur_max_func())
+#elif defined(__APPLE__)
+#define RAND_MAX 0x7fffffff
+#define MB_CUR_MAX static_cast<decltype(sizeof(0))>(::___mb_cur_max())
+#else
+#define RAND_MAX 0x7fffffff
+#define MB_CUR_MAX ::__ctype_get_mb_cur_max()
+#endif
+
+FTL_CSTDLIB_BEGIN
+
+using size_t = decltype(sizeof(0));
+struct div_t { int quot, rem; };
+struct ldiv_t { long quot, rem; };
+struct lldiv_t { long long quot, rem; };
+
+using ::abort;
+#if defined(_MSC_VER)
+inline int atexit(void (*function)()) noexcept { return ::atexit(function); }
+inline int at_quick_exit(void (*function)()) noexcept {
+    return ::at_quick_exit(function);
+}
+#else
+using ::atexit;
+using ::at_quick_exit;
+#endif
+using ::exit;
+using ::_Exit;
+using ::quick_exit;
+using ::getenv;
+using ::system;
+#if defined(_WIN32)
+inline void* malloc(size_t size) { return ::_aligned_malloc(size, alignof(max_align_t)); }
+inline void free(void* pointer) { ::_aligned_free(pointer); }
+inline void* realloc(void* pointer, size_t size) {
+    return ::_aligned_realloc(pointer, size, alignof(max_align_t));
+}
+inline void* calloc(size_t count, size_t size) {
+    if (size && count > size_t(-1) / size) return nullptr;
+    auto* result = static_cast<unsigned char*>(malloc(count * size));
+    if (result) for (size_t i = 0; i < count * size; ++i) result[i] = 0;
+    return result;
+}
+#else
+using ::calloc;
+using ::free;
+using ::malloc;
+using ::realloc;
+#endif
+using ::atof;
+using ::atoi;
+using ::atol;
+using ::atoll;
+using ::strtod;
+using ::strtof;
+using ::strtold;
+using ::strtol;
+using ::strtoll;
+using ::strtoul;
+using ::strtoull;
+using ::mblen;
+using ::mbtowc;
+using ::wctomb;
+using ::mbstowcs;
+using ::wcstombs;
+using ::bsearch;
+using ::qsort;
+using ::rand;
+using ::srand;
+
+#if defined(_WIN32)
+inline void* aligned_alloc(size_t alignment, size_t size) {
+    return size % alignment ? nullptr : ::_aligned_malloc(size, alignment);
+}
+#else
+using ::aligned_alloc;
+#endif
+
+constexpr int abs(int value) { return value < 0 ? -value : value; }
+constexpr long abs(long value) { return value < 0 ? -value : value; }
+constexpr long long abs(long long value) { return value < 0 ? -value : value; }
+constexpr float abs(float value) { return value < 0 ? -value : value; }
+constexpr double abs(double value) { return value < 0 ? -value : value; }
+constexpr long double abs(long double value) { return value < 0 ? -value : value; }
+constexpr long labs(long value) { return abs(value); }
+constexpr long long llabs(long long value) { return abs(value); }
+constexpr div_t div(int numer, int denom) { return {numer / denom, numer % denom}; }
+constexpr ldiv_t div(long numer, long denom) { return {numer / denom, numer % denom}; }
+constexpr lldiv_t div(long long numer, long long denom) { return {numer / denom, numer % denom}; }
+constexpr ldiv_t ldiv(long numer, long denom) { return div(numer, denom); }
+constexpr lldiv_t lldiv(long long numer, long long denom) { return div(numer, denom); }
+
+FTL_CSTDLIB_END
+
+#undef FTL_CSTDLIB_BEGIN
+#undef FTL_CSTDLIB_END
+#endif

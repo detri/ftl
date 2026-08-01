@@ -102,6 +102,15 @@ dependency order, not hundreds of individual overloads.
 | `<exception>` | Stage 1.4 |
 | `<typeinfo>` | Stage 1.4 |
 | `<typeindex>` | Stage 1.4 |
+| `<cassert>` | Stage 1.5 |
+| `<cerrno>` | Stage 1.5 |
+| `<cfloat>` | Stage 1.5 |
+| `<climits>` | Stage 1.5 |
+| `<cstdarg>` | Stage 1.5 |
+| `<csetjmp>` | Stage 1.5 |
+| `<csignal>` | Stage 1.5 |
+| `<cstdlib>` | Stage 1.5 |
+| `<cinttypes>` | Stage 1.5 |
 
 ### Seeded headers
 
@@ -132,7 +141,7 @@ remain required when C++23 still specifies them; they are not silently dropped.
 
 | Area | Absent headers |
 |---|---|
-| Language support | `<cassert>`, `<cerrno>`, `<cfloat>`, `<climits>`, `<csetjmp>`, `<csignal>`, `<cstdarg>`, `<cstdlib>`, `<coroutine>` |
+| Language support | `<coroutine>` |
 | Concepts/types/vocabulary | `<any>`, `<bitset>`, `<expected>`, `<ratio>`, `<tuple>`, `<variant>` |
 | Iteration/ranges | `<iterator>`, `<ranges>`, `<span>`, `<mdspan>`, `<generator>` |
 | Algorithms/numerics | `<algorithm>`, `<numeric>`, `<numbers>`, `<random>`, `<valarray>`, `<execution>` |
@@ -140,7 +149,7 @@ remain required when C++23 still specifies them; they are not silently dropped.
 | Containers | `<deque>`, `<flat_map>`, `<flat_set>`, `<forward_list>`, `<list>`, `<map>`, `<queue>`, `<set>`, `<stack>`, `<unordered_map>`, `<unordered_set>`, `<vector>` |
 | Text/encoding | `<charconv>`, `<codecvt>`, `<string>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope |
 | Errors/time/localization | `<chrono>`, `<system_error>`, `<stdexcept>`, `<stacktrace>`, `<locale>`, `<clocale>`, `<ctime>` |
-| C numerics/text | `<cfenv>`, `<cinttypes>`, `<cmath>`, `<complex>`, `<cuchar>`, `<cwchar>`, `<cwctype>` |
+| C numerics/text | `<cfenv>`, `<cmath>`, `<complex>`, `<cuchar>`, `<cwchar>`, `<cwctype>` |
 | I/O/formatting/files | `<cstdio>`, `<fstream>`, `<iomanip>`, `<ios>`, `<iosfwd>`, `<iostream>`, `<istream>`, `<ostream>`, `<sstream>`, `<spanstream>`, `<streambuf>`, `<strstream>`, `<syncstream>`, `<filesystem>`, `<format>`, `<print>` |
 | Concurrency | `<barrier>`, `<condition_variable>`, `<future>`, `<latch>`, `<mutex>`, `<semaphore>`, `<shared_mutex>`, `<stop_token>`, `<thread>` |
 | C compatibility | `<stdatomic.h>` |
@@ -246,6 +255,8 @@ container.
 new closure begins with a synopsis checklist in its tracking issue.
 
 ### Stage 1 — Complete the scalar foundation
+
+**Status: complete.**
 
 Take these closures in order:
 

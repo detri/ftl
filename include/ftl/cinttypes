@@ -1,0 +1,254 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CINTTYPES_HEADER
+#define FTL_CINTTYPES_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <cstdint>
+#define FTL_CINTTYPES_BEGIN namespace std {
+#define FTL_CINTTYPES_END }
+#else
+#include <ftl/cstdint>
+#define FTL_CINTTYPES_BEGIN namespace ftl {
+#define FTL_CINTTYPES_END }
+#endif
+
+#if defined(_MSC_VER)
+#define FTL_INTMAX_TYPE long long
+#define FTL_UINTMAX_TYPE unsigned long long
+#else
+#define FTL_INTMAX_TYPE __INTMAX_TYPE__
+#define FTL_UINTMAX_TYPE __UINTMAX_TYPE__
+#endif
+extern "C" {
+FTL_INTMAX_TYPE strtoimax(const char*, char**, int);
+FTL_UINTMAX_TYPE strtoumax(const char*, char**, int);
+FTL_INTMAX_TYPE wcstoimax(const wchar_t*, wchar_t**, int);
+FTL_UINTMAX_TYPE wcstoumax(const wchar_t*, wchar_t**, int);
+}
+
+FTL_CINTTYPES_BEGIN
+struct imaxdiv_t { intmax_t quot, rem; };
+constexpr intmax_t imaxabs(intmax_t value) { return value < 0 ? -value : value; }
+constexpr imaxdiv_t imaxdiv(intmax_t numer, intmax_t denom) {
+    return {numer / denom, numer % denom};
+}
+using ::strtoimax;
+using ::strtoumax;
+using ::wcstoimax;
+using ::wcstoumax;
+FTL_CINTTYPES_END
+
+#if defined(_WIN32)
+#define FTL_PRI8 "hh"
+#define FTL_PRI16 "h"
+#define FTL_PRI32 ""
+#define FTL_PRI64 "ll"
+#define FTL_PRIPTR "ll"
+#define FTL_PRIMAX "ll"
+#elif defined(__APPLE__)
+#define FTL_PRI8 "hh"
+#define FTL_PRI16 "h"
+#define FTL_PRI32 ""
+#define FTL_PRI64 "ll"
+#define FTL_PRIPTR "l"
+#define FTL_PRIMAX "l"
+#else
+#define FTL_PRI8 "hh"
+#define FTL_PRI16 "h"
+#define FTL_PRI32 ""
+#define FTL_PRI64 "l"
+#define FTL_PRIPTR "l"
+#define FTL_PRIMAX "l"
+#endif
+
+#define PRId8 FTL_PRI8 "d"
+#define PRIi8 FTL_PRI8 "i"
+#define PRIo8 FTL_PRI8 "o"
+#define PRIu8 FTL_PRI8 "u"
+#define PRIx8 FTL_PRI8 "x"
+#define PRIX8 FTL_PRI8 "X"
+#define PRId16 FTL_PRI16 "d"
+#define PRIi16 FTL_PRI16 "i"
+#define PRIo16 FTL_PRI16 "o"
+#define PRIu16 FTL_PRI16 "u"
+#define PRIx16 FTL_PRI16 "x"
+#define PRIX16 FTL_PRI16 "X"
+#define PRId32 FTL_PRI32 "d"
+#define PRIi32 FTL_PRI32 "i"
+#define PRIo32 FTL_PRI32 "o"
+#define PRIu32 FTL_PRI32 "u"
+#define PRIx32 FTL_PRI32 "x"
+#define PRIX32 FTL_PRI32 "X"
+#define PRId64 FTL_PRI64 "d"
+#define PRIi64 FTL_PRI64 "i"
+#define PRIo64 FTL_PRI64 "o"
+#define PRIu64 FTL_PRI64 "u"
+#define PRIx64 FTL_PRI64 "x"
+#define PRIX64 FTL_PRI64 "X"
+
+#define PRIdLEAST8 PRId8
+#define PRIiLEAST8 PRIi8
+#define PRIoLEAST8 PRIo8
+#define PRIuLEAST8 PRIu8
+#define PRIxLEAST8 PRIx8
+#define PRIXLEAST8 PRIX8
+#define PRIdLEAST16 PRId16
+#define PRIiLEAST16 PRIi16
+#define PRIoLEAST16 PRIo16
+#define PRIuLEAST16 PRIu16
+#define PRIxLEAST16 PRIx16
+#define PRIXLEAST16 PRIX16
+#define PRIdLEAST32 PRId32
+#define PRIiLEAST32 PRIi32
+#define PRIoLEAST32 PRIo32
+#define PRIuLEAST32 PRIu32
+#define PRIxLEAST32 PRIx32
+#define PRIXLEAST32 PRIX32
+#define PRIdLEAST64 PRId64
+#define PRIiLEAST64 PRIi64
+#define PRIoLEAST64 PRIo64
+#define PRIuLEAST64 PRIu64
+#define PRIxLEAST64 PRIx64
+#define PRIXLEAST64 PRIX64
+
+#define PRIdFAST8 PRId8
+#define PRIiFAST8 PRIi8
+#define PRIoFAST8 PRIo8
+#define PRIuFAST8 PRIu8
+#define PRIxFAST8 PRIx8
+#define PRIXFAST8 PRIX8
+#if defined(_WIN32)
+#define PRIdFAST16 PRId32
+#define PRIiFAST16 PRIi32
+#define PRIoFAST16 PRIo32
+#define PRIuFAST16 PRIu32
+#define PRIxFAST16 PRIx32
+#define PRIXFAST16 PRIX32
+#define PRIdFAST32 PRId32
+#define PRIiFAST32 PRIi32
+#define PRIoFAST32 PRIo32
+#define PRIuFAST32 PRIu32
+#define PRIxFAST32 PRIx32
+#define PRIXFAST32 PRIX32
+#elif defined(__APPLE__)
+#define PRIdFAST16 PRId16
+#define PRIiFAST16 PRIi16
+#define PRIoFAST16 PRIo16
+#define PRIuFAST16 PRIu16
+#define PRIxFAST16 PRIx16
+#define PRIXFAST16 PRIX16
+#define PRIdFAST32 PRId32
+#define PRIiFAST32 PRIi32
+#define PRIoFAST32 PRIo32
+#define PRIuFAST32 PRIu32
+#define PRIxFAST32 PRIx32
+#define PRIXFAST32 PRIX32
+#else
+#define PRIdFAST16 PRId64
+#define PRIiFAST16 PRIi64
+#define PRIoFAST16 PRIo64
+#define PRIuFAST16 PRIu64
+#define PRIxFAST16 PRIx64
+#define PRIXFAST16 PRIX64
+#define PRIdFAST32 PRId64
+#define PRIiFAST32 PRIi64
+#define PRIoFAST32 PRIo64
+#define PRIuFAST32 PRIu64
+#define PRIxFAST32 PRIx64
+#define PRIXFAST32 PRIX64
+#endif
+#define PRIdFAST64 PRId64
+#define PRIiFAST64 PRIi64
+#define PRIoFAST64 PRIo64
+#define PRIuFAST64 PRIu64
+#define PRIxFAST64 PRIx64
+#define PRIXFAST64 PRIX64
+
+#define PRIdMAX FTL_PRIMAX "d"
+#define PRIiMAX FTL_PRIMAX "i"
+#define PRIoMAX FTL_PRIMAX "o"
+#define PRIuMAX FTL_PRIMAX "u"
+#define PRIxMAX FTL_PRIMAX "x"
+#define PRIXMAX FTL_PRIMAX "X"
+#define PRIdPTR FTL_PRIPTR "d"
+#define PRIiPTR FTL_PRIPTR "i"
+#define PRIoPTR FTL_PRIPTR "o"
+#define PRIuPTR FTL_PRIPTR "u"
+#define PRIxPTR FTL_PRIPTR "x"
+#define PRIXPTR FTL_PRIPTR "X"
+
+#define SCNd8 PRId8
+#define SCNi8 PRIi8
+#define SCNo8 PRIo8
+#define SCNu8 PRIu8
+#define SCNx8 PRIx8
+#define SCNd16 PRId16
+#define SCNi16 PRIi16
+#define SCNo16 PRIo16
+#define SCNu16 PRIu16
+#define SCNx16 PRIx16
+#define SCNd32 PRId32
+#define SCNi32 PRIi32
+#define SCNo32 PRIo32
+#define SCNu32 PRIu32
+#define SCNx32 PRIx32
+#define SCNd64 PRId64
+#define SCNi64 PRIi64
+#define SCNo64 PRIo64
+#define SCNu64 PRIu64
+#define SCNx64 PRIx64
+#define SCNdLEAST8 SCNd8
+#define SCNiLEAST8 SCNi8
+#define SCNoLEAST8 SCNo8
+#define SCNuLEAST8 SCNu8
+#define SCNxLEAST8 SCNx8
+#define SCNdLEAST16 SCNd16
+#define SCNiLEAST16 SCNi16
+#define SCNoLEAST16 SCNo16
+#define SCNuLEAST16 SCNu16
+#define SCNxLEAST16 SCNx16
+#define SCNdLEAST32 SCNd32
+#define SCNiLEAST32 SCNi32
+#define SCNoLEAST32 SCNo32
+#define SCNuLEAST32 SCNu32
+#define SCNxLEAST32 SCNx32
+#define SCNdLEAST64 SCNd64
+#define SCNiLEAST64 SCNi64
+#define SCNoLEAST64 SCNo64
+#define SCNuLEAST64 SCNu64
+#define SCNxLEAST64 SCNx64
+#define SCNdFAST8 PRIdFAST8
+#define SCNiFAST8 PRIiFAST8
+#define SCNoFAST8 PRIoFAST8
+#define SCNuFAST8 PRIuFAST8
+#define SCNxFAST8 PRIxFAST8
+#define SCNdFAST16 PRIdFAST16
+#define SCNiFAST16 PRIiFAST16
+#define SCNoFAST16 PRIoFAST16
+#define SCNuFAST16 PRIuFAST16
+#define SCNxFAST16 PRIxFAST16
+#define SCNdFAST32 PRIdFAST32
+#define SCNiFAST32 PRIiFAST32
+#define SCNoFAST32 PRIoFAST32
+#define SCNuFAST32 PRIuFAST32
+#define SCNxFAST32 PRIxFAST32
+#define SCNdFAST64 PRIdFAST64
+#define SCNiFAST64 PRIiFAST64
+#define SCNoFAST64 PRIoFAST64
+#define SCNuFAST64 PRIuFAST64
+#define SCNxFAST64 PRIxFAST64
+#define SCNdMAX PRIdMAX
+#define SCNiMAX PRIiMAX
+#define SCNoMAX PRIoMAX
+#define SCNuMAX PRIuMAX
+#define SCNxMAX PRIxMAX
+#define SCNdPTR PRIdPTR
+#define SCNiPTR PRIiPTR
+#define SCNoPTR PRIoPTR
+#define SCNuPTR PRIuPTR
+#define SCNxPTR PRIxPTR
+
+#undef FTL_INTMAX_TYPE
+#undef FTL_UINTMAX_TYPE
+#endif
