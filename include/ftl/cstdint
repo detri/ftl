@@ -99,9 +99,9 @@ FTL_CSTDINT_END_NAMESPACE
 #define INT64_MAX 9223372036854775807LL
 #define UINT64_MAX 18446744073709551615ULL
 #else
-#define INT64_MIN (-__INT64_C(9223372036854775807) - 1)
-#define INT64_MAX __INT64_C(9223372036854775807)
-#define UINT64_MAX __UINT64_C(18446744073709551615)
+#define INT64_MIN (-__INT64_MAX__ - 1)
+#define INT64_MAX __INT64_MAX__
+#define UINT64_MAX __UINT64_MAX__
 #endif
 
 #define INT_LEAST8_MIN INT8_MIN
@@ -193,11 +193,16 @@ FTL_CSTDINT_END_NAMESPACE
 #define UINT64_C(value) value##ULL
 #define INTMAX_C(value) value##LL
 #define UINTMAX_C(value) value##ULL
+#elif defined(__APPLE__)
+#define INT64_C(value) value##LL
+#define UINT64_C(value) value##ULL
+#define INTMAX_C(value) value##LL
+#define UINTMAX_C(value) value##ULL
 #else
-#define INT64_C(value) __INT64_C(value)
-#define UINT64_C(value) __UINT64_C(value)
-#define INTMAX_C(value) __INT64_C(value)
-#define UINTMAX_C(value) __UINT64_C(value)
+#define INT64_C(value) value##L
+#define UINT64_C(value) value##UL
+#define INTMAX_C(value) value##L
+#define UINTMAX_C(value) value##UL
 #endif
 #endif // INT8_MIN
 
