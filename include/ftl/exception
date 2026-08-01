@@ -20,6 +20,17 @@
 #define FTL_EXCEPTION_NAMESPACE ftl
 #endif
 
+#ifndef __cpp_lib_uncaught_exceptions
+#define __cpp_lib_uncaught_exceptions 201411L
+#endif
+
+#if defined(_CPPUNWIND) || defined(__cpp_exceptions)
+#define FTL_EXCEPTION_HAS_EXCEPTIONS 1
+#endif
+#if defined(_CPPRTTI) || defined(__GXX_RTTI)
+#define FTL_EXCEPTION_HAS_RTTI 1
+#endif
+
 #if defined(_MSC_VER)
 #if defined(_DEBUG)
 #pragma comment(lib, "msvcprtd")
@@ -193,6 +204,10 @@ public:
         exception_ptr(other).swap(*this);
         return *this;
     }
+    exception_ptr& operator=(nullptr_t) noexcept {
+        exception_ptr{}.swap(*this);
+        return *this;
+    }
     ~exception_ptr() noexcept;
     explicit operator bool() const noexcept { return object != nullptr; }
     void swap(exception_ptr& other) noexcept {
@@ -237,9 +252,7 @@ public:
         const exception_ptr& right) noexcept {
         return __ExceptionPtrCompare(&left, &right);
     }
-    friend void swap(exception_ptr& left, exception_ptr& right) noexcept {
-        __ExceptionPtrSwap(&left, &right);
-    }
+    friend void swap(exception_ptr&, exception_ptr&) noexcept;
 
 private:
     void* data1{};
@@ -249,6 +262,12 @@ private:
 
 inline bool operator==(const exception_ptr& value, nullptr_t) noexcept {
     return !value;
+}
+
+inline void swap(exception_ptr& left, exception_ptr& right) noexcept {
+    exception_ptr temporary{left};
+    left = right;
+    right = temporary;
 }
 
 #if defined(FTL_REPLACE_STL) && !defined(_MSC_VER)
@@ -275,14 +294,18 @@ inline bool operator==(const exception_ptr& value, nullptr_t) noexcept {
 }
 #endif
 
-template<class Exception, class... Args>
-exception_ptr make_exception_ptr(Args&&... args) noexcept {
+template<class Exception>
+#ifdef FTL_EXCEPTION_HAS_EXCEPTIONS
+exception_ptr make_exception_ptr(Exception value) noexcept {
     try {
-        throw Exception(FTL_EXCEPTION_NAMESPACE::forward<Args>(args)...);
+        throw value;
     } catch (...) {
         return current_exception();
     }
 }
+#else
+exception_ptr make_exception_ptr(Exception) noexcept;
+#endif
 
 class nested_exception {
 public:
@@ -316,6 +339,7 @@ public:
 }
 
 template<class T>
+#ifdef FTL_EXCEPTION_HAS_EXCEPTIONS
 [[noreturn]] void throw_with_nested(T&& value) {
     using U = decay_t<T>;
     if constexpr (is_class_v<U> && !is_final_v<U> &&
@@ -325,8 +349,12 @@ template<class T>
     else
         throw FTL_EXCEPTION_NAMESPACE::forward<T>(value);
 }
+#else
+[[noreturn]] void throw_with_nested(T&&);
+#endif
 
 template<class T>
+#ifdef FTL_EXCEPTION_HAS_RTTI
 void rethrow_if_nested(const T& value) {
     if constexpr (is_polymorphic_v<T>) {
 #if defined(_MSC_VER) || __has_builtin(__builtin_addressof)
@@ -341,11 +369,16 @@ void rethrow_if_nested(const T& value) {
             nested->rethrow_nested();
     }
 }
+#else
+void rethrow_if_nested(const T&);
+#endif
 
 FTL_EXCEPTION_END_NAMESPACE
 
 #undef FTL_EXCEPTION_BEGIN_NAMESPACE
 #undef FTL_EXCEPTION_END_NAMESPACE
 #undef FTL_EXCEPTION_NAMESPACE
+#undef FTL_EXCEPTION_HAS_EXCEPTIONS
+#undef FTL_EXCEPTION_HAS_RTTI
 
 #endif // FTL_EXCEPTION_HEADER

@@ -90,11 +90,14 @@ endfunction()
 
 function(add_ftl_disabled_features_check name source)
     add_ftl_standalone_check(${name} ${source})
-    target_compile_definitions(ftl_check_${name} PRIVATE FTL_NO_THREADS)
+    target_compile_definitions(ftl_check_${name} PRIVATE
+        FTL_NO_THREADS FTL_REPLACE_STL)
+    target_include_directories(ftl_check_${name} PRIVATE ../include/ftl)
     if(MSVC)
-        target_compile_options(ftl_check_${name} PRIVATE /EHs-c- /GR-)
+        target_compile_options(ftl_check_${name} PRIVATE /EHs-c- /GR- /X)
     else()
-        target_compile_options(ftl_check_${name} PRIVATE -fno-exceptions -fno-rtti)
+        target_compile_options(ftl_check_${name} PRIVATE
+            -fno-exceptions -fno-rtti -nostdinc++)
     endif()
 endfunction()
 
@@ -124,6 +127,8 @@ foreach(header IN ITEMS
         memory
         atomic
         exception
+        typeinfo
+        typeindex
         optional
         initializer_list
         functional

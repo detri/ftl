@@ -98,6 +98,10 @@ dependency order, not hundreds of individual overloads.
 | `<version>` | Stage 1.3 |
 | `<source_location>` | Stage 1.3 |
 | `<stdfloat>` | Stage 1.3 |
+| `<new>` | Stage 1.4 |
+| `<exception>` | Stage 1.4 |
+| `<typeinfo>` | Stage 1.4 |
+| `<typeindex>` | Stage 1.4 |
 
 ### Seeded headers
 
@@ -106,8 +110,6 @@ synopses:
 
 | Header | Implemented direction | Major remaining groups |
 |---|---|---|
-| `<new>` | allocation declarations and helpers | complete replaceable forms, handlers, alignment/lifetime audit |
-| `<exception>` | base exceptions, exception state/nesting | complete ABI/runtime behavior on all toolchains |
 | `<cstring>` | common byte/string operations | complete C++23 C-string synopsis |
 | `<atomic>` | integral atomics and memory orders | generic/pointer atomics, `atomic_ref`, flag, fences, wait/notify, lock-free rules |
 | `<array>` | storage and basic access/modifiers | reverse iteration, tuple protocol, `get`, `to_array`, full comparisons |
@@ -119,9 +121,9 @@ synopses:
 `include/ftl/detail/rapidhash` is an implementation detail, not a standard
 header or roadmap milestone.
 
-Current test gaps are also explicit: `<type_traits>`, `<utility>`,
-`<concepts>`, and `<new>` only receive aggregate compile coverage; every
-seeded header still needs synopsis-level and cross-toolchain coverage.
+Current test gaps are also explicit: `<type_traits>`, `<utility>`, and
+`<concepts>` only receive aggregate compile coverage; every seeded header
+still needs synopsis-level and cross-toolchain coverage.
 
 ### Absent C++23 headers
 
@@ -130,8 +132,8 @@ remain required when C++23 still specifies them; they are not silently dropped.
 
 | Area | Absent headers |
 |---|---|
-| Language support | `<cassert>`, `<cerrno>`, `<cfloat>`, `<climits>`, `<csetjmp>`, `<csignal>`, `<cstdarg>`, `<cstdlib>`, `<coroutine>`, `<typeinfo>` |
-| Concepts/types/vocabulary | `<any>`, `<bitset>`, `<expected>`, `<ratio>`, `<tuple>`, `<typeindex>`, `<variant>` |
+| Language support | `<cassert>`, `<cerrno>`, `<cfloat>`, `<climits>`, `<csetjmp>`, `<csignal>`, `<cstdarg>`, `<cstdlib>`, `<coroutine>` |
+| Concepts/types/vocabulary | `<any>`, `<bitset>`, `<expected>`, `<ratio>`, `<tuple>`, `<variant>` |
 | Iteration/ranges | `<iterator>`, `<ranges>`, `<span>`, `<mdspan>`, `<generator>` |
 | Algorithms/numerics | `<algorithm>`, `<numeric>`, `<numbers>`, `<random>`, `<valarray>`, `<execution>` |
 | Dynamic allocation | `<memory_resource>`, `<scoped_allocator>` |

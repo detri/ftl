@@ -3,6 +3,7 @@
 #include <ftl/bit>
 #include <ftl/source_location>
 #include <ftl/stdfloat>
+#include <ftl/version>
 
 #if __cpp_lib_byte != 201603L
 #error <cstddef> must advertise std::byte
@@ -44,6 +45,11 @@
 #endif
 #if __cpp_lib_source_location != 201907L
 #error <source_location> must advertise source locations
+#endif
+#if __cpp_lib_hardware_interference_size != 201703L || \
+    __cpp_lib_launder != 201606L || \
+    __cpp_lib_uncaught_exceptions != 201411L
+#error Stage 1.4 language-support feature macros are incomplete
 #endif
 #ifdef __cpp_lib_stdfloat
 #error N4950 does not define __cpp_lib_stdfloat

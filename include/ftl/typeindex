@@ -1,0 +1,43 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_TYPEINDEX_HEADER
+#define FTL_TYPEINDEX_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <compare>
+#include <typeinfo>
+#else
+#include <ftl/typeinfo>
+#include <ftl/compare>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+template<class T>
+struct hash;
+
+class type_index {
+public:
+    type_index(const type_info& info) noexcept : info_{&info} {}
+    [[nodiscard]] size_t hash_code() const noexcept { return info_->hash_code(); }
+    [[nodiscard]] const char* name() const noexcept { return info_->name(); }
+    [[nodiscard]] bool operator==(const type_index& other) const noexcept {
+        return *info_ == *other.info_;
+    }
+    [[nodiscard]] strong_ordering operator<=>(const type_index& other) const noexcept {
+        if (*this == other) return strong_ordering::equal;
+        return info_->before(*other.info_) ? strong_ordering::less
+                                          : strong_ordering::greater;
+    }
+private:
+    const type_info* info_;
+};
+
+template<> struct hash<type_index> {
+    size_t operator()(const type_index& value) const noexcept {
+        return value.hash_code();
+    }
+};
+
+FTL_END_NAMESPACE
+#endif

@@ -20,8 +20,15 @@ bool exception_ptr_works() {
         pointer = tested::current_exception();
     }
 
+    tested::exception_ptr copy = pointer;
+    tested::exception_ptr empty;
+    tested::swap(copy, empty);
+    copy = nullptr;
+    if (copy || !empty || empty != pointer)
+        return false;
+
     try {
-        tested::rethrow_exception(pointer);
+        tested::rethrow_exception(empty);
     } catch (const error& value) {
         return value.what()[0] == 'e';
     }
@@ -61,11 +68,23 @@ bool uncaught_count_works() {
     return observed;
 }
 
+bool make_exception_ptr_works() {
+    try {
+        tested::rethrow_exception(tested::make_exception_ptr(error{}));
+    } catch (const error&) {
+        return true;
+    }
+    return false;
+}
+
 static_assert(tested::is_base_of_v<tested::exception, tested::bad_alloc>);
 static_assert(tested::is_base_of_v<tested::exception, tested::bad_weak_ptr>);
 
 bool ftl_test() {
-    return exception_ptr_works() &&
+    const auto handler = tested::get_terminate();
+    const bool terminate_handler_works =
+        tested::set_terminate(handler) == handler;
+    return terminate_handler_works && exception_ptr_works() &&
            nested_exception_works() &&
-           uncaught_count_works();
+           uncaught_count_works() && make_exception_ptr_works();
 }
