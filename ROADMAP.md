@@ -73,8 +73,7 @@ Status terms used below:
 
 - **Seeded**: a header exists and implements a useful subset.
 - **Absent**: no public header exists.
-- **Complete**: satisfies the five gates above. No header is claimed complete
-  yet.
+- **Complete**: satisfies the five gates above.
 
 Before work starts on a closure, create a tracking issue and copy each
 header's C++23 synopsis into it as a checklist. Include the relevant tests,
@@ -83,16 +82,21 @@ dependency order, not hundreds of individual overloads.
 
 ## Current inventory
 
+### Complete headers
+
+| Header | Completed closure |
+|---|---|
+| `<cstddef>` | Stage 1.1 |
+| `<cstdint>` | Stage 1.1 |
+| `<initializer_list>` | Stage 1.1 |
+
 ### Seeded headers
 
-All current public headers are incomplete until audited against their C++23
+The remaining public headers are incomplete until audited against their C++23
 synopses:
 
 | Header | Implemented direction | Major remaining groups |
 |---|---|---|
-| `<cstddef>` | fundamental types, `byte` | synopsis/macros and platform audit |
-| `<cstdint>` | fixed/least/fast/pointer integer types | exact optional types, limits/macros, platform audit |
-| `<initializer_list>` | `initializer_list` | conformance and compiler-ABI audit |
 | `<type_traits>` | broad trait foundation | full C++23 synopsis, edge cases, compiler matrix |
 | `<utility>` | move/forward/swap/exchange helpers | `pair`, integer sequences, comparison helpers, full synopsis |
 | `<concepts>` | common language concepts | common-reference/common-type and remaining comparison/object concepts |
@@ -111,7 +115,7 @@ synopses:
 `include/ftl/detail/rapidhash` is an implementation detail, not a standard
 header or roadmap milestone.
 
-Current test gaps are also explicit: `<cstddef>`, `<type_traits>`, `<utility>`,
+Current test gaps are also explicit: `<type_traits>`, `<utility>`,
 `<concepts>`, and `<new>` only receive aggregate compile coverage; every
 seeded header still needs synopsis-level and cross-toolchain coverage.
 

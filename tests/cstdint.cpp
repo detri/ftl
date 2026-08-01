@@ -10,7 +10,37 @@ namespace tested = ftl;
 #endif
 
 #ifndef FTL_REPLACE_STL
-static_assert(ftl::is_same_v<ftl::int64_t, std::int64_t>);
+#define FTL_SAME_CSTDINT_TYPE(name) \
+    static_assert(ftl::is_same_v<ftl::name, std::name>)
+FTL_SAME_CSTDINT_TYPE(int8_t);
+FTL_SAME_CSTDINT_TYPE(uint8_t);
+FTL_SAME_CSTDINT_TYPE(int16_t);
+FTL_SAME_CSTDINT_TYPE(uint16_t);
+FTL_SAME_CSTDINT_TYPE(int32_t);
+FTL_SAME_CSTDINT_TYPE(uint32_t);
+FTL_SAME_CSTDINT_TYPE(int64_t);
+FTL_SAME_CSTDINT_TYPE(uint64_t);
+FTL_SAME_CSTDINT_TYPE(int_least8_t);
+FTL_SAME_CSTDINT_TYPE(uint_least8_t);
+FTL_SAME_CSTDINT_TYPE(int_least16_t);
+FTL_SAME_CSTDINT_TYPE(uint_least16_t);
+FTL_SAME_CSTDINT_TYPE(int_least32_t);
+FTL_SAME_CSTDINT_TYPE(uint_least32_t);
+FTL_SAME_CSTDINT_TYPE(int_least64_t);
+FTL_SAME_CSTDINT_TYPE(uint_least64_t);
+FTL_SAME_CSTDINT_TYPE(int_fast8_t);
+FTL_SAME_CSTDINT_TYPE(uint_fast8_t);
+FTL_SAME_CSTDINT_TYPE(int_fast16_t);
+FTL_SAME_CSTDINT_TYPE(uint_fast16_t);
+FTL_SAME_CSTDINT_TYPE(int_fast32_t);
+FTL_SAME_CSTDINT_TYPE(uint_fast32_t);
+FTL_SAME_CSTDINT_TYPE(int_fast64_t);
+FTL_SAME_CSTDINT_TYPE(uint_fast64_t);
+FTL_SAME_CSTDINT_TYPE(intptr_t);
+FTL_SAME_CSTDINT_TYPE(uintptr_t);
+FTL_SAME_CSTDINT_TYPE(intmax_t);
+FTL_SAME_CSTDINT_TYPE(uintmax_t);
+#undef FTL_SAME_CSTDINT_TYPE
 #endif
 
 static_assert(sizeof(tested::uint8_t) == 1);
@@ -57,5 +87,15 @@ static_assert(INT64_C(1) == tested::int64_t{1});
 static_assert(UINT64_C(1) == tested::uint64_t{1});
 static_assert(INTMAX_C(1) == tested::intmax_t{1});
 static_assert(UINTMAX_C(1) == tested::uintmax_t{1});
+static_assert(tested::is_same_v<decltype(INT8_C(1)), int>);
+static_assert(tested::is_same_v<decltype(UINT8_C(1)), int>);
+static_assert(tested::is_same_v<decltype(INT16_C(1)), int>);
+static_assert(tested::is_same_v<decltype(UINT16_C(1)), int>);
+static_assert(tested::is_same_v<decltype(INT32_C(1)), tested::int_least32_t>);
+static_assert(tested::is_same_v<decltype(UINT32_C(1)), tested::uint_least32_t>);
+static_assert(tested::is_same_v<decltype(INT64_C(1)), tested::int_least64_t>);
+static_assert(tested::is_same_v<decltype(UINT64_C(1)), tested::uint_least64_t>);
+static_assert(tested::is_same_v<decltype(INTMAX_C(1)), tested::intmax_t>);
+static_assert(tested::is_same_v<decltype(UINTMAX_C(1)), tested::uintmax_t>);
 
 bool ftl_test() { return true; }
