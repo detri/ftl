@@ -151,6 +151,7 @@ foreach(header IN ITEMS
         cstdlib
         cinttypes
         c_headers
-        string_view)
+        string_view
+        iterator)
     add_ftl_test(${header})
 endforeach()

@@ -111,6 +111,7 @@ dependency order, not hundreds of individual overloads.
 | `<csignal>` | Stage 1.5 |
 | `<cstdlib>` | Stage 1.5 |
 | `<cinttypes>` | Stage 1.5 |
+| `<iterator>` | Stage 2.1 |
 
 ### Seeded headers
 
@@ -143,7 +144,7 @@ remain required when C++23 still specifies them; they are not silently dropped.
 |---|---|
 | Language support | `<coroutine>` |
 | Concepts/types/vocabulary | `<any>`, `<bitset>`, `<expected>`, `<ratio>`, `<tuple>`, `<variant>` |
-| Iteration/ranges | `<iterator>`, `<ranges>`, `<span>`, `<mdspan>`, `<generator>` |
+| Iteration/ranges | `<ranges>`, `<span>`, `<mdspan>`, `<generator>` |
 | Algorithms/numerics | `<algorithm>`, `<numeric>`, `<numbers>`, `<random>`, `<valarray>`, `<execution>` |
 | Dynamic allocation | `<memory_resource>`, `<scoped_allocator>` |
 | Containers | `<deque>`, `<flat_map>`, `<flat_set>`, `<forward_list>`, `<list>`, `<map>`, `<queue>`, `<set>`, `<stack>`, `<unordered_map>`, `<unordered_set>`, `<vector>` |
