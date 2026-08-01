@@ -270,5 +270,4 @@ template<class T> struct numeric_limits<const volatile T> : numeric_limits<T> {}
 
 FTL_END_NAMESPACE
 
-#define __cpp_lib_numeric_limits 199711L
 #endif

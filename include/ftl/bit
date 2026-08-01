@@ -36,11 +36,15 @@ constexpr To bit_cast(const From& value) noexcept
 
 namespace detail {
 template<class T>
-concept bit_unsigned = is_same_v<remove_cv_t<T>, unsigned char> ||
-    is_same_v<remove_cv_t<T>, unsigned short> ||
-    is_same_v<remove_cv_t<T>, unsigned int> ||
-    is_same_v<remove_cv_t<T>, unsigned long> ||
-    is_same_v<remove_cv_t<T>, unsigned long long>;
+concept bit_unsigned = is_integral_v<T> && is_unsigned_v<T> &&
+    !is_same_v<remove_cv_t<T>, bool> &&
+    !is_same_v<remove_cv_t<T>, char> &&
+    !is_same_v<remove_cv_t<T>, wchar_t> &&
+#ifdef __cpp_char8_t
+    !is_same_v<remove_cv_t<T>, char8_t> &&
+#endif
+    !is_same_v<remove_cv_t<T>, char16_t> &&
+    !is_same_v<remove_cv_t<T>, char32_t>;
 }
 
 template<detail::bit_unsigned T>
@@ -127,15 +131,20 @@ constexpr T bit_ceil(T value) noexcept {
     return value <= 1 ? T(1) : T(T(1) << bit_width(T(value - 1)));
 }
 
-template<class T> requires (is_integral_v<T> && !is_same_v<remove_cv_t<T>, bool>)
+template<class T> requires is_integral_v<T>
 constexpr T byteswap(T value) noexcept {
-    using U = make_unsigned_t<T>;
-    U source = U(value), result = 0;
-    for (size_t index = 0; index < sizeof(T); ++index) {
-        result = U((result << 8) | (source & U(0xff)));
-        source >>= 8;
+    static_assert(has_unique_object_representations_v<T>);
+    if constexpr (sizeof(T) == 1) {
+        return value;
+    } else {
+        using U = make_unsigned_t<T>;
+        U source = U(value), result = 0;
+        for (size_t index = 0; index < sizeof(T); ++index) {
+            result = U((result << 8) | (source & U(0xff)));
+            source >>= 8;
+        }
+        return T(result);
     }
-    return T(result);
 }
 
 #define __cpp_lib_bit_cast 201806L
