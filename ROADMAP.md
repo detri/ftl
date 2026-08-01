@@ -121,9 +121,9 @@ synopses:
 `include/ftl/detail/rapidhash` is an implementation detail, not a standard
 header or roadmap milestone.
 
-Current test gaps are also explicit: `<type_traits>`, `<utility>`,
-`<concepts>`, and `<new>` only receive aggregate compile coverage; every
-seeded header still needs synopsis-level and cross-toolchain coverage.
+Current test gaps are also explicit: `<type_traits>`, `<utility>`, and
+`<concepts>` only receive aggregate compile coverage; every seeded header
+still needs synopsis-level and cross-toolchain coverage.
 
 ### Absent C++23 headers
 
