@@ -76,6 +76,13 @@
 #define FTL_HAS_IS_ENUM 0
 #endif
 
+#if __has_builtin(__is_scoped_enum)
+#define FTL_HAS_IS_SCOPED_ENUM 1
+#define FTL_IS_SCOPED_ENUM(T) __is_scoped_enum(T)
+#else
+#define FTL_HAS_IS_SCOPED_ENUM 0
+#endif
+
 #if __has_builtin(__is_abstract) || FTL_NATIVE_MSVC
 #define FTL_HAS_IS_ABSTRACT 1
 #define FTL_IS_ABSTRACT(T) __is_abstract(T)
@@ -226,14 +233,14 @@
 #define FTL_HAS_UNDERLYING_TYPE 0
 #endif
 
-#if __has_builtin(__is_layout_compatible)
+#if __has_builtin(__is_layout_compatible) || FTL_NATIVE_MSVC
 #define FTL_HAS_IS_LAYOUT_COMPATIBLE 1
 #define FTL_IS_LAYOUT_COMPATIBLE(T, U) __is_layout_compatible(T, U)
 #else
 #define FTL_HAS_IS_LAYOUT_COMPATIBLE 0
 #endif
 
-#if __has_builtin(__is_pointer_interconvertible_base_of)
+#if __has_builtin(__is_pointer_interconvertible_base_of) || FTL_NATIVE_MSVC
 #define FTL_HAS_IS_POINTER_INTERCONVERTIBLE_BASE_OF 1
 #define FTL_IS_POINTER_INTERCONVERTIBLE_BASE_OF(T, U) __is_pointer_interconvertible_base_of(T, U)
 #else
@@ -301,15 +308,18 @@
 
 FTL_BEGIN_NAMESPACE
 
-template<bool Value>
-struct bool_constant {
-    static constexpr bool value = Value;
-    using value_type = bool;
-    using type       = bool_constant;
+template<class T, T Value>
+struct integral_constant {
+    static constexpr T value = Value;
+    using value_type = T;
+    using type       = integral_constant;
 
     constexpr operator value_type() const noexcept { return value; }
     constexpr value_type operator()() const noexcept { return value; }
 };
+
+template<bool Value>
+using bool_constant = integral_constant<bool, Value>;
 
 using true_type  = bool_constant<true>;
 using false_type = bool_constant<false>;
@@ -636,46 +646,40 @@ template<class T>
 using remove_all_extents_t = typename remove_all_extents<T>::type;
 
 template<class T>
-struct rank : bool_constant<false> {
-    static constexpr size_t value = 0;
-};
+struct rank : integral_constant<size_t, 0> {};
 
 template<class T>
-struct rank<T[]> {
-    static constexpr size_t value = rank<T>::value + 1;
-};
+struct rank<T[]> : integral_constant<size_t, rank<T>::value + 1> {};
 
 template<class T, size_t N>
-struct rank<T[N]> {
-    static constexpr size_t value = rank<T>::value + 1;
-};
+struct rank<T[N]> : integral_constant<size_t, rank<T>::value + 1> {};
 
 template<class T>
 inline constexpr size_t rank_v = rank<T>::value;
 
 template<class T, unsigned Dimension = 0>
-struct extent {
-    static constexpr size_t value = 0;
-};
+struct extent : integral_constant<size_t, 0> {};
 
 template<class T>
-struct extent<T[], 0> {
-    static constexpr size_t value = 0;
-};
+struct extent<T[], 0> : integral_constant<size_t, 0> {};
 
 template<class T, unsigned Dimension>
 struct extent<T[], Dimension> : extent<T, Dimension - 1> {};
 
 template<class T, size_t N>
-struct extent<T[N], 0> {
-    static constexpr size_t value = N;
-};
+struct extent<T[N], 0> : integral_constant<size_t, N> {};
 
 template<class T, size_t N, unsigned Dimension>
 struct extent<T[N], Dimension> : extent<T, Dimension - 1> {};
 
 template<class T, unsigned Dimension = 0>
 inline constexpr size_t extent_v = extent<T, Dimension>::value;
+
+template<class T>
+struct alignment_of : integral_constant<size_t, alignof(T)> {};
+
+template<class T>
+inline constexpr size_t alignment_of_v = alignment_of<T>::value;
 
 template<class T>
 struct is_object
@@ -734,10 +738,15 @@ using add_rvalue_reference_t = typename add_rvalue_reference<T>::type;
 template<class T>
 add_rvalue_reference_t<T> declval() noexcept;
 
+namespace detail {
 template<class T>
-struct add_pointer {
-    using type = remove_reference_t<T>*;
-};
+auto try_add_pointer(int) -> type_identity<remove_reference_t<T>*>;
+template<class T>
+auto try_add_pointer(...) -> type_identity<T>;
+}
+
+template<class T>
+struct add_pointer : decltype(detail::try_add_pointer<T>(0)) {};
 
 template<class T>
 using add_pointer_t = typename add_pointer<T>::type;
@@ -753,6 +762,214 @@ public:
 
 template<class T>
 using decay_t = typename decay<T>::type;
+
+template<class T>
+struct unwrap_reference { using type = T; };
+
+template<class T> class reference_wrapper;
+
+template<class T>
+struct unwrap_reference<reference_wrapper<T>> { using type = T&; };
+
+template<class T>
+using unwrap_reference_t = typename unwrap_reference<T>::type;
+
+template<class T>
+struct unwrap_ref_decay : unwrap_reference<decay_t<T>> {};
+
+template<class T>
+using unwrap_ref_decay_t = typename unwrap_ref_decay<T>::type;
+
+template<class... T>
+struct common_type;
+
+namespace detail {
+template<class T, class U, class = void>
+struct common_type_const {};
+
+template<class T, class U>
+struct common_type_const<T, U, void_t<decltype(false
+    ? declval<const T&>() : declval<const U&>())>> {
+    using type = decay_t<decltype(false
+        ? declval<const T&>() : declval<const U&>())>;
+};
+
+template<class T, class U, class = void>
+struct common_type_two : common_type_const<T, U> {};
+
+template<class T, class U>
+struct common_type_two<T, U, void_t<decltype(false
+    ? declval<T>() : declval<U>())>> {
+    using type = decay_t<decltype(false ? declval<T>() : declval<U>())>;
+};
+
+template<class T, class U,
+         bool = is_same_v<T, decay_t<T>> && is_same_v<U, decay_t<U>>>
+struct common_type_dispatch : common_type<decay_t<T>, decay_t<U>> {};
+
+template<class T, class U>
+struct common_type_dispatch<T, U, true> : common_type_two<T, U> {};
+}
+
+template<>
+struct common_type<> {};
+
+template<class T>
+struct common_type<T> : common_type<T, T> {};
+
+template<class T, class U>
+struct common_type<T, U> : detail::common_type_dispatch<T, U> {};
+
+template<class T, class U, class... Rest>
+struct common_type<T, U, Rest...>;
+
+template<class... T>
+using common_type_t = typename common_type<T...>::type;
+
+template<class T, class U, template<class> class TQual,
+         template<class> class UQual>
+struct basic_common_reference {};
+
+namespace detail {
+template<class From, class To>
+struct copy_cv { using type = To; };
+template<class From, class To>
+struct copy_cv<const From, To> { using type = const To; };
+template<class From, class To>
+struct copy_cv<volatile From, To> { using type = volatile To; };
+template<class From, class To>
+struct copy_cv<const volatile From, To> { using type = const volatile To; };
+
+template<class T>
+struct xref {
+    template<class U>
+    using apply = typename copy_cv<remove_reference_t<T>, U>::type;
+};
+template<class T>
+struct xref<T&> {
+    template<class U>
+    using apply = typename copy_cv<remove_reference_t<T>, U>::type&;
+};
+template<class T>
+struct xref<T&&> {
+    template<class U>
+    using apply = typename copy_cv<remove_reference_t<T>, U>::type&&;
+};
+
+template<class T, class U, class = void>
+struct common_ref {};
+
+template<class From, class To>
+inline constexpr bool convertible_intrinsic_v =
+    bool(FTL_IS_CONVERTIBLE(From, To));
+
+template<class T, class U>
+    requires is_reference_v<decltype(false ? declval<T&>() : declval<U&>())>
+struct common_ref<T&, U&, void_t<decltype(false ? declval<T&>()
+                                              : declval<U&>())>> {
+    using type = decltype(false ? declval<T&>() : declval<U&>());
+};
+
+template<class T, class U>
+    requires convertible_intrinsic_v<
+                 T&&, typename common_ref<T&, U&>::type&&> &&
+             convertible_intrinsic_v<
+                 U&&, typename common_ref<T&, U&>::type&&>
+struct common_ref<T&&, U&&, void_t<typename common_ref<T&, U&>::type>> {
+    using type = typename common_ref<T&, U&>::type&&;
+};
+
+template<class T, class U>
+    requires convertible_intrinsic_v<
+                 T&&, typename common_ref<const T&, U&>::type>
+struct common_ref<T&&, U&, void_t<typename common_ref<const T&, U&>::type>> {
+    using type = typename common_ref<const T&, U&>::type;
+};
+
+template<class T, class U>
+struct common_ref<T&, U&&> : common_ref<U&&, T&> {};
+
+template<class T, class U>
+concept has_common_ref = requires { typename common_ref<T, U>::type; };
+
+template<class T, class U>
+using basic_common_reference_t = typename basic_common_reference<
+    remove_cvref_t<T>, remove_cvref_t<U>, xref<T>::template apply,
+    xref<U>::template apply>::type;
+
+template<class T, class U>
+concept has_basic_common_reference = requires {
+    typename basic_common_reference_t<T, U>;
+};
+
+template<class T, class U>
+concept has_conditional_result = requires {
+    typename type_identity<decltype(false ? declval<T>() : declval<U>())>::type;
+};
+
+template<class T, class U, bool = has_common_ref<T, U>,
+         bool = has_basic_common_reference<T, U>,
+         bool = has_conditional_result<T, U>>
+struct common_reference_two : common_type<T, U> {};
+
+template<class T, class U, bool HasBasic, bool HasConditional>
+struct common_reference_two<T, U, true, HasBasic, HasConditional>
+    : common_ref<T, U> {};
+
+template<class T, class U, bool HasConditional>
+struct common_reference_two<T, U, false, true, HasConditional> {
+    using type = basic_common_reference_t<T, U>;
+};
+
+template<class T, class U>
+struct common_reference_two<T, U, false, false, true> {
+    using type = decltype(false ? declval<T>() : declval<U>());
+};
+
+template<class, class T, class U, class... Rest>
+struct common_type_multi {};
+
+template<class T, class U, class... Rest>
+struct common_type_multi<void_t<typename common_type<T, U>::type>,
+                         T, U, Rest...>
+    : common_type<typename common_type<T, U>::type, Rest...> {};
+}
+
+template<class T, class U, class... Rest>
+struct common_type<T, U, Rest...>
+    : detail::common_type_multi<void, T, U, Rest...> {};
+
+template<class... T>
+struct common_reference;
+
+template<>
+struct common_reference<> {};
+
+template<class T>
+struct common_reference<T> { using type = T; };
+
+template<class T, class U>
+struct common_reference<T, U> : detail::common_reference_two<T, U> {};
+
+template<class T, class U, class... Rest>
+struct common_reference<T, U, Rest...>;
+
+namespace detail {
+template<class, class T, class U, class... Rest>
+struct common_reference_multi {};
+
+template<class T, class U, class... Rest>
+struct common_reference_multi<void_t<typename common_reference<T, U>::type>,
+                              T, U, Rest...>
+    : common_reference<typename common_reference<T, U>::type, Rest...> {};
+}
+
+template<class T, class U, class... Rest>
+struct common_reference<T, U, Rest...>
+    : detail::common_reference_multi<void, T, U, Rest...> {};
+
+template<class... T>
+using common_reference_t = typename common_reference<T...>::type;
 
 template<class>
 struct is_member_pointer_impl : false_type {};
@@ -1016,13 +1233,13 @@ inline constexpr bool is_nothrow_destructible_v =
 #if FTL_HAS_IS_LAYOUT_COMPATIBLE
 template<class T, class U>
 inline constexpr bool is_layout_compatible_v =
-    bool(FTL_IS_LAYOUT_COMPATIBLE(T, U));
+    FTL_IS_LAYOUT_COMPATIBLE(T, U);
 #endif
 
 #if FTL_HAS_IS_POINTER_INTERCONVERTIBLE_BASE_OF
 template<class Base, class Derived>
 inline constexpr bool is_pointer_interconvertible_base_of_v =
-    bool(FTL_IS_POINTER_INTERCONVERTIBLE_BASE_OF(Base, Derived));
+    FTL_IS_POINTER_INTERCONVERTIBLE_BASE_OF(Base, Derived);
 #endif
 
 #if FTL_HAS_IS_IMPLICIT_LIFETIME
@@ -1056,6 +1273,21 @@ struct underlying_type {
 
 template<class T>
 using underlying_type_t = typename underlying_type<T>::type;
+#endif
+
+#if FTL_HAS_IS_SCOPED_ENUM
+template<class T>
+inline constexpr bool is_scoped_enum_v = bool(FTL_IS_SCOPED_ENUM(T));
+#else
+template<class T, bool = is_enum_v<T>>
+struct is_scoped_enum_impl : false_type {};
+
+template<class T>
+struct is_scoped_enum_impl<T, true>
+    : bool_constant<!is_convertible_v<T, underlying_type_t<T>>> {};
+
+template<class T>
+inline constexpr bool is_scoped_enum_v = is_scoped_enum_impl<T>::value;
 #endif
 
 template<class T>
@@ -1164,11 +1396,40 @@ inline constexpr bool is_unsigned_v = is_unsigned<T>::value;
 template<class T>
 struct make_unsigned;
 
+template<class T>
+struct make_signed;
+
+template<class T>
+    requires is_enum_v<T>
+struct make_unsigned<T> {
+private:
+    using converted = typename make_unsigned<underlying_type_t<remove_cv_t<T>>>::type;
+public:
+    using type = typename detail::copy_cv<T, converted>::type;
+};
+
+template<class T>
+    requires is_enum_v<T>
+struct make_signed<T> {
+private:
+    using converted = typename make_signed<underlying_type_t<remove_cv_t<T>>>::type;
+public:
+    using type = typename detail::copy_cv<T, converted>::type;
+};
+
 #define FTL_DETAIL_MAKE_UNSIGNED(FROM, TO)              \
     template<> struct make_unsigned<FROM> { using type = TO; }; \
     template<> struct make_unsigned<const FROM> { using type = const TO; }; \
     template<> struct make_unsigned<volatile FROM> { using type = volatile TO; }; \
     template<> struct make_unsigned<const volatile FROM> { \
+        using type = const volatile TO; \
+    }
+
+#define FTL_DETAIL_MAKE_SIGNED(FROM, TO)                \
+    template<> struct make_signed<FROM> { using type = TO; }; \
+    template<> struct make_signed<const FROM> { using type = const TO; }; \
+    template<> struct make_signed<volatile FROM> { using type = volatile TO; }; \
+    template<> struct make_signed<const volatile FROM> { \
         using type = const volatile TO; \
     }
 
@@ -1183,17 +1444,38 @@ FTL_DETAIL_MAKE_UNSIGNED(long, unsigned long);
 FTL_DETAIL_MAKE_UNSIGNED(unsigned long, unsigned long);
 FTL_DETAIL_MAKE_UNSIGNED(long long, unsigned long long);
 FTL_DETAIL_MAKE_UNSIGNED(unsigned long long, unsigned long long);
+FTL_DETAIL_MAKE_SIGNED(char, signed char);
+FTL_DETAIL_MAKE_SIGNED(signed char, signed char);
+FTL_DETAIL_MAKE_SIGNED(unsigned char, signed char);
+FTL_DETAIL_MAKE_SIGNED(short, short);
+FTL_DETAIL_MAKE_SIGNED(unsigned short, short);
+FTL_DETAIL_MAKE_SIGNED(int, int);
+FTL_DETAIL_MAKE_SIGNED(unsigned int, int);
+FTL_DETAIL_MAKE_SIGNED(long, long);
+FTL_DETAIL_MAKE_SIGNED(unsigned long, long);
+FTL_DETAIL_MAKE_SIGNED(long long, long long);
+FTL_DETAIL_MAKE_SIGNED(unsigned long long, long long);
 using unsigned_wchar_t =
     conditional_t<sizeof(wchar_t) == sizeof(unsigned short),
                   unsigned short, unsigned int>;
 FTL_DETAIL_MAKE_UNSIGNED(wchar_t, unsigned_wchar_t);
+using signed_wchar_t =
+    conditional_t<sizeof(wchar_t) == sizeof(short), short, int>;
+FTL_DETAIL_MAKE_SIGNED(wchar_t, signed_wchar_t);
 FTL_DETAIL_MAKE_UNSIGNED(char8_t, unsigned char);
 FTL_DETAIL_MAKE_UNSIGNED(char16_t, unsigned short);
 FTL_DETAIL_MAKE_UNSIGNED(char32_t, unsigned int);
+FTL_DETAIL_MAKE_SIGNED(char8_t, signed char);
+FTL_DETAIL_MAKE_SIGNED(char16_t, short);
+FTL_DETAIL_MAKE_SIGNED(char32_t, int);
 #undef FTL_DETAIL_MAKE_UNSIGNED
+#undef FTL_DETAIL_MAKE_SIGNED
 
 template<class T>
 using make_unsigned_t = typename make_unsigned<T>::type;
+
+template<class T>
+using make_signed_t = typename make_signed<T>::type;
 
 constexpr bool is_constant_evaluated() noexcept {
     if consteval {
@@ -1243,6 +1525,7 @@ inline constexpr bool negation_v = negation<T>::value;
 FTL_DETAIL_UNARY_TRAIT(is_union);
 FTL_DETAIL_UNARY_TRAIT(is_class);
 FTL_DETAIL_UNARY_TRAIT(is_enum);
+FTL_DETAIL_UNARY_TRAIT(is_scoped_enum);
 FTL_DETAIL_UNARY_TRAIT(is_abstract);
 FTL_DETAIL_UNARY_TRAIT(is_aggregate);
 FTL_DETAIL_UNARY_TRAIT(is_empty);
@@ -1251,9 +1534,26 @@ FTL_DETAIL_UNARY_TRAIT(is_polymorphic);
 FTL_DETAIL_UNARY_TRAIT(is_standard_layout);
 FTL_DETAIL_UNARY_TRAIT(is_trivial);
 FTL_DETAIL_UNARY_TRAIT(is_trivially_copyable);
+FTL_DETAIL_UNARY_TRAIT(has_virtual_destructor);
+FTL_DETAIL_UNARY_TRAIT(has_unique_object_representations);
 FTL_DETAIL_BINARY_TRAIT(is_base_of);
 FTL_DETAIL_BINARY_TRAIT(is_assignable);
 FTL_DETAIL_BINARY_TRAIT(is_convertible);
+#if FTL_HAS_IS_LAYOUT_COMPATIBLE
+FTL_DETAIL_BINARY_TRAIT(is_layout_compatible);
+#endif
+#if FTL_HAS_IS_POINTER_INTERCONVERTIBLE_BASE_OF
+FTL_DETAIL_BINARY_TRAIT(is_pointer_interconvertible_base_of);
+#endif
+#if FTL_HAS_IS_IMPLICIT_LIFETIME
+FTL_DETAIL_UNARY_TRAIT(is_implicit_lifetime);
+#endif
+#if FTL_HAS_REFERENCE_CONSTRUCTS_FROM_TEMPORARY
+FTL_DETAIL_BINARY_TRAIT(reference_constructs_from_temporary);
+#endif
+#if FTL_HAS_REFERENCE_CONVERTS_FROM_TEMPORARY
+FTL_DETAIL_BINARY_TRAIT(reference_converts_from_temporary);
+#endif
 #undef FTL_DETAIL_UNARY_TRAIT
 #undef FTL_DETAIL_BINARY_TRAIT
 
@@ -1285,11 +1585,30 @@ template<class T>
 struct is_move_constructible : is_constructible<T, T&&> {};
 
 template<class T>
+struct is_trivially_default_constructible : is_trivially_constructible<T> {};
+
+template<class T>
+struct is_trivially_copy_constructible
+    : is_trivially_constructible<T, const T&> {};
+
+template<class T>
+struct is_trivially_move_constructible : is_trivially_constructible<T, T&&> {};
+
+template<class T>
 inline constexpr bool is_default_constructible_v = is_default_constructible<T>::value;
 template<class T>
 inline constexpr bool is_copy_constructible_v = is_copy_constructible<T>::value;
 template<class T>
 inline constexpr bool is_move_constructible_v = is_move_constructible<T>::value;
+template<class T>
+inline constexpr bool is_trivially_default_constructible_v =
+    is_trivially_default_constructible<T>::value;
+template<class T>
+inline constexpr bool is_trivially_copy_constructible_v =
+    is_trivially_copy_constructible<T>::value;
+template<class T>
+inline constexpr bool is_trivially_move_constructible_v =
+    is_trivially_move_constructible<T>::value;
 
 template<class T>
 struct is_nothrow_default_constructible : is_nothrow_constructible<T> {};
@@ -1318,9 +1637,22 @@ template<class T>
 struct is_move_assignable : is_assignable<T&, T&&> {};
 
 template<class T>
+struct is_trivially_copy_assignable
+    : is_trivially_assignable<T&, const T&> {};
+
+template<class T>
+struct is_trivially_move_assignable : is_trivially_assignable<T&, T&&> {};
+
+template<class T>
 inline constexpr bool is_copy_assignable_v = is_copy_assignable<T>::value;
 template<class T>
 inline constexpr bool is_move_assignable_v = is_move_assignable<T>::value;
+template<class T>
+inline constexpr bool is_trivially_copy_assignable_v =
+    is_trivially_copy_assignable<T>::value;
+template<class T>
+inline constexpr bool is_trivially_move_assignable_v =
+    is_trivially_move_assignable<T>::value;
 
 template<class T>
 struct is_nothrow_copy_assignable : is_nothrow_assignable<T&, const T&> {};
@@ -1334,6 +1666,344 @@ inline constexpr bool is_nothrow_copy_assignable_v =
 template<class T>
 inline constexpr bool is_nothrow_move_assignable_v =
     is_nothrow_move_assignable<T>::value;
+
+namespace detail {
+template<class To>
+void convertible_sink(To) noexcept;
+
+template<class From, class To, bool = is_convertible_v<From, To>,
+         bool = is_void_v<From> || is_void_v<To>>
+struct nothrow_convertible : false_type {};
+
+template<class From, class To>
+struct nothrow_convertible<From, To, true, false>
+    : bool_constant<noexcept(convertible_sink<To>(declval<From>()))> {};
+
+template<class From, class To>
+struct nothrow_convertible<From, To, true, true>
+    : bool_constant<is_void_v<From> && is_void_v<To>> {};
+}
+
+template<class From, class To>
+struct is_nothrow_convertible : detail::nothrow_convertible<From, To> {};
+
+template<class From, class To>
+inline constexpr bool is_nothrow_convertible_v =
+    is_nothrow_convertible<From, To>::value;
+
+template<class T>
+constexpr void swap(T&, T&)
+    noexcept(is_nothrow_move_constructible_v<T> &&
+             is_nothrow_move_assignable_v<T>)
+    requires (is_move_constructible_v<T> && is_move_assignable_v<T>);
+
+template<class T, class U>
+struct is_swappable_with
+    : bool_constant<requires(T&& left, U&& right) {
+        swap(static_cast<T&&>(left), static_cast<U&&>(right));
+        swap(static_cast<U&&>(right), static_cast<T&&>(left));
+    }> {};
+
+template<class T, class U>
+inline constexpr bool is_swappable_with_v = is_swappable_with<T, U>::value;
+
+template<class T>
+struct is_swappable : is_swappable_with<T&, T&> {};
+
+template<class T, size_t N>
+struct is_swappable<T[N]> : is_swappable<T> {};
+
+template<class T>
+inline constexpr bool is_swappable_v = is_swappable<T>::value;
+
+template<class T, class U>
+struct is_nothrow_swappable_with
+    : bool_constant<is_swappable_with_v<T, U> && requires(T&& left, U&& right) {
+        requires noexcept(swap(static_cast<T&&>(left),
+                               static_cast<U&&>(right)));
+        requires noexcept(swap(static_cast<U&&>(right),
+                               static_cast<T&&>(left)));
+    }> {};
+
+template<class T, class U>
+inline constexpr bool is_nothrow_swappable_with_v =
+    is_nothrow_swappable_with<T, U>::value;
+
+template<class T>
+struct is_nothrow_swappable : is_nothrow_swappable_with<T&, T&> {};
+
+template<class T, size_t N>
+struct is_nothrow_swappable<T[N]> : is_nothrow_swappable<T> {};
+
+template<class T>
+inline constexpr bool is_nothrow_swappable_v = is_nothrow_swappable<T>::value;
+
+namespace detail {
+template<class T>
+struct member_pointer_class;
+
+template<class Member, class Class>
+struct member_pointer_class<Member Class::*> { using type = Class; };
+
+template<class T>
+struct is_reference_wrapper : false_type {};
+
+template<class T>
+struct is_reference_wrapper<reference_wrapper<T>> : true_type {};
+
+template<class F, class T, class... Args>
+    requires is_member_function_pointer_v<decay_t<F>> &&
+             is_base_of_v<typename member_pointer_class<decay_t<F>>::type,
+                          decay_t<T>>
+constexpr auto invoke(F&& function, T&& object, Args&&... args)
+    noexcept(noexcept((static_cast<T&&>(object).*function)(
+        static_cast<Args&&>(args)...)))
+    -> decltype((static_cast<T&&>(object).*function)(
+        static_cast<Args&&>(args)...)) {
+    return (static_cast<T&&>(object).*function)(static_cast<Args&&>(args)...);
+}
+
+template<class F, class T, class... Args>
+    requires is_member_function_pointer_v<decay_t<F>> &&
+             is_reference_wrapper<decay_t<T>>::value
+constexpr auto invoke(F&& function, T&& object, Args&&... args)
+    noexcept(noexcept((object.get().*function)(static_cast<Args&&>(args)...)))
+    -> decltype((object.get().*function)(static_cast<Args&&>(args)...)) {
+    return (object.get().*function)(static_cast<Args&&>(args)...);
+}
+
+template<class F, class T, class... Args>
+    requires is_member_function_pointer_v<decay_t<F>> &&
+             (!is_base_of_v<typename member_pointer_class<decay_t<F>>::type,
+                            decay_t<T>>) &&
+             (!is_reference_wrapper<decay_t<T>>::value)
+constexpr auto invoke(F&& function, T&& object, Args&&... args)
+    noexcept(noexcept(((*static_cast<T&&>(object)).*function)(
+        static_cast<Args&&>(args)...)))
+    -> decltype(((*static_cast<T&&>(object)).*function)(
+        static_cast<Args&&>(args)...)) {
+    return ((*static_cast<T&&>(object)).*function)(static_cast<Args&&>(args)...);
+}
+
+template<class F, class T>
+    requires is_member_object_pointer_v<decay_t<F>> &&
+             is_base_of_v<typename member_pointer_class<decay_t<F>>::type,
+                          decay_t<T>>
+constexpr auto invoke(F&& member, T&& object) noexcept
+    -> decltype(static_cast<T&&>(object).*member) {
+    return static_cast<T&&>(object).*member;
+}
+
+template<class F, class T>
+    requires is_member_object_pointer_v<decay_t<F>> &&
+             is_reference_wrapper<decay_t<T>>::value
+constexpr auto invoke(F&& member, T&& object) noexcept
+    -> decltype(object.get().*member) {
+    return object.get().*member;
+}
+
+template<class F, class T>
+    requires is_member_object_pointer_v<decay_t<F>> &&
+             (!is_base_of_v<typename member_pointer_class<decay_t<F>>::type,
+                            decay_t<T>>) &&
+             (!is_reference_wrapper<decay_t<T>>::value)
+constexpr auto invoke(F&& member, T&& object)
+    noexcept(noexcept((*static_cast<T&&>(object)).*member))
+    -> decltype((*static_cast<T&&>(object)).*member) {
+    return (*static_cast<T&&>(object)).*member;
+}
+
+template<class F, class... Args>
+    requires (!is_member_pointer_v<decay_t<F>>)
+constexpr auto invoke(F&& function, Args&&... args)
+    noexcept(noexcept(static_cast<F&&>(function)(static_cast<Args&&>(args)...)))
+    -> decltype(static_cast<F&&>(function)(static_cast<Args&&>(args)...)) {
+    return static_cast<F&&>(function)(static_cast<Args&&>(args)...);
+}
+
+template<class, class F, class... Args>
+struct invoke_result_impl {};
+
+template<class F, class... Args>
+struct invoke_result_impl<void_t<decltype(invoke(
+                              declval<F>(), declval<Args>()...))>,
+                          F, Args...> {
+    using type = decltype(invoke(declval<F>(), declval<Args>()...));
+};
+}
+
+template<class F, class... Args>
+struct invoke_result : detail::invoke_result_impl<void, F, Args...> {};
+
+template<class F, class... Args>
+using invoke_result_t = typename invoke_result<F, Args...>::type;
+
+template<class F, class... Args>
+struct is_invocable
+    : bool_constant<requires { typename invoke_result_t<F, Args...>; }> {};
+
+template<class F, class... Args>
+inline constexpr bool is_invocable_v = is_invocable<F, Args...>::value;
+
+template<class R, class F, class... Args>
+struct is_invocable_r
+    : bool_constant<[] consteval {
+        if constexpr (!is_invocable_v<F, Args...>)
+            return false;
+        else if constexpr (is_void_v<R>)
+            return true;
+        else
+            return requires {
+                detail::convertible_sink<R>(detail::invoke(
+                    declval<F>(), declval<Args>()...));
+            };
+    }()> {};
+
+template<class R, class F, class... Args>
+inline constexpr bool is_invocable_r_v = is_invocable_r<R, F, Args...>::value;
+
+template<class F, class... Args>
+struct is_nothrow_invocable
+    : bool_constant<is_invocable_v<F, Args...> && requires {
+        requires noexcept(detail::invoke(declval<F>(), declval<Args>()...));
+    }> {};
+
+template<class F, class... Args>
+inline constexpr bool is_nothrow_invocable_v =
+    is_nothrow_invocable<F, Args...>::value;
+
+template<class R, class F, class... Args>
+struct is_nothrow_invocable_r
+    : bool_constant<[] consteval {
+        if constexpr (!is_invocable_r_v<R, F, Args...>)
+            return false;
+        else if constexpr (is_void_v<R>)
+            return noexcept(detail::invoke(declval<F>(), declval<Args>()...));
+        else
+            return noexcept(detail::convertible_sink<R>(detail::invoke(
+                declval<F>(), declval<Args>()...)));
+    }()> {};
+
+template<class R, class F, class... Args>
+inline constexpr bool is_nothrow_invocable_r_v =
+    is_nothrow_invocable_r<R, F, Args...>::value;
+
+namespace detail {
+template<class Class>
+union member_storage {
+    char active;
+    Class object;
+    constexpr member_storage() : active{} {}
+    constexpr ~member_storage() {}
+};
+
+template<class Class1, class Class2>
+union corresponding_storage {
+    char active;
+    Class1 left;
+    Class2 right;
+    constexpr corresponding_storage() : active{} {}
+    constexpr ~corresponding_storage() {}
+};
+}
+
+template<class Class, class Member>
+constexpr bool is_pointer_interconvertible_with_class(
+    Member Class::* member) noexcept {
+#if FTL_NATIVE_MSVC
+    return __is_pointer_interconvertible_with_class(Class, member);
+#elif __has_builtin(__builtin_is_pointer_interconvertible_with_class)
+    return __builtin_is_pointer_interconvertible_with_class(member);
+#else
+    detail::member_storage<Class> storage;
+    return static_cast<const volatile void*>(&storage.object) ==
+           static_cast<const volatile void*>(&(storage.object.*member));
+#endif
+}
+
+template<class Class1, class Class2, class Member1, class Member2>
+constexpr bool is_corresponding_member(Member1 Class1::* left,
+                                       Member2 Class2::* right) noexcept {
+#if FTL_NATIVE_MSVC
+    return __is_corresponding_member(Class1, Class2, left, right);
+#elif __has_builtin(__builtin_is_corresponding_member)
+    return __builtin_is_corresponding_member(left, right);
+#else
+    if constexpr (!is_layout_compatible_v<Class1, Class2>)
+        return false;
+    else {
+        detail::corresponding_storage<Class1, Class2> storage;
+        return static_cast<const volatile void*>(&(storage.left.*left)) ==
+               static_cast<const volatile void*>(&(storage.right.*right));
+    }
+#endif
+}
+
+#ifndef __cpp_lib_integral_constant
+#define __cpp_lib_integral_constant 201304L
+#endif
+#ifndef __cpp_lib_transformation_trait_aliases
+#define __cpp_lib_transformation_trait_aliases 201304L
+#endif
+#ifndef __cpp_lib_void_t
+#define __cpp_lib_void_t 201411L
+#endif
+#ifndef __cpp_lib_bool_constant
+#define __cpp_lib_bool_constant 201505L
+#endif
+#ifndef __cpp_lib_logical_traits
+#define __cpp_lib_logical_traits 201510L
+#endif
+#ifndef __cpp_lib_type_trait_variable_templates
+#define __cpp_lib_type_trait_variable_templates 201510L
+#endif
+#ifndef __cpp_lib_has_unique_object_representations
+#define __cpp_lib_has_unique_object_representations 201606L
+#endif
+#ifndef __cpp_lib_is_swappable
+#define __cpp_lib_is_swappable 201603L
+#endif
+#ifndef __cpp_lib_is_aggregate
+#define __cpp_lib_is_aggregate 201703L
+#endif
+#ifndef __cpp_lib_is_invocable
+#define __cpp_lib_is_invocable 201703L
+#endif
+#ifndef __cpp_lib_is_nothrow_convertible
+#define __cpp_lib_is_nothrow_convertible 201806L
+#endif
+#ifndef __cpp_lib_remove_cvref
+#define __cpp_lib_remove_cvref 201711L
+#endif
+#ifndef __cpp_lib_is_constant_evaluated
+#define __cpp_lib_is_constant_evaluated 201811L
+#endif
+#ifndef __cpp_lib_unwrap_ref
+#define __cpp_lib_unwrap_ref 201811L
+#endif
+#ifndef __cpp_lib_bounded_array_traits
+#define __cpp_lib_bounded_array_traits 201902L
+#endif
+#ifndef __cpp_lib_is_layout_compatible
+#define __cpp_lib_is_layout_compatible 201907L
+#endif
+#ifndef __cpp_lib_is_pointer_interconvertible
+#define __cpp_lib_is_pointer_interconvertible 201907L
+#endif
+#ifndef __cpp_lib_is_scoped_enum
+#define __cpp_lib_is_scoped_enum 202011L
+#endif
+#if FTL_HAS_REFERENCE_CONSTRUCTS_FROM_TEMPORARY && \
+    FTL_HAS_REFERENCE_CONVERTS_FROM_TEMPORARY
+#ifndef __cpp_lib_reference_from_temporary
+#define __cpp_lib_reference_from_temporary 202202L
+#endif
+#endif
+#if FTL_HAS_IS_IMPLICIT_LIFETIME
+#ifndef __cpp_lib_is_implicit_lifetime
+#define __cpp_lib_is_implicit_lifetime 202302L
+#endif
+#endif
 
 FTL_END_NAMESPACE
 

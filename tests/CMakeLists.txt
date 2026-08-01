@@ -102,6 +102,14 @@ add_ftl_compile_fail_check(byte_rejects_float checks/compile_fail.cpp)
 add_ftl_compile_fail_check(byte_shift_rejects_float checks/byte_shift_compile_fail.cpp)
 add_ftl_compile_fail_check(initializer_list_rejects_specialization
     checks/initializer_list_specialization_compile_fail.cpp)
+add_ftl_compile_fail_check(type_traits_rejects_make_signed_bool
+    checks/type_traits_make_signed_bool_compile_fail.cpp)
+add_ftl_compile_fail_check(utility_rejects_bad_forward
+    checks/utility_forward_compile_fail.cpp)
+add_ftl_compile_fail_check(compare_rejects_nonzero
+    checks/compare_nonzero_compile_fail.cpp)
+add_ftl_compile_fail_check(pair_rejects_dangling_reference
+    checks/pair_dangling_compile_fail.cpp)
 add_ftl_standalone_check(feature_macros checks/feature_macros.cpp)
 add_ftl_standalone_check(no_allocation checks/no_allocation.cpp)
 add_ftl_freestanding_link_check(freestanding_link checks/freestanding_link.cpp)
