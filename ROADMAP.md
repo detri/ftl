@@ -89,6 +89,10 @@ dependency order, not hundreds of individual overloads.
 | `<cstddef>` | Stage 1.1 |
 | `<cstdint>` | Stage 1.1 |
 | `<initializer_list>` | Stage 1.1 |
+| `<type_traits>` | Stage 1.2 |
+| `<utility>` | Stage 1.2 |
+| `<concepts>` | Stage 1.2 |
+| `<compare>` | Stage 1.2 |
 
 ### Seeded headers
 
@@ -97,10 +101,6 @@ synopses:
 
 | Header | Implemented direction | Major remaining groups |
 |---|---|---|
-| `<type_traits>` | broad trait foundation | full C++23 synopsis, edge cases, compiler matrix |
-| `<utility>` | move/forward/swap/exchange helpers | `pair`, integer sequences, comparison helpers, full synopsis |
-| `<concepts>` | common language concepts | common-reference/common-type and remaining comparison/object concepts |
-| `<compare>` | ordering categories, `compare_three_way` | named predicates, fallback comparators, concepts, full customization rules |
 | `<new>` | allocation declarations and helpers | complete replaceable forms, handlers, alignment/lifetime audit |
 | `<exception>` | base exceptions, exception state/nesting | complete ABI/runtime behavior on all toolchains |
 | `<cstring>` | common byte/string operations | complete C++23 C-string synopsis |

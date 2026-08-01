@@ -4,8 +4,10 @@
 #define FTL_BIT_HEADER
 
 #ifdef FTL_REPLACE_STL
+#include <limits>
 #include <type_traits>
 #else
+#include <ftl/limits>
 #include <ftl/type_traits>
 #endif
 
@@ -34,8 +36,11 @@ constexpr To bit_cast(const From& value) noexcept
 
 namespace detail {
 template<class T>
-concept bit_unsigned =
-    is_unsigned_v<T> && !is_same_v<remove_cv_t<T>, bool>;
+concept bit_unsigned = is_same_v<remove_cv_t<T>, unsigned char> ||
+    is_same_v<remove_cv_t<T>, unsigned short> ||
+    is_same_v<remove_cv_t<T>, unsigned int> ||
+    is_same_v<remove_cv_t<T>, unsigned long> ||
+    is_same_v<remove_cv_t<T>, unsigned long long>;
 }
 
 template<detail::bit_unsigned T>
@@ -45,7 +50,7 @@ constexpr T rotr(T value, int shift) noexcept;
 
 template<detail::bit_unsigned T>
 constexpr T rotl(T value, int shift) noexcept {
-    constexpr int digits = int(sizeof(T) * 8);
+    constexpr int digits = numeric_limits<T>::digits;
     const int amount = shift % digits;
     return amount == 0 ? value
          : amount > 0 ? T((value << amount) | (value >> (digits - amount)))
@@ -54,7 +59,7 @@ constexpr T rotl(T value, int shift) noexcept {
 
 template<detail::bit_unsigned T>
 constexpr T rotr(T value, int shift) noexcept {
-    constexpr int digits = int(sizeof(T) * 8);
+    constexpr int digits = numeric_limits<T>::digits;
     const int amount = shift % digits;
     return amount == 0 ? value
          : amount > 0 ? T((value >> amount) | (value << (digits - amount)))
@@ -78,7 +83,7 @@ constexpr int countl_one(T value) noexcept {
 template<detail::bit_unsigned T>
 constexpr int countr_zero(T value) noexcept {
     if (!value)
-        return int(sizeof(T) * 8);
+        return numeric_limits<T>::digits;
     int count = 0;
     while (!(value & 1)) {
         value >>= 1;
@@ -109,7 +114,7 @@ constexpr bool has_single_bit(T value) noexcept {
 
 template<detail::bit_unsigned T>
 constexpr int bit_width(T value) noexcept {
-    return int(sizeof(T) * 8) - countl_zero(value);
+    return numeric_limits<T>::digits - countl_zero(value);
 }
 
 template<detail::bit_unsigned T>
@@ -122,15 +127,22 @@ constexpr T bit_ceil(T value) noexcept {
     return value <= 1 ? T(1) : T(T(1) << bit_width(T(value - 1)));
 }
 
-template<detail::bit_unsigned T>
+template<class T> requires (is_integral_v<T> && !is_same_v<remove_cv_t<T>, bool>)
 constexpr T byteswap(T value) noexcept {
-    T result = 0;
+    using U = make_unsigned_t<T>;
+    U source = U(value), result = 0;
     for (size_t index = 0; index < sizeof(T); ++index) {
-        result = T((result << 8) | (value & T(0xff)));
-        value >>= 8;
+        result = U((result << 8) | (source & U(0xff)));
+        source >>= 8;
     }
-    return result;
+    return T(result);
 }
+
+#define __cpp_lib_bit_cast 201806L
+#define __cpp_lib_bitops 201907L
+#define __cpp_lib_endian 201907L
+#define __cpp_lib_int_pow2 202002L
+#define __cpp_lib_byteswap 202110L
 
 FTL_END_NAMESPACE
 

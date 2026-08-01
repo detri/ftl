@@ -1,0 +1,274 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_LIMITS_HEADER
+#define FTL_LIMITS_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <type_traits>
+#else
+#include <ftl/type_traits>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+enum float_round_style {
+    round_indeterminate = -1,
+    round_toward_zero = 0,
+    round_to_nearest = 1,
+    round_toward_infinity = 2,
+    round_toward_neg_infinity = 3
+};
+
+enum float_denorm_style {
+    denorm_indeterminate = -1,
+    denorm_absent = 0,
+    denorm_present = 1
+};
+
+template<class T> struct numeric_limits {
+    static constexpr bool is_specialized = false;
+    static constexpr T min() noexcept { return T(); }
+    static constexpr T max() noexcept { return T(); }
+    static constexpr T lowest() noexcept { return T(); }
+    static constexpr int digits = 0, digits10 = 0, max_digits10 = 0;
+    static constexpr bool is_signed = false, is_integer = false, is_exact = false;
+    static constexpr int radix = 0;
+    static constexpr T epsilon() noexcept { return T(); }
+    static constexpr T round_error() noexcept { return T(); }
+    static constexpr int min_exponent = 0, min_exponent10 = 0;
+    static constexpr int max_exponent = 0, max_exponent10 = 0;
+    static constexpr bool has_infinity = false, has_quiet_NaN = false, has_signaling_NaN = false;
+    static constexpr float_denorm_style has_denorm = denorm_absent;
+    static constexpr bool has_denorm_loss = false;
+    static constexpr T infinity() noexcept { return T(); }
+    static constexpr T quiet_NaN() noexcept { return T(); }
+    static constexpr T signaling_NaN() noexcept { return T(); }
+    static constexpr T denorm_min() noexcept { return T(); }
+    static constexpr bool is_iec559 = false, is_bounded = false, is_modulo = false;
+    static constexpr bool traps = false, tinyness_before = false;
+    static constexpr float_round_style round_style = round_toward_zero;
+};
+
+namespace detail {
+template<class T> struct integral_limits {
+    using U = make_unsigned_t<T>;
+    static constexpr bool is_specialized = true;
+    static constexpr bool is_signed = T(-1) < T(0);
+    static constexpr int digits = int(sizeof(T) * 8) - int(is_signed);
+    static constexpr int digits10 = digits * 301 / 1000;
+    static constexpr bool is_integer = true, is_exact = true;
+    static constexpr int radix = 2;
+    static constexpr T max() noexcept { return is_signed ? T(U(-1) >> 1) : T(-1); }
+    static constexpr T min() noexcept { return is_signed ? T(-max() - 1) : T(0); }
+    static constexpr T lowest() noexcept { return min(); }
+    static constexpr int max_digits10 = 0;
+    static constexpr T epsilon() noexcept { return T(0); }
+    static constexpr T round_error() noexcept { return T(0); }
+    static constexpr int min_exponent = 0, min_exponent10 = 0;
+    static constexpr int max_exponent = 0, max_exponent10 = 0;
+    static constexpr bool has_infinity = false, has_quiet_NaN = false, has_signaling_NaN = false;
+    static constexpr float_denorm_style has_denorm = denorm_absent;
+    static constexpr bool has_denorm_loss = false;
+    static constexpr T infinity() noexcept { return T(0); }
+    static constexpr T quiet_NaN() noexcept { return T(0); }
+    static constexpr T signaling_NaN() noexcept { return T(0); }
+    static constexpr T denorm_min() noexcept { return T(0); }
+    static constexpr bool is_iec559 = false;
+    static constexpr bool is_bounded = true, is_modulo = !is_signed;
+    static constexpr bool traps = false, tinyness_before = false;
+    static constexpr float_round_style round_style = round_toward_zero;
+};
+}
+
+#define FTL_INTEGER_LIMITS(T) template<> struct numeric_limits<T> : detail::integral_limits<T> {}
+FTL_INTEGER_LIMITS(char);
+FTL_INTEGER_LIMITS(signed char);
+FTL_INTEGER_LIMITS(unsigned char);
+#ifdef __cpp_char8_t
+FTL_INTEGER_LIMITS(char8_t);
+#endif
+FTL_INTEGER_LIMITS(char16_t);
+FTL_INTEGER_LIMITS(char32_t);
+FTL_INTEGER_LIMITS(wchar_t);
+FTL_INTEGER_LIMITS(short);
+FTL_INTEGER_LIMITS(unsigned short);
+FTL_INTEGER_LIMITS(int);
+FTL_INTEGER_LIMITS(unsigned int);
+FTL_INTEGER_LIMITS(long);
+FTL_INTEGER_LIMITS(unsigned long);
+FTL_INTEGER_LIMITS(long long);
+FTL_INTEGER_LIMITS(unsigned long long);
+#undef FTL_INTEGER_LIMITS
+
+template<> struct numeric_limits<bool> {
+    static constexpr bool is_specialized = true;
+    static constexpr int digits = 1, digits10 = 0;
+    static constexpr int max_digits10 = 0;
+    static constexpr bool is_signed = false, is_integer = true, is_exact = true;
+    static constexpr int radix = 2;
+    static constexpr bool min() noexcept { return false; }
+    static constexpr bool max() noexcept { return true; }
+    static constexpr bool lowest() noexcept { return false; }
+    static constexpr bool epsilon() noexcept { return false; }
+    static constexpr bool round_error() noexcept { return false; }
+    static constexpr int min_exponent = 0, min_exponent10 = 0;
+    static constexpr int max_exponent = 0, max_exponent10 = 0;
+    static constexpr bool has_infinity = false, has_quiet_NaN = false, has_signaling_NaN = false;
+    static constexpr float_denorm_style has_denorm = denorm_absent;
+    static constexpr bool has_denorm_loss = false;
+    static constexpr bool infinity() noexcept { return false; }
+    static constexpr bool quiet_NaN() noexcept { return false; }
+    static constexpr bool signaling_NaN() noexcept { return false; }
+    static constexpr bool denorm_min() noexcept { return false; }
+    static constexpr bool is_iec559 = false, is_bounded = true, is_modulo = false;
+    static constexpr bool traps = false, tinyness_before = false;
+    static constexpr float_round_style round_style = round_toward_zero;
+};
+
+#if defined(_MSC_VER) && !defined(__clang__)
+namespace detail {
+template<class T> struct floating_values;
+template<> struct floating_values<float> {
+    static constexpr float infinity() { return __builtin_bit_cast(float, 0x7f800000u); }
+    static constexpr float quiet_nan() { return __builtin_bit_cast(float, 0x7fc00000u); }
+    static constexpr float signaling_nan() { return __builtin_bit_cast(float, 0x7f800001u); }
+};
+template<> struct floating_values<double> {
+    static constexpr double infinity() { return __builtin_bit_cast(double, 0x7ff0000000000000ull); }
+    static constexpr double quiet_nan() { return __builtin_bit_cast(double, 0x7ff8000000000000ull); }
+    static constexpr double signaling_nan() { return __builtin_bit_cast(double, 0x7ff0000000000001ull); }
+};
+template<> struct floating_values<long double> : floating_values<double> {};
+}
+#define FTL_FLOAT_INFINITY(T, IEC) detail::floating_values<T>::infinity()
+#define FTL_FLOAT_QUIET_NAN(T, IEC) detail::floating_values<T>::quiet_nan()
+#define FTL_FLOAT_SIGNALING_NAN(T, IEC) detail::floating_values<T>::signaling_nan()
+#else
+#define FTL_FLOAT_INFINITY(T, IEC) static_cast<T>(__builtin_huge_val##IEC())
+#define FTL_FLOAT_QUIET_NAN(T, IEC) static_cast<T>(__builtin_nan##IEC(""))
+#define FTL_FLOAT_SIGNALING_NAN(T, IEC) static_cast<T>(__builtin_nans##IEC(""))
+#endif
+
+#define FTL_FLOAT_LIMITS(T, P, IEC) template<> struct numeric_limits<T> { \
+    static constexpr bool is_specialized = true; \
+    static constexpr T min() noexcept { return P##_MIN__; } \
+    static constexpr T max() noexcept { return P##_MAX__; } \
+    static constexpr T lowest() noexcept { return -P##_MAX__; } \
+    static constexpr int digits = P##_MANT_DIG__, digits10 = P##_DIG__; \
+    static constexpr int max_digits10 = 2 + P##_MANT_DIG__ * 301 / 1000; \
+    static constexpr bool is_signed = true, is_integer = false, is_exact = false; \
+    static constexpr int radix = __FLT_RADIX__; \
+    static constexpr T epsilon() noexcept { return P##_EPSILON__; } \
+    static constexpr T round_error() noexcept { return static_cast<T>(0.5); } \
+    static constexpr int min_exponent = P##_MIN_EXP__, min_exponent10 = P##_MIN_10_EXP__; \
+    static constexpr int max_exponent = P##_MAX_EXP__, max_exponent10 = P##_MAX_10_EXP__; \
+    static constexpr bool has_infinity = true, has_quiet_NaN = true, has_signaling_NaN = true; \
+    static constexpr float_denorm_style has_denorm = denorm_present; \
+    static constexpr bool has_denorm_loss = false; \
+    static constexpr T infinity() noexcept { return FTL_FLOAT_INFINITY(T, IEC); } \
+    static constexpr T quiet_NaN() noexcept { return FTL_FLOAT_QUIET_NAN(T, IEC); } \
+    static constexpr T signaling_NaN() noexcept { return FTL_FLOAT_SIGNALING_NAN(T, IEC); } \
+    static constexpr T denorm_min() noexcept { return P##_DENORM_MIN__; } \
+    static constexpr bool is_iec559 = true, is_bounded = true, is_modulo = false; \
+    static constexpr bool traps = false, tinyness_before = false; \
+    static constexpr float_round_style round_style = round_to_nearest; \
+}
+
+#if defined(_MSC_VER) && !defined(__clang__)
+#define __FLT_MIN__ 1.17549435082228750796873653722224568e-38F
+#define __FLT_MAX__ 3.40282346638528859811704183484516925e+38F
+#define __FLT_EPSILON__ 1.1920928955078125e-7F
+#define __FLT_DENORM_MIN__ 1.40129846432481707092372958328991613e-45F
+#define __FLT_MANT_DIG__ 24
+#define __FLT_DIG__ 6
+#define __FLT_RADIX__ 2
+#define __FLT_MIN_EXP__ (-125)
+#define __FLT_MIN_10_EXP__ (-37)
+#define __FLT_MAX_EXP__ 128
+#define __FLT_MAX_10_EXP__ 38
+#define __DBL_MIN__ 2.22507385850720138309023271733240406e-308
+#define __DBL_MAX__ 1.79769313486231570814527423731704357e+308
+#define __DBL_EPSILON__ 2.22044604925031308084726333618164062e-16
+#define __DBL_DENORM_MIN__ 4.94065645841246544176568792868221372e-324
+#define __DBL_MANT_DIG__ 53
+#define __DBL_DIG__ 15
+#define __DBL_RADIX__ 2
+#define __DBL_MIN_EXP__ (-1021)
+#define __DBL_MIN_10_EXP__ (-307)
+#define __DBL_MAX_EXP__ 1024
+#define __DBL_MAX_10_EXP__ 308
+#define __LDBL_MIN__ __DBL_MIN__
+#define __LDBL_MAX__ __DBL_MAX__
+#define __LDBL_EPSILON__ __DBL_EPSILON__
+#define __LDBL_DENORM_MIN__ __DBL_DENORM_MIN__
+#define __LDBL_MANT_DIG__ __DBL_MANT_DIG__
+#define __LDBL_DIG__ __DBL_DIG__
+#define __LDBL_RADIX__ __DBL_RADIX__
+#define __LDBL_MIN_EXP__ __DBL_MIN_EXP__
+#define __LDBL_MIN_10_EXP__ __DBL_MIN_10_EXP__
+#define __LDBL_MAX_EXP__ __DBL_MAX_EXP__
+#define __LDBL_MAX_10_EXP__ __DBL_MAX_10_EXP__
+#endif
+
+FTL_FLOAT_LIMITS(float, __FLT, f);
+FTL_FLOAT_LIMITS(double, __DBL, );
+FTL_FLOAT_LIMITS(long double, __LDBL, l);
+#undef FTL_FLOAT_LIMITS
+#undef FTL_FLOAT_INFINITY
+#undef FTL_FLOAT_QUIET_NAN
+#undef FTL_FLOAT_SIGNALING_NAN
+
+#define FTL_EXTENDED_FLOAT_LIMITS(SUFFIX, P) \
+template<> struct numeric_limits<decltype(0.0##SUFFIX)> { \
+    using T = decltype(0.0##SUFFIX); \
+    static constexpr bool is_specialized = true; \
+    static constexpr T min() noexcept { return P##_MIN__; } \
+    static constexpr T max() noexcept { return P##_MAX__; } \
+    static constexpr T lowest() noexcept { return -P##_MAX__; } \
+    static constexpr int digits = P##_MANT_DIG__, digits10 = P##_DIG__; \
+    static constexpr int max_digits10 = P##_DECIMAL_DIG__; \
+    static constexpr bool is_signed = true, is_integer = false, is_exact = false; \
+    static constexpr int radix = __FLT_RADIX__; \
+    static constexpr T epsilon() noexcept { return P##_EPSILON__; } \
+    static constexpr T round_error() noexcept { return static_cast<T>(0.5); } \
+    static constexpr int min_exponent = P##_MIN_EXP__, min_exponent10 = P##_MIN_10_EXP__; \
+    static constexpr int max_exponent = P##_MAX_EXP__, max_exponent10 = P##_MAX_10_EXP__; \
+    static constexpr bool has_infinity = P##_HAS_INFINITY__; \
+    static constexpr bool has_quiet_NaN = P##_HAS_QUIET_NAN__; \
+    static constexpr bool has_signaling_NaN = has_quiet_NaN; \
+    static constexpr float_denorm_style has_denorm = P##_HAS_DENORM__ ? denorm_present : denorm_absent; \
+    static constexpr bool has_denorm_loss = false; \
+    static constexpr T infinity() noexcept { return static_cast<T>(__builtin_huge_val()); } \
+    static constexpr T quiet_NaN() noexcept { return static_cast<T>(__builtin_nan("")); } \
+    static constexpr T signaling_NaN() noexcept { return static_cast<T>(__builtin_nans("")); } \
+    static constexpr T denorm_min() noexcept { return P##_DENORM_MIN__; } \
+    static constexpr bool is_iec559 = P##_IS_IEC_60559__; \
+    static constexpr bool is_bounded = true, is_modulo = false; \
+    static constexpr bool traps = false, tinyness_before = false; \
+    static constexpr float_round_style round_style = round_to_nearest; \
+}
+#ifdef __STDCPP_FLOAT16_T__
+FTL_EXTENDED_FLOAT_LIMITS(f16, __FLT16);
+#endif
+#ifdef __STDCPP_FLOAT32_T__
+FTL_EXTENDED_FLOAT_LIMITS(f32, __FLT32);
+#endif
+#ifdef __STDCPP_FLOAT64_T__
+FTL_EXTENDED_FLOAT_LIMITS(f64, __FLT64);
+#endif
+#ifdef __STDCPP_FLOAT128_T__
+FTL_EXTENDED_FLOAT_LIMITS(f128, __FLT128);
+#endif
+#ifdef __STDCPP_BFLOAT16_T__
+FTL_EXTENDED_FLOAT_LIMITS(bf16, __BFLT16);
+#endif
+#undef FTL_EXTENDED_FLOAT_LIMITS
+
+template<class T> struct numeric_limits<const T> : numeric_limits<T> {};
+template<class T> struct numeric_limits<volatile T> : numeric_limits<T> {};
+template<class T> struct numeric_limits<const volatile T> : numeric_limits<T> {};
+
+FTL_END_NAMESPACE
+
+#define __cpp_lib_numeric_limits 199711L
+#endif
