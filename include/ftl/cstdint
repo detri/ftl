@@ -88,8 +88,13 @@ using uint_fast64_t = unsigned long;
 
 using intptr_t = FTL_INTPTR;
 using uintptr_t = FTL_UINTPTR;
+#if defined(__APPLE__)
+using intmax_t = long;
+using uintmax_t = unsigned long;
+#else
 using intmax_t = int64_t;
 using uintmax_t = uint64_t;
+#endif
 
 FTL_CSTDINT_END_NAMESPACE
 
@@ -205,8 +210,8 @@ FTL_CSTDINT_END_NAMESPACE
 #elif defined(__APPLE__)
 #define INT64_C(value) value##LL
 #define UINT64_C(value) value##ULL
-#define INTMAX_C(value) value##LL
-#define UINTMAX_C(value) value##ULL
+#define INTMAX_C(value) value##L
+#define UINTMAX_C(value) value##UL
 #else
 #define INT64_C(value) value##L
 #define UINT64_C(value) value##UL
