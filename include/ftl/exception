@@ -24,6 +24,13 @@
 #define __cpp_lib_uncaught_exceptions 201411L
 #endif
 
+#if defined(_CPPUNWIND) || defined(__cpp_exceptions)
+#define FTL_EXCEPTION_HAS_EXCEPTIONS 1
+#endif
+#if defined(_CPPRTTI) || defined(__GXX_RTTI)
+#define FTL_EXCEPTION_HAS_RTTI 1
+#endif
+
 #if defined(_MSC_VER)
 #if defined(_DEBUG)
 #pragma comment(lib, "msvcprtd")
@@ -258,11 +265,9 @@ inline bool operator==(const exception_ptr& value, nullptr_t) noexcept {
 }
 
 inline void swap(exception_ptr& left, exception_ptr& right) noexcept {
-#if defined(_MSC_VER)
-    __ExceptionPtrSwap(&left, &right);
-#else
-    left.swap(right);
-#endif
+    exception_ptr temporary{left};
+    left = right;
+    right = temporary;
 }
 
 #if defined(FTL_REPLACE_STL) && !defined(_MSC_VER)
@@ -290,6 +295,7 @@ inline void swap(exception_ptr& left, exception_ptr& right) noexcept {
 #endif
 
 template<class Exception>
+#ifdef FTL_EXCEPTION_HAS_EXCEPTIONS
 exception_ptr make_exception_ptr(Exception value) noexcept {
     try {
         throw value;
@@ -297,6 +303,9 @@ exception_ptr make_exception_ptr(Exception value) noexcept {
         return current_exception();
     }
 }
+#else
+exception_ptr make_exception_ptr(Exception) noexcept;
+#endif
 
 class nested_exception {
 public:
@@ -330,6 +339,7 @@ public:
 }
 
 template<class T>
+#ifdef FTL_EXCEPTION_HAS_EXCEPTIONS
 [[noreturn]] void throw_with_nested(T&& value) {
     using U = decay_t<T>;
     if constexpr (is_class_v<U> && !is_final_v<U> &&
@@ -339,8 +349,12 @@ template<class T>
     else
         throw FTL_EXCEPTION_NAMESPACE::forward<T>(value);
 }
+#else
+[[noreturn]] void throw_with_nested(T&&);
+#endif
 
 template<class T>
+#ifdef FTL_EXCEPTION_HAS_RTTI
 void rethrow_if_nested(const T& value) {
     if constexpr (is_polymorphic_v<T>) {
 #if defined(_MSC_VER) || __has_builtin(__builtin_addressof)
@@ -355,11 +369,16 @@ void rethrow_if_nested(const T& value) {
             nested->rethrow_nested();
     }
 }
+#else
+void rethrow_if_nested(const T&);
+#endif
 
 FTL_EXCEPTION_END_NAMESPACE
 
 #undef FTL_EXCEPTION_BEGIN_NAMESPACE
 #undef FTL_EXCEPTION_END_NAMESPACE
 #undef FTL_EXCEPTION_NAMESPACE
+#undef FTL_EXCEPTION_HAS_EXCEPTIONS
+#undef FTL_EXCEPTION_HAS_RTTI
 
 #endif // FTL_EXCEPTION_HEADER

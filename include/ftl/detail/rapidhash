@@ -13,7 +13,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <memory>
 #include <string_view>
 #include <type_traits>
 #define FTL_RAPIDHASH_STD std
@@ -24,7 +23,6 @@
 #include <ftl/cstddef>
 #include <ftl/cstdint>
 #include <ftl/cstring>
-#include <ftl/memory>
 #include <ftl/string_view>
 #include <ftl/type_traits>
 #define FTL_RAPIDHASH_STD ftl
@@ -835,7 +833,7 @@ struct rapidhash_t {
             return rapidhash(bytes.data(), bytes.size());
         }
 
-        return rapidhash(static_cast<const void *>(FTL_RAPIDHASH_STD::addressof(value)), sizeof(value));
+        return rapidhash(static_cast<const void *>(__builtin_addressof(value)), sizeof(value));
     }
 };
 

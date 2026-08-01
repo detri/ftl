@@ -5,15 +5,16 @@
 
 #ifdef FTL_REPLACE_STL
 #include <compare>
-#include <functional>
 #include <typeinfo>
 #else
 #include <ftl/typeinfo>
 #include <ftl/compare>
-#include <ftl/functional>
 #endif
 
 FTL_BEGIN_NAMESPACE
+
+template<class T>
+struct hash;
 
 class type_index {
 public:
