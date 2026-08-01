@@ -67,8 +67,10 @@ static_assert(tested::is_member_object_pointer_v<decltype(&base_type::member)> &
 static_assert(tested::is_base_of_v<base_type, derived_type> &&
               tested::is_convertible_v<derived_type*, base_type*> &&
               !tested::is_convertible_v<base_type*, derived_type*>);
+#ifdef __cpp_lib_is_pointer_interconvertible
 static_assert(tested::is_pointer_interconvertible_base_of_v<
               pointer_base, pointer_derived>);
+#endif
 static_assert(tested::has_virtual_destructor_v<polymorphic_type>);
 static_assert(tested::has_unique_object_representations_v<unsigned char>);
 static_assert(tested::is_bounded_array_v<int[1]> &&
@@ -91,8 +93,10 @@ static_assert(tested::is_nothrow_default_constructible_v<int> &&
 #ifdef __cpp_lib_is_implicit_lifetime
 static_assert(tested::is_implicit_lifetime_v<int>);
 #endif
-static_assert(tested::reference_constructs_from_temporary_v<const int&, int>);
-static_assert(tested::reference_converts_from_temporary_v<const int&, int>);
+#ifdef __cpp_lib_reference_from_temporary
+static_assert(tested::reference_constructs_from_temporary_v<const int&, int> &&
+              tested::reference_converts_from_temporary_v<const int&, int>);
+#endif
 static_assert(tested::is_nothrow_convertible_v<int, long>);
 static_assert(tested::is_nothrow_convertible_v<void, const void>);
 static_assert(!tested::is_nothrow_convertible_v<void, int>);
@@ -171,7 +175,9 @@ static_assert(!tested::is_nothrow_invocable_r_v<int,
 
 struct layout_one { int first; int second; };
 struct layout_two { int first; int second; };
+#ifdef __cpp_lib_is_layout_compatible
 static_assert(tested::is_layout_compatible_v<layout_one, layout_two>);
+#endif
 static_assert(tested::is_pointer_interconvertible_with_class(
               &layout_one::first));
 static_assert(!tested::is_pointer_interconvertible_with_class(

@@ -1988,10 +1988,11 @@ constexpr bool is_corresponding_member(Member1 Class1::* left,
 #ifndef __cpp_lib_bounded_array_traits
 #define __cpp_lib_bounded_array_traits 201902L
 #endif
-#ifndef __cpp_lib_is_layout_compatible
+#if FTL_HAS_IS_LAYOUT_COMPATIBLE && !defined(__cpp_lib_is_layout_compatible)
 #define __cpp_lib_is_layout_compatible 201907L
 #endif
-#ifndef __cpp_lib_is_pointer_interconvertible
+#if FTL_HAS_IS_POINTER_INTERCONVERTIBLE_BASE_OF && \
+    !defined(__cpp_lib_is_pointer_interconvertible)
 #define __cpp_lib_is_pointer_interconvertible 201907L
 #endif
 #ifndef __cpp_lib_is_scoped_enum
