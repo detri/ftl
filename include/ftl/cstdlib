@@ -54,6 +54,7 @@ void* _aligned_realloc(void*, decltype(sizeof(0)), decltype(sizeof(0)));
 void _aligned_free(void*);
 int ___mb_cur_max_func();
 #elif defined(__APPLE__)
+void* aligned_alloc(decltype(sizeof(0)), decltype(sizeof(0)));
 int ___mb_cur_max();
 #else
 void* aligned_alloc(decltype(sizeof(0)), decltype(sizeof(0)));
