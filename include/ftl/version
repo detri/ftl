@@ -27,6 +27,8 @@
 #define __cpp_lib_reference_from_temporary 202202L
 #define __cpp_lib_is_implicit_lifetime 202302L
 #define __cpp_lib_type_identity 201806L
+#define __cpp_lib_const_iterator 202207L
+#define __cpp_lib_move_iterator_concept 202207L
 #define __cpp_lib_common_reference 202302L
 #define __cpp_lib_exchange_function 201304L
 #define __cpp_lib_as_const 201510L

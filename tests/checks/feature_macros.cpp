@@ -19,6 +19,8 @@
     __cpp_lib_is_null_pointer != 201309L || \
     __cpp_lib_is_final != 201402L || \
     __cpp_lib_type_identity != 201806L || \
+    __cpp_lib_const_iterator != 202207L || \
+    __cpp_lib_move_iterator_concept != 202207L || \
     __cpp_lib_common_reference != 202302L
 #error <type_traits> must advertise completed facilities
 #endif
