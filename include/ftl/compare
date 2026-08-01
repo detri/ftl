@@ -365,7 +365,7 @@ struct float_order_bits<double> {
 
 template<>
 struct float_order_bits<long double> {
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) || __SIZEOF_LONG_DOUBLE__ == 8
     using type = unsigned long long;
     static constexpr type sign = type(1) << 63;
     static constexpr type mask = ~type(0);
@@ -386,7 +386,8 @@ constexpr strong_ordering float_strong_order(T left, T right) noexcept {
     using bits = typename traits::type;
     bits left_bits;
     bits right_bits;
-#if !defined(_MSC_VER) && defined(__SIZEOF_INT128__)
+#if !defined(_MSC_VER) && defined(__SIZEOF_INT128__) && \
+    __SIZEOF_LONG_DOUBLE__ == 16
     if constexpr (is_same_v<T, long double>) {
         const auto left_bytes =
             __builtin_bit_cast(typename traits::representation, left);

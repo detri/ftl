@@ -1929,13 +1929,17 @@ constexpr bool is_corresponding_member(Member1 Class1::* left,
 #elif __has_builtin(__builtin_is_corresponding_member)
     return __builtin_is_corresponding_member(left, right);
 #else
+#if FTL_HAS_IS_LAYOUT_COMPATIBLE
     if constexpr (!is_layout_compatible_v<Class1, Class2>)
         return false;
     else {
+#endif
         detail::corresponding_storage<Class1, Class2> storage;
         return static_cast<const volatile void*>(&(storage.left.*left)) ==
                static_cast<const volatile void*>(&(storage.right.*right));
+#if FTL_HAS_IS_LAYOUT_COMPATIBLE
     }
+#endif
 #endif
 }
 
