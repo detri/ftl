@@ -39,8 +39,8 @@ jobs:
           - name: Linux Clang
             os: ubuntu-latest
             compiler: clang
-            cc: clang
-            cxx: clang++
+            cc: clang-19
+            cxx: clang++-19
             build_dir: build-clang
 
           - name: macOS AppleClang
