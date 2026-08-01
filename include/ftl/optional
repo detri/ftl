@@ -489,7 +489,6 @@ template<class T, class U>
     requires (!detail::is_optional_v<U>) &&
              requires(const T& left, const U& right) { left <=> right; }
 constexpr auto operator<=>(const optional<T>& left, const U& right)
-    -> decltype(compare_three_way{}(*left, right))
 {
     if (left) {
         return compare_three_way{}(*left, right);

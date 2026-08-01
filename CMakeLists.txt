@@ -57,8 +57,9 @@ if(BUILD_TESTING)
                 $<TARGET_OBJECTS:${object}>
             )
             target_link_libraries(${target} PRIVATE GTest::gtest_main)
-            gtest_discover_tests(
-                ${target}
+            gtest_add_tests(
+                TARGET ${target}
+                SOURCES tests/gtest_driver.cpp
                 TEST_PREFIX "${mode}.${header}."
             )
         endforeach()
