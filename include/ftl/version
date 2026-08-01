@@ -56,5 +56,14 @@
 #define __cpp_lib_hardware_interference_size 201703L
 #define __cpp_lib_launder 201606L
 #define __cpp_lib_uncaught_exceptions 201411L
+#define __cpp_lib_invoke 201411L
+#define __cpp_lib_invoke_r 202106L
+#define __cpp_lib_not_fn 201603L
+#define __cpp_lib_bind_front 201907L
+#define __cpp_lib_bind_back 202202L
+#define __cpp_lib_boyer_moore_searcher 201603L
+#define __cpp_lib_constexpr_functional 201907L
+#define __cpp_lib_move_only_function 202110L
+#define __cpp_lib_transparent_operators 201510L
 
 #endif
