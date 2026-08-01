@@ -1,4 +1,7 @@
 #include <ftl/array>
+#include <ftl/exception>
+#include <ftl/typeinfo>
+#include <ftl/typeindex>
 
 #ifndef FTL_NO_THREADS
 #error thread support must be disabled for this check

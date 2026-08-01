@@ -1,0 +1,124 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_TYPEINFO_HEADER
+#define FTL_TYPEINFO_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <cstddef>
+#include <exception>
+#if !defined(_MSC_VER)
+#include <detail/rapidhash>
+#endif
+#else
+#include <ftl/exception>
+#ifndef _MSC_VER
+#include <typeinfo>
+#endif
+#endif
+
+#if defined(_MSC_VER)
+struct __std_type_info_data {
+    const char* _UndecoratedName;
+    const char _DecoratedName[1];
+};
+struct __type_info_node;
+extern "C" {
+decltype(sizeof(0)) __cdecl __std_type_info_hash(const __std_type_info_data*) noexcept;
+int __cdecl __std_type_info_compare(const __std_type_info_data*,
+                                    const __std_type_info_data*) noexcept;
+const char* __cdecl __std_type_info_name(__std_type_info_data*,
+                                        __type_info_node*) noexcept;
+}
+extern __type_info_node __type_info_root_node;
+
+class type_info {
+public:
+    type_info(const type_info&) = delete;
+    type_info& operator=(const type_info&) = delete;
+    [[nodiscard]] decltype(sizeof(0)) hash_code() const noexcept {
+        return __std_type_info_hash(&data_);
+    }
+    [[nodiscard]] constexpr bool operator==(const type_info& other) const noexcept {
+        if (__builtin_is_constant_evaluated()) return &data_ == &other.data_;
+        return __std_type_info_compare(&data_, &other.data_) == 0;
+    }
+    [[nodiscard]] bool before(const type_info& other) const noexcept {
+        return __std_type_info_compare(&data_, &other.data_) < 0;
+    }
+    [[nodiscard]] const char* name() const noexcept {
+        return __std_type_info_name(&data_, &__type_info_root_node);
+    }
+    virtual ~type_info() noexcept;
+private:
+    mutable __std_type_info_data data_;
+};
+#endif
+
+#ifdef FTL_REPLACE_STL
+namespace std {
+#if defined(_MSC_VER)
+using ::type_info;
+#else
+class type_info {
+public:
+    virtual ~type_info();
+    [[nodiscard]] bool operator==(const type_info& other) const noexcept {
+        return name_ == other.name_ || __builtin_strcmp(name(), other.name()) == 0;
+    }
+    [[nodiscard]] bool before(const type_info& other) const noexcept {
+        return __builtin_strcmp(name(), other.name()) < 0;
+    }
+    [[nodiscard]] size_t hash_code() const noexcept {
+        size_t length = 0;
+        while (name()[length]) ++length;
+        return static_cast<size_t>(ftl_rapidhash::rapidhash(name(), length));
+    }
+    [[nodiscard]] const char* name() const noexcept {
+        return name_[0] == '*' ? name_ + 1 : name_;
+    }
+    type_info(const type_info&) = delete;
+    type_info& operator=(const type_info&) = delete;
+protected:
+    explicit type_info(const char* name) : name_(name) {}
+    const char* name_;
+};
+#endif
+
+class bad_cast : public exception {
+public:
+    bad_cast() noexcept;
+    bad_cast(const bad_cast&) noexcept;
+    bad_cast& operator=(const bad_cast&) noexcept;
+    ~bad_cast() noexcept override;
+    [[nodiscard]] const char* what() const noexcept override;
+};
+
+class bad_typeid : public exception {
+public:
+    bad_typeid() noexcept;
+    bad_typeid(const bad_typeid&) noexcept;
+    bad_typeid& operator=(const bad_typeid&) noexcept;
+    ~bad_typeid() noexcept override;
+    [[nodiscard]] const char* what() const noexcept override;
+};
+}
+#else
+namespace ftl {
+#if defined(_MSC_VER)
+using type_info = ::type_info;
+class bad_cast : public exception {
+public:
+    [[nodiscard]] const char* what() const noexcept override { return "bad cast"; }
+};
+class bad_typeid : public exception {
+public:
+    [[nodiscard]] const char* what() const noexcept override { return "bad typeid"; }
+};
+#else
+using type_info = ::std::type_info;
+using bad_cast = ::std::bad_cast;
+using bad_typeid = ::std::bad_typeid;
+#endif
+}
+#endif
+#endif

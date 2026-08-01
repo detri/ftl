@@ -124,6 +124,8 @@ foreach(header IN ITEMS
         memory
         atomic
         exception
+        typeinfo
+        typeindex
         optional
         initializer_list
         functional

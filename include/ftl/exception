@@ -20,6 +20,10 @@
 #define FTL_EXCEPTION_NAMESPACE ftl
 #endif
 
+#ifndef __cpp_lib_uncaught_exceptions
+#define __cpp_lib_uncaught_exceptions 201411L
+#endif
+
 #if defined(_MSC_VER)
 #if defined(_DEBUG)
 #pragma comment(lib, "msvcprtd")
@@ -193,6 +197,10 @@ public:
         exception_ptr(other).swap(*this);
         return *this;
     }
+    exception_ptr& operator=(nullptr_t) noexcept {
+        exception_ptr{}.swap(*this);
+        return *this;
+    }
     ~exception_ptr() noexcept;
     explicit operator bool() const noexcept { return object != nullptr; }
     void swap(exception_ptr& other) noexcept {
@@ -237,9 +245,7 @@ public:
         const exception_ptr& right) noexcept {
         return __ExceptionPtrCompare(&left, &right);
     }
-    friend void swap(exception_ptr& left, exception_ptr& right) noexcept {
-        __ExceptionPtrSwap(&left, &right);
-    }
+    friend void swap(exception_ptr&, exception_ptr&) noexcept;
 
 private:
     void* data1{};
@@ -249,6 +255,14 @@ private:
 
 inline bool operator==(const exception_ptr& value, nullptr_t) noexcept {
     return !value;
+}
+
+inline void swap(exception_ptr& left, exception_ptr& right) noexcept {
+#if defined(_MSC_VER)
+    __ExceptionPtrSwap(&left, &right);
+#else
+    left.swap(right);
+#endif
 }
 
 #if defined(FTL_REPLACE_STL) && !defined(_MSC_VER)
@@ -275,10 +289,10 @@ inline bool operator==(const exception_ptr& value, nullptr_t) noexcept {
 }
 #endif
 
-template<class Exception, class... Args>
-exception_ptr make_exception_ptr(Args&&... args) noexcept {
+template<class Exception>
+exception_ptr make_exception_ptr(Exception value) noexcept {
     try {
-        throw Exception(FTL_EXCEPTION_NAMESPACE::forward<Args>(args)...);
+        throw value;
     } catch (...) {
         return current_exception();
     }
