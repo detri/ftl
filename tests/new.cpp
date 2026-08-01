@@ -16,12 +16,19 @@ static_assert(requires(tested::size_t size, void* pointer) {
     ::operator new[](size, tested::align_val_t{64});
     ::operator new(size, tested::nothrow);
     ::operator new[](size, tested::nothrow);
+    ::operator new(size, tested::align_val_t{64}, tested::nothrow);
+    ::operator new[](size, tested::align_val_t{64}, tested::nothrow);
     ::operator delete(pointer);
     ::operator delete[](pointer);
     ::operator delete(pointer, size);
     ::operator delete[](pointer, size);
     ::operator delete(pointer, tested::align_val_t{64});
     ::operator delete[](pointer, tested::align_val_t{64});
+    ::operator delete(pointer, tested::nothrow);
+    ::operator delete[](pointer, tested::nothrow);
+    ::operator delete(pointer, tested::align_val_t{64}, tested::nothrow);
+    ::operator delete[](pointer, tested::align_val_t{64}, tested::nothrow);
+    tested::destroying_delete;
 });
 
 bool ftl_test() {
