@@ -5,13 +5,13 @@
 
 #if !defined(_INITIALIZER_LIST_) && \
     !defined(_LIBCPP_INITIALIZER_LIST) && \
-    !defined(_GLIBCXX_INITIALIZER_LIST)
+    !defined(_INITIALIZER_LIST)
 #if defined(_MSC_VER)
 #define _INITIALIZER_LIST_
 #elif defined(__APPLE__)
 #define _LIBCPP_INITIALIZER_LIST
 #else
-#define _GLIBCXX_INITIALIZER_LIST
+#define _INITIALIZER_LIST
 #endif
 namespace std {
 
