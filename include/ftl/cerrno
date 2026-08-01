@@ -1,0 +1,25 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CERRNO_HEADER
+#define FTL_CERRNO_HEADER
+
+#if defined(_WIN32)
+extern "C" int* _errno();
+#define errno (*_errno())
+#elif defined(__APPLE__)
+extern "C" int* __error();
+#define errno (*__error())
+#else
+extern "C" int* __errno_location() noexcept;
+#define errno (*__errno_location())
+#endif
+
+#define EDOM 33
+#define ERANGE 34
+#if defined(_WIN32)
+#define EILSEQ 42
+#else
+#define EILSEQ 84
+#endif
+
+#endif

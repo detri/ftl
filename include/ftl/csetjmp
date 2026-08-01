@@ -1,0 +1,24 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CSETJMP_HEADER
+#define FTL_CSETJMP_HEADER
+
+#if defined(_WIN32)
+struct alignas(16) ftl_jmp_word { unsigned long long part[2]; };
+using ftl_jmp_buf = ftl_jmp_word[16];
+extern "C" int _setjmp(ftl_jmp_buf);
+extern "C" [[noreturn]] void longjmp(ftl_jmp_buf, int) noexcept(false);
+#define setjmp(E) _setjmp(E)
+#else
+using ftl_jmp_buf = long[32];
+extern "C" int setjmp(ftl_jmp_buf);
+extern "C" [[noreturn]] void longjmp(ftl_jmp_buf, int);
+#endif
+
+#ifdef FTL_REPLACE_STL
+namespace std { using jmp_buf = ::ftl_jmp_buf; using ::longjmp; }
+#else
+namespace ftl { using jmp_buf = ::ftl_jmp_buf; using ::longjmp; }
+#endif
+
+#endif
