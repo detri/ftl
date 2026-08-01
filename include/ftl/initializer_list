@@ -6,6 +6,13 @@
 #if !defined(_INITIALIZER_LIST_) && \
     !defined(_LIBCPP_INITIALIZER_LIST) && \
     !defined(_GLIBCXX_INITIALIZER_LIST)
+#if defined(_MSC_VER)
+#define _INITIALIZER_LIST_
+#elif defined(__APPLE__)
+#define _LIBCPP_INITIALIZER_LIST
+#else
+#define _GLIBCXX_INITIALIZER_LIST
+#endif
 namespace std {
 
 template<class T>
@@ -31,11 +38,9 @@ public:
 #if defined(_MSC_VER) && !defined(__clang__)
         return last;
 #else
-        return first + count;
+        return count ? first + count : first;
 #endif
     }
-    constexpr bool empty() const noexcept { return begin() == end(); }
-    constexpr const T* data() const noexcept { return begin(); }
 
 private:
 #if defined(_MSC_VER) && !defined(__clang__)

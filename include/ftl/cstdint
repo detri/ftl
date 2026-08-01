@@ -13,21 +13,40 @@
 #define FTL_CSTDINT_END_NAMESPACE }
 #endif
 
+#if defined(_MSC_VER)
+#define FTL_INT8 signed char
+#define FTL_UINT8 unsigned char
+#define FTL_INT16 short
+#define FTL_UINT16 unsigned short
+#define FTL_INT32 int
+#define FTL_UINT32 unsigned int
+#define FTL_INT64 long long
+#define FTL_UINT64 unsigned long long
+#define FTL_INTPTR long long
+#define FTL_UINTPTR unsigned long long
+#else
+#define FTL_INT8 __INT8_TYPE__
+#define FTL_UINT8 __UINT8_TYPE__
+#define FTL_INT16 __INT16_TYPE__
+#define FTL_UINT16 __UINT16_TYPE__
+#define FTL_INT32 __INT32_TYPE__
+#define FTL_UINT32 __UINT32_TYPE__
+#define FTL_INT64 __INT64_TYPE__
+#define FTL_UINT64 __UINT64_TYPE__
+#define FTL_INTPTR __INTPTR_TYPE__
+#define FTL_UINTPTR __UINTPTR_TYPE__
+#endif
+
 FTL_CSTDINT_BEGIN_NAMESPACE
 
-using int8_t = signed char;
-using uint8_t = unsigned char;
-using int16_t = short;
-using uint16_t = unsigned short;
-using int32_t = int;
-using uint32_t = unsigned int;
-#if defined(_MSC_VER)
-using int64_t = long long;
-using uint64_t = unsigned long long;
-#else
-using int64_t = long;
-using uint64_t = unsigned long;
-#endif
+using int8_t = FTL_INT8;
+using uint8_t = FTL_UINT8;
+using int16_t = FTL_INT16;
+using uint16_t = FTL_UINT16;
+using int32_t = FTL_INT32;
+using uint32_t = FTL_UINT32;
+using int64_t = FTL_INT64;
+using uint64_t = FTL_UINT64;
 
 using int_least8_t = int8_t;
 using uint_least8_t = uint8_t;
@@ -38,6 +57,7 @@ using uint_least32_t = uint32_t;
 using int_least64_t = int64_t;
 using uint_least64_t = uint64_t;
 
+#if defined(_MSC_VER)
 using int_fast8_t = int8_t;
 using uint_fast8_t = uint8_t;
 using int_fast16_t = int32_t;
@@ -46,25 +66,151 @@ using int_fast32_t = int32_t;
 using uint_fast32_t = uint32_t;
 using int_fast64_t = int64_t;
 using uint_fast64_t = uint64_t;
-
-#if defined(_WIN64)
-using intptr_t = long long;
-using uintptr_t = unsigned long long;
-#elif defined(_WIN32)
-using intptr_t = int;
-using uintptr_t = unsigned int;
-#elif __SIZEOF_POINTER__ == 8
-using intptr_t = long;
-using uintptr_t = unsigned long;
 #else
-using intptr_t = int;
-using uintptr_t = unsigned int;
+using int_fast8_t = __INT_FAST8_TYPE__;
+using uint_fast8_t = __UINT_FAST8_TYPE__;
+using int_fast16_t = __INT_FAST16_TYPE__;
+using uint_fast16_t = __UINT_FAST16_TYPE__;
+using int_fast32_t = __INT_FAST32_TYPE__;
+using uint_fast32_t = __UINT_FAST32_TYPE__;
+using int_fast64_t = __INT_FAST64_TYPE__;
+using uint_fast64_t = __UINT_FAST64_TYPE__;
 #endif
+
+using intptr_t = FTL_INTPTR;
+using uintptr_t = FTL_UINTPTR;
 using intmax_t = int64_t;
 using uintmax_t = uint64_t;
 
 FTL_CSTDINT_END_NAMESPACE
 
+#ifndef INT8_MIN
+#define INT8_MIN (-127 - 1)
+#define INT8_MAX 127
+#define UINT8_MAX 255U
+#define INT16_MIN (-32767 - 1)
+#define INT16_MAX 32767
+#define UINT16_MAX 65535U
+#define INT32_MIN (-2147483647 - 1)
+#define INT32_MAX 2147483647
+#define UINT32_MAX 4294967295U
+#if defined(_MSC_VER)
+#define INT64_MIN (-9223372036854775807LL - 1)
+#define INT64_MAX 9223372036854775807LL
+#define UINT64_MAX 18446744073709551615ULL
+#else
+#define INT64_MIN (-__INT64_C(9223372036854775807) - 1)
+#define INT64_MAX __INT64_C(9223372036854775807)
+#define UINT64_MAX __UINT64_C(18446744073709551615)
+#endif
+
+#define INT_LEAST8_MIN INT8_MIN
+#define INT_LEAST8_MAX INT8_MAX
+#define UINT_LEAST8_MAX UINT8_MAX
+#define INT_LEAST16_MIN INT16_MIN
+#define INT_LEAST16_MAX INT16_MAX
+#define UINT_LEAST16_MAX UINT16_MAX
+#define INT_LEAST32_MIN INT32_MIN
+#define INT_LEAST32_MAX INT32_MAX
+#define UINT_LEAST32_MAX UINT32_MAX
+#define INT_LEAST64_MIN INT64_MIN
+#define INT_LEAST64_MAX INT64_MAX
+#define UINT_LEAST64_MAX UINT64_MAX
+
+#if defined(_MSC_VER)
+#define INT_FAST8_MIN INT8_MIN
+#define INT_FAST8_MAX INT8_MAX
+#define UINT_FAST8_MAX UINT8_MAX
+#define INT_FAST16_MIN INT32_MIN
+#define INT_FAST16_MAX INT32_MAX
+#define UINT_FAST16_MAX UINT32_MAX
+#define INT_FAST32_MIN INT32_MIN
+#define INT_FAST32_MAX INT32_MAX
+#define UINT_FAST32_MAX UINT32_MAX
+#define INT_FAST64_MIN INT64_MIN
+#define INT_FAST64_MAX INT64_MAX
+#define UINT_FAST64_MAX UINT64_MAX
+#else
+#define INT_FAST8_MIN (-__INT_FAST8_MAX__ - 1)
+#define INT_FAST8_MAX __INT_FAST8_MAX__
+#define UINT_FAST8_MAX __UINT_FAST8_MAX__
+#define INT_FAST16_MIN (-__INT_FAST16_MAX__ - 1)
+#define INT_FAST16_MAX __INT_FAST16_MAX__
+#define UINT_FAST16_MAX __UINT_FAST16_MAX__
+#define INT_FAST32_MIN (-__INT_FAST32_MAX__ - 1)
+#define INT_FAST32_MAX __INT_FAST32_MAX__
+#define UINT_FAST32_MAX __UINT_FAST32_MAX__
+#define INT_FAST64_MIN (-__INT_FAST64_MAX__ - 1)
+#define INT_FAST64_MAX __INT_FAST64_MAX__
+#define UINT_FAST64_MAX __UINT_FAST64_MAX__
+#endif
+
+#define INTMAX_MIN INT64_MIN
+#define INTMAX_MAX INT64_MAX
+#define UINTMAX_MAX UINT64_MAX
+#define INTPTR_MIN INT64_MIN
+#define INTPTR_MAX INT64_MAX
+#define UINTPTR_MAX UINT64_MAX
+
+#if defined(_MSC_VER)
+#define PTRDIFF_MIN INT64_MIN
+#define PTRDIFF_MAX INT64_MAX
+#define SIZE_MAX UINT64_MAX
+#define SIG_ATOMIC_MIN INT32_MIN
+#define SIG_ATOMIC_MAX INT32_MAX
+#define WCHAR_MIN 0
+#define WCHAR_MAX UINT16_MAX
+#define WINT_MIN 0
+#define WINT_MAX UINT16_MAX
+#else
+#define PTRDIFF_MIN (-__PTRDIFF_MAX__ - 1)
+#define PTRDIFF_MAX __PTRDIFF_MAX__
+#define SIZE_MAX __SIZE_MAX__
+#define SIG_ATOMIC_MIN (-__SIG_ATOMIC_MAX__ - 1)
+#define SIG_ATOMIC_MAX __SIG_ATOMIC_MAX__
+#ifdef __WCHAR_UNSIGNED__
+#define WCHAR_MIN 0
+#else
+#define WCHAR_MIN (-__WCHAR_MAX__ - 1)
+#endif
+#define WCHAR_MAX __WCHAR_MAX__
+#ifdef __WINT_UNSIGNED__
+#define WINT_MIN 0
+#else
+#define WINT_MIN (-__WINT_MAX__ - 1)
+#endif
+#define WINT_MAX __WINT_MAX__
+#endif
+
+#define INT8_C(value) value
+#define UINT8_C(value) value##U
+#define INT16_C(value) value
+#define UINT16_C(value) value##U
+#define INT32_C(value) value
+#define UINT32_C(value) value##U
+#if defined(_MSC_VER)
+#define INT64_C(value) value##LL
+#define UINT64_C(value) value##ULL
+#define INTMAX_C(value) value##LL
+#define UINTMAX_C(value) value##ULL
+#else
+#define INT64_C(value) __INT64_C(value)
+#define UINT64_C(value) __UINT64_C(value)
+#define INTMAX_C(value) __INT64_C(value)
+#define UINTMAX_C(value) __UINT64_C(value)
+#endif
+#endif // INT8_MIN
+
+#undef FTL_INT8
+#undef FTL_UINT8
+#undef FTL_INT16
+#undef FTL_UINT16
+#undef FTL_INT32
+#undef FTL_UINT32
+#undef FTL_INT64
+#undef FTL_UINT64
+#undef FTL_INTPTR
+#undef FTL_UINTPTR
 #undef FTL_CSTDINT_BEGIN_NAMESPACE
 #undef FTL_CSTDINT_END_NAMESPACE
 

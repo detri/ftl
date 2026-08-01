@@ -7,6 +7,18 @@
 #define __cpp_lib_byte 201603L
 #endif
 
+#ifndef NULL
+#define NULL nullptr
+#endif
+
+#ifndef offsetof
+#if defined(_MSC_VER) && !defined(__clang__)
+#define offsetof(P, D) ((decltype(sizeof(0)))&reinterpret_cast<const volatile char&>(((P*)0)->D))
+#else
+#define offsetof(P, D) __builtin_offsetof(P, D)
+#endif
+#endif
+
 #ifdef FTL_REPLACE_STL
 #define FTL_CSTDDEF_BEGIN_NAMESPACE namespace std {
 #define FTL_CSTDDEF_END_NAMESPACE }
@@ -29,18 +41,52 @@ union max_align_t {
 
 enum class byte : unsigned char {};
 
-// ponytail: language-only constraint accepts integer-like user types; use
-// is_integral once cstddef/type_traits share a cycle-free internal core.
+namespace detail {
+template<class T, class U>
+inline constexpr bool cstddef_same_as = false;
+
+template<class T>
+inline constexpr bool cstddef_same_as<T, T> = true;
+
+template<class T>
+struct cstddef_remove_cv { using type = T; };
+template<class T>
+struct cstddef_remove_cv<const T> { using type = T; };
+template<class T>
+struct cstddef_remove_cv<volatile T> { using type = T; };
+template<class T>
+struct cstddef_remove_cv<const volatile T> { using type = T; };
+
+template<class T>
+inline constexpr bool cstddef_integral =
+    cstddef_same_as<typename cstddef_remove_cv<T>::type, bool> ||
+    cstddef_same_as<typename cstddef_remove_cv<T>::type, char> ||
+    cstddef_same_as<typename cstddef_remove_cv<T>::type, signed char> ||
+    cstddef_same_as<typename cstddef_remove_cv<T>::type, unsigned char> ||
+    cstddef_same_as<typename cstddef_remove_cv<T>::type, wchar_t> ||
+    cstddef_same_as<typename cstddef_remove_cv<T>::type, char8_t> ||
+    cstddef_same_as<typename cstddef_remove_cv<T>::type, char16_t> ||
+    cstddef_same_as<typename cstddef_remove_cv<T>::type, char32_t> ||
+    cstddef_same_as<typename cstddef_remove_cv<T>::type, short> ||
+    cstddef_same_as<typename cstddef_remove_cv<T>::type, unsigned short> ||
+    cstddef_same_as<typename cstddef_remove_cv<T>::type, int> ||
+    cstddef_same_as<typename cstddef_remove_cv<T>::type, unsigned int> ||
+    cstddef_same_as<typename cstddef_remove_cv<T>::type, long> ||
+    cstddef_same_as<typename cstddef_remove_cv<T>::type, unsigned long> ||
+    cstddef_same_as<typename cstddef_remove_cv<T>::type, long long> ||
+    cstddef_same_as<typename cstddef_remove_cv<T>::type, unsigned long long>;
+} // namespace detail
+
 template<class Integer>
-    requires requires(Integer value) { value & 1; }
+    requires detail::cstddef_integral<Integer>
 constexpr byte operator<<(byte value, Integer shift) noexcept {
-    return byte(static_cast<unsigned char>(value) << shift);
+    return byte(static_cast<unsigned int>(value) << shift);
 }
 
 template<class Integer>
-    requires requires(Integer value) { value & 1; }
+    requires detail::cstddef_integral<Integer>
 constexpr byte operator>>(byte value, Integer shift) noexcept {
-    return byte(static_cast<unsigned char>(value) >> shift);
+    return byte(static_cast<unsigned int>(value) >> shift);
 }
 
 constexpr byte operator|(byte left, byte right) noexcept {
@@ -63,13 +109,13 @@ constexpr byte operator~(byte value) noexcept {
 }
 
 template<class Integer>
-    requires requires(Integer value) { value & 1; }
+    requires detail::cstddef_integral<Integer>
 constexpr byte& operator<<=(byte& value, Integer shift) noexcept {
     return value = value << shift;
 }
 
 template<class Integer>
-    requires requires(Integer value) { value & 1; }
+    requires detail::cstddef_integral<Integer>
 constexpr byte& operator>>=(byte& value, Integer shift) noexcept {
     return value = value >> shift;
 }
@@ -87,9 +133,9 @@ constexpr byte& operator^=(byte& left, byte right) noexcept {
 }
 
 template<class Integer>
-    requires requires(Integer value) { value & 1; }
+    requires detail::cstddef_integral<Integer>
 constexpr Integer to_integer(byte value) noexcept {
-    return Integer(value);
+    return static_cast<Integer>(value);
 }
 
 FTL_CSTDDEF_END_NAMESPACE

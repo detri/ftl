@@ -76,9 +76,10 @@ Status terms used below:
 - **Complete**: satisfies the five gates above. No header is claimed complete
   yet.
 
-The source of truth for individual facilities should be a checklist copied
-from the C++23 header synopsis into the header's tracking issue. The roadmap
-tracks dependency order, not hundreds of individual overloads.
+Before work starts on a closure, create a tracking issue and copy each
+header's C++23 synopsis into it as a checklist. Include the relevant tests,
+feature-test macros, and both usage modes in that issue. The roadmap tracks
+dependency order, not hundreds of individual overloads.
 
 ## Current inventory
 
@@ -215,11 +216,14 @@ Some headers form delivery closures and should be completed together:
 ## Staged completion plan
 
 Only one stage is active at a time. Within a stage, pick the smallest listed
-closure whose prerequisites are green, finish it in both modes on all three
-compilers, then take the next closure. Do not start a higher stage to obtain a
-more interesting container.
+closure whose prerequisites are green, create its synopsis checklist before
+changing code, finish it in both modes on all three compilers, then take the
+next closure. Do not start a higher stage to obtain a more interesting
+container.
 
 ### Stage 0 — Make completion enforceable
+
+**Status: complete.**
 
 - Add the MSVC/Clang/GCC build matrix for normal and replacement modes.
 - Give every seeded header its own two test targets.
@@ -228,8 +232,8 @@ more interesting container.
 - Record the supported platform/architecture/exceptions/RTTI/threads matrix.
 - Audit `FTL_REPLACE_STL` so a test cannot accidentally consume a vendor header.
 
-**Exit:** every seeded header has an owner/checklist and CI can prove both
-usage modes without hosted-STL leakage.
+**Exit:** CI can prove both usage modes without hosted-STL leakage, and every
+new closure begins with a synopsis checklist in its tracking issue.
 
 ### Stage 1 — Complete the scalar foundation
 
