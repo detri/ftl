@@ -3,7 +3,7 @@
 | Dimension | Supported |
 |---|---|
 | Language | C++23 |
-| Compilers | MSVC, Clang, GCC |
+| Compilers | MSVC 19.51+, Clang/Clang-CL 20+, GCC 13+, AppleClang 21+ |
 | Operating systems | Windows, Linux, macOS |
 | Architectures | x86-64 |
 | Usage modes | `ftl` namespace, full `FTL_REPLACE_STL` replacement |

@@ -11,8 +11,35 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [[ "${{ github.event_name }}" == workflow_dispatch ]] ||
+             [[ "$BASE_SHA" =~ ^0+$ ]] ||
+             ! git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- include tests; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   test:
     name: ${{ matrix.name }}
+    needs: changes
+    if: >-
+      ${{ always() &&
+          (needs.changes.result != 'success' || needs.changes.outputs.code == 'true') }}
     runs-on: ${{ matrix.os }}
 
     strategy:
