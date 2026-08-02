@@ -122,6 +122,10 @@ dependency order, not hundreds of individual overloads.
 | `<any>`              | Stage 2.5         |
 | `<coroutine>`        | Stage 2.6.1       |
 
+Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
+because coroutine transformation performs lookup through std::coroutine_traits.
+Normal namespace mode still provides and tests the library types directly.
+
 ### Seeded headers
 
 The remaining public headers are incomplete until audited against their C++23
