@@ -142,9 +142,29 @@ template<class S, class I> concept sized_sentinel_for = sentinel_for<S, I> &&
         { s - i } -> same_as<iter_difference_t<I>>; { i - s } -> same_as<iter_difference_t<I>>;
     };
 namespace detail {
-template<class I> using iter_concept_t = conditional_t<requires { typename iterator_traits<I>::iterator_concept; },
-    typename iterator_traits<I>::iterator_concept, typename iterator_traits<I>::iterator_category>;
-}
+
+template<class Iterator, class = void>
+struct iter_concept {
+    using type =
+        typename iterator_traits<Iterator>::iterator_category;
+};
+
+template<class Iterator>
+struct iter_concept<
+    Iterator,
+    void_t<
+        typename iterator_traits<Iterator>::iterator_concept
+    >
+> {
+    using type =
+        typename iterator_traits<Iterator>::iterator_concept;
+};
+
+template<class Iterator>
+using iter_concept_t =
+    typename iter_concept<Iterator>::type;
+
+} // namespace detail
 template<class I> concept input_iterator = input_or_output_iterator<I> && indirectly_readable<I> &&
     derived_from<detail::iter_concept_t<I>, input_iterator_tag>;
 template<class I, class T> concept output_iterator = input_or_output_iterator<I> && indirectly_writable<I, T> && requires(I i, T&& t) { *i++ = static_cast<T&&>(t); };

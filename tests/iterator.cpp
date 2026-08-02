@@ -13,6 +13,18 @@ static_assert(tested::same_as<tested::iter_difference_t<int*>, tested::ptrdiff_t
 static_assert(tested::same_as<tested::const_iterator<const int*>, const int*>);
 static_assert(tested::same_as<tested::const_iterator<int*>, tested::basic_const_iterator<int*>>);
 
+static_assert(tested::is_same_v<
+    tested::iterator_traits<const tested::byte*>::iterator_concept,
+    tested::contiguous_iterator_tag
+>);
+
+static_assert(tested::is_same_v<
+    tested::detail::iter_concept_t<const tested::byte*>,
+    tested::contiguous_iterator_tag
+>);
+
+static_assert(tested::contiguous_iterator<const tested::byte*>);
+
 struct output {
     using value_type = int;
     int values[4]{};
