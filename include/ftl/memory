@@ -1500,8 +1500,13 @@ public:
         requires is_convertible_v<
             typename weak_ptr<U>::element_type*, element_type*>
     explicit shared_ptr(const weak_ptr<U>& other) {
-        if (!other.control || !other.control->try_add_strong())
+        if (!control || !control->try_add_strong()) {
+        #if FTL_HAS_EXCEPTIONS
             throw bad_weak_ptr{};
+        #else
+            terminate();
+        #endif
+        }
         pointer_value = other.pointer_value;
         control = other.control;
     }
