@@ -48,12 +48,14 @@
 #define FTL_NATIVE_MSVC_CXX23_TRAITS 0
 #endif
 
+#ifndef FTL_HAS_RTTI
 #if defined(FTL_NO_RTTI)
 #define FTL_HAS_RTTI 0
 #elif defined(_CPPRTTI) || defined(__GXX_RTTI)
 #define FTL_HAS_RTTI 1
 #else
 #define FTL_HAS_RTTI 0
+#endif
 #endif
 
 #ifndef FTL_HAS_EXCEPTIONS

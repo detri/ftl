@@ -19,6 +19,14 @@ struct move_only_callable {
     int operator()(int input) { return value + input; }
 };
 
+struct copyable_callable {
+    int value;
+
+    int operator()(int input) const {
+        return value + input;
+    }
+};
+
 template<class T>
 concept can_ref_temporary = requires { tested::ref(T{}); };
 
@@ -72,13 +80,31 @@ static_assert(tested::hash<tested::string_view>{}("rapidhash") ==
               ftl_rapidhash::rapidhash("rapidhash"));
 
 bool ftl_test() {
-    tested::function<int(int)> copyable = [value = 3](int input) {
-        return value + input;
-    };
+    tested::function<int(int)> copyable = copyable_callable{3};
     tested::function deduced = [](int input) { return input + 1; };
     if (deduced(1) != 2) return false;
+    auto* target = copyable.target<copyable_callable>();
+    if (!target || target->value != 3)
+        return false;
+
+    if (copyable.target<int>() != nullptr)
+        return false;
+
+    const auto& const_copyable = copyable;
+    const auto* const_target =
+        const_copyable.target<copyable_callable>();
+
+    if (!const_target || const_target->value != 3)
+        return false;
     tested::function<int(int)> copy = copyable;
-    if (copy(2) != 5 || copy.target_type() == typeid(void)) return false;
+    if (copy(2) != 5)
+        return false;
+
+#if !defined(FTL_NO_RTTI) && \
+    (defined(_CPPRTTI) || defined(__GXX_RTTI))
+    if (copy.target_type() == typeid(void))
+        return false;
+#endif
     copy = nullptr;
     if (copy != nullptr) return false;
 
