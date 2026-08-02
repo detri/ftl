@@ -426,7 +426,9 @@ template<class R, class... Args> class function<R(Args...)> {
         virtual ~erased() = default;
         virtual erased* clone() const = 0;
         virtual R call(Args&&...) = 0;
+#if FTL_HAS_RTTI
         virtual const type_info& type() const noexcept = 0;
+#endif
         virtual void* address() noexcept = 0;
         virtual const void* address() const noexcept = 0;
     };
@@ -437,7 +439,9 @@ template<class R, class... Args> class function<R(Args...)> {
         R call(Args&&... args) override {
             return invoke_r<R>(value, forward<Args>(args)...);
         }
+#if FTL_HAS_RTTI
         const type_info& type() const noexcept override { return typeid(F); }
+#endif
         void* address() noexcept override { return &value; }
         const void* address() const noexcept override { return &value; }
     };
