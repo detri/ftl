@@ -79,14 +79,12 @@ using copy_cv_volatile_t = conditional_t<is_volatile_v<Void>,
 
 template<class T, class Void>
 copy_cv_volatile_t<T, Void>* start_lifetime_as(Void* pointer) noexcept {
-    static_assert(is_implicit_lifetime_v<T> && is_trivially_destructible_v<T>);
     return reinterpret_cast<copy_cv_volatile_t<T, Void>*>(pointer);
 }
 
 template<class T, class Void>
 copy_cv_volatile_t<T, Void>* start_lifetime_as_array(
     Void* pointer, size_t) noexcept {
-    static_assert(is_implicit_lifetime_v<T> && is_trivially_destructible_v<T>);
     return reinterpret_cast<copy_cv_volatile_t<T, Void>*>(pointer);
 }
 
