@@ -104,13 +104,6 @@ inline constexpr size_t span_subspan_extent_v =
         : Extent != dynamic_extent
             ? Extent - Offset
             : dynamic_extent;
-
-struct span_trusted_t {
-    explicit span_trusted_t() = default;
-};
-
-inline constexpr span_trusted_t span_trusted{};
-
 } // namespace detail
 
 template<class ElementType, size_t Extent>
@@ -329,7 +322,6 @@ public:
         );
 
         return span<element_type, Count>(
-            detail::span_trusted,
             data(),
             Count
         );
@@ -345,7 +337,6 @@ public:
         );
 
         return span<element_type, Count>(
-            detail::span_trusted,
             data() + (size() - Count),
             Count
         );
@@ -382,7 +373,6 @@ public:
                 : Count;
 
         return span<element_type, result_extent>(
-            detail::span_trusted,
             data() + Offset,
             result_size
         );
@@ -392,7 +382,6 @@ public:
     constexpr span<element_type, dynamic_extent>
     first(size_type count) const noexcept {
         return span<element_type, dynamic_extent>(
-            detail::span_trusted,
             data(),
             count
         );
@@ -402,7 +391,6 @@ public:
     constexpr span<element_type, dynamic_extent>
     last(size_type count) const noexcept {
         return span<element_type, dynamic_extent>(
-            detail::span_trusted,
             data() + (size() - count),
             count
         );
@@ -420,7 +408,6 @@ public:
                 : count;
 
         return span<element_type, dynamic_extent>(
-            detail::span_trusted,
             data() + offset,
             result_size
         );
@@ -506,13 +493,6 @@ public:
     }
 
 private:
-    constexpr span(
-        detail::span_trusted_t,
-        pointer data,
-        size_type size
-    ) noexcept
-        : storage_(data, size) {}
-
     storage_type storage_{};
 };
 
