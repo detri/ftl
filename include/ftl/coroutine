@@ -19,16 +19,17 @@
 #include <ftl/utility>
 #endif
 
-#if !defined(__cpp_impl_coroutine)
+#if !defined(__cpp_impl_coroutine) || __cpp_impl_coroutine < 201902L
 #error "FTL <coroutine> requires compiler coroutine support"
 #endif
 
-#if !__has_builtin(__builtin_coro_done) ||       \
-    !__has_builtin(__builtin_coro_resume) ||     \
-    !__has_builtin(__builtin_coro_destroy) ||    \
-    !__has_builtin(__builtin_coro_promise) ||    \
-    !__has_builtin(__builtin_coro_noop)
-#error "FTL <coroutine> requires compiler coroutine builtins"
+#if defined(__clang__)
+#  if !__has_builtin(__builtin_coro_done) ||       \
+      !__has_builtin(__builtin_coro_resume) ||     \
+      !__has_builtin(__builtin_coro_destroy) ||    \
+      !__has_builtin(__builtin_coro_promise)
+#    error "FTL <coroutine> requires compiler coroutine builtins"
+#  endif
 #endif
 
 FTL_BEGIN_NAMESPACE
@@ -53,6 +54,14 @@ struct coroutine_traits_base<
 > {
     using promise_type = typename Return::promise_type;
 };
+
+template<class Promise>
+inline constexpr size_t coroutine_promise_alignment =
+#if defined(__GNUC__) && !defined(__clang__)
+    alignof(Promise);
+#else
+    0;
+#endif
 
 } // namespace detail
 
@@ -129,7 +138,7 @@ struct coroutine_handle {
         coroutine_handle result;
         result.pointer = __builtin_coro_promise(
             promise_pointer,
-            0,
+            detail::coroutine_promise_alignment<Promise>,
             true
         );
         return result;
@@ -184,7 +193,7 @@ struct coroutine_handle {
         return *reinterpret_cast<Promise*>(
             __builtin_coro_promise(
                 pointer,
-                0,
+                detail::coroutine_promise_alignment<Promise>,
                 false
             )
         );
@@ -225,6 +234,22 @@ struct hash<coroutine_handle<Promise>> {
 
 struct noop_coroutine_promise {};
 
+namespace detail {
+
+inline void noop_coroutine_resume_destroy() noexcept {}
+
+struct noop_coroutine_frame {
+    void (*resume)() = noop_coroutine_resume_destroy;
+    void (*destroy)() = noop_coroutine_resume_destroy;
+    noop_coroutine_promise promise;
+};
+
+#if defined(__GNUC__) && !defined(__clang__)
+inline noop_coroutine_frame noop_frame;
+#endif
+
+} // namespace detail
+
 template<>
 struct coroutine_handle<noop_coroutine_promise> {
     friend coroutine_handle noop_coroutine() noexcept;
@@ -243,20 +268,18 @@ struct coroutine_handle<noop_coroutine_promise> {
     }
 
     constexpr void operator()() const noexcept {}
-
     constexpr void resume() const noexcept {}
-
     constexpr void destroy() const noexcept {}
 
     [[nodiscard]]
     noop_coroutine_promise& promise() const noexcept {
+#if defined(__GNUC__) && !defined(__clang__)
+        return detail::noop_frame.promise;
+#else
         return *static_cast<noop_coroutine_promise*>(
-            __builtin_coro_promise(
-                pointer,
-                0,
-                false
-            )
+            __builtin_coro_promise(pointer, detail::coroutine_promise_alignment<noop_coroutine_promise>, false)
         );
+#endif
     }
 
     [[nodiscard]]
@@ -267,7 +290,11 @@ struct coroutine_handle<noop_coroutine_promise> {
 private:
     coroutine_handle() noexcept = default;
 
+#if defined(__GNUC__) && !defined(__clang__)
+    void* pointer = static_cast<void*>(&detail::noop_frame);
+#else
     void* pointer = __builtin_coro_noop();
+#endif
 };
 
 using noop_coroutine_handle =
