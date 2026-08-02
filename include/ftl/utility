@@ -47,6 +47,19 @@ using index_sequence_for = make_index_sequence<sizeof...(T)>;
 struct piecewise_construct_t { explicit piecewise_construct_t() = default; };
 inline constexpr piecewise_construct_t piecewise_construct{};
 
+struct allocator_arg_t { explicit allocator_arg_t() = default; };
+inline constexpr allocator_arg_t allocator_arg{};
+
+template<class T, class Alloc, class = void>
+struct uses_allocator : false_type {};
+
+template<class T, class Alloc>
+struct uses_allocator<T, Alloc, void_t<typename T::allocator_type>>
+    : is_convertible<Alloc, typename T::allocator_type> {};
+
+template<class T, class Alloc>
+inline constexpr bool uses_allocator_v = uses_allocator<T, Alloc>::value;
+
 template<class... Types>
 class tuple;
 

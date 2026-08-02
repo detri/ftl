@@ -60,5 +60,12 @@
 #ifdef __cpp_lib_stdfloat
 #error N4950 does not define __cpp_lib_stdfloat
 #endif
+#if __cpp_lib_constexpr_memory != 202202L || \
+    __cpp_lib_allocate_at_least != 202302L || \
+    __cpp_lib_out_ptr != 202106L || \
+    __cpp_lib_start_lifetime_as != 202207L || \
+    __cpp_lib_memory_resource != 201603L
+#error Stage 2.4 memory-management feature macros are incomplete
+#endif
 
 int main() {}
