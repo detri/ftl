@@ -1056,7 +1056,7 @@ public:
 
     [[nodiscard]] constexpr T* allocate(size_t count) {
         if (count > size_t(-1) / sizeof(T)) {
-#ifdef FTL_HAS_EXCEPTIONS
+#if FTL_HAS_EXCEPTIONS
             throw bad_array_new_length{};
 #else
             terminate();
