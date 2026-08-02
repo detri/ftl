@@ -36,7 +36,7 @@ public:
 
 namespace detail {
 [[noreturn]] inline void throw_bad_variant_access() {
-#if defined(_CPPUNWIND) || defined(__cpp_exceptions)
+#if FTL_HAS_EXCEPTIONS
     throw bad_variant_access{};
 #else
     terminate();

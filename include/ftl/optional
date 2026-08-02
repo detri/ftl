@@ -42,7 +42,7 @@ public:
 
 namespace detail {
 [[noreturn]] inline void throw_bad_optional_access() {
-#if defined(_CPPUNWIND) || defined(__cpp_exceptions)
+#if FTL_HAS_EXCEPTIONS
     throw bad_optional_access{};
 #else
     terminate();

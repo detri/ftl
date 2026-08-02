@@ -32,7 +32,7 @@ namespace detail {
 template<class T> inline unsigned char any_type_token;
 
 [[noreturn]] inline void throw_bad_any_cast() {
-#if defined(_CPPUNWIND) || defined(__cpp_exceptions)
+#if FTL_HAS_EXCEPTIONS
     throw bad_any_cast{};
 #else
     terminate();

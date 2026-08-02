@@ -487,7 +487,13 @@ public:
     }
     explicit operator bool() const noexcept { return target_ != nullptr; }
     R operator()(Args... args) const {
-        if (!target_) throw bad_function_call{};
+        if (!target_) {
+#if FTL_HAS_EXCEPTIONS
+            throw bad_function_call{};
+#else
+            terminate();
+#endif
+        }
         return target_->call(forward<Args>(args)...);
     }
 #if FTL_HAS_RTTI

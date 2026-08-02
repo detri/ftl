@@ -72,7 +72,13 @@ class new_delete_memory_resource final : public memory_resource {
     }
 };
 class null_memory_resource_impl final : public memory_resource {
-    void* do_allocate(size_t, size_t) override { throw bad_alloc{}; }
+    void* do_allocate(size_t, size_t) override {
+#if FTL_HAS_EXCEPTIONS
+        throw bad_alloc{};
+#else
+        terminate();
+#endif
+    }
     void do_deallocate(void*, size_t, size_t) override {}
     bool do_is_equal(const memory_resource& other) const noexcept override {
         return this == &other;
