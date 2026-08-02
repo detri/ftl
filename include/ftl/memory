@@ -1502,18 +1502,22 @@ public:
     }
 
     template<class U>
-        requires is_convertible_v<
-            typename weak_ptr<U>::element_type*, element_type*>
-    explicit shared_ptr(const weak_ptr<U>& other) {
-        if (!control || !control->try_add_strong()) {
-        #if FTL_HAS_EXCEPTIONS
+        requires detail::shared_pointer_compatible_v<U, T>
+    explicit shared_ptr(const weak_ptr<U>& other)
+        : pointer_value(nullptr),
+          control(nullptr) {
+        auto* candidate = other.control;
+
+        if (!candidate || !candidate->try_add_strong()) {
+#if FTL_HAS_EXCEPTIONS
             throw bad_weak_ptr{};
-        #else
+#else
             terminate();
-        #endif
+#endif
         }
+
         pointer_value = other.pointer_value;
-        control = other.control;
+        control = candidate;
     }
 
     ~shared_ptr() {
