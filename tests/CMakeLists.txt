@@ -123,6 +123,9 @@ add_ftl_compile_fail_check(optional_rejects_rvalue_reference
     checks/optional_rejects_rvalue_reference_compile_fail.cpp)
 add_ftl_compile_fail_check(variant_rejects_duplicate_get
     checks/variant_rejects_duplicate_get_compile_fail.cpp)
+add_ftl_compile_fail_check(span_rejects_const_removal checks/span_rejects_const_removal_compile_fail.cpp)
+add_ftl_compile_fail_check(span_rejects_derived_to_base_array_conversion checks/span_rejects_derived_to_base_array_conversion_compile_fail.cpp)
+add_ftl_compile_fail_check(span_rejects_mismatched_static_extent checks/span_rejects_mismatched_static_extent_compile_fail.cpp)
 add_ftl_standalone_check(feature_macros checks/feature_macros.cpp)
 add_ftl_standalone_check(no_allocation checks/no_allocation.cpp)
 add_ftl_freestanding_link_check(freestanding_link checks/freestanding_link.cpp)
@@ -170,6 +173,7 @@ foreach(header IN ITEMS
         iterator
         tuple
         coroutine
+        span
 )
     add_ftl_test(${header})
 endforeach()
