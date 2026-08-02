@@ -1055,8 +1055,13 @@ public:
     constexpr allocator(const allocator<U>&) noexcept {}
 
     [[nodiscard]] constexpr T* allocate(size_t count) {
-        if (count > size_t(-1) / sizeof(T))
+        if (count > size_t(-1) / sizeof(T)) {
+#ifdef FTL_HAS_EXCEPTIONS
             throw bad_array_new_length{};
+#else
+            terminate();
+#endif
+        }
         const size_t bytes = count * sizeof(T);
 #if defined(__STDCPP_DEFAULT_NEW_ALIGNMENT__)
         if constexpr (alignof(T) > __STDCPP_DEFAULT_NEW_ALIGNMENT__)
