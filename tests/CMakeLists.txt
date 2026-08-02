@@ -174,6 +174,7 @@ foreach(header IN ITEMS
         tuple
         coroutine
         span
+        ranges
 )
     add_ftl_test(${header})
 endforeach()

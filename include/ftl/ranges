@@ -1,0 +1,1001 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_RANGES_HEADER
+#define FTL_RANGES_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <cstddef>
+#include <iterator>
+#include <memory>
+#include <type_traits>
+#include <utility>
+#else
+#include <ftl/cstddef>
+#include <ftl/iterator>
+#include <ftl/memory>
+#include <ftl/type_traits>
+#include <ftl/utility>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+namespace ranges {
+
+template<class>
+inline constexpr bool enable_borrowed_range = false;
+
+template<class>
+inline constexpr bool disable_sized_range = false;
+
+namespace detail {
+
+template<class T, class = void>
+inline constexpr bool complete_type = false;
+
+template<class T>
+inline constexpr bool complete_type<
+    T,
+    void_t<decltype(sizeof(T))>
+> = true;
+
+template<class T>
+concept borrowable_range_argument =
+    is_lvalue_reference_v<T> ||
+    enable_borrowed_range<remove_cvref_t<T>>;
+
+template<class T>
+concept class_or_enum =
+    is_class_v<remove_reference_t<T>> ||
+    is_enum_v<remove_reference_t<T>>;
+
+template<class T>
+concept integer_like =
+    integral<remove_cv_t<T>> &&
+    !same_as<remove_cv_t<T>, bool>;
+
+template<class T>
+using uncvref_t = remove_cvref_t<T>;
+
+/*
+ * Poison pills ensure these calls use ADL only rather than finding the
+ * customization-point objects being defined in this namespace.
+ */
+void begin() = delete;
+void end() = delete;
+void rbegin() = delete;
+void rend() = delete;
+void size() = delete;
+
+template<class T>
+constexpr auto adl_begin(T& value)
+    noexcept(noexcept(begin(value)))
+    -> decltype(begin(value)) {
+    return begin(value);
+}
+
+template<class T>
+constexpr auto adl_end(T& value)
+    noexcept(noexcept(end(value)))
+    -> decltype(end(value)) {
+    return end(value);
+}
+
+template<class T>
+constexpr auto adl_rbegin(T& value)
+    noexcept(noexcept(rbegin(value)))
+    -> decltype(rbegin(value)) {
+    return rbegin(value);
+}
+
+template<class T>
+constexpr auto adl_rend(T& value)
+    noexcept(noexcept(rend(value)))
+    -> decltype(rend(value)) {
+    return rend(value);
+}
+
+template<class T>
+constexpr auto adl_size(T& value)
+    noexcept(noexcept(size(value)))
+    -> decltype(size(value)) {
+    return size(value);
+}
+
+template<class T>
+concept member_begin =
+    requires(T& value) {
+        {
+            value.begin()
+        } -> input_or_output_iterator;
+    };
+
+template<class T>
+concept has_adl_begin =
+    class_or_enum<T> &&
+    requires(T& value) {
+        {
+            detail::adl_begin(value)
+        } -> input_or_output_iterator;
+    };
+
+template<class T>
+consteval bool begin_noexcept() {
+    if constexpr (is_array_v<T>) {
+        return true;
+    } else if constexpr (member_begin<T>) {
+        return noexcept(declval<T&>().begin());
+    } else {
+        return noexcept(detail::adl_begin(declval<T&>()));
+    }
+}
+
+struct begin_fn {
+    template<class T>
+        requires (
+            borrowable_range_argument<T&&> &&
+            (
+                is_array_v<remove_reference_t<T>> ||
+                member_begin<remove_reference_t<T>> ||
+                has_adl_begin<remove_reference_t<T>>
+            )
+        )
+    [[nodiscard]]
+    constexpr auto operator()(T&& value) const
+        noexcept(begin_noexcept<remove_reference_t<T>>()) {
+        using U = remove_reference_t<T>;
+
+        if constexpr (is_array_v<U>) {
+            static_assert(
+                complete_type<remove_all_extents_t<U>>
+            );
+
+            return value + 0;
+        } else if constexpr (member_begin<U>) {
+            return value.begin();
+        } else {
+            return detail::adl_begin(value);
+        }
+    }
+};
+
+} // namespace detail
+
+inline constexpr detail::begin_fn begin{};
+
+template<class T>
+using iterator_t =
+    decltype(ranges::begin(declval<T&>()));
+
+namespace detail {
+
+template<class T>
+concept member_end =
+    requires(T& value) {
+        {
+            value.end()
+        } -> sentinel_for<iterator_t<T>>;
+    };
+
+template<class T>
+concept has_adl_end =
+    class_or_enum<T> &&
+    requires(T& value) {
+        {
+            detail::adl_end(value)
+        } -> sentinel_for<iterator_t<T>>;
+    };
+
+template<class T>
+consteval bool end_noexcept() {
+    if constexpr (is_array_v<T>) {
+        return true;
+    } else if constexpr (member_end<T>) {
+        return noexcept(declval<T&>().end());
+    } else {
+        return noexcept(detail::adl_end(declval<T&>()));
+    }
+}
+
+struct end_fn {
+    template<class T>
+        requires (
+            borrowable_range_argument<T&&> &&
+            (
+                (
+                    is_array_v<remove_reference_t<T>> &&
+                    extent_v<remove_reference_t<T>> != 0
+                ) ||
+                member_end<remove_reference_t<T>> ||
+                has_adl_end<remove_reference_t<T>>
+            )
+        )
+    [[nodiscard]]
+    constexpr auto operator()(T&& value) const
+        noexcept(end_noexcept<remove_reference_t<T>>()) {
+        using U = remove_reference_t<T>;
+
+        if constexpr (is_array_v<U>) {
+            static_assert(
+                complete_type<remove_all_extents_t<U>>
+            );
+
+            return value + extent_v<U>;
+        } else if constexpr (member_end<U>) {
+            return value.end();
+        } else {
+            return detail::adl_end(value);
+        }
+    }
+};
+
+} // namespace detail
+
+inline constexpr detail::end_fn end{};
+
+template<class T>
+using sentinel_t =
+    decltype(ranges::end(declval<T&>()));
+
+template<class T>
+concept range =
+    requires(T& value) {
+        ranges::begin(value);
+        ranges::end(value);
+    };
+
+template<class T>
+concept input_range =
+    range<T> &&
+    input_iterator<iterator_t<T>>;
+
+template<class T>
+concept forward_range =
+    input_range<T> &&
+    forward_iterator<iterator_t<T>>;
+
+template<class T>
+concept bidirectional_range =
+    forward_range<T> &&
+    bidirectional_iterator<iterator_t<T>>;
+
+template<class T>
+concept random_access_range =
+    bidirectional_range<T> &&
+    random_access_iterator<iterator_t<T>>;
+
+template<class T>
+concept common_range =
+    range<T> &&
+    same_as<iterator_t<T>, sentinel_t<T>>;
+
+template<class T>
+concept borrowed_range =
+    range<T> &&
+    (
+        is_lvalue_reference_v<T> ||
+        enable_borrowed_range<remove_cvref_t<T>>
+    );
+
+namespace detail {
+
+template<class R>
+[[nodiscard]]
+constexpr auto& possibly_const_range(R& value) noexcept {
+    if constexpr (input_range<const R>) {
+        return static_cast<const R&>(value);
+    } else {
+        return value;
+    }
+}
+
+template<class T>
+consteval bool cbegin_noexcept() {
+    using R = remove_reference_t<T>;
+    using P = decltype(possibly_const_range(
+        declval<R&>()
+    ));
+
+    return noexcept(
+        const_iterator<decltype(ranges::begin(
+            declval<P>()
+        ))>(
+            ranges::begin(declval<P>())
+        )
+    );
+}
+
+struct cbegin_fn {
+    template<class T>
+        requires (
+            borrowable_range_argument<T&&> &&
+            requires(remove_reference_t<T>& value) {
+                const_iterator<decltype(
+                    ranges::begin(
+                        detail::possibly_const_range(value)
+                    )
+                )>(
+                    ranges::begin(
+                        detail::possibly_const_range(value)
+                    )
+                );
+            }
+        )
+    [[nodiscard]]
+    constexpr auto operator()(T&& value) const
+        noexcept(cbegin_noexcept<T>()) {
+        auto& selected =
+            detail::possibly_const_range(value);
+
+        auto current =
+            ranges::begin(selected);
+
+        return const_iterator<decltype(current)>(
+            move(current)
+        );
+    }
+};
+
+template<class T>
+consteval bool cend_noexcept() {
+    using R = remove_reference_t<T>;
+    using P = decltype(possibly_const_range(
+        declval<R&>()
+    ));
+
+    return noexcept(
+        const_sentinel<decltype(ranges::end(
+            declval<P>()
+        ))>(
+            ranges::end(declval<P>())
+        )
+    );
+}
+
+struct cend_fn {
+    template<class T>
+        requires (
+            borrowable_range_argument<T&&> &&
+            requires(remove_reference_t<T>& value) {
+                const_sentinel<decltype(
+                    ranges::end(
+                        detail::possibly_const_range(value)
+                    )
+                )>(
+                    ranges::end(
+                        detail::possibly_const_range(value)
+                    )
+                );
+            }
+        )
+    [[nodiscard]]
+    constexpr auto operator()(T&& value) const
+        noexcept(cend_noexcept<T>()) {
+        auto& selected =
+            detail::possibly_const_range(value);
+
+        auto current =
+            ranges::end(selected);
+
+        return const_sentinel<decltype(current)>(
+            move(current)
+        );
+    }
+};
+
+} // namespace detail
+
+inline constexpr detail::cbegin_fn cbegin{};
+inline constexpr detail::cend_fn cend{};
+
+template<class T>
+using const_iterator_t =
+    decltype(ranges::cbegin(declval<T&>()));
+
+template<class T>
+using const_sentinel_t =
+    decltype(ranges::cend(declval<T&>()));
+
+namespace detail {
+
+template<class T>
+concept member_rbegin =
+    requires(T& value) {
+        {
+            value.rbegin()
+        } -> input_or_output_iterator;
+    };
+
+template<class T>
+concept has_adl_rbegin =
+    class_or_enum<T> &&
+    requires(T& value) {
+        {
+            detail::adl_rbegin(value)
+        } -> input_or_output_iterator;
+    };
+
+template<class T>
+concept reversible_fallback =
+    requires(T& value) {
+        requires same_as<
+            decltype(ranges::begin(value)),
+            decltype(ranges::end(value))
+        >;
+
+        requires bidirectional_iterator<
+            decltype(ranges::begin(value))
+        >;
+    };
+
+template<class T>
+consteval bool rbegin_noexcept() {
+    if constexpr (member_rbegin<T>) {
+        return noexcept(declval<T&>().rbegin());
+    } else if constexpr (has_adl_rbegin<T>) {
+        return noexcept(
+            detail::adl_rbegin(declval<T&>())
+        );
+    } else {
+        return noexcept(
+            make_reverse_iterator(
+                ranges::end(declval<T&>())
+            )
+        );
+    }
+}
+
+struct rbegin_fn {
+    template<class T>
+        requires (
+            borrowable_range_argument<T&&> &&
+            (
+                member_rbegin<remove_reference_t<T>> ||
+                has_adl_rbegin<remove_reference_t<T>> ||
+                reversible_fallback<remove_reference_t<T>>
+            )
+        )
+    [[nodiscard]]
+    constexpr auto operator()(T&& value) const
+        noexcept(rbegin_noexcept<remove_reference_t<T>>()) {
+        using U = remove_reference_t<T>;
+
+        if constexpr (member_rbegin<U>) {
+            return value.rbegin();
+        } else if constexpr (has_adl_rbegin<U>) {
+            return detail::adl_rbegin(value);
+        } else {
+            return make_reverse_iterator(
+                ranges::end(value)
+            );
+        }
+    }
+};
+
+template<class T>
+concept member_rend =
+    requires(T& value) {
+        {
+            value.rend()
+        } -> sentinel_for<
+            decltype(
+                declval<const rbegin_fn&>()(value)
+            )
+        >;
+    };
+
+template<class T>
+concept has_adl_rend =
+    class_or_enum<T> &&
+    requires(T& value) {
+        {
+            detail::adl_rend(value)
+        } -> sentinel_for<
+            decltype(
+                declval<const rbegin_fn&>()(value)
+            )
+        >;
+    };
+
+template<class T>
+consteval bool rend_noexcept() {
+    if constexpr (member_rend<T>) {
+        return noexcept(declval<T&>().rend());
+    } else if constexpr (has_adl_rend<T>) {
+        return noexcept(
+            detail::adl_rend(declval<T&>())
+        );
+    } else {
+        return noexcept(
+            make_reverse_iterator(
+                ranges::begin(declval<T&>())
+            )
+        );
+    }
+}
+
+struct rend_fn {
+    template<class T>
+        requires (
+            borrowable_range_argument<T&&> &&
+            (
+                member_rend<remove_reference_t<T>> ||
+                has_adl_rend<remove_reference_t<T>> ||
+                reversible_fallback<remove_reference_t<T>>
+            )
+        )
+    [[nodiscard]]
+    constexpr auto operator()(T&& value) const
+        noexcept(rend_noexcept<remove_reference_t<T>>()) {
+        using U = remove_reference_t<T>;
+
+        if constexpr (member_rend<U>) {
+            return value.rend();
+        } else if constexpr (has_adl_rend<U>) {
+            return detail::adl_rend(value);
+        } else {
+            return make_reverse_iterator(
+                ranges::begin(value)
+            );
+        }
+    }
+};
+
+} // namespace detail
+
+inline constexpr detail::rbegin_fn rbegin{};
+inline constexpr detail::rend_fn rend{};
+
+namespace detail {
+
+template<class T>
+consteval bool crbegin_noexcept() {
+    using R = remove_reference_t<T>;
+    using P = decltype(possibly_const_range(
+        declval<R&>()
+    ));
+
+    return noexcept(
+        const_iterator<decltype(ranges::rbegin(
+            declval<P>()
+        ))>(
+            ranges::rbegin(declval<P>())
+        )
+    );
+}
+
+struct crbegin_fn {
+    template<class T>
+        requires (
+            borrowable_range_argument<T&&> &&
+            requires(remove_reference_t<T>& value) {
+                const_iterator<decltype(
+                    ranges::rbegin(
+                        detail::possibly_const_range(value)
+                    )
+                )>(
+                    ranges::rbegin(
+                        detail::possibly_const_range(value)
+                    )
+                );
+            }
+        )
+    [[nodiscard]]
+    constexpr auto operator()(T&& value) const
+        noexcept(crbegin_noexcept<T>()) {
+        auto& selected =
+            detail::possibly_const_range(value);
+
+        auto current =
+            ranges::rbegin(selected);
+
+        return const_iterator<decltype(current)>(
+            move(current)
+        );
+    }
+};
+
+template<class T>
+consteval bool crend_noexcept() {
+    using R = remove_reference_t<T>;
+    using P = decltype(possibly_const_range(
+        declval<R&>()
+    ));
+
+    return noexcept(
+        const_sentinel<decltype(ranges::rend(
+            declval<P>()
+        ))>(
+            ranges::rend(declval<P>())
+        )
+    );
+}
+
+struct crend_fn {
+    template<class T>
+        requires (
+            borrowable_range_argument<T&&> &&
+            requires(remove_reference_t<T>& value) {
+                const_sentinel<decltype(
+                    ranges::rend(
+                        detail::possibly_const_range(value)
+                    )
+                )>(
+                    ranges::rend(
+                        detail::possibly_const_range(value)
+                    )
+                );
+            }
+        )
+    [[nodiscard]]
+    constexpr auto operator()(T&& value) const
+        noexcept(crend_noexcept<T>()) {
+        auto& selected =
+            detail::possibly_const_range(value);
+
+        auto current =
+            ranges::rend(selected);
+
+        return const_sentinel<decltype(current)>(
+            move(current)
+        );
+    }
+};
+
+} // namespace detail
+
+inline constexpr detail::crbegin_fn crbegin{};
+inline constexpr detail::crend_fn crend{};
+
+namespace detail {
+
+template<class T>
+concept member_size =
+    !disable_sized_range<remove_cv_t<T>> &&
+    requires(T& value) {
+        requires integer_like<
+            decltype(value.size())
+        >;
+    };
+
+template<class T>
+concept has_adl_size =
+    class_or_enum<T> &&
+    !disable_sized_range<remove_cv_t<T>> &&
+    requires(T& value) {
+        requires integer_like<
+            decltype(detail::adl_size(value))
+        >;
+    };
+
+template<class T>
+concept subtraction_size =
+    forward_iterator<iterator_t<T>> &&
+    sized_sentinel_for<
+        sentinel_t<T>,
+        iterator_t<T>
+    > &&
+    requires(T& value) {
+        ranges::end(value) -
+        ranges::begin(value);
+    };
+
+template<class Difference>
+using unsigned_like_t =
+    make_unsigned_t<remove_cv_t<Difference>>;
+
+template<class T>
+consteval bool size_noexcept() {
+    if constexpr (is_array_v<T>) {
+        return true;
+    } else if constexpr (member_size<T>) {
+        return noexcept(declval<T&>().size());
+    } else if constexpr (has_adl_size<T>) {
+        return noexcept(
+            detail::adl_size(declval<T&>())
+        );
+    } else {
+        return noexcept(
+            ranges::end(declval<T&>()) -
+            ranges::begin(declval<T&>())
+        );
+    }
+}
+
+struct size_fn {
+    template<class T>
+        requires (
+            (
+                is_array_v<remove_reference_t<T>> &&
+                extent_v<remove_reference_t<T>> != 0
+            ) ||
+            member_size<remove_reference_t<T>> ||
+            has_adl_size<remove_reference_t<T>> ||
+            subtraction_size<remove_reference_t<T>>
+        )
+    [[nodiscard]]
+    constexpr auto operator()(T&& value) const
+        noexcept(size_noexcept<remove_reference_t<T>>()) {
+        using U = remove_reference_t<T>;
+
+        if constexpr (is_array_v<U>) {
+            return extent_v<U>;
+        } else if constexpr (member_size<U>) {
+            return value.size();
+        } else if constexpr (has_adl_size<U>) {
+            return detail::adl_size(value);
+        } else {
+            using Difference = decltype(
+                ranges::end(value) -
+                ranges::begin(value)
+            );
+
+            using Result =
+                unsigned_like_t<Difference>;
+
+            return static_cast<Result>(
+                ranges::end(value) -
+                ranges::begin(value)
+            );
+        }
+    }
+};
+
+} // namespace detail
+
+inline constexpr detail::size_fn size{};
+
+template<class T>
+concept sized_range =
+    range<T> &&
+    requires(T& value) {
+        ranges::size(value);
+    };
+
+template<class T>
+using range_size_t =
+    decltype(ranges::size(declval<T&>()));
+
+namespace detail {
+
+struct ssize_fn {
+    template<class T>
+        requires requires(T&& value) {
+            ranges::size(
+                static_cast<T&&>(value)
+            );
+        }
+    [[nodiscard]]
+    constexpr auto operator()(T&& value) const
+        noexcept(noexcept(
+            ranges::size(
+                static_cast<T&&>(value)
+            )
+        )) {
+        using Size = decltype(
+            ranges::size(
+                static_cast<T&&>(value)
+            )
+        );
+
+        using Result = common_type_t<
+            ptrdiff_t,
+            make_signed_t<Size>
+        >;
+
+        return static_cast<Result>(
+            ranges::size(
+                static_cast<T&&>(value)
+            )
+        );
+    }
+};
+
+template<class T>
+concept member_empty =
+    requires(T& value) {
+        static_cast<bool>(value.empty());
+    };
+
+template<class T>
+concept size_empty =
+    requires(T& value) {
+        ranges::size(value) == 0;
+    };
+
+template<class T>
+concept iterator_empty =
+    forward_iterator<iterator_t<T>> &&
+    requires(T& value) {
+        static_cast<bool>(
+            ranges::begin(value) ==
+            ranges::end(value)
+        );
+    };
+
+template<class T>
+consteval bool empty_noexcept() {
+    if constexpr (member_empty<T>) {
+        return noexcept(
+            static_cast<bool>(
+                declval<T&>().empty()
+            )
+        );
+    } else if constexpr (size_empty<T>) {
+        return noexcept(
+            ranges::size(declval<T&>()) == 0
+        );
+    } else {
+        return noexcept(
+            static_cast<bool>(
+                ranges::begin(declval<T&>()) ==
+                ranges::end(declval<T&>())
+            )
+        );
+    }
+}
+
+struct empty_fn {
+    template<class T>
+        requires (
+            member_empty<remove_reference_t<T>> ||
+            size_empty<remove_reference_t<T>> ||
+            iterator_empty<remove_reference_t<T>>
+        )
+    [[nodiscard]]
+    constexpr bool operator()(T&& value) const
+        noexcept(empty_noexcept<remove_reference_t<T>>()) {
+        using U = remove_reference_t<T>;
+
+        if constexpr (member_empty<U>) {
+            return static_cast<bool>(
+                value.empty()
+            );
+        } else if constexpr (size_empty<U>) {
+            return ranges::size(value) == 0;
+        } else {
+            return static_cast<bool>(
+                ranges::begin(value) ==
+                ranges::end(value)
+            );
+        }
+    }
+};
+
+template<class T>
+concept member_data =
+    requires(T& value) {
+        requires is_pointer_v<
+            decltype(value.data())
+        >;
+
+        requires is_object_v<
+            remove_pointer_t<
+                decltype(value.data())
+            >
+        >;
+    };
+
+template<class T>
+concept iterator_data =
+    contiguous_iterator<iterator_t<T>> &&
+    requires(T& value) {
+        to_address(ranges::begin(value));
+    };
+
+template<class T>
+consteval bool data_noexcept() {
+    if constexpr (member_data<T>) {
+        return noexcept(declval<T&>().data());
+    } else {
+        return noexcept(
+            to_address(
+                ranges::begin(declval<T&>())
+            )
+        );
+    }
+}
+
+struct data_fn {
+    template<class T>
+        requires (
+            borrowable_range_argument<T&&> &&
+            (
+                member_data<remove_reference_t<T>> ||
+                iterator_data<remove_reference_t<T>>
+            )
+        )
+    [[nodiscard]]
+    constexpr auto operator()(T&& value) const
+        noexcept(data_noexcept<remove_reference_t<T>>()) {
+        using U = remove_reference_t<T>;
+
+        if constexpr (member_data<U>) {
+            return value.data();
+        } else {
+            return to_address(
+                ranges::begin(value)
+            );
+        }
+    }
+};
+
+} // namespace detail
+
+inline constexpr detail::ssize_fn ssize{};
+inline constexpr detail::empty_fn empty{};
+inline constexpr detail::data_fn data{};
+
+namespace detail {
+
+struct cdata_fn {
+    template<class T>
+        requires (
+            borrowable_range_argument<T&&> &&
+            requires(remove_reference_t<T>& value) {
+                ranges::data(
+                    detail::possibly_const_range(value)
+                );
+            }
+        )
+    [[nodiscard]]
+    constexpr auto operator()(T&& value) const
+        noexcept(noexcept(
+            ranges::data(
+                detail::possibly_const_range(value)
+            )
+        )) {
+        auto& selected =
+            detail::possibly_const_range(value);
+
+        return ranges::data(selected);
+    }
+};
+
+} // namespace detail
+
+inline constexpr detail::cdata_fn cdata{};
+
+template<class T>
+using range_difference_t =
+    iter_difference_t<iterator_t<T>>;
+
+template<class T>
+using range_value_t =
+    iter_value_t<iterator_t<T>>;
+
+template<class T>
+using range_reference_t =
+    iter_reference_t<iterator_t<T>>;
+
+template<class T>
+using range_const_reference_t =
+    iter_const_reference_t<iterator_t<T>>;
+
+template<class T>
+using range_rvalue_reference_t =
+    iter_rvalue_reference_t<iterator_t<T>>;
+
+template<class T>
+using range_common_reference_t =
+    iter_common_reference_t<iterator_t<T>>;
+
+struct dangling {
+    constexpr dangling() noexcept = default;
+
+    template<class... Args>
+    constexpr dangling(Args&&...) noexcept {}
+};
+
+template<range R>
+using borrowed_iterator_t =
+    conditional_t<
+        borrowed_range<R>,
+        iterator_t<R>,
+        dangling
+    >;
+
+} // namespace ranges
+
+FTL_END_NAMESPACE
+
+#endif // FTL_RANGES_HEADER
