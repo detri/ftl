@@ -85,5 +85,6 @@
 #define __cpp_lib_expected 202211L
 #define __cpp_lib_variant 202106L
 #define __cpp_lib_optional 202110L
+#define __cpp_lib_coroutine 201902L
 
 #endif
