@@ -91,7 +91,7 @@ endfunction()
 function(add_ftl_disabled_features_check name source)
     add_ftl_standalone_check(${name} ${source})
     target_compile_definitions(ftl_check_${name} PRIVATE
-        FTL_NO_THREADS FTL_REPLACE_STL)
+        FTL_NO_EXCEPTIONS FTL_NO_RTTI FTL_NO_THREADS FTL_REPLACE_STL)
     target_include_directories(ftl_check_${name} PRIVATE ../include/ftl)
     if(MSVC)
         target_compile_options(ftl_check_${name} PRIVATE /EHs-c- /GR- /X)
@@ -115,6 +115,14 @@ add_ftl_compile_fail_check(pair_rejects_dangling_reference
     checks/pair_dangling_compile_fail.cpp)
 add_ftl_compile_fail_check(memory_rejects_invalid_uses_allocator
     checks/memory_uses_allocator_compile_fail.cpp)
+add_ftl_compile_fail_check(any_rejects_move_only
+    checks/any_rejects_move_only_compile_fail.cpp)
+add_ftl_compile_fail_check(expected_rejects_reference
+    checks/expected_rejects_reference_compile_fail.cpp)
+add_ftl_compile_fail_check(optional_rejects_rvalue_reference
+    checks/optional_rejects_rvalue_reference_compile_fail.cpp)
+add_ftl_compile_fail_check(variant_rejects_duplicate_get
+    checks/variant_rejects_duplicate_get_compile_fail.cpp)
 add_ftl_standalone_check(feature_macros checks/feature_macros.cpp)
 add_ftl_standalone_check(no_allocation checks/no_allocation.cpp)
 add_ftl_freestanding_link_check(freestanding_link checks/freestanding_link.cpp)
@@ -133,6 +141,9 @@ foreach(header IN ITEMS
         exception
         typeinfo
         typeindex
+        any
+        expected
+        variant
         optional
         initializer_list
         functional

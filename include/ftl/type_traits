@@ -48,6 +48,26 @@
 #define FTL_NATIVE_MSVC_CXX23_TRAITS 0
 #endif
 
+#ifndef FTL_HAS_RTTI
+#if defined(FTL_NO_RTTI)
+#define FTL_HAS_RTTI 0
+#elif defined(_CPPRTTI) || defined(__GXX_RTTI)
+#define FTL_HAS_RTTI 1
+#else
+#define FTL_HAS_RTTI 0
+#endif
+#endif
+
+#ifndef FTL_HAS_EXCEPTIONS
+#if defined(FTL_NO_EXCEPTIONS)
+#define FTL_HAS_EXCEPTIONS 0
+#elif defined(_CPPUNWIND) || defined(__cpp_exceptions) || defined(__EXCEPTIONS)
+#define FTL_HAS_EXCEPTIONS 1
+#else
+#define FTL_HAS_EXCEPTIONS 0
+#endif
+#endif
+
 #if __has_builtin(__is_same) || FTL_NATIVE_MSVC
 #define FTL_HAS_IS_SAME 1
 #define FTL_IS_SAME(A, B) __is_same(A, B)

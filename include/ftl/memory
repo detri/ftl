@@ -275,139 +275,208 @@ template<class InputIterator, class ForwardIterator>
 constexpr ForwardIterator uninitialized_copy(
     InputIterator first, InputIterator last, ForwardIterator output) {
     auto current = output;
+
+#if FTL_HAS_EXCEPTIONS
     try {
+#endif
         for (; first != last; ++first, ++current)
             construct_at(addressof(*current), *first);
+
         return current;
+
+#if FTL_HAS_EXCEPTIONS
     } catch (...) {
         destroy(output, current);
         throw;
     }
+#endif
 }
 
 template<class InputIterator, class Size, class ForwardIterator>
 constexpr ForwardIterator uninitialized_copy_n(
     InputIterator first, Size count, ForwardIterator output) {
     auto current = output;
+
+#if FTL_HAS_EXCEPTIONS
     try {
+#endif
         for (; count > 0; --count, ++first, ++current)
             construct_at(addressof(*current), *first);
+
         return current;
+
+#if FTL_HAS_EXCEPTIONS
     } catch (...) {
         destroy(output, current);
         throw;
     }
+#endif
 }
 
 template<class InputIterator, class ForwardIterator>
 constexpr ForwardIterator uninitialized_move(
     InputIterator first, InputIterator last, ForwardIterator output) {
     auto current = output;
+
+#if FTL_HAS_EXCEPTIONS
     try {
+#endif
         for (; first != last; ++first, ++current)
             construct_at(addressof(*current), move(*first));
+
         return current;
+
+#if FTL_HAS_EXCEPTIONS
     } catch (...) {
         destroy(output, current);
         throw;
     }
+#endif
 }
 
 template<class InputIterator, class Size, class ForwardIterator>
 constexpr pair<InputIterator, ForwardIterator> uninitialized_move_n(
     InputIterator first, Size count, ForwardIterator output) {
     auto current = output;
+
+#if FTL_HAS_EXCEPTIONS
     try {
+#endif
         for (; count > 0; --count, ++first, ++current)
             construct_at(addressof(*current), move(*first));
+
         return {first, current};
+
+#if FTL_HAS_EXCEPTIONS
     } catch (...) {
         destroy(output, current);
         throw;
     }
+#endif
 }
 
 template<class ForwardIterator, class T>
 constexpr void uninitialized_fill(
     ForwardIterator first, ForwardIterator last, const T& value) {
     auto current = first;
+
+#if FTL_HAS_EXCEPTIONS
     try {
+#endif
         for (; current != last; ++current)
             construct_at(addressof(*current), value);
+
+#if FTL_HAS_EXCEPTIONS
     } catch (...) {
         destroy(first, current);
         throw;
     }
+#endif
 }
 
 template<class ForwardIterator, class Size, class T>
 constexpr ForwardIterator uninitialized_fill_n(
     ForwardIterator first, Size count, const T& value) {
     auto current = first;
+
+#if FTL_HAS_EXCEPTIONS
     try {
+#endif
         for (; count > 0; --count, ++current)
             construct_at(addressof(*current), value);
+
         return current;
+
+#if FTL_HAS_EXCEPTIONS
     } catch (...) {
         destroy(first, current);
         throw;
     }
+#endif
 }
 
 template<class ForwardIterator>
 constexpr void uninitialized_default_construct(
     ForwardIterator first, ForwardIterator last) {
     auto current = first;
+
+#if FTL_HAS_EXCEPTIONS
     try {
-        for (; current != last; ++current)
+#endif
+        for (; current != last; ++current) {
             ::new (static_cast<void*>(addressof(*current)))
                 remove_reference_t<decltype(*current)>;
+        }
+
+#if FTL_HAS_EXCEPTIONS
     } catch (...) {
         destroy(first, current);
         throw;
     }
+#endif
 }
 
 template<class ForwardIterator, class Size>
 constexpr ForwardIterator uninitialized_default_construct_n(
     ForwardIterator first, Size count) {
     auto current = first;
+
+#if FTL_HAS_EXCEPTIONS
     try {
-        for (; count > 0; --count, ++current)
+#endif
+        for (; count > 0; --count, ++current) {
             ::new (static_cast<void*>(addressof(*current)))
                 remove_reference_t<decltype(*current)>;
+        }
+
         return current;
+
+#if FTL_HAS_EXCEPTIONS
     } catch (...) {
         destroy(first, current);
         throw;
     }
+#endif
 }
 
 template<class ForwardIterator>
 constexpr void uninitialized_value_construct(
     ForwardIterator first, ForwardIterator last) {
     auto current = first;
+
+#if FTL_HAS_EXCEPTIONS
     try {
+#endif
         for (; current != last; ++current)
             construct_at(addressof(*current));
+
+#if FTL_HAS_EXCEPTIONS
     } catch (...) {
         destroy(first, current);
         throw;
     }
+#endif
 }
 
 template<class ForwardIterator, class Size>
 constexpr ForwardIterator uninitialized_value_construct_n(
     ForwardIterator first, Size count) {
     auto current = first;
+
+#if FTL_HAS_EXCEPTIONS
     try {
+#endif
         for (; count > 0; --count, ++current)
             construct_at(addressof(*current));
+
         return current;
+
+#if FTL_HAS_EXCEPTIONS
     } catch (...) {
         destroy(first, current);
         throw;
     }
+#endif
 }
 
 template<class T, class Deleter = default_delete<T>>
@@ -835,13 +904,21 @@ struct allocator_pointer_control_block final : shared_control_block {
 template<class Block, class... Args>
 Block* make_control_block(Args&&... args) {
     void* storage = ::operator new(sizeof(Block));
+
+#if FTL_HAS_EXCEPTIONS
     try {
+#endif
         return construct_at(
-            static_cast<Block*>(storage), forward<Args>(args)...);
+            static_cast<Block*>(storage),
+            forward<Args>(args)...
+        );
+
+#if FTL_HAS_EXCEPTIONS
     } catch (...) {
         ::operator delete(storage);
         throw;
     }
+#endif
 }
 
 template<class From, class To>
@@ -978,8 +1055,13 @@ public:
     constexpr allocator(const allocator<U>&) noexcept {}
 
     [[nodiscard]] constexpr T* allocate(size_t count) {
-        if (count > size_t(-1) / sizeof(T))
+        if (count > size_t(-1) / sizeof(T)) {
+#if FTL_HAS_EXCEPTIONS
             throw bad_array_new_length{};
+#else
+            terminate();
+#endif
+        }
         const size_t bytes = count * sizeof(T);
 #if defined(__STDCPP_DEFAULT_NEW_ALIGNMENT__)
         if constexpr (alignof(T) > __STDCPP_DEFAULT_NEW_ALIGNMENT__)
@@ -1292,37 +1374,76 @@ public:
                   is_array_v<T>, default_delete<U[]>, default_delete<U>>{}) {}
 
     template<class U, class Deleter>
-        requires (detail::shared_pointer_compatible_v<U, T> &&
-                  is_move_constructible_v<Deleter>)
-    shared_ptr(U* value, Deleter value_deleter) : pointer_value{value} {
+        requires (
+            detail::shared_pointer_compatible_v<U, T> &&
+            is_move_constructible_v<Deleter>
+        )
+    shared_ptr(U* value, Deleter value_deleter)
+        : pointer_value{value} {
         using block = detail::pointer_control_block<U*, Deleter>;
+
+    #if FTL_HAS_EXCEPTIONS
         try {
+    #endif
             control = detail::make_control_block<block>(
-                value, move(value_deleter));
+                value,
+                move(value_deleter)
+            );
+
             enable_weak_this(value);
+
+    #if FTL_HAS_EXCEPTIONS
         } catch (...) {
             value_deleter(value);
             throw;
         }
+    #endif
     }
 
     template<class U, class Deleter, class Allocator>
         requires detail::shared_pointer_compatible_v<U, T>
-    shared_ptr(U* value, Deleter value_deleter, Allocator allocator)
+    shared_ptr(
+        U* value,
+        Deleter value_deleter,
+        Allocator allocator
+    )
         : pointer_value(value) {
-        using block = detail::allocator_pointer_control_block<
-            U*, Deleter, Allocator>;
+        using block =
+            detail::allocator_pointer_control_block<U*, Deleter, Allocator>;
+
         using block_allocator =
-            typename allocator_traits<Allocator>::template rebind_alloc<block>;
+            typename allocator_traits<Allocator>
+                ::template rebind_alloc<block>;
+
         block_allocator rebound(allocator);
-        block* owner = allocator_traits<block_allocator>::allocate(rebound, 1);
+
+        block* owner =
+            allocator_traits<block_allocator>::allocate(rebound, 1);
+
+    #if FTL_HAS_EXCEPTIONS
         try {
+    #endif
             allocator_traits<block_allocator>::construct(
-                rebound, owner, value, move(value_deleter), allocator);
+                rebound,
+                owner,
+                value,
+                move(value_deleter),
+                allocator
+            );
+
+    #if FTL_HAS_EXCEPTIONS
         } catch (...) {
-            allocator_traits<block_allocator>::deallocate(rebound, owner, 1);
-            value_deleter(value); throw;
+            allocator_traits<block_allocator>::deallocate(
+                rebound,
+                owner,
+                1
+            );
+
+            value_deleter(value);
+            throw;
         }
+    #endif
+
         control = owner;
         enable_weak_this(value);
     }
@@ -1381,13 +1502,22 @@ public:
     }
 
     template<class U>
-        requires is_convertible_v<
-            typename weak_ptr<U>::element_type*, element_type*>
-    explicit shared_ptr(const weak_ptr<U>& other) {
-        if (!other.control || !other.control->try_add_strong())
+        requires detail::shared_pointer_compatible_v<U, T>
+    explicit shared_ptr(const weak_ptr<U>& other)
+        : pointer_value(nullptr),
+          control(nullptr) {
+        auto* candidate = other.control;
+
+        if (!candidate || !candidate->try_add_strong()) {
+#if FTL_HAS_EXCEPTIONS
             throw bad_weak_ptr{};
+#else
+            terminate();
+#endif
+        }
+
         pointer_value = other.pointer_value;
-        control = other.control;
+        control = candidate;
     }
 
     ~shared_ptr() {
@@ -1828,23 +1958,42 @@ template<class T> struct atomic<weak_ptr<T>>
 template<class T, class Allocator, class... Args>
     requires (!is_array_v<T>)
 shared_ptr<T> allocate_shared(
-    const Allocator& allocator, Args&&... args) {
+    const Allocator& allocator,
+    Args&&... args
+) {
     using block =
         detail::allocator_inplace_control_block<T, Allocator>;
+
     using block_allocator =
         typename allocator_traits<Allocator>
             ::template rebind_alloc<block>;
+
     block_allocator rebound{allocator};
+
     block* owner =
         allocator_traits<block_allocator>::allocate(rebound, 1);
+
+#if FTL_HAS_EXCEPTIONS
     try {
+#endif
         allocator_traits<block_allocator>::construct(
-            rebound, owner, allocator, forward<Args>(args)...);
+            rebound,
+            owner,
+            allocator,
+            forward<Args>(args)...
+        );
+
+#if FTL_HAS_EXCEPTIONS
     } catch (...) {
         allocator_traits<block_allocator>::deallocate(
-            rebound, owner, 1);
+            rebound,
+            owner,
+            1
+        );
+
         throw;
     }
+#endif
 
     shared_ptr<T> result;
     result.pointer_value = owner->pointer();
@@ -1874,20 +2023,47 @@ shared_ptr<T> make_shared() {
 }
 template<class T, class A> requires is_bounded_array_v<T>
 shared_ptr<T> allocate_shared(const A&) { return make_shared<T>(); }
-template<class T> requires is_unbounded_array_v<T>
-shared_ptr<T> make_shared(size_t count, const remove_extent_t<T>& value) {
+template<class T>
+    requires is_unbounded_array_v<T>
+shared_ptr<T> make_shared(
+    size_t count,
+    const remove_extent_t<T>& value
+) {
     using element = remove_extent_t<T>;
-    element* data = static_cast<element*>(::operator new(sizeof(element) * count));
+
+    element* data = static_cast<element*>(
+        ::operator new(sizeof(element) * count)
+    );
+
     size_t built = 0;
-    try { for (; built < count; ++built) construct_at(data + built, value); }
-    catch (...) {
-        while (built) destroy_at(data + --built);
-        ::operator delete(data); throw;
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+        for (; built < count; ++built)
+            construct_at(data + built, value);
+
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+        while (built != 0)
+            destroy_at(data + --built);
+
+        ::operator delete(data);
+        throw;
     }
-    struct deleter { size_t count; void operator()(element* p) const noexcept {
-        for (size_t i = count; i; --i) destroy_at(p + i - 1);
-        ::operator delete(p);
-    } };
+#endif
+
+    struct deleter {
+        size_t count;
+
+        void operator()(element* pointer) const noexcept {
+            for (size_t index = count; index != 0; --index)
+                destroy_at(pointer + index - 1);
+
+            ::operator delete(pointer);
+        }
+    };
+
     return shared_ptr<T>(data, deleter{count});
 }
 template<class T, class A> requires is_unbounded_array_v<T>
@@ -1895,20 +2071,46 @@ shared_ptr<T> allocate_shared(const A&, size_t count,
                               const remove_extent_t<T>& value) {
     return make_shared<T>(count, value);
 }
-template<class T> requires is_bounded_array_v<T>
-shared_ptr<T> make_shared(const remove_extent_t<T>& value) {
+template<class T>
+    requires is_bounded_array_v<T>
+shared_ptr<T> make_shared(
+    const remove_extent_t<T>& value
+) {
     using element = remove_extent_t<T>;
-    element* data = static_cast<element*>(::operator new(sizeof(element) * extent_v<T>));
+
+    constexpr size_t count = extent_v<T>;
+
+    element* data = static_cast<element*>(
+        ::operator new(sizeof(element) * count)
+    );
+
     size_t built = 0;
-    try { for (; built < extent_v<T>; ++built) construct_at(data + built, value); }
-    catch (...) {
-        while (built) destroy_at(data + --built);
-        ::operator delete(data); throw;
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+        for (; built < count; ++built)
+            construct_at(data + built, value);
+
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+        while (built != 0)
+            destroy_at(data + --built);
+
+        ::operator delete(data);
+        throw;
     }
-    struct deleter { void operator()(element* p) const noexcept {
-        for (size_t i = extent_v<T>; i; --i) destroy_at(p + i - 1);
-        ::operator delete(p);
-    } };
+#endif
+
+    struct deleter {
+        void operator()(element* pointer) const noexcept {
+            for (size_t index = extent_v<T>; index != 0; --index)
+                destroy_at(pointer + index - 1);
+
+            ::operator delete(pointer);
+        }
+    };
+
     return shared_ptr<T>(data, deleter{});
 }
 template<class T, class A> requires is_bounded_array_v<T>

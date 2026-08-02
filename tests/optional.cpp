@@ -50,6 +50,13 @@ static_assert(monadic_optional_works());
 static_assert(tested::is_trivially_copyable_v<tested::optional<int&>>);
 static_assert(tested::is_trivially_copyable_v<tested::optional<int>>);
 static_assert(tested::optional<int>{1} < tested::optional<int>{2});
+static_assert(tested::is_assignable_v<tested::optional<long>&,
+                                     const tested::optional<int>&>);
+static_assert(tested::is_constructible_v<tested::optional<bool>,
+                                        const tested::optional<int>&>);
+#if __cpp_lib_optional != 202110L
+#error optional must advertise its C++23 monadic surface
+#endif
 
 bool ftl_test() {
     if (!value_optional_works())

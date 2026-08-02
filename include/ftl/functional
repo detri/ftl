@@ -422,11 +422,19 @@ public:
 
 template<class> class function;
 template<class R, class... Args> class function<R(Args...)> {
+    template<class T>
+    static const void* type_token() noexcept {
+        static const unsigned char token{};
+        return &token;
+    }
     struct erased {
         virtual ~erased() = default;
         virtual erased* clone() const = 0;
         virtual R call(Args&&...) = 0;
+#if FTL_HAS_RTTI
         virtual const type_info& type() const noexcept = 0;
+#endif
+        virtual const void* token() const noexcept = 0;
         virtual void* address() noexcept = 0;
         virtual const void* address() const noexcept = 0;
     };
@@ -437,7 +445,12 @@ template<class R, class... Args> class function<R(Args...)> {
         R call(Args&&... args) override {
             return invoke_r<R>(value, forward<Args>(args)...);
         }
+#if FTL_HAS_RTTI
         const type_info& type() const noexcept override { return typeid(F); }
+#endif
+        const void* token() const noexcept override {
+            return type_token<F>();
+        }
         void* address() noexcept override { return &value; }
         const void* address() const noexcept override { return &value; }
     };
@@ -478,19 +491,35 @@ public:
     }
     explicit operator bool() const noexcept { return target_ != nullptr; }
     R operator()(Args... args) const {
-        if (!target_) throw bad_function_call{};
+        if (!target_) {
+#if FTL_HAS_EXCEPTIONS
+            throw bad_function_call{};
+#else
+            terminate();
+#endif
+        }
         return target_->call(forward<Args>(args)...);
     }
+#if FTL_HAS_RTTI
     const type_info& target_type() const noexcept {
         return target_ ? target_->type() : typeid(void);
     }
-    template<class T> T* target() noexcept {
-        return target_ && target_->type() == typeid(T)
-            ? static_cast<T*>(target_->address()) : nullptr;
+#endif
+    template<class T>
+    T* target() noexcept {
+        using U = remove_cv_t<T>;
+
+        return target_ && target_->token() == type_token<U>()
+            ? static_cast<T*>(target_->address())
+            : nullptr;
     }
-    template<class T> const T* target() const noexcept {
-        return target_ && target_->type() == typeid(T)
-            ? static_cast<const T*>(target_->address()) : nullptr;
+    template<class T>
+    const T* target() const noexcept {
+        using U = remove_cv_t<T>;
+
+        return target_ && target_->token() == type_token<U>()
+            ? static_cast<const T*>(target_->address())
+            : nullptr;
     }
 };
 template<class R, class... A>
