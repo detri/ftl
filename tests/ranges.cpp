@@ -37,9 +37,7 @@ struct member_range {
     }
 
     constexpr tested::size_t size() const noexcept {
-        return static_cast<tested::size_t>(
-            last - first
-        );
+        return static_cast<tested::size_t>(last - first);
     }
 
     constexpr bool empty() const noexcept {
@@ -125,28 +123,14 @@ struct move_only_range {
 
     constexpr move_only_range() = default;
 
-    constexpr move_only_range(
-        int* begin_value,
-        int* end_value
-    ) noexcept
-        : first(begin_value),
-          last(end_value) {}
+    constexpr move_only_range(int* begin_value, int* end_value) noexcept
+        : first(begin_value), last(end_value) {}
 
-    move_only_range(
-        const move_only_range&
-    ) = delete;
+    move_only_range(const move_only_range&) = delete;
+    move_only_range& operator=(const move_only_range&) = delete;
 
-    move_only_range& operator=(
-        const move_only_range&
-    ) = delete;
-
-    constexpr move_only_range(
-        move_only_range&&
-    ) noexcept = default;
-
-    constexpr move_only_range& operator=(
-        move_only_range&&
-    ) noexcept = default;
+    constexpr move_only_range(move_only_range&&) noexcept = default;
+    constexpr move_only_range& operator=(move_only_range&&) noexcept = default;
 
     constexpr int* begin() noexcept {
         return first;
@@ -165,9 +149,7 @@ struct move_only_range {
     }
 
     constexpr tested::size_t size() const noexcept {
-        return static_cast<tested::size_t>(
-            last - first
-        );
+        return static_cast<tested::size_t>(last - first);
     }
 
     constexpr int* data() noexcept {
@@ -180,20 +162,14 @@ struct move_only_range {
 };
 
 struct interface_view
-    : tested::ranges::view_interface<
-          interface_view
-      > {
+    : tested::ranges::view_interface<interface_view> {
     int* first = nullptr;
     int* last = nullptr;
 
     constexpr interface_view() = default;
 
-    constexpr interface_view(
-        int* begin_value,
-        int* end_value
-    ) noexcept
-        : first(begin_value),
-          last(end_value) {}
+    constexpr interface_view(int* begin_value, int* end_value) noexcept
+        : first(begin_value), last(end_value) {}
 
     constexpr int* begin() noexcept {
         return first;
@@ -212,8 +188,7 @@ struct interface_view
     }
 };
 
-struct base_view
-    : tested::ranges::view_base {
+struct base_view : tested::ranges::view_base {
     int* first = nullptr;
     int* last = nullptr;
 
@@ -250,9 +225,7 @@ constexpr int* begin(range& value) noexcept {
     return value.first;
 }
 
-constexpr const int* begin(
-    const range& value
-) noexcept {
+constexpr const int* begin(const range& value) noexcept {
     return value.first;
 }
 
@@ -260,18 +233,12 @@ constexpr int* end(range& value) noexcept {
     return value.last;
 }
 
-constexpr const int* end(
-    const range& value
-) noexcept {
+constexpr const int* end(const range& value) noexcept {
     return value.last;
 }
 
-constexpr tested::size_t size(
-    const range& value
-) noexcept {
-    return static_cast<tested::size_t>(
-        value.last - value.first
-    );
+constexpr tested::size_t size(const range& value) noexcept {
+    return static_cast<tested::size_t>(value.last - value.first);
 }
 
 } // namespace adl_test
@@ -284,15 +251,11 @@ struct range {
 };
 
 constexpr auto rbegin(range& value) noexcept {
-    return tested::reverse_iterator<int*>(
-        value.last
-    );
+    return tested::reverse_iterator<int*>(value.last);
 }
 
 constexpr auto rend(range& value) noexcept {
-    return tested::reverse_iterator<int*>(
-        value.first
-    );
+    return tested::reverse_iterator<int*>(value.first);
 }
 
 } // namespace reverse_adl_test
@@ -302,19 +265,15 @@ constexpr auto rend(range& value) noexcept {
 namespace std::ranges {
 
 template<>
-inline constexpr bool enable_borrowed_range<
-    ::borrowed_member_range
-> = true;
+inline constexpr bool
+enable_borrowed_range<::borrowed_member_range> = true;
 
 template<>
-inline constexpr bool disable_sized_range<
-    ::explicitly_unsized_range
-> = true;
+inline constexpr bool
+disable_sized_range<::explicitly_unsized_range> = true;
 
 template<>
-inline constexpr bool enable_view<
-    ::opted_view
-> = true;
+inline constexpr bool enable_view<::opted_view> = true;
 
 } // namespace std::ranges
 
@@ -323,19 +282,15 @@ inline constexpr bool enable_view<
 namespace ftl::ranges {
 
 template<>
-inline constexpr bool enable_borrowed_range<
-    ::borrowed_member_range
-> = true;
+inline constexpr bool
+enable_borrowed_range<::borrowed_member_range> = true;
 
 template<>
-inline constexpr bool disable_sized_range<
-    ::explicitly_unsized_range
-> = true;
+inline constexpr bool
+disable_sized_range<::explicitly_unsized_range> = true;
 
 template<>
-inline constexpr bool enable_view<
-    ::opted_view
-> = true;
+inline constexpr bool enable_view<::opted_view> = true;
 
 } // namespace ftl::ranges
 
@@ -367,263 +322,242 @@ concept can_ref_view =
         };
     };
 
+static_assert(tested::ranges::range<member_range>);
+static_assert(tested::ranges::input_range<member_range>);
+static_assert(tested::ranges::forward_range<member_range>);
+static_assert(tested::ranges::bidirectional_range<member_range>);
+static_assert(tested::ranges::random_access_range<member_range>);
+static_assert(tested::ranges::contiguous_range<member_range>);
+static_assert(tested::ranges::common_range<member_range>);
+static_assert(tested::ranges::sized_range<member_range>);
+static_assert(tested::ranges::sized_range<subtraction_range>);
+static_assert(tested::ranges::output_range<member_range, int>);
+
+static_assert(tested::ranges::borrowed_range<member_range&>);
+static_assert(!tested::ranges::borrowed_range<member_range>);
 static_assert(
-    tested::ranges::range<member_range>
+    tested::ranges::borrowed_range<borrowed_member_range>
 );
 
-static_assert(
-    tested::ranges::input_range<member_range>
-);
+static_assert(!can_begin_rvalue<member_range>);
+static_assert(!can_end_rvalue<member_range>);
+static_assert(!can_data_rvalue<member_range>);
 
-static_assert(
-    tested::ranges::forward_range<member_range>
-);
+static_assert(can_begin_rvalue<borrowed_member_range>);
+static_assert(can_end_rvalue<borrowed_member_range>);
+static_assert(can_data_rvalue<borrowed_member_range>);
 
-static_assert(
-    tested::ranges::bidirectional_range<member_range>
-);
+static_assert(tested::is_same_v<
+    tested::ranges::iterator_t<member_range>,
+    int*
+>);
 
-static_assert(
-    tested::ranges::random_access_range<member_range>
-);
+static_assert(tested::is_same_v<
+    tested::ranges::sentinel_t<member_range>,
+    int*
+>);
 
-static_assert(
-    tested::ranges::common_range<member_range>
-);
+static_assert(tested::is_same_v<
+    tested::ranges::const_iterator_t<member_range>,
+    const int*
+>);
 
-static_assert(
-    tested::ranges::sized_range<member_range>
-);
+static_assert(tested::is_same_v<
+    tested::ranges::const_sentinel_t<member_range>,
+    const int*
+>);
 
-static_assert(
-    tested::ranges::sized_range<subtraction_range>
-);
+static_assert(tested::is_same_v<
+    tested::ranges::range_value_t<member_range>,
+    int
+>);
 
-static_assert(
-    tested::ranges::borrowed_range<member_range&>
-);
+static_assert(tested::is_same_v<
+    tested::ranges::range_reference_t<member_range>,
+    int&
+>);
 
-static_assert(
-    !tested::ranges::borrowed_range<member_range>
-);
+static_assert(tested::is_same_v<
+    tested::ranges::range_const_reference_t<member_range>,
+    const int&
+>);
 
-static_assert(
-    tested::ranges::borrowed_range<
-        borrowed_member_range
-    >
-);
+static_assert(tested::detail::has_common_ref<const int&, int&>);
+static_assert(tested::detail::has_common_ref<const int&&, int&>);
 
-static_assert(
-    !can_begin_rvalue<member_range>
-);
+static_assert(tested::is_same_v<
+    tested::ranges::range_rvalue_reference_t<member_range>,
+    int&&
+>);
 
-static_assert(
-    !can_end_rvalue<member_range>
-);
+static_assert(tested::is_same_v<
+    tested::ranges::range_difference_t<member_range>,
+    tested::ptrdiff_t
+>);
 
-static_assert(
-    !can_data_rvalue<member_range>
-);
+static_assert(tested::is_same_v<
+    tested::ranges::borrowed_iterator_t<member_range>,
+    tested::ranges::dangling
+>);
 
-static_assert(
-    can_begin_rvalue<borrowed_member_range>
-);
+static_assert(tested::is_same_v<
+    tested::ranges::borrowed_iterator_t<member_range&>,
+    int*
+>);
 
-static_assert(
-    can_end_rvalue<borrowed_member_range>
-);
+static_assert(tested::is_default_constructible_v<
+    tested::ranges::dangling
+>);
 
-static_assert(
-    can_data_rvalue<borrowed_member_range>
-);
+static_assert(tested::is_constructible_v<
+    tested::ranges::dangling,
+    int*,
+    int*
+>);
 
-static_assert(
-    tested::is_same_v<
-        tested::ranges::iterator_t<member_range>,
-        int*
-    >
-);
+static_assert(tested::ranges::view<interface_view>);
+static_assert(tested::ranges::view<base_view>);
+static_assert(tested::ranges::view<opted_view>);
+static_assert(!tested::ranges::view<member_range>);
 
-static_assert(
-    tested::is_same_v<
-        tested::ranges::sentinel_t<member_range>,
-        int*
-    >
-);
+static_assert(tested::ranges::viewable_range<member_range&>);
+static_assert(tested::ranges::viewable_range<move_only_range>);
+static_assert(!tested::ranges::viewable_range<
+    tested::initializer_list<int>
+>);
 
-static_assert(
-    tested::is_same_v<
-        tested::ranges::range_value_t<member_range>,
-        int
-    >
-);
+static_assert(can_ref_view<member_range&>);
+static_assert(!can_ref_view<member_range>);
 
-static_assert(
-    tested::is_same_v<
-        tested::ranges::range_reference_t<member_range>,
-        int&
-    >
-);
+static_assert(tested::ranges::view<
+    tested::ranges::ref_view<member_range>
+>);
 
-static_assert(
-    tested::is_same_v<
-        tested::ranges::range_difference_t<
-            member_range
-        >,
-        tested::ptrdiff_t
-    >
-);
+static_assert(tested::ranges::borrowed_range<
+    tested::ranges::ref_view<member_range>
+>);
 
-static_assert(
-    tested::is_same_v<
-        tested::ranges::borrowed_iterator_t<
-            member_range
-        >,
-        tested::ranges::dangling
-    >
-);
+static_assert(tested::ranges::view<
+    tested::ranges::owning_view<move_only_range>
+>);
 
-static_assert(
-    tested::is_same_v<
-        tested::ranges::borrowed_iterator_t<
-            member_range&
-        >,
-        int*
-    >
-);
+static_assert(!tested::is_copy_constructible_v<
+    tested::ranges::owning_view<move_only_range>
+>);
 
-static_assert(
-    tested::is_default_constructible_v<
-        tested::ranges::dangling
-    >
-);
+static_assert(tested::is_move_constructible_v<
+    tested::ranges::owning_view<move_only_range>
+>);
 
-static_assert(
-    tested::ranges::view<interface_view>
-);
+static_assert(tested::ranges::view<
+    tested::ranges::empty_view<int>
+>);
 
-static_assert(
-    tested::ranges::view<base_view>
-);
+static_assert(tested::ranges::borrowed_range<
+    tested::ranges::empty_view<int>
+>);
 
-static_assert(
-    tested::ranges::view<opted_view>
-);
+static_assert(tested::ranges::view<
+    tested::ranges::single_view<int>
+>);
 
-static_assert(
-    !tested::ranges::view<member_range>
-);
+static_assert(tested::is_same_v<
+    tested::ranges::views::all_t<member_range&>,
+    tested::ranges::ref_view<member_range>
+>);
 
-static_assert(
-    tested::ranges::viewable_range<
-        member_range&
-    >
-);
+static_assert(tested::is_same_v<
+    tested::ranges::views::all_t<move_only_range>,
+    tested::ranges::owning_view<move_only_range>
+>);
 
-static_assert(
-    tested::ranges::viewable_range<
-        move_only_range
-    >
-);
+static_assert(tested::is_same_v<
+    tested::ranges::views::all_t<interface_view>,
+    interface_view
+>);
 
-static_assert(
-    !tested::ranges::viewable_range<
-        tested::initializer_list<int>
-    >
-);
+static_assert(tested::contiguous_iterator<
+    tested::ranges::iterator_t<interface_view>
+>);
 
-static_assert(
-    can_ref_view<member_range&>
-);
+static_assert(tested::is_same_v<
+    decltype(tested::ranges::data(
+        tested::declval<interface_view&>()
+    )),
+    int*
+>);
 
-static_assert(
-    !can_ref_view<member_range>
-);
+static_assert(tested::is_same_v<
+    decltype(tested::ranges::data(
+        tested::declval<const interface_view&>()
+    )),
+    const int*
+>);
 
-static_assert(
-    tested::ranges::view<
-        tested::ranges::ref_view<member_range>
-    >
-);
+static_assert(tested::is_same_v<
+    tested::add_pointer_t<
+        tested::ranges::range_reference_t<interface_view>
+    >,
+    int*
+>);
 
-static_assert(
-    tested::ranges::borrowed_range<
-        tested::ranges::ref_view<member_range>
-    >
-);
+static_assert(tested::ranges::contiguous_range<interface_view>);
+static_assert(tested::ranges::contiguous_range<const interface_view>);
 
-static_assert(
-    tested::ranges::view<
-        tested::ranges::owning_view<
-            move_only_range
-        >
-    >
-);
+constexpr bool range_iterator_operations_work() {
+    int values[] = {1, 2, 3, 4};
+    int* iterator = values;
 
-static_assert(
-    !tested::is_copy_constructible_v<
-        tested::ranges::owning_view<
-            move_only_range
-        >
-    >
-);
+    tested::ranges::advance(iterator, 2);
+    if (iterator != values + 2)
+        return false;
 
-static_assert(
-    tested::is_move_constructible_v<
-        tested::ranges::owning_view<
-            move_only_range
-        >
-    >
-);
+    tested::ranges::advance(iterator, -1);
+    if (iterator != values + 1)
+        return false;
 
-static_assert(
-    tested::ranges::view<
-        tested::ranges::empty_view<int>
-    >
-);
+    tested::ranges::advance(iterator, values + 4);
+    if (iterator != values + 4)
+        return false;
 
-static_assert(
-    tested::ranges::borrowed_range<
-        tested::ranges::empty_view<int>
-    >
-);
+    iterator = values;
 
-static_assert(
-    tested::ranges::view<
-        tested::ranges::single_view<int>
-    >
-);
+    auto remainder = tested::ranges::advance(
+        iterator,
+        tested::ptrdiff_t{8},
+        values + 4
+    );
 
-static_assert(
-    tested::is_same_v<
-        tested::ranges::views::all_t<
-            member_range&
-        >,
-        tested::ranges::ref_view<
-            member_range
-        >
-    >
-);
+    if (iterator != values + 4 || remainder != 4)
+        return false;
 
-static_assert(
-    tested::is_same_v<
-        tested::ranges::views::all_t<
-            move_only_range
-        >,
-        tested::ranges::owning_view<
-            move_only_range
-        >
-    >
-);
+    if (tested::ranges::distance(values, values + 4) != 4)
+        return false;
 
-static_assert(
-    tested::is_same_v<
-        tested::ranges::views::all_t<
-            interface_view
-        >,
-        interface_view
-    >
-);
+    member_range range{values, values + 4};
+
+    if (tested::ranges::distance(range) != 4)
+        return false;
+
+    if (tested::ranges::next(values) != values + 1)
+        return false;
+
+    if (tested::ranges::next(values, 3) != values + 3)
+        return false;
+
+    if (tested::ranges::next(values, values + 4) != values + 4)
+        return false;
+
+    if (tested::ranges::prev(values + 4) != values + 3)
+        return false;
+
+    if (tested::ranges::prev(values + 4, 2) != values + 2)
+        return false;
+
+    return true;
+}
+
+static_assert(range_iterator_operations_work());
 
 constexpr bool ranges_constexpr_works() {
     int values[] = {1, 2, 3, 4};
@@ -649,10 +583,7 @@ constexpr bool ranges_constexpr_works() {
     if (tested::ranges::cdata(values) != values)
         return false;
 
-    member_range member{
-        values,
-        values + 4
-    };
+    member_range member{values, values + 4};
 
     if (tested::ranges::begin(member) != values)
         return false;
@@ -663,61 +594,81 @@ constexpr bool ranges_constexpr_works() {
     if (tested::ranges::size(member) != 4)
         return false;
 
+    if (tested::ranges::ssize(member) != 4)
+        return false;
+
     if (tested::ranges::empty(member))
+        return false;
+
+    if (tested::ranges::data(member) != values)
+        return false;
+
+    if (tested::ranges::cdata(member) != values)
         return false;
 
     if (tested::ranges::cbegin(member) != values)
         return false;
 
-    if (
-        tested::ranges::cend(member) !=
-        values + 4
-    ) {
+    if (tested::ranges::cend(member) != values + 4)
         return false;
-    }
 
-    subtraction_range subtraction{
-        values,
-        values + 4
-    };
+    const member_range constant_member{values, values + 4};
 
-    if (
-        tested::ranges::size(subtraction) != 4
-    ) {
+    if (tested::ranges::begin(constant_member) != values)
         return false;
-    }
 
-    explicitly_unsized_range disabled{
-        values,
-        values + 4
-    };
-
-    if (
-        tested::ranges::size(disabled) != 4
-    ) {
+    if (tested::ranges::end(constant_member) != values + 4)
         return false;
-    }
 
-    iterator_empty_range empty_range{
-        values,
-        values
-    };
+    subtraction_range subtraction{values, values + 4};
+
+    if (tested::ranges::size(subtraction) != 4)
+        return false;
+
+    if (tested::ranges::data(subtraction) != values)
+        return false;
+
+    explicitly_unsized_range disabled{values, values + 4};
+
+    // disable_sized_range suppresses the member size(), but pointer subtraction
+    // still makes this a sized range.
+    if (tested::ranges::size(disabled) != 4)
+        return false;
+
+    iterator_empty_range empty_range{values, values};
 
     if (!tested::ranges::empty(empty_range))
+        return false;
+
+    iterator_empty_range nonempty_range{values, values + 4};
+
+    if (tested::ranges::empty(nonempty_range))
+        return false;
+
+    adl_test::range adl{values, values + 4};
+
+    if (tested::ranges::begin(adl) != values)
+        return false;
+
+    if (tested::ranges::end(adl) != values + 4)
+        return false;
+
+    if (tested::ranges::size(adl) != 4)
         return false;
 
     if (*tested::ranges::rbegin(values) != 4)
         return false;
 
-    if (
-        *(tested::ranges::rend(values) - 1) != 1
-    ) {
+    if (*(tested::ranges::rend(values) - 1) != 1)
         return false;
-    }
 
-    tested::ranges::ref_view reference{
-        member
-    };
+    if (*tested::ranges::crbegin(values) != 4)
+        return false;
+
+    if (*(tested::ranges::crend(values) - 1) != 1)
+        return false;
+
+    tested::ranges::ref_view reference{member};
 
     if (&reference.base() != &member)
         return false;
@@ -734,43 +685,29 @@ constexpr bool ranges_constexpr_works() {
     if (reference.data() != values)
         return false;
 
-    auto all_reference =
-        tested::ranges::views::all(member);
+    auto all_reference = tested::ranges::views::all(member);
 
-    static_assert(
-        tested::is_same_v<
-            decltype(all_reference),
-            tested::ranges::ref_view<
-                member_range
-            >
-        >
-    );
+    static_assert(tested::is_same_v<
+        decltype(all_reference),
+        tested::ranges::ref_view<member_range>
+    >);
 
-    if (
-        all_reference.begin() != values ||
-        all_reference.end() != values + 4
-    ) {
+    if (all_reference.begin() != values)
         return false;
-    }
 
-    interface_view existing{
-        values,
-        values + 4
-    };
+    if (all_reference.end() != values + 4)
+        return false;
 
-    auto all_existing =
-        tested::ranges::views::all(
-            static_cast<interface_view&&>(
-                existing
-            )
-        );
+    interface_view existing{values, values + 4};
 
-    static_assert(
-        tested::is_same_v<
-            decltype(all_existing),
-            interface_view
-        >
+    auto all_existing = tested::ranges::views::all(
+        static_cast<interface_view&&>(existing)
     );
+
+    static_assert(tested::is_same_v<
+        decltype(all_existing),
+        interface_view
+    >);
 
     if (all_existing.front() != 1)
         return false;
@@ -787,8 +724,10 @@ constexpr bool ranges_constexpr_works() {
     if (all_existing.data() != values)
         return false;
 
-    constexpr auto empty =
-        tested::ranges::views::empty<int>;
+    if (!static_cast<bool>(all_existing))
+        return false;
+
+    constexpr auto empty = tested::ranges::views::empty<int>;
 
     if (!empty.empty())
         return false;
@@ -796,16 +735,16 @@ constexpr bool ranges_constexpr_works() {
     if (empty.size() != 0)
         return false;
 
-    if (
-        empty.begin() != nullptr ||
-        empty.end() != nullptr ||
-        empty.data() != nullptr
-    ) {
+    if (empty.begin() != nullptr)
         return false;
-    }
 
-    auto single =
-        tested::ranges::views::single(42);
+    if (empty.end() != nullptr)
+        return false;
+
+    if (empty.data() != nullptr)
+        return false;
+
+    auto single = tested::ranges::views::single(42);
 
     if (single.empty())
         return false;
@@ -833,60 +772,74 @@ static_assert(ranges_constexpr_works());
 bool ftl_test() {
     int values[] = {1, 2, 3, 4};
 
-    move_only_range movable{
-        values,
-        values + 4
-    };
+    borrowed_member_range borrowed{values, values + 4};
 
-    auto owned =
-        tested::ranges::views::all(
-            static_cast<move_only_range&&>(
-                movable
-            )
-        );
+    if (tested::ranges::begin(
+            static_cast<borrowed_member_range&&>(borrowed)
+        ) != values) {
+        return false;
+    }
 
-    static_assert(
-        tested::is_same_v<
-            decltype(owned),
-            tested::ranges::owning_view<
-                move_only_range
-            >
-        >
+    if (tested::ranges::end(
+            static_cast<borrowed_member_range&&>(borrowed)
+        ) != values + 4) {
+        return false;
+    }
+
+    reverse_adl_test::range reversed{values, values + 4};
+
+    if (*tested::ranges::rbegin(reversed) != 4)
+        return false;
+
+    if (*(tested::ranges::rend(reversed) - 1) != 1)
+        return false;
+
+    move_only_range movable{values, values + 4};
+
+    auto owned = tested::ranges::views::all(
+        static_cast<move_only_range&&>(movable)
     );
 
-    if (
-        owned.begin() != values ||
-        owned.end() != values + 4 ||
-        owned.size() != 4 ||
-        owned.data() != values
-    ) {
+    static_assert(tested::is_same_v<
+        decltype(owned),
+        tested::ranges::owning_view<move_only_range>
+    >);
+
+    if (owned.begin() != values)
         return false;
-    }
+
+    if (owned.end() != values + 4)
+        return false;
+
+    if (owned.size() != 4)
+        return false;
+
+    if (owned.data() != values)
+        return false;
 
     auto moved_base =
-        static_cast<decltype(owned)&&>(
-            owned
-        ).base();
+        static_cast<decltype(owned)&&>(owned).base();
 
-    if (
-        moved_base.begin() != values ||
-        moved_base.end() != values + 4
-    ) {
+    if (moved_base.begin() != values)
         return false;
-    }
 
-    tested::ranges::single_view<int>
-        in_place_single(
-            tested::in_place,
-            7
-        );
-
-    if (
-        in_place_single.front() != 7 ||
-        in_place_single.back() != 7
-    ) {
+    if (moved_base.end() != values + 4)
         return false;
-    }
 
-    return ranges_constexpr_works();
+    tested::ranges::single_view<int> in_place_single(
+        tested::in_place,
+        7
+    );
+
+    if (in_place_single.front() != 7)
+        return false;
+
+    if (in_place_single.back() != 7)
+        return false;
+
+    tested::ranges::dangling ignored{values, values + 4};
+    (void) ignored;
+
+    return ranges_constexpr_works() &&
+           range_iterator_operations_work();
 }

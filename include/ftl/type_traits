@@ -884,10 +884,26 @@ inline constexpr bool convertible_intrinsic_v =
     bool(FTL_IS_CONVERTIBLE(From, To));
 
 template<class T, class U>
-    requires is_reference_v<decltype(false ? declval<T&>() : declval<U&>())>
-struct common_ref<T&, U&, void_t<decltype(false ? declval<T&>()
-                                              : declval<U&>())>> {
-    using type = decltype(false ? declval<T&>() : declval<U&>());
+using copy_cv12_t = typename copy_cv<T, typename copy_cv<U, T>::type>::type;
+
+template<class T, class U>
+using copy_cv21_t = typename copy_cv<U, typename copy_cv<T, U>::type>::type;
+
+template<class T, class U>
+using common_ref_cond_t = decltype(
+    false
+        ? declval<copy_cv12_t<T, U>&>()
+        : declval<copy_cv21_t<T, U>&>()
+);
+
+template<class T, class U>
+    requires is_reference_v<common_ref_cond_t<T, U>>
+struct common_ref<
+    T&,
+    U&,
+    void_t<common_ref_cond_t<T, U>>
+> {
+    using type = common_ref_cond_t<T, U>;
 };
 
 template<class T, class U>
