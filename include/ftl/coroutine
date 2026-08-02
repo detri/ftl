@@ -57,10 +57,10 @@ struct coroutine_traits_base<
 
 template<class Promise>
 inline constexpr size_t coroutine_promise_alignment =
-#if defined(__GNUC__) && !defined(__clang__)
-    alignof(Promise);
-#else
+#if defined(_MSC_VER)
     0;
+#else
+    alignof(Promise);
 #endif
 
 } // namespace detail

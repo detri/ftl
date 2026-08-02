@@ -134,6 +134,22 @@ constexpr bool null_handle_works() {
 
 static_assert(null_handle_works());
 
+static_assert(
+    (tested::coroutine_handle<>{} <=>
+     tested::coroutine_handle<>{}) ==
+    tested::strong_ordering::equal
+);
+
+struct no_promise_type {};
+
+template<class T>
+concept has_promise_type =
+    requires { typename T::promise_type; };
+
+static_assert(!has_promise_type<
+    tested::coroutine_traits<no_promise_type>
+>);
+
 bool ftl_test() {
     tested::coroutine_handle<> first;
     tested::coroutine_handle<> second = nullptr;
@@ -149,6 +165,9 @@ bool ftl_test() {
 
     auto noop = tested::noop_coroutine();
 
+    if (&noop.promise() != &noop.promise())
+        return false;
+
     if (!noop || noop.done() || noop.address() == nullptr)
         return false;
 
@@ -156,6 +175,9 @@ bool ftl_test() {
         static_cast<tested::coroutine_handle<>>(noop);
 
     if (erased_noop.address() != noop.address())
+        return false;
+
+    if (erased_noop != static_cast<tested::coroutine_handle<>>(noop))
         return false;
 
     noop.resume();
@@ -195,6 +217,11 @@ bool ftl_test() {
     tested::hash<task::handle_type> hasher;
 
     if (hasher(operation.handle) != hasher(reconstructed))
+        return false;
+
+    reconstructed = nullptr;
+
+    if (reconstructed || reconstructed.address() != nullptr)
         return false;
 #endif
 
