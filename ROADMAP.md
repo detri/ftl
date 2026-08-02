@@ -113,6 +113,9 @@ dependency order, not hundreds of individual overloads.
 | `<cinttypes>` | Stage 1.5 |
 | `<iterator>` | Stage 2.1 |
 | `<functional>` | Stage 2.3 |
+| `<memory>` | Stage 2.4 |
+| `<scoped_allocator>` | Stage 2.4 |
+| `<memory_resource>` | Stage 2.4 |
 
 ### Seeded headers
 
@@ -124,9 +127,8 @@ synopses:
 | `<cstring>` | common byte/string operations | complete C++23 C-string synopsis |
 | `<atomic>` | integral atomics and memory orders | generic/pointer atomics, `atomic_ref`, flag, fences, wait/notify, lock-free rules |
 | `<array>` | C++23 surface except `at()` failure type | replace trap with `out_of_range` after `<stdexcept>` completes |
-| `<tuple>` | non-allocator C++23 tuple/array/pair surface | allocator-extended construction after Stage 2.4; `subrange` tuple-like integration after Stage 2.6 |
+| `<tuple>` | C++23 tuple/array/pair surface including allocator-extended construction | `subrange` tuple-like integration after Stage 2.6 |
 | `<string_view>` | basic `string_view` operations | full `basic_string_view`, traits integration, searches, iterators, literals, I/O/hash integration |
-| `<memory>` | allocators, lifetime algorithms, unique/shared ownership | full pointer utilities, allocator protocol, casts, overwrite/array forms, conformance/ABI audit |
 | `<optional>` | value/reference optional, monadic operations, hashing | complete C++23 value synopsis and separate C++26-extension audit |
 
 `include/ftl/detail/rapidhash` is an implementation detail, not a standard
@@ -147,7 +149,6 @@ remain required when C++23 still specifies them; they are not silently dropped.
 | Concepts/types/vocabulary | `<any>`, `<bitset>`, `<expected>`, `<ratio>`, `<variant>` |
 | Iteration/ranges | `<ranges>`, `<span>`, `<mdspan>`, `<generator>` |
 | Algorithms/numerics | `<algorithm>`, `<numeric>`, `<numbers>`, `<random>`, `<valarray>`, `<execution>` |
-| Dynamic allocation | `<memory_resource>`, `<scoped_allocator>` |
 | Containers | `<deque>`, `<flat_map>`, `<flat_set>`, `<forward_list>`, `<list>`, `<map>`, `<queue>`, `<set>`, `<stack>`, `<unordered_map>`, `<unordered_set>`, `<vector>` |
 | Text/encoding | `<charconv>`, `<codecvt>`, `<string>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope |
 | Errors/time/localization | `<chrono>`, `<system_error>`, `<stdexcept>`, `<stacktrace>`, `<locale>`, `<clocale>`, `<ctime>` |

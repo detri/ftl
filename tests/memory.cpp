@@ -42,6 +42,15 @@ struct enabled : ftl::enable_shared_from_this<enabled> {
     int value;
     explicit enabled(int input) : value(input) {}
 };
+struct allocator_aware {
+    using allocator_type = ftl::allocator<int>;
+    int value;
+    allocator_aware(ftl::allocator_arg_t, const allocator_type&, int input)
+        : value(input) {}
+};
+
+void make_object(object** output) { *output = new object{31}; }
+void replace_object(object** output) { delete *output; *output = new object{32}; }
 
 static_assert(ftl::is_default_constructible_v<ftl::default_delete<object>>);
 static_assert(ftl::is_constructible_v<
@@ -161,11 +170,35 @@ static_assert(requires(object* location) {
     ftl::destroy_at(location);
 });
 
+static_assert(ftl::uses_allocator_v<allocator_aware, ftl::allocator<int>>);
+static_assert(ftl::is_same_v<decltype(ftl::make_unique<object>(1)),
+                            ftl::unique_ptr<object>>);
+static_assert(ftl::is_same_v<decltype(ftl::make_shared<object[]>(2)),
+                            ftl::shared_ptr<object[]>>);
+
+bool extended_memory_works() {
+    auto array = ftl::make_shared<object[]>(2, object{8});
+    auto owner = ftl::make_shared<derived>();
+    ftl::shared_ptr<base> base_owner = owner;
+    auto down = ftl::static_pointer_cast<derived>(base_owner);
+    ftl::atomic<ftl::shared_ptr<derived>> atomic_owner{owner};
+    auto loaded = atomic_owner.load();
+    ftl::unique_ptr<object> output;
+    make_object(ftl::out_ptr(output));
+    replace_object(ftl::inout_ptr(output));
+    auto aware = ftl::make_obj_using_allocator<allocator_aware>(
+        ftl::allocator<int>{}, 19);
+    return array[1].value == 8 && down.get() == owner.get() &&
+           loaded.get() == owner.get() && output->value == 32 &&
+           aware.value == 19;
+}
+
 bool ftl_test() {
     return lifetime_works() &&
            shared_ownership_works() &&
            unique_ownership_works() &&
            weak_lifetime_works() &&
            allocator_works() &&
-           allocate_shared_works();
+           allocate_shared_works() &&
+           extended_memory_works();
 }

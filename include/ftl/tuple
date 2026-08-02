@@ -32,6 +32,21 @@ struct tuple_leaf {
     FTL_TUPLE_NO_UNIQUE_ADDRESS T value;
     constexpr tuple_leaf() requires is_default_constructible_v<T> : value() {}
     template<class U> constexpr tuple_leaf(U&& item) : value(forward<U>(item)) {}
+    template<class Alloc, class... U>
+    constexpr tuple_leaf(allocator_arg_t, const Alloc& alloc, U&&... item)
+        requires (!uses_allocator_v<T, Alloc>)
+        : value(forward<U>(item)...) {}
+    template<class Alloc, class... U>
+    constexpr tuple_leaf(allocator_arg_t, const Alloc& alloc, U&&... item)
+        requires (uses_allocator_v<T, Alloc> &&
+                  is_constructible_v<T, allocator_arg_t, const Alloc&, U...>)
+        : value(allocator_arg, alloc, forward<U>(item)...) {}
+    template<class Alloc, class... U>
+    constexpr tuple_leaf(allocator_arg_t, const Alloc& alloc, U&&... item)
+        requires (uses_allocator_v<T, Alloc> &&
+                  !is_constructible_v<T, allocator_arg_t, const Alloc&, U...> &&
+                  is_constructible_v<T, U..., const Alloc&>)
+        : value(forward<U>(item)..., alloc) {}
 };
 
 template<class Sequence, class... Types> struct tuple_base;
@@ -40,7 +55,13 @@ struct tuple_base<index_sequence<Index...>, Types...> : tuple_leaf<Index, Types>
     constexpr tuple_base() requires (is_default_constructible_v<Types> && ...) = default;
     template<class... U>
     constexpr tuple_base(U&&... values)
+        requires (sizeof...(U) == sizeof...(Types))
         : tuple_leaf<Index, Types>(forward<U>(values))... {}
+    template<class Alloc, class... U>
+    constexpr tuple_base(allocator_arg_t, const Alloc& alloc, U&&... values)
+        requires (sizeof...(U) == sizeof...(Types))
+        : tuple_leaf<Index, Types>(allocator_arg, alloc,
+              forward<U>(values))... {}
 };
 
 template<size_t Index, class Head, class... Tail>
@@ -125,6 +146,30 @@ public:
     tuple(tuple&&) = default;
     tuple& operator=(const tuple&) = default;
     tuple& operator=(tuple&&) = default;
+
+    template<class Alloc>
+    constexpr tuple(allocator_arg_t, const Alloc& alloc)
+        requires (is_default_constructible_v<Types> && ...)
+        : base(allocator_arg, alloc) {}
+
+    template<class Alloc>
+    constexpr tuple(allocator_arg_t, const Alloc& alloc,
+                    const Types&... values)
+        requires (sizeof...(Types) != 0)
+        : base(allocator_arg, alloc, values...) {}
+
+    template<class Alloc, class... U>
+    constexpr tuple(allocator_arg_t, const Alloc& alloc, U&&... values)
+        requires (sizeof...(U) == sizeof...(Types) && sizeof...(Types) != 0)
+        : base(allocator_arg, alloc, forward<U>(values)...) {}
+
+    template<class Alloc, class Other>
+    constexpr tuple(allocator_arg_t, const Alloc& alloc, Other&& other)
+        requires ((detail::is_tuple<remove_cvref_t<Other>>::value ||
+                   detail::is_tuple_source<remove_cvref_t<Other>>::value) &&
+                  tuple_size_v<remove_cvref_t<Other>> == sizeof...(Types))
+        : tuple(allocator_arg, alloc, forward<Other>(other),
+                index_sequence_for<Types...>{}) {}
 
     constexpr const tuple& operator=(const tuple& other) const
         requires (is_assignable_v<const Types&, const Types&> && ...) {
@@ -243,6 +288,10 @@ private:
     template<class Other, size_t... I>
     constexpr tuple(Other&& other, index_sequence<I...>)
         : base(get<I>(forward<Other>(other))...) {}
+    template<class Alloc, class Other, size_t... I>
+    constexpr tuple(allocator_arg_t, const Alloc& alloc, Other&& other,
+                    index_sequence<I...>)
+        : base(allocator_arg, alloc, get<I>(forward<Other>(other))...) {}
     template<class Other, size_t... I>
     constexpr void assign(Other&& other, index_sequence<I...>) {
         ((get<I>(*this) = get<I>(forward<Other>(other))), ...);
@@ -261,9 +310,8 @@ private:
     }
 };
 
-// ponytail: allocator-extended tuple constructors and uses_allocator wait for
-// Stage 2.4's allocator protocol; duplicating that protocol here would invert
-// the roadmap dependency.
+template<class... Types, class Alloc>
+struct uses_allocator<tuple<Types...>, Alloc> : true_type {};
 
 template<class... T> tuple(T...) -> tuple<T...>;
 template<class T1, class T2> tuple(pair<T1, T2>) -> tuple<T1, T2>;

@@ -1,0 +1,160 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_SCOPED_ALLOCATOR_HEADER
+#define FTL_SCOPED_ALLOCATOR_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <memory>
+#else
+#include <ftl/memory>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+template<class OuterAlloc, class... InnerAllocs>
+class scoped_allocator_adaptor;
+
+template<class OuterAlloc>
+class scoped_allocator_adaptor<OuterAlloc> : public OuterAlloc {
+    using traits = allocator_traits<OuterAlloc>;
+public:
+    using outer_allocator_type = OuterAlloc;
+    using inner_allocator_type = scoped_allocator_adaptor;
+    using value_type = typename traits::value_type;
+    using size_type = typename traits::size_type;
+    using difference_type = typename traits::difference_type;
+    using pointer = typename traits::pointer;
+    using const_pointer = typename traits::const_pointer;
+    using void_pointer = typename traits::void_pointer;
+    using const_void_pointer = typename traits::const_void_pointer;
+    using propagate_on_container_copy_assignment =
+        typename traits::propagate_on_container_copy_assignment;
+    using propagate_on_container_move_assignment =
+        typename traits::propagate_on_container_move_assignment;
+    using propagate_on_container_swap = typename traits::propagate_on_container_swap;
+    using is_always_equal = typename traits::is_always_equal;
+    template<class T> struct rebind { using other = scoped_allocator_adaptor<
+        typename traits::template rebind_alloc<T>>; };
+
+    scoped_allocator_adaptor() = default;
+    template<class Other>
+    scoped_allocator_adaptor(Other&& outer) noexcept
+        : OuterAlloc(forward<Other>(outer)) {}
+    template<class Other>
+    scoped_allocator_adaptor(
+        const scoped_allocator_adaptor<Other>& other) noexcept
+        : OuterAlloc(other.outer_allocator()) {}
+    template<class Other>
+    scoped_allocator_adaptor(scoped_allocator_adaptor<Other>&& other) noexcept
+        : OuterAlloc(move(other.outer_allocator())) {}
+
+    inner_allocator_type& inner_allocator() noexcept { return *this; }
+    const inner_allocator_type& inner_allocator() const noexcept { return *this; }
+    outer_allocator_type& outer_allocator() noexcept { return *this; }
+    const outer_allocator_type& outer_allocator() const noexcept { return *this; }
+    [[nodiscard]] pointer allocate(size_type n) { return traits::allocate(*this, n); }
+    [[nodiscard]] pointer allocate(size_type n, const_void_pointer hint) {
+        return traits::allocate(*this, n, hint);
+    }
+    void deallocate(pointer p, size_type n) { traits::deallocate(*this, p, n); }
+    size_type max_size() const { return traits::max_size(*this); }
+    template<class T, class... Args>
+    void construct(T* p, Args&&... args) {
+        uninitialized_construct_using_allocator(
+            p, inner_allocator(), forward<Args>(args)...);
+    }
+    template<class T> void destroy(T* p) { traits::destroy(*this, p); }
+    scoped_allocator_adaptor select_on_container_copy_construction() const {
+        return traits::select_on_container_copy_construction(*this);
+    }
+};
+
+template<class OuterAlloc, class Inner, class... Rest>
+class scoped_allocator_adaptor<OuterAlloc, Inner, Rest...>
+    : public OuterAlloc {
+    using traits = allocator_traits<OuterAlloc>;
+    struct from_inner_t {};
+    scoped_allocator_adaptor<Inner, Rest...> inner_value;
+    scoped_allocator_adaptor(OuterAlloc outer,
+                             scoped_allocator_adaptor<Inner, Rest...> inner,
+                             from_inner_t) noexcept
+        : OuterAlloc(move(outer)), inner_value(move(inner)) {}
+public:
+    using outer_allocator_type = OuterAlloc;
+    using inner_allocator_type = scoped_allocator_adaptor<Inner, Rest...>;
+    using value_type = typename traits::value_type;
+    using size_type = typename traits::size_type;
+    using difference_type = typename traits::difference_type;
+    using pointer = typename traits::pointer;
+    using const_pointer = typename traits::const_pointer;
+    using void_pointer = typename traits::void_pointer;
+    using const_void_pointer = typename traits::const_void_pointer;
+    using propagate_on_container_copy_assignment = bool_constant<
+        traits::propagate_on_container_copy_assignment::value &&
+        inner_allocator_type::propagate_on_container_copy_assignment::value>;
+    using propagate_on_container_move_assignment = bool_constant<
+        traits::propagate_on_container_move_assignment::value &&
+        inner_allocator_type::propagate_on_container_move_assignment::value>;
+    using propagate_on_container_swap = bool_constant<
+        traits::propagate_on_container_swap::value &&
+        inner_allocator_type::propagate_on_container_swap::value>;
+    using is_always_equal = bool_constant<traits::is_always_equal::value &&
+        inner_allocator_type::is_always_equal::value>;
+    template<class T> struct rebind { using other = scoped_allocator_adaptor<
+        typename traits::template rebind_alloc<T>, Inner, Rest...>; };
+
+    scoped_allocator_adaptor() = default;
+    template<class Other>
+    scoped_allocator_adaptor(Other&& outer, const Inner& inner,
+                             const Rest&... rest) noexcept
+        : OuterAlloc(forward<Other>(outer)), inner_value(inner, rest...) {}
+    template<class Other>
+    scoped_allocator_adaptor(const scoped_allocator_adaptor<
+        Other, Inner, Rest...>& other) noexcept
+        : OuterAlloc(other.outer_allocator()), inner_value(other.inner_allocator()) {}
+    template<class Other>
+    scoped_allocator_adaptor(scoped_allocator_adaptor<
+        Other, Inner, Rest...>&& other) noexcept
+        : OuterAlloc(move(other.outer_allocator())),
+          inner_value(move(other.inner_allocator())) {}
+
+    inner_allocator_type& inner_allocator() noexcept { return inner_value; }
+    const inner_allocator_type& inner_allocator() const noexcept { return inner_value; }
+    outer_allocator_type& outer_allocator() noexcept { return *this; }
+    const outer_allocator_type& outer_allocator() const noexcept { return *this; }
+    [[nodiscard]] pointer allocate(size_type n) { return traits::allocate(*this, n); }
+    [[nodiscard]] pointer allocate(size_type n, const_void_pointer hint) {
+        return traits::allocate(*this, n, hint);
+    }
+    void deallocate(pointer p, size_type n) { traits::deallocate(*this, p, n); }
+    size_type max_size() const { return traits::max_size(*this); }
+    template<class T, class... Args>
+    void construct(T* p, Args&&... args) {
+        uninitialized_construct_using_allocator(
+            p, inner_allocator(), forward<Args>(args)...);
+    }
+    template<class T> void destroy(T* p) { traits::destroy(*this, p); }
+    scoped_allocator_adaptor select_on_container_copy_construction() const {
+        return {traits::select_on_container_copy_construction(*this),
+                inner_value.select_on_container_copy_construction(), from_inner_t{}};
+    }
+};
+
+template<class Outer, class... Inner>
+scoped_allocator_adaptor(Outer, Inner...)
+    -> scoped_allocator_adaptor<Outer, Inner...>;
+
+template<class O1, class... I1, class O2, class... I2>
+bool operator==(const scoped_allocator_adaptor<O1, I1...>& left,
+                const scoped_allocator_adaptor<O2, I2...>& right) noexcept {
+    if constexpr (sizeof...(I1) == 0 && sizeof...(I2) == 0)
+        return left.outer_allocator() == right.outer_allocator();
+    else if constexpr (sizeof...(I1) != 0 && sizeof...(I2) != 0)
+        return left.outer_allocator() == right.outer_allocator() &&
+               left.inner_allocator() == right.inner_allocator();
+    else
+        return false;
+}
+
+FTL_END_NAMESPACE
+#endif
