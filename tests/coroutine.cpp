@@ -134,12 +134,6 @@ constexpr bool null_handle_works() {
 
 static_assert(null_handle_works());
 
-static_assert(
-    (tested::coroutine_handle<>{} <=>
-     tested::coroutine_handle<>{}) ==
-    tested::strong_ordering::equal
-);
-
 struct no_promise_type {};
 
 template<class T>
@@ -155,6 +149,9 @@ bool ftl_test() {
     tested::coroutine_handle<> second = nullptr;
 
     if (first || second)
+        return false;
+
+    if ((first <=> second) != tested::strong_ordering::equal)
         return false;
 
     if (first.address() != nullptr || second.address() != nullptr)
