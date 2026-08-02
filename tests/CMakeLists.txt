@@ -91,7 +91,7 @@ endfunction()
 function(add_ftl_disabled_features_check name source)
     add_ftl_standalone_check(${name} ${source})
     target_compile_definitions(ftl_check_${name} PRIVATE
-        FTL_NO_RTTI FTL_NO_THREADS FTL_REPLACE_STL)
+        FTL_NO_EXCEPTIONS FTL_NO_RTTI FTL_NO_THREADS FTL_REPLACE_STL)
     target_include_directories(ftl_check_${name} PRIVATE ../include/ftl)
     if(MSVC)
         target_compile_options(ftl_check_${name} PRIVATE /EHs-c- /GR- /X)
