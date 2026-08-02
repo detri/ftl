@@ -116,6 +116,10 @@ dependency order, not hundreds of individual overloads.
 | `<memory>` | Stage 2.4 |
 | `<scoped_allocator>` | Stage 2.4 |
 | `<memory_resource>` | Stage 2.4 |
+| `<optional>` | Stage 2.5 |
+| `<expected>` | Stage 2.5 |
+| `<variant>` | Stage 2.5 |
+| `<any>` | Stage 2.5 |
 
 ### Seeded headers
 
@@ -129,7 +133,6 @@ synopses:
 | `<array>` | C++23 surface except `at()` failure type | replace trap with `out_of_range` after `<stdexcept>` completes |
 | `<tuple>` | C++23 tuple/array/pair surface including allocator-extended construction | `subrange` tuple-like integration after Stage 2.6 |
 | `<string_view>` | basic `string_view` operations | full `basic_string_view`, traits integration, searches, iterators, literals, I/O/hash integration |
-| `<optional>` | value/reference optional, monadic operations, hashing | complete C++23 value synopsis and separate C++26-extension audit |
 
 `include/ftl/detail/rapidhash` is an implementation detail, not a standard
 header or roadmap milestone.
@@ -146,7 +149,7 @@ remain required when C++23 still specifies them; they are not silently dropped.
 | Area | Absent headers |
 |---|---|
 | Language support | `<coroutine>` |
-| Concepts/types/vocabulary | `<any>`, `<bitset>`, `<expected>`, `<ratio>`, `<variant>` |
+| Concepts/types/vocabulary | `<bitset>`, `<ratio>` |
 | Iteration/ranges | `<ranges>`, `<span>`, `<mdspan>`, `<generator>` |
 | Algorithms/numerics | `<algorithm>`, `<numeric>`, `<numbers>`, `<random>`, `<valarray>`, `<execution>` |
 | Containers | `<deque>`, `<flat_map>`, `<flat_set>`, `<forward_list>`, `<list>`, `<map>`, `<queue>`, `<set>`, `<stack>`, `<unordered_map>`, `<unordered_set>`, `<vector>` |

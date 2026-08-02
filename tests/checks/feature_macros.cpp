@@ -4,6 +4,10 @@
 #include <ftl/source_location>
 #include <ftl/stdfloat>
 #include <ftl/version>
+#include <ftl/any>
+#include <ftl/expected>
+#include <ftl/optional>
+#include <ftl/variant>
 
 #if __cpp_lib_byte != 201603L
 #error <cstddef> must advertise std::byte
@@ -66,6 +70,10 @@
     __cpp_lib_start_lifetime_as != 202207L || \
     __cpp_lib_memory_resource != 201603L
 #error Stage 2.4 memory-management feature macros are incomplete
+#endif
+#if __cpp_lib_any != 201606L || __cpp_lib_expected != 202211L || \
+    __cpp_lib_optional != 202110L || __cpp_lib_variant != 202106L
+#error Stage 2.5 vocabulary feature macros are incomplete
 #endif
 
 int main() {}

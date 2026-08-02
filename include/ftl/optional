@@ -3,6 +3,8 @@
 #ifndef FTL_OPTIONAL_HEADER
 #define FTL_OPTIONAL_HEADER
 
+#define __cpp_lib_optional 202110L
+
 #ifdef FTL_REPLACE_STL
 #include <compare>
 #include <exception>
@@ -38,6 +40,16 @@ public:
     }
 };
 
+namespace detail {
+[[noreturn]] inline void throw_bad_optional_access() {
+#if defined(_CPPUNWIND) || defined(__cpp_exceptions)
+    throw bad_optional_access{};
+#else
+    terminate();
+#endif
+}
+}
+
 template<class T>
 class optional;
 
@@ -51,6 +63,24 @@ struct is_optional<optional<T>> : true_type {};
 template<class T>
 inline constexpr bool is_optional_v =
     is_optional<remove_cvref_t<T>>::value;
+
+template<class T, class U>
+inline constexpr bool converts_from_optional_v =
+    is_constructible_v<T, optional<U>&> ||
+    is_constructible_v<T, const optional<U>&> ||
+    is_constructible_v<T, optional<U>&&> ||
+    is_constructible_v<T, const optional<U>&&> ||
+    is_convertible_v<optional<U>&, T> ||
+    is_convertible_v<const optional<U>&, T> ||
+    is_convertible_v<optional<U>&&, T> ||
+    is_convertible_v<const optional<U>&&, T>;
+
+template<class T, class U>
+inline constexpr bool assigns_from_optional_v =
+    is_assignable_v<T&, optional<U>&> ||
+    is_assignable_v<T&, const optional<U>&> ||
+    is_assignable_v<T&, optional<U>&&> ||
+    is_assignable_v<T&, const optional<U>&&>;
 
 template<class T>
 constexpr T* optional_addressof(T& value) noexcept {
@@ -114,6 +144,7 @@ public:
     template<class U, class... Args>
     constexpr explicit optional(
         in_place_t, initializer_list<U> values, Args&&... args)
+        noexcept(is_nothrow_constructible_v<T, initializer_list<U>&, Args...>)
         requires is_constructible_v<T, initializer_list<U>&, Args...>
         : stored(values, forward<Args>(args)...), engaged{true} {}
 
@@ -129,7 +160,9 @@ public:
     template<class U>
     constexpr explicit(!is_convertible_v<const U&, T>)
     optional(const optional<U>& other)
-        requires is_constructible_v<T, const U&>
+        requires (is_constructible_v<T, const U&> &&
+                  (is_same_v<remove_cv_t<T>, bool> ||
+                   !detail::converts_from_optional_v<T, U>))
         : engaged{other.has_value()} {
         if (engaged)
             construct_at(detail::optional_addressof(stored), *other);
@@ -137,7 +170,10 @@ public:
 
     template<class U>
     constexpr explicit(!is_convertible_v<U, T>) optional(optional<U>&& other)
-        requires is_constructible_v<T, U>
+        noexcept(is_nothrow_constructible_v<T, U>)
+        requires (is_constructible_v<T, U> &&
+                  (is_same_v<remove_cv_t<T>, bool> ||
+                   !detail::converts_from_optional_v<T, U>))
         : engaged{other.has_value()} {
         if (engaged)
             construct_at(detail::optional_addressof(stored), move(*other));
@@ -186,11 +222,40 @@ public:
     template<class U = T>
     constexpr optional& operator=(U&& input)
         requires (!detail::is_optional_v<remove_cvref_t<U>> &&
+                  (!is_scalar_v<T> ||
+                   !is_same_v<decay_t<U>, T>) &&
                   is_constructible_v<T, U> && is_assignable_v<T&, U>) {
         if (engaged)
             stored = forward<U>(input);
         else
             emplace(forward<U>(input));
+        return *this;
+    }
+
+    template<class U>
+    constexpr optional& operator=(const optional<U>& other)
+        requires (is_constructible_v<T, const U&> &&
+                  is_assignable_v<T&, const U&> &&
+                  !detail::converts_from_optional_v<T, U> &&
+                  !detail::assigns_from_optional_v<T, U>) {
+        if (other) {
+            if (engaged) stored = *other;
+            else emplace(*other);
+        } else reset();
+        return *this;
+    }
+
+    template<class U>
+    constexpr optional& operator=(optional<U>&& other)
+        noexcept(is_nothrow_constructible_v<T, U> &&
+                 is_nothrow_assignable_v<T&, U>)
+        requires (is_constructible_v<T, U> && is_assignable_v<T&, U> &&
+                  !detail::converts_from_optional_v<T, U> &&
+                  !detail::assigns_from_optional_v<T, U>) {
+        if (other) {
+            if (engaged) stored = move(*other);
+            else emplace(move(*other));
+        } else reset();
         return *this;
     }
 
@@ -208,19 +273,19 @@ public:
     constexpr bool has_value() const noexcept { return engaged; }
 
     constexpr const T& value_or_throw() const& {
-        if (!engaged) throw bad_optional_access{};
+        if (!engaged) detail::throw_bad_optional_access();
         return stored;
     }
     constexpr T& value_or_throw() & {
-        if (!engaged) throw bad_optional_access{};
+        if (!engaged) detail::throw_bad_optional_access();
         return stored;
     }
     constexpr const T&& value_or_throw() const&& {
-        if (!engaged) throw bad_optional_access{};
+        if (!engaged) detail::throw_bad_optional_access();
         return move(stored);
     }
     constexpr T&& value_or_throw() && {
-        if (!engaged) throw bad_optional_access{};
+        if (!engaged) detail::throw_bad_optional_access();
         return move(stored);
     }
 
@@ -250,6 +315,7 @@ public:
 
     template<class U, class... Args>
     constexpr T& emplace(initializer_list<U> values, Args&&... args)
+        noexcept(is_nothrow_constructible_v<T, initializer_list<U>&, Args...>)
         requires is_constructible_v<T, initializer_list<U>&, Args...> {
         reset();
         construct_at(detail::optional_addressof(stored),
@@ -399,7 +465,7 @@ public:
     constexpr explicit operator bool() const noexcept { return pointer; }
     constexpr bool has_value() const noexcept { return pointer; }
     constexpr T& value() const {
-        if (!pointer) throw bad_optional_access{};
+        if (!pointer) detail::throw_bad_optional_access();
         return *pointer;
     }
     template<class U>
@@ -494,7 +560,8 @@ constexpr auto operator<=>(const optional<T>& left, const U& right)
 
 template<class T>
 constexpr void swap(optional<T>& left, optional<T>& right)
-    noexcept(noexcept(left.swap(right))) {
+    noexcept(noexcept(left.swap(right)))
+    requires requires { left.swap(right); } {
     left.swap(right);
 }
 
@@ -513,6 +580,9 @@ make_optional(initializer_list<U> values, Args&&... args) {
 }
 
 template<class T>
+    requires requires(const remove_cv_t<remove_reference_t<T>>& item) {
+        hash<remove_cv_t<remove_reference_t<T>>>{}(item);
+    }
 struct hash<optional<T>> {
     size_t operator()(const optional<T>& value) const
         noexcept(noexcept(
