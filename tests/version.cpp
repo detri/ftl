@@ -22,5 +22,10 @@
 #ifdef __cpp_lib_stdfloat
 #error N4950 does not define __cpp_lib_stdfloat
 #endif
+#ifndef __cpp_lib_coroutine
+#error "__cpp_lib_coroutine must be defined"
+#endif
+
+static_assert(__cpp_lib_coroutine == 201902L);
 
 bool ftl_test() { return true; }
