@@ -168,6 +168,8 @@ foreach(header IN ITEMS
         c_headers
         string_view
         iterator
-        tuple)
+        tuple
+        coroutine
+)
     add_ftl_test(${header})
 endforeach()

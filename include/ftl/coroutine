@@ -34,6 +34,14 @@
 FTL_BEGIN_NAMESPACE
 
 namespace detail {
+template<class T>
+constexpr T* coroutine_addressof(T& value) noexcept {
+#if defined(_MSC_VER) || __has_builtin(__builtin_addressof)
+    return __builtin_addressof(value);
+#else
+    return &value;
+#endif
+}
 
 template<class Return, class = void>
 struct coroutine_traits_base {};
@@ -114,7 +122,7 @@ struct coroutine_handle {
     from_promise(Promise& promise_value) noexcept {
         const auto promise_pointer = const_cast<void*>(
             static_cast<const volatile void*>(
-                addressof(promise_value)
+                detail::coroutine_addressof(promise_value)
             )
         );
 
