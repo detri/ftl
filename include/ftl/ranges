@@ -2820,6 +2820,514 @@ inline constexpr bool
 enable_borrowed_range<take_view<V>> =
     enable_borrowed_range<V>;
 
+namespace detail
+{
+
+// Reuse the guarded simple-view implementation added for take_view.
+template<class T>
+concept drop_simple_view =
+    take_simple_view<T>;
+
+
+template<
+    class V,
+    bool =
+        forward_range<V> &&
+        !(random_access_range<V> && sized_range<V>)
+>
+struct drop_cache
+{
+};
+
+
+template<class V>
+struct drop_cache<V, true>
+{
+    non_propagating_cache<
+        iterator_t<V>
+    > cached_begin;
+};
+
+} // namespace detail
+
+
+template<view V>
+class drop_view
+    : public view_interface<drop_view<V>>
+{
+private:
+    FTL_NO_UNIQUE_ADDRESS
+    V base_ = V();
+
+    range_difference_t<V> count_ = 0;
+
+    FTL_NO_UNIQUE_ADDRESS
+    detail::drop_cache<V> cache_{};
+
+public:
+    drop_view()
+        requires default_initializable<V>
+        = default;
+
+    constexpr explicit drop_view(
+        V base,
+        range_difference_t<V> count
+    )
+        : base_(FTL_RANGES_NAMESPACE::move(base)),
+          count_(count)
+    {
+    }
+
+    [[nodiscard]]
+    constexpr V base() const&
+        requires copy_constructible<V>
+    {
+        return base_;
+    }
+
+    [[nodiscard]]
+    constexpr V base() &&
+    {
+        return FTL_RANGES_NAMESPACE::move(base_);
+    }
+
+    [[nodiscard]]
+    constexpr auto begin()
+        requires (
+            !(
+                detail::drop_simple_view<V> &&
+                random_access_range<const V> &&
+                sized_range<const V>
+            )
+        )
+    {
+        if constexpr (
+            random_access_range<V> &&
+            sized_range<V>
+        )
+        {
+            return ranges::next(
+                ranges::begin(base_),
+                count_,
+                ranges::end(base_)
+            );
+        }
+        else if constexpr (forward_range<V>)
+        {
+            auto& cached =
+                cache_.cached_begin;
+
+            if (!cached.has_value())
+            {
+                cached.emplace(
+                    ranges::next(
+                        ranges::begin(base_),
+                        count_,
+                        ranges::end(base_)
+                    )
+                );
+            }
+
+            return *cached;
+        }
+        else
+        {
+            return ranges::next(
+                ranges::begin(base_),
+                count_,
+                ranges::end(base_)
+            );
+        }
+    }
+
+    [[nodiscard]]
+    constexpr auto begin() const
+        requires (
+            random_access_range<const V> &&
+            sized_range<const V>
+        )
+    {
+        return ranges::next(
+            ranges::begin(base_),
+            static_cast<
+                range_difference_t<const V>
+            >(count_),
+            ranges::end(base_)
+        );
+    }
+
+    [[nodiscard]]
+    constexpr auto end()
+        requires (!detail::drop_simple_view<V>)
+    {
+        return ranges::end(base_);
+    }
+
+    [[nodiscard]]
+    constexpr auto end() const
+        requires range<const V>
+    {
+        return ranges::end(base_);
+    }
+
+    [[nodiscard]]
+    constexpr auto size()
+        requires sized_range<V>
+    {
+        const auto base_size =
+            ranges::size(base_);
+
+        const auto count =
+            static_cast<decltype(base_size)>(
+                count_
+            );
+
+        return base_size < count
+            ? decltype(base_size){0}
+            : base_size - count;
+    }
+
+    [[nodiscard]]
+    constexpr auto size() const
+        requires sized_range<const V>
+    {
+        const auto base_size =
+            ranges::size(base_);
+
+        const auto count =
+            static_cast<decltype(base_size)>(
+                count_
+            );
+
+        return base_size < count
+            ? decltype(base_size){0}
+            : base_size - count;
+    }
+};
+
+
+template<class R>
+drop_view(
+    R&&,
+    range_difference_t<R>
+) -> drop_view<views::all_t<R>>;
+
+
+template<class V>
+inline constexpr bool
+enable_borrowed_range<drop_view<V>> =
+    enable_borrowed_range<V>;
+
+namespace views
+{
+
+namespace detail
+{
+
+template<class RawRange>
+struct drop_apply
+{
+    template<
+        viewable_range R,
+        class Count
+    >
+        requires convertible_to<
+            Count,
+            range_difference_t<R>
+        >
+    [[nodiscard]]
+    static constexpr auto call(
+        R&& range,
+        Count&& count
+    )
+    {
+        using base_type =
+            all_t<R>;
+
+        using difference_type =
+            range_difference_t<R>;
+
+        return drop_view<base_type>(
+            all(static_cast<R&&>(range)),
+            static_cast<difference_type>(
+                static_cast<Count&&>(count)
+            )
+        );
+    }
+};
+
+
+template<class T>
+struct drop_apply<empty_view<T>>
+{
+    template<class R, class Count>
+    [[nodiscard]]
+    static constexpr empty_view<T> call(
+        R&&,
+        Count&&
+    ) noexcept
+    {
+        return {};
+    }
+};
+
+template<class W, class Bound>
+struct drop_apply<iota_view<W, Bound>>
+{
+    using raw_range =
+        iota_view<W, Bound>;
+
+    template<
+        viewable_range R,
+        class Count
+    >
+        requires convertible_to<
+            Count,
+            range_difference_t<R>
+        >
+    [[nodiscard]]
+    static constexpr auto call(
+        R&& range,
+        Count&& count
+    )
+    {
+        if constexpr (
+            random_access_range<raw_range> &&
+            sized_range<raw_range>
+        )
+        {
+            using difference_type =
+                range_difference_t<R>;
+
+            const difference_type distance =
+                static_cast<difference_type>(
+                    ranges::distance(range)
+                );
+
+            const difference_type requested =
+                static_cast<difference_type>(
+                    static_cast<Count&&>(count)
+                );
+
+            const difference_type offset =
+                distance < requested
+                    ? distance
+                    : requested;
+
+            auto first =
+                ranges::begin(range);
+
+            auto last =
+                ranges::end(range);
+
+            return raw_range(
+                first + offset,
+                last
+            );
+        }
+        else
+        {
+            using base_type =
+                all_t<R>;
+
+            using difference_type =
+                range_difference_t<R>;
+
+            return drop_view<base_type>(
+                all(static_cast<R&&>(range)),
+                static_cast<difference_type>(
+                    static_cast<Count&&>(count)
+                )
+            );
+        }
+    }
+};
+
+template<
+    input_or_output_iterator Iterator,
+    sentinel_for<Iterator> Sentinel,
+    subrange_kind Kind
+>
+    requires (
+        Kind == subrange_kind::sized ||
+        !sized_sentinel_for<
+            Sentinel,
+            Iterator
+        >
+    )
+struct drop_apply<
+    subrange<
+        Iterator,
+        Sentinel,
+        Kind
+    >
+>
+{
+    using raw_range =
+        subrange<
+            Iterator,
+            Sentinel,
+            Kind
+        >;
+
+    static constexpr bool stores_size =
+        Kind == subrange_kind::sized &&
+        !sized_sentinel_for<
+            Sentinel,
+            Iterator
+        >;
+
+    template<
+        viewable_range R,
+        class Count
+    >
+        requires convertible_to<
+            Count,
+            range_difference_t<R>
+        >
+    [[nodiscard]]
+    static constexpr auto call(
+        R&& range,
+        Count&& count
+    )
+    {
+        if constexpr (
+            random_access_range<raw_range> &&
+            sized_range<raw_range>
+        )
+        {
+            using difference_type =
+                range_difference_t<R>;
+
+            const difference_type distance =
+                static_cast<difference_type>(
+                    ranges::distance(range)
+                );
+
+            const difference_type requested =
+                static_cast<difference_type>(
+                    static_cast<Count&&>(count)
+                );
+
+            const difference_type offset =
+                distance < requested
+                    ? distance
+                    : requested;
+
+            auto first =
+                ranges::begin(range);
+
+            auto last =
+                ranges::end(range);
+
+            if constexpr (stores_size)
+            {
+                return raw_range(
+                    first + offset,
+                    last,
+                    ranges::detail::to_unsigned_like(
+                        distance - offset
+                    )
+                );
+            }
+            else
+            {
+                return raw_range(
+                    first + offset,
+                    last
+                );
+            }
+        }
+        else
+        {
+            using base_type =
+                all_t<R>;
+
+            using difference_type =
+                range_difference_t<R>;
+
+            return drop_view<base_type>(
+                all(static_cast<R&&>(range)),
+                static_cast<difference_type>(
+                    static_cast<Count&&>(count)
+                )
+            );
+        }
+    }
+};
+
+template<
+    viewable_range R,
+    class Count
+>
+    requires convertible_to<
+        Count,
+        range_difference_t<R>
+    >
+[[nodiscard]]
+constexpr auto apply_drop(
+    R&& range,
+    Count&& count
+)
+{
+    using raw_range =
+        remove_cvref_t<R>;
+
+    return drop_apply<raw_range>::call(
+        static_cast<R&&>(range),
+        static_cast<Count&&>(count)
+    );
+}
+
+} // namespace detail
+
+
+struct drop_fn
+{
+    template<
+        viewable_range R,
+        class Count
+    >
+        requires convertible_to<
+            Count,
+            range_difference_t<R>
+        >
+    [[nodiscard]]
+    constexpr auto operator()(
+        R&& range,
+        Count&& count
+    ) const
+    {
+        return detail::apply_drop(
+            static_cast<R&&>(range),
+            static_cast<Count&&>(count)
+        );
+    }
+
+    template<class Count>
+        requires constructible_from<
+            decay_t<Count>,
+            Count
+        >
+    [[nodiscard]]
+    constexpr auto operator()(
+        Count&& count
+    ) const
+    {
+        using stored_type =
+            decay_t<Count>;
+
+        return FTL_RANGES_NAMESPACE::ranges::detail::
+        partial_adaptor<drop_fn>(
+            static_cast<Count&&>(count)
+        );
+    }
+};
+
+inline constexpr drop_fn drop{};
+
+} // namespace views
+
 
 namespace views
 {
@@ -3033,6 +3541,7 @@ public:
 };
 
 } // namespace detail
+
 
 
 struct take_fn

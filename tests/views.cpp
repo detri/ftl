@@ -3219,6 +3219,873 @@ static_assert(
     iota_take_reverse_integration_works()
 );
 
+using drop_pointer_view =
+tested::ranges::drop_view<
+    pointer_view
+>;
+
+using drop_forward_sized_view =
+tested::ranges::drop_view<
+    forward_sized_view
+>;
+
+using drop_non_common_view =
+tested::ranges::drop_view<
+    non_common_view
+>;
+
+using drop_input_sized_sentinel_view =
+tested::ranges::drop_view<
+    input_sized_sentinel_view
+>;
+
+using drop_simple_pointer_view =
+tested::ranges::drop_view<
+    simple_pointer_view
+>;
+
+
+static_assert(
+    tested::ranges::view<
+        drop_pointer_view
+    >
+);
+
+static_assert(
+    tested::ranges::contiguous_range<
+        drop_pointer_view
+    >
+);
+
+static_assert(
+    tested::ranges::common_range<
+        drop_pointer_view
+    >
+);
+
+static_assert(
+    tested::ranges::sized_range<
+        drop_pointer_view
+    >
+);
+
+static_assert(
+    tested::ranges::borrowed_range<
+        drop_pointer_view
+    >
+);
+
+static_assert(
+    tested::ranges::range<
+        const drop_pointer_view>
+);
+
+
+static_assert(
+    tested::ranges::bidirectional_range<
+        drop_forward_sized_view
+    >
+);
+
+static_assert(
+    !tested::ranges::random_access_range<
+        drop_forward_sized_view
+    >
+);
+
+static_assert(
+    tested::ranges::common_range<
+        drop_forward_sized_view
+    >
+);
+
+static_assert(
+    tested::ranges::sized_range<
+        drop_forward_sized_view
+    >
+);
+
+// Const begin() is intentionally restricted to random-access
+// sized bases.
+static_assert(
+    !tested::ranges::range<
+        const drop_forward_sized_view>
+);
+
+
+static_assert(
+    tested::ranges::random_access_range<
+        drop_non_common_view
+    >
+);
+
+static_assert(
+    !tested::ranges::common_range<
+        drop_non_common_view
+    >
+);
+
+static_assert(
+    !tested::ranges::sized_range<
+        drop_non_common_view
+    >
+);
+
+
+static_assert(
+    tested::ranges::input_range<
+        drop_input_sized_sentinel_view
+    >
+);
+
+static_assert(
+    !tested::ranges::forward_range<
+        drop_input_sized_sentinel_view
+    >
+);
+
+static_assert(
+    !tested::ranges::common_range<
+        drop_input_sized_sentinel_view
+    >
+);
+
+static_assert(
+    !tested::ranges::sized_range<
+        drop_input_sized_sentinel_view
+    >
+);
+
+static_assert(tested::is_same_v<
+    tested::ranges::iterator_t<
+        drop_input_sized_sentinel_view
+    >,
+    input_pointer_iterator
+>);
+
+static_assert(tested::is_same_v<
+    tested::ranges::sentinel_t<
+        drop_input_sized_sentinel_view
+    >,
+    sized_input_sentinel
+>);
+
+
+static_assert(
+    tested::ranges::view<
+        drop_simple_pointer_view
+    >
+);
+
+static_assert(
+    tested::ranges::range<
+        const drop_simple_pointer_view>
+);
+
+static_assert(tested::is_same_v<
+    tested::ranges::iterator_t<
+        drop_simple_pointer_view
+    >,
+    tested::ranges::iterator_t<
+        const drop_simple_pointer_view>
+>);
+
+
+static_assert(tested::is_same_v<
+    decltype(
+        tested::declval<
+            const drop_pointer_view&>().base()
+    ),
+    pointer_view
+>);
+
+static_assert(tested::is_same_v<
+    decltype(
+        tested::declval<
+            drop_pointer_view&&>().base()
+    ),
+    pointer_view
+>);
+
+constexpr bool drop_view_direct_works()
+{
+    int values[] = {1, 2, 3, 4, 5};
+
+    pointer_view base{
+        values,
+        values + 5
+    };
+
+    tested::ranges::drop_view dropped(
+        base,
+        tested::ptrdiff_t{2}
+    );
+
+    static_assert(tested::is_same_v<
+        decltype(dropped),
+        drop_pointer_view
+    >);
+
+    if (dropped.empty())
+        return false;
+
+    if (dropped.size() != 3)
+        return false;
+
+    if (dropped.begin() != values + 2)
+        return false;
+
+    if (dropped.end() != values + 5)
+        return false;
+
+    if (dropped.front() != 3)
+        return false;
+
+    if (dropped.back() != 5)
+        return false;
+
+    if (dropped[0] != 3)
+        return false;
+
+    if (dropped[1] != 4)
+        return false;
+
+    if (dropped[2] != 5)
+        return false;
+
+    auto copied_base =
+            static_cast<const decltype(dropped)&>(
+                dropped
+            ).base();
+
+    if (copied_base.begin() != values)
+        return false;
+
+    if (copied_base.end() != values + 5)
+        return false;
+
+    return true;
+}
+
+static_assert(drop_view_direct_works());
+
+
+constexpr bool drop_view_clamps_to_empty()
+{
+    int values[] = {1, 2, 3};
+
+    pointer_view base{
+        values,
+        values + 3
+    };
+
+    tested::ranges::drop_view dropped(
+        base,
+        tested::ptrdiff_t{100}
+    );
+
+    if (!dropped.empty())
+        return false;
+
+    if (dropped.size() != 0)
+        return false;
+
+    if (dropped.begin() != values + 3)
+        return false;
+
+    if (dropped.end() != values + 3)
+        return false;
+
+    return true;
+}
+
+static_assert(drop_view_clamps_to_empty());
+
+
+constexpr bool drop_view_zero_works()
+{
+    int values[] = {1, 2, 3};
+
+    pointer_view base{
+        values,
+        values + 3
+    };
+
+    tested::ranges::drop_view dropped(
+        base,
+        tested::ptrdiff_t{0}
+    );
+
+    if (dropped.size() != 3)
+        return false;
+
+    if (dropped.begin() != values)
+        return false;
+
+    if (dropped.end() != values + 3)
+        return false;
+
+    return true;
+}
+
+static_assert(drop_view_zero_works());
+
+
+constexpr bool drop_view_const_works()
+{
+    int values[] = {1, 2, 3, 4};
+
+    const tested::ranges::drop_view dropped(
+        pointer_view{
+            values,
+            values + 4
+        },
+        tested::ptrdiff_t{2}
+    );
+
+    if (dropped.size() != 2)
+        return false;
+
+    if (dropped.begin() != values + 2)
+        return false;
+
+    if (dropped.end() != values + 4)
+        return false;
+
+    if (dropped.front() != 3)
+        return false;
+
+    if (dropped.back() != 4)
+        return false;
+
+    return true;
+}
+
+static_assert(drop_view_const_works());
+
+using direct_apply_result =
+    decltype(
+        tested::ranges::views::detail::apply_drop(
+            tested::declval<pointer_view&>(),
+            2
+        )
+    );
+
+static_assert(
+    !tested::is_void_v<
+        direct_apply_result
+    >
+);
+
+using drop_fn_result =
+    decltype(
+        tested::ranges::views::drop(
+            tested::declval<pointer_view&>(),
+            2
+        )
+    );
+
+static_assert(
+    !tested::is_void_v<
+        drop_fn_result
+    >
+);
+
+constexpr bool drop_adaptor_direct_works()
+{
+    int values[] = {1, 2, 3, 4};
+
+    pointer_view base{
+        values,
+        values + 4
+    };
+
+    auto dropped =
+            tested::ranges::views::drop(
+                base,
+                2
+            );
+
+    static_assert(tested::is_same_v<
+        decltype(dropped),
+        drop_pointer_view
+    >);
+
+    return
+            dropped.size() == 2 &&
+            dropped.front() == 3 &&
+            dropped.back() == 4;
+}
+
+static_assert(drop_adaptor_direct_works());
+
+
+constexpr bool drop_adaptor_pipeline_works()
+{
+    int values[] = {1, 2, 3, 4, 5};
+
+    pointer_view base{
+        values,
+        values + 5
+    };
+
+    auto dropped =
+            base |
+            tested::ranges::views::drop(2);
+
+    static_assert(tested::is_same_v<
+        decltype(dropped),
+        drop_pointer_view
+    >);
+
+    if (dropped.size() != 3)
+        return false;
+
+    if (dropped[0] != 3)
+        return false;
+
+    if (dropped[1] != 4)
+        return false;
+
+    if (dropped[2] != 5)
+        return false;
+
+    return true;
+}
+
+static_assert(drop_adaptor_pipeline_works());
+
+using drop_partial =
+    decltype(
+        tested::ranges::views::drop(2)
+    );
+
+static_assert(
+    !tested::ranges::range<
+        drop_partial
+    >
+);
+
+static_assert(
+    tested::ranges::detail::
+        range_adaptor_closure_object<
+            drop_partial
+        >
+);
+
+static_assert(
+    tested::invocable<
+        drop_partial,
+        pointer_view&
+    >
+);
+
+constexpr bool drop_array_pipeline_works()
+{
+    int values[] = {1, 2, 3, 4};
+
+    auto dropped =
+            values |
+            tested::ranges::views::drop(1);
+
+    if (dropped.size() != 3)
+        return false;
+
+    if (dropped.front() != 2)
+        return false;
+
+    if (dropped.back() != 4)
+        return false;
+
+    return true;
+}
+
+static_assert(drop_array_pipeline_works());
+
+constexpr bool drop_sized_non_random_access_works()
+{
+    int values[] = {1, 2, 3, 4};
+
+    forward_sized_view base{
+        values,
+        values + 4
+    };
+
+    tested::ranges::drop_view dropped(
+        base,
+        tested::ptrdiff_t{2}
+    );
+
+    static_assert(tested::is_same_v<
+        tested::ranges::iterator_t<
+            decltype(dropped)
+        >,
+        bidirectional_pointer_iterator
+    >);
+
+    static_assert(tested::is_same_v<
+        tested::ranges::sentinel_t<
+            decltype(dropped)
+        >,
+        bidirectional_pointer_iterator
+    >);
+
+    if (dropped.size() != 2)
+        return false;
+
+    auto iterator =
+            dropped.begin();
+
+    if (*iterator++ != 3)
+        return false;
+
+    if (*iterator++ != 4)
+        return false;
+
+    return iterator == dropped.end();
+}
+
+#if defined(FTL_REPLACE_STL) || defined(_MSC_VER)
+static_assert(
+    drop_sized_non_random_access_works()
+);
+#endif
+
+constexpr bool drop_forward_cache_works()
+{
+    int values[] = {1, 2, 3, 4, 5};
+    int comparisons = 0;
+
+    non_common_view base{
+        values,
+        values + 5,
+        &comparisons
+    };
+
+    tested::ranges::drop_view dropped(
+        base,
+        tested::ptrdiff_t{3}
+    );
+
+    auto first =
+            dropped.begin();
+
+    if (first != values + 3)
+        return false;
+
+    const int comparisons_after_first =
+            comparisons;
+
+    if (comparisons_after_first == 0)
+        return false;
+
+    auto second =
+            dropped.begin();
+
+    if (second != values + 3)
+        return false;
+
+    // The cached forward-range path must not traverse again.
+    if (comparisons != comparisons_after_first)
+        return false;
+
+    return true;
+}
+
+#if defined(FTL_REPLACE_STL) || defined(_MSC_VER)
+static_assert(drop_forward_cache_works());
+#endif
+
+constexpr bool drop_input_range_works()
+{
+    int values[] = {1, 2, 3, 4};
+
+    input_sized_sentinel_view base{
+        values,
+        values + 4
+    };
+
+    tested::ranges::drop_view dropped(
+        base,
+        tested::ptrdiff_t{2}
+    );
+
+    auto iterator =
+            dropped.begin();
+
+    if (*iterator != 3)
+        return false;
+
+    ++iterator;
+
+    if (*iterator != 4)
+        return false;
+
+    ++iterator;
+
+    if (iterator != dropped.end())
+        return false;
+
+    return true;
+}
+
+static_assert(drop_input_range_works());
+
+
+constexpr bool drop_input_range_clamps()
+{
+    int values[] = {1, 2, 3};
+
+    input_sized_sentinel_view base{
+        values,
+        values + 3
+    };
+
+    tested::ranges::drop_view dropped(
+        base,
+        tested::ptrdiff_t{20}
+    );
+
+    return dropped.begin() == dropped.end();
+}
+
+static_assert(drop_input_range_clamps());
+
+constexpr bool drop_simple_view_works()
+{
+    int values[] = {1, 2, 3, 4};
+
+    tested::ranges::drop_view dropped(
+        simple_pointer_view{
+            values,
+            values + 4
+        },
+        tested::ptrdiff_t{2}
+    );
+
+    const auto& constant =
+            dropped;
+
+    if (dropped.begin() != values + 2)
+        return false;
+
+    if (dropped.end() != values + 4)
+        return false;
+
+    if (constant.begin() != values + 2)
+        return false;
+
+    if (constant.end() != values + 4)
+        return false;
+
+    return true;
+}
+
+static_assert(drop_simple_view_works());
+
+constexpr bool drop_empty_view_normalization_works()
+{
+    constexpr auto empty =
+            tested::ranges::views::empty<int>;
+
+    auto dropped =
+            tested::ranges::views::drop(
+                empty,
+                20
+            );
+
+    static_assert(tested::is_same_v<
+        decltype(dropped),
+        tested::ranges::empty_view<int>
+    >);
+
+    return
+            dropped.empty() &&
+            dropped.size() == 0;
+}
+
+static_assert(
+    drop_empty_view_normalization_works()
+);
+
+
+constexpr bool drop_subrange_normalization_works()
+{
+    int values[] = {1, 2, 3, 4, 5};
+
+    tested::ranges::subrange original(
+        values,
+        values + 5
+    );
+
+    auto dropped =
+            tested::ranges::views::drop(
+                original,
+                2
+            );
+
+    static_assert(tested::is_same_v<
+        decltype(dropped),
+        decltype(original)
+    >);
+
+    if (dropped.begin() != values + 2)
+        return false;
+
+    if (dropped.end() != values + 5)
+        return false;
+
+    if (dropped.size() != 3)
+        return false;
+
+    return true;
+}
+
+static_assert(
+    drop_subrange_normalization_works()
+);
+
+
+constexpr bool drop_subrange_clamping_works()
+{
+    int values[] = {1, 2, 3};
+
+    tested::ranges::subrange original(
+        values,
+        values + 3
+    );
+
+    auto dropped =
+            tested::ranges::views::drop(
+                original,
+                20
+            );
+
+    return
+            dropped.begin() == values + 3 &&
+            dropped.end() == values + 3 &&
+            dropped.size() == 0;
+}
+
+static_assert(
+    drop_subrange_clamping_works()
+);
+
+
+constexpr bool drop_iota_normalization_works()
+{
+    auto original =
+            tested::ranges::views::iota(
+                10,
+                20
+            );
+
+    auto dropped =
+            tested::ranges::views::drop(
+                original,
+                4
+            );
+
+    using expected_type =
+            tested::ranges::iota_view<int, int>;
+
+    static_assert(tested::is_same_v<
+        decltype(dropped),
+        expected_type
+    >);
+
+    if (dropped.size() != 6)
+        return false;
+
+    if (dropped.front() != 14)
+        return false;
+
+    if (dropped.back() != 19)
+        return false;
+
+    return true;
+}
+
+static_assert(
+    drop_iota_normalization_works()
+);
+
+
+constexpr bool drop_iota_clamping_works()
+{
+    auto original =
+            tested::ranges::views::iota(
+                10,
+                13
+            );
+
+    auto dropped =
+            original |
+            tested::ranges::views::drop(100);
+
+    return
+            dropped.empty() &&
+            dropped.size() == 0;
+}
+
+static_assert(
+    drop_iota_clamping_works()
+);
+
+constexpr bool drop_take_integration_works()
+{
+    auto result =
+            tested::ranges::views::iota(0, 10) |
+            tested::ranges::views::drop(3) |
+            tested::ranges::views::take(4);
+
+    if (result.size() != 4)
+        return false;
+
+    if (result[0] != 3)
+        return false;
+
+    if (result[1] != 4)
+        return false;
+
+    if (result[2] != 5)
+        return false;
+
+    if (result[3] != 6)
+        return false;
+
+    return true;
+}
+
+static_assert(drop_take_integration_works());
+
+
+constexpr bool drop_reverse_integration_works()
+{
+    int values[] = {1, 2, 3, 4, 5};
+
+    auto result =
+            values |
+            tested::ranges::views::drop(2) |
+            tested::ranges::views::reverse;
+
+    if (result.size() != 3)
+        return false;
+
+    if (result[0] != 5)
+        return false;
+
+    if (result[1] != 4)
+        return false;
+
+    if (result[2] != 3)
+        return false;
+
+    return true;
+}
+
+static_assert(drop_reverse_integration_works());
+
 bool ftl_test()
 {
     return reverse_view_direct_works() &&
@@ -3261,5 +4128,24 @@ bool ftl_test()
            take_iota_normalization_works() &&
            take_iota_clamping_works() &&
            take_reverse_integration_works() &&
-           iota_take_reverse_integration_works();
+           iota_take_reverse_integration_works() &&
+           drop_view_direct_works() &&
+           drop_view_clamps_to_empty() &&
+           drop_view_zero_works() &&
+           drop_view_const_works() &&
+           drop_adaptor_direct_works() &&
+           drop_adaptor_pipeline_works() &&
+           drop_array_pipeline_works() &&
+           drop_sized_non_random_access_works() &&
+           drop_forward_cache_works() &&
+           drop_input_range_works() &&
+           drop_input_range_clamps() &&
+           drop_simple_view_works() &&
+           drop_empty_view_normalization_works() &&
+           drop_subrange_normalization_works() &&
+           drop_subrange_clamping_works() &&
+           drop_iota_normalization_works() &&
+           drop_iota_clamping_works() &&
+           drop_take_integration_works() &&
+           drop_reverse_integration_works();
 }
