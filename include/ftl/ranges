@@ -1608,10 +1608,10 @@ class reverse_view
     : public view_interface<reverse_view<V>>
 {
 private:
-    [[no_unique_address]]
+    FTL_NO_UNIQUE_ADDRESS
     detail::reverse_view_cache_t<V> cached_begin_{};
 
-    [[no_unique_address]]
+    FTL_NO_UNIQUE_ADDRESS
     V base_ = V();
 
 public:

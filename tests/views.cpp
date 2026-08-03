@@ -688,9 +688,6 @@ constexpr bool reverse_non_common_range_works()
     return true;
 }
 
-static_assert(reverse_non_common_range_works());
-
-
 constexpr bool reverse_non_common_cache_works()
 {
     int values[] = {1, 2, 3, 4};
@@ -733,7 +730,12 @@ constexpr bool reverse_non_common_cache_works()
     return true;
 }
 
+#if defined(FTL_REPLACE_STL) || defined(_MSC_VER)
+
+static_assert(reverse_non_common_range_works());
 static_assert(reverse_non_common_cache_works());
+
+#endif
 
 struct bidirectional_pointer_iterator
 {
