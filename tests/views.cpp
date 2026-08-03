@@ -4086,6 +4086,154 @@ constexpr bool drop_reverse_integration_works()
 
 static_assert(drop_reverse_integration_works());
 
+struct less_than_four
+{
+    constexpr bool operator()(
+        int value
+    ) const noexcept
+    {
+        return value < 4;
+    }
+};
+
+using take_while_pointer_view =
+    tested::ranges::take_while_view<
+        pointer_view,
+        less_than_four
+    >;
+
+static_assert(
+    tested::ranges::view<
+        take_while_pointer_view
+    >
+);
+
+static_assert(
+    tested::ranges::random_access_range<
+        take_while_pointer_view
+    >
+);
+
+static_assert(
+    !tested::ranges::common_range<
+        take_while_pointer_view
+    >
+);
+
+static_assert(
+    !tested::ranges::sized_range<
+        take_while_pointer_view
+    >
+);
+
+static_assert(
+    !tested::ranges::borrowed_range<
+        take_while_pointer_view
+    >
+);
+
+static_assert(
+    tested::ranges::range<
+        const take_while_pointer_view
+    >
+);
+
+constexpr bool take_while_direct_works()
+{
+    int values[] = {
+        1,
+        2,
+        3,
+        4,
+        1
+    };
+
+    pointer_view base{
+        values,
+        values + 5
+    };
+
+    auto taken =
+        tested::ranges::views::take_while(
+            base,
+            less_than_four{}
+        );
+
+    auto iterator =
+        taken.begin();
+
+    if (
+        iterator == taken.end() ||
+        *iterator != 1
+    )
+    {
+        return false;
+    }
+
+    ++iterator;
+
+    if (
+        iterator == taken.end() ||
+        *iterator != 2
+    )
+    {
+        return false;
+    }
+
+    ++iterator;
+
+    if (
+        iterator == taken.end() ||
+        *iterator != 3
+    )
+    {
+        return false;
+    }
+
+    ++iterator;
+
+    return iterator == taken.end();
+}
+
+static_assert(
+    take_while_direct_works()
+);
+
+constexpr bool take_while_pipe_works()
+{
+    int values[] = {
+        1,
+        2,
+        3,
+        4,
+        1
+    };
+
+    pointer_view base{
+        values,
+        values + 5
+    };
+
+    auto taken =
+        base |
+        tested::ranges::views::take_while(
+            less_than_four{}
+        );
+
+    auto iterator =
+        taken.begin();
+
+    return
+        *iterator++ == 1 &&
+        *iterator++ == 2 &&
+        *iterator++ == 3 &&
+        iterator == taken.end();
+}
+
+static_assert(
+    take_while_pipe_works()
+);
+
 bool ftl_test()
 {
     return reverse_view_direct_works() &&
@@ -4147,5 +4295,7 @@ bool ftl_test()
            drop_iota_normalization_works() &&
            drop_iota_clamping_works() &&
            drop_take_integration_works() &&
-           drop_reverse_integration_works();
+           drop_reverse_integration_works() &&
+           take_while_direct_works() &&
+           take_while_pipe_works();
 }

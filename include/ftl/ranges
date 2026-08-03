@@ -8,6 +8,7 @@
 #include <compare>
 #include <concepts>
 #include <cstddef>
+#include <functional>
 #include <initializer_list>
 #include <iterator>
 #include <memory>
@@ -20,6 +21,7 @@
 #include <ftl/compare>
 #include <ftl/concepts>
 #include <ftl/cstddef>
+#include <ftl/functional>
 #include <ftl/initializer_list>
 #include <ftl/iterator>
 #include <ftl/memory>
@@ -3328,6 +3330,395 @@ inline constexpr drop_fn drop{};
 
 } // namespace views
 
+
+template<
+    view V,
+    class Pred
+>
+    requires (
+        input_range<V> &&
+        is_object_v<Pred> &&
+        indirect_unary_predicate<
+            const Pred,
+            iterator_t<V>
+        >
+    )
+class take_while_view
+    : public view_interface<
+        take_while_view<V, Pred>
+    >
+{
+private:
+    template<bool Const>
+    class sentinel;
+
+    FTL_NO_UNIQUE_ADDRESS
+    V base_ = V();
+
+    FTL_NO_UNIQUE_ADDRESS
+    detail::movable_box<Pred> pred_;
+
+public:
+    take_while_view()
+        requires (
+            default_initializable<V> &&
+            default_initializable<Pred>
+        )
+        = default;
+
+    constexpr explicit take_while_view(
+        V base,
+        Pred pred
+    )
+        : base_(
+            FTL_RANGES_NAMESPACE::move(base)
+        ),
+          pred_(
+            FTL_RANGES_NAMESPACE::move(pred)
+        )
+    {
+    }
+
+    [[nodiscard]]
+    constexpr V base() const&
+        requires copy_constructible<V>
+    {
+        return base_;
+    }
+
+    [[nodiscard]]
+    constexpr V base() &&
+    {
+        return FTL_RANGES_NAMESPACE::move(base_);
+    }
+
+    [[nodiscard]]
+    constexpr const Pred& pred() const
+    {
+        return *pred_;
+    }
+
+    [[nodiscard]]
+    constexpr auto begin()
+        requires (!detail::take_simple_view<V>)
+    {
+        return ranges::begin(base_);
+    }
+
+    [[nodiscard]]
+    constexpr auto begin() const
+        requires (
+            range<const V> &&
+            indirect_unary_predicate<
+                const Pred,
+                iterator_t<const V>
+            >
+        )
+    {
+        return ranges::begin(base_);
+    }
+
+    [[nodiscard]]
+    constexpr auto end()
+        requires (!detail::take_simple_view<V>)
+    {
+        return sentinel<false>(
+            ranges::end(base_),
+            FTL_RANGES_NAMESPACE::addressof(
+                *pred_
+            )
+        );
+    }
+
+    [[nodiscard]]
+    constexpr auto end() const
+        requires (
+            range<const V> &&
+            indirect_unary_predicate<
+                const Pred,
+                iterator_t<const V>
+            >
+        )
+    {
+        return sentinel<true>(
+            ranges::end(base_),
+            FTL_RANGES_NAMESPACE::addressof(
+                *pred_
+            )
+        );
+    }
+};
+
+template<
+    view V,
+    class Pred
+>
+    requires (
+        input_range<V> &&
+        is_object_v<Pred> &&
+        indirect_unary_predicate<
+            const Pred,
+            iterator_t<V>
+        >
+    )
+template<bool Const>
+class take_while_view<V, Pred>::sentinel
+{
+private:
+    using Base =
+        conditional_t<
+            Const,
+            const V,
+            V
+        >;
+
+    template<bool OtherConst>
+    using OtherBase =
+        conditional_t<
+            OtherConst,
+            const V,
+            V
+        >;
+
+    FTL_NO_UNIQUE_ADDRESS
+    sentinel_t<Base> end_ =
+        sentinel_t<Base>();
+
+    const Pred* pred_ = nullptr;
+
+    template<bool>
+    friend class sentinel;
+
+public:
+    sentinel() = default;
+
+    constexpr explicit sentinel(
+        sentinel_t<Base> end,
+        const Pred* pred
+    )
+        : end_(
+            static_cast<
+                sentinel_t<Base>&&
+            >(end)
+        ),
+          pred_(pred)
+    {
+    }
+
+    constexpr sentinel(
+        sentinel<!Const> other
+    )
+        requires (
+            Const &&
+            convertible_to<
+                sentinel_t<V>,
+                sentinel_t<Base>
+            >
+        )
+        : end_(
+            static_cast<
+                sentinel_t<V>&&
+            >(other.end_)
+        ),
+          pred_(other.pred_)
+    {
+    }
+
+    [[nodiscard]]
+    constexpr sentinel_t<Base> base() const
+    {
+        return end_;
+    }
+
+    friend constexpr bool operator==(
+        const iterator_t<Base>& iterator,
+        const sentinel& bound
+    )
+    {
+        return
+            iterator == bound.end_ ||
+            !FTL_RANGES_NAMESPACE::invoke(
+                *bound.pred_,
+                *iterator
+            );
+    }
+
+    friend constexpr bool operator==(
+        const sentinel& bound,
+        const iterator_t<Base>& iterator
+    )
+    {
+        return iterator == bound;
+    }
+
+    friend constexpr bool operator!=(
+        const iterator_t<Base>& iterator,
+        const sentinel& bound
+    )
+    {
+        return !(iterator == bound);
+    }
+
+    friend constexpr bool operator!=(
+        const sentinel& bound,
+        const iterator_t<Base>& iterator
+    )
+    {
+        return !(bound == iterator);
+    }
+
+    template<bool OtherConst = !Const>
+        requires sentinel_for<
+            sentinel_t<Base>,
+            iterator_t<
+                OtherBase<OtherConst>
+            >
+        >
+    friend constexpr bool operator==(
+        const iterator_t<
+            OtherBase<OtherConst>
+        >& iterator,
+        const sentinel& bound
+    )
+    {
+        return
+            iterator == bound.end_ ||
+            !FTL_RANGES_NAMESPACE::invoke(
+                *bound.pred_,
+                *iterator
+            );
+    }
+
+    template<bool OtherConst = !Const>
+        requires sentinel_for<
+            sentinel_t<Base>,
+            iterator_t<
+                OtherBase<OtherConst>
+            >
+        >
+    friend constexpr bool operator==(
+        const sentinel& bound,
+        const iterator_t<
+            OtherBase<OtherConst>
+        >& iterator
+    )
+    {
+        return iterator == bound;
+    }
+
+    template<bool OtherConst = !Const>
+        requires sentinel_for<
+            sentinel_t<Base>,
+            iterator_t<
+                OtherBase<OtherConst>
+            >
+        >
+    friend constexpr bool operator!=(
+        const iterator_t<
+            OtherBase<OtherConst>
+        >& iterator,
+        const sentinel& bound
+    )
+    {
+        return !(iterator == bound);
+    }
+
+    template<bool OtherConst = !Const>
+        requires sentinel_for<
+            sentinel_t<Base>,
+            iterator_t<
+                OtherBase<OtherConst>
+            >
+        >
+    friend constexpr bool operator!=(
+        const sentinel& bound,
+        const iterator_t<
+            OtherBase<OtherConst>
+        >& iterator
+    )
+    {
+        return !(bound == iterator);
+    }
+};
+
+template<class R, class Pred>
+take_while_view(
+    R&&,
+    Pred
+) -> take_while_view<
+    views::all_t<R>,
+    Pred
+>;
+
+namespace views
+{
+
+namespace detail
+{
+
+struct take_while_fn
+{
+    template<
+        viewable_range R,
+        class Pred
+    >
+        requires (
+            input_range<all_t<R>> &&
+            constructible_from<
+                decay_t<Pred>,
+                Pred
+            > &&
+            indirect_unary_predicate<
+                const decay_t<Pred>,
+                iterator_t<all_t<R>>
+            >
+        )
+    [[nodiscard]]
+    constexpr auto operator()(
+        R&& range,
+        Pred&& pred
+    ) const
+    {
+        using base_type =
+            all_t<R>;
+
+        using predicate_type =
+            decay_t<Pred>;
+
+        return take_while_view<
+            base_type,
+            predicate_type
+        >(
+            all(static_cast<R&&>(range)),
+            predicate_type(
+                static_cast<Pred&&>(pred)
+            )
+        );
+    }
+
+    template<class Pred>
+        requires constructible_from<
+            decay_t<Pred>,
+            Pred
+        >
+    [[nodiscard]]
+    constexpr auto operator()(
+        Pred&& pred
+    ) const
+    {
+        return FTL_RANGES_NAMESPACE::ranges::detail::
+            partial_adaptor<take_while_fn>(
+                static_cast<Pred&&>(pred)
+            );
+    }
+};
+
+} // namespace detail
+
+inline constexpr detail::take_while_fn
+take_while{};
+
+} // namespace views
 
 namespace views
 {
