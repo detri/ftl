@@ -175,6 +175,7 @@ foreach(header IN ITEMS
         coroutine
         span
         ranges
+        views
 )
     add_ftl_test(${header})
 endforeach()

@@ -16,108 +16,133 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
-struct member_range {
+struct member_range
+{
     int* first = nullptr;
     int* last = nullptr;
 
-    constexpr int* begin() noexcept {
+    constexpr int* begin() noexcept
+    {
         return first;
     }
 
-    constexpr const int* begin() const noexcept {
+    constexpr const int* begin() const noexcept
+    {
         return first;
     }
 
-    constexpr int* end() noexcept {
+    constexpr int* end() noexcept
+    {
         return last;
     }
 
-    constexpr const int* end() const noexcept {
+    constexpr const int* end() const noexcept
+    {
         return last;
     }
 
-    constexpr tested::size_t size() const noexcept {
+    constexpr tested::size_t size() const noexcept
+    {
         return static_cast<tested::size_t>(last - first);
     }
 
-    constexpr bool empty() const noexcept {
+    constexpr bool empty() const noexcept
+    {
         return first == last;
     }
 
-    constexpr int* data() noexcept {
+    constexpr int* data() noexcept
+    {
         return first;
     }
 
-    constexpr const int* data() const noexcept {
+    constexpr const int* data() const noexcept
+    {
         return first;
     }
 };
 
-struct subtraction_range {
+struct subtraction_range
+{
     int* first = nullptr;
     int* last = nullptr;
 
-    constexpr int* begin() noexcept {
+    constexpr int* begin() noexcept
+    {
         return first;
     }
 
-    constexpr const int* begin() const noexcept {
+    constexpr const int* begin() const noexcept
+    {
         return first;
     }
 
-    constexpr int* end() noexcept {
+    constexpr int* end() noexcept
+    {
         return last;
     }
 
-    constexpr const int* end() const noexcept {
-        return last;
-    }
-};
-
-struct iterator_empty_range {
-    int* first = nullptr;
-    int* last = nullptr;
-
-    constexpr int* begin() noexcept {
-        return first;
-    }
-
-    constexpr int* end() noexcept {
+    constexpr const int* end() const noexcept
+    {
         return last;
     }
 };
 
-struct borrowed_member_range {
+struct iterator_empty_range
+{
     int* first = nullptr;
     int* last = nullptr;
 
-    constexpr int* begin() noexcept {
+    constexpr int* begin() noexcept
+    {
         return first;
     }
 
-    constexpr int* end() noexcept {
+    constexpr int* end() noexcept
+    {
         return last;
     }
 };
 
-struct explicitly_unsized_range {
+struct borrowed_member_range
+{
     int* first = nullptr;
     int* last = nullptr;
 
-    constexpr tested::size_t size() const noexcept {
+    constexpr int* begin() noexcept
+    {
+        return first;
+    }
+
+    constexpr int* end() noexcept
+    {
+        return last;
+    }
+};
+
+struct explicitly_unsized_range
+{
+    int* first = nullptr;
+    int* last = nullptr;
+
+    constexpr tested::size_t size() const noexcept
+    {
         return 999;
     }
 
-    constexpr int* begin() noexcept {
+    constexpr int* begin() noexcept
+    {
         return first;
     }
 
-    constexpr int* end() noexcept {
+    constexpr int* end() noexcept
+    {
         return last;
     }
 };
 
-struct move_only_range {
+struct move_only_range
+{
     int* first = nullptr;
     int* last = nullptr;
 
@@ -127,42 +152,52 @@ struct move_only_range {
         : first(begin_value), last(end_value) {}
 
     move_only_range(const move_only_range&) = delete;
+
     move_only_range& operator=(const move_only_range&) = delete;
 
     constexpr move_only_range(move_only_range&&) noexcept = default;
+
     constexpr move_only_range& operator=(move_only_range&&) noexcept = default;
 
-    constexpr int* begin() noexcept {
+    constexpr int* begin() noexcept
+    {
         return first;
     }
 
-    constexpr const int* begin() const noexcept {
+    constexpr const int* begin() const noexcept
+    {
         return first;
     }
 
-    constexpr int* end() noexcept {
+    constexpr int* end() noexcept
+    {
         return last;
     }
 
-    constexpr const int* end() const noexcept {
+    constexpr const int* end() const noexcept
+    {
         return last;
     }
 
-    constexpr tested::size_t size() const noexcept {
+    constexpr tested::size_t size() const noexcept
+    {
         return static_cast<tested::size_t>(last - first);
     }
 
-    constexpr int* data() noexcept {
+    constexpr int* data() noexcept
+    {
         return first;
     }
 
-    constexpr const int* data() const noexcept {
+    constexpr const int* data() const noexcept
+    {
         return first;
     }
 };
 
 struct interface_view
-    : tested::ranges::view_interface<interface_view> {
+        : tested::ranges::view_interface<interface_view>
+{
     int* first = nullptr;
     int* last = nullptr;
 
@@ -171,156 +206,175 @@ struct interface_view
     constexpr interface_view(int* begin_value, int* end_value) noexcept
         : first(begin_value), last(end_value) {}
 
-    constexpr int* begin() noexcept {
+    constexpr int* begin() noexcept
+    {
         return first;
     }
 
-    constexpr const int* begin() const noexcept {
+    constexpr const int* begin() const noexcept
+    {
         return first;
     }
 
-    constexpr int* end() noexcept {
+    constexpr int* end() noexcept
+    {
         return last;
     }
 
-    constexpr const int* end() const noexcept {
+    constexpr const int* end() const noexcept
+    {
         return last;
     }
 };
 
-struct base_view : tested::ranges::view_base {
+struct base_view : tested::ranges::view_base
+{
     int* first = nullptr;
     int* last = nullptr;
 
-    constexpr int* begin() noexcept {
+    constexpr int* begin() noexcept
+    {
         return first;
     }
 
-    constexpr int* end() noexcept {
+    constexpr int* end() noexcept
+    {
         return last;
     }
 };
 
-struct opted_view {
+struct opted_view
+{
     int* first = nullptr;
     int* last = nullptr;
 
-    constexpr int* begin() noexcept {
+    constexpr int* begin() noexcept
+    {
         return first;
     }
 
-    constexpr int* end() noexcept {
+    constexpr int* end() noexcept
+    {
         return last;
     }
 };
 
-namespace adl_test {
+namespace adl_test
+{
+    struct range
+    {
+        int* first = nullptr;
+        int* last = nullptr;
+    };
 
-struct range {
-    int* first = nullptr;
-    int* last = nullptr;
-};
+    constexpr int* begin(range& value) noexcept
+    {
+        return value.first;
+    }
 
-constexpr int* begin(range& value) noexcept {
-    return value.first;
-}
+    constexpr const int* begin(const range& value) noexcept
+    {
+        return value.first;
+    }
 
-constexpr const int* begin(const range& value) noexcept {
-    return value.first;
-}
+    constexpr int* end(range& value) noexcept
+    {
+        return value.last;
+    }
 
-constexpr int* end(range& value) noexcept {
-    return value.last;
-}
+    constexpr const int* end(const range& value) noexcept
+    {
+        return value.last;
+    }
 
-constexpr const int* end(const range& value) noexcept {
-    return value.last;
-}
-
-constexpr tested::size_t size(const range& value) noexcept {
-    return static_cast<tested::size_t>(value.last - value.first);
-}
-
+    constexpr tested::size_t size(const range& value) noexcept
+    {
+        return static_cast<tested::size_t>(value.last - value.first);
+    }
 } // namespace adl_test
 
-namespace reverse_adl_test {
+namespace reverse_adl_test
+{
+    struct range
+    {
+        int* first = nullptr;
+        int* last = nullptr;
+    };
 
-struct range {
-    int* first = nullptr;
-    int* last = nullptr;
-};
+    constexpr auto rbegin(range& value) noexcept
+    {
+        return tested::reverse_iterator<int*>(value.last);
+    }
 
-constexpr auto rbegin(range& value) noexcept {
-    return tested::reverse_iterator<int*>(value.last);
-}
-
-constexpr auto rend(range& value) noexcept {
-    return tested::reverse_iterator<int*>(value.first);
-}
-
+    constexpr auto rend(range& value) noexcept
+    {
+        return tested::reverse_iterator<int*>(value.first);
+    }
 } // namespace reverse_adl_test
 
 #ifdef FTL_REPLACE_STL
 
-namespace std::ranges {
+namespace std::ranges
+{
+    template<>
+    inline constexpr bool
+    enable_borrowed_range<::borrowed_member_range> = true;
 
-template<>
-inline constexpr bool
-enable_borrowed_range<::borrowed_member_range> = true;
+    template<>
+    inline constexpr bool
+    disable_sized_range<::explicitly_unsized_range> = true;
 
-template<>
-inline constexpr bool
-disable_sized_range<::explicitly_unsized_range> = true;
-
-template<>
-inline constexpr bool enable_view<::opted_view> = true;
-
+    template<>
+    inline constexpr bool enable_view<::opted_view> = true;
 } // namespace std::ranges
 
 #else
 
-namespace ftl::ranges {
+namespace ftl::ranges
+{
+    template<>
+    inline constexpr bool
+    enable_borrowed_range<::borrowed_member_range> = true;
 
-template<>
-inline constexpr bool
-enable_borrowed_range<::borrowed_member_range> = true;
+    template<>
+    inline constexpr bool
+    disable_sized_range<::explicitly_unsized_range> = true;
 
-template<>
-inline constexpr bool
-disable_sized_range<::explicitly_unsized_range> = true;
-
-template<>
-inline constexpr bool enable_view<::opted_view> = true;
-
+    template<>
+    inline constexpr bool enable_view<::opted_view> = true;
 } // namespace ftl::ranges
 
 #endif
 
 template<class T>
 concept can_begin_rvalue =
-    requires {
-        tested::ranges::begin(T{});
-    };
+        requires
+        {
+            tested::ranges::begin(T{});
+        };
 
 template<class T>
 concept can_end_rvalue =
-    requires {
-        tested::ranges::end(T{});
-    };
+        requires
+        {
+            tested::ranges::end(T{});
+        };
 
 template<class T>
 concept can_data_rvalue =
-    requires {
-        tested::ranges::data(T{});
-    };
+        requires
+        {
+            tested::ranges::data(T{});
+        };
 
 template<class T>
 concept can_ref_view =
-    requires(T&& value) {
-        tested::ranges::ref_view{
-            static_cast<T&&>(value)
+        requires(T&& value)
+        {
+            tested::ranges::ref_view{
+                static_cast<T&&>(value)
+            };
         };
-    };
 
 static_assert(tested::ranges::range<member_range>);
 static_assert(tested::ranges::input_range<member_range>);
@@ -349,46 +403,38 @@ static_assert(can_data_rvalue<borrowed_member_range>);
 
 static_assert(tested::is_same_v<
     tested::ranges::iterator_t<member_range>,
-    int*
->);
+    int*>);
 
 static_assert(tested::is_same_v<
     tested::ranges::sentinel_t<member_range>,
-    int*
->);
+    int*>);
 
 static_assert(tested::is_same_v<
     tested::ranges::const_iterator_t<member_range>,
-    const int*
->);
+    const int*>);
 
 static_assert(tested::is_same_v<
     tested::ranges::const_sentinel_t<member_range>,
-    const int*
->);
+    const int*>);
 
 static_assert(tested::is_same_v<
     tested::ranges::range_value_t<member_range>,
-    int
->);
+    int>);
 
 static_assert(tested::is_same_v<
     tested::ranges::range_reference_t<member_range>,
-    int&
->);
+    int&>);
 
 static_assert(tested::is_same_v<
     tested::ranges::range_const_reference_t<member_range>,
-    const int&
->);
+    const int&>);
 
 static_assert(tested::detail::has_common_ref<const int&, int&>);
 static_assert(tested::detail::has_common_ref<const int&&, int&>);
 
 static_assert(tested::is_same_v<
     tested::ranges::range_rvalue_reference_t<member_range>,
-    int&&
->);
+    int&&>);
 
 static_assert(tested::is_same_v<
     tested::ranges::range_difference_t<member_range>,
@@ -402,8 +448,7 @@ static_assert(tested::is_same_v<
 
 static_assert(tested::is_same_v<
     tested::ranges::borrowed_iterator_t<member_range&>,
-    int*
->);
+    int*>);
 
 static_assert(tested::is_default_constructible_v<
     tested::ranges::dangling
@@ -412,8 +457,7 @@ static_assert(tested::is_default_constructible_v<
 static_assert(tested::is_constructible_v<
     tested::ranges::dangling,
     int*,
-    int*
->);
+    int*>);
 
 static_assert(tested::ranges::view<interface_view>);
 static_assert(tested::ranges::view<base_view>);
@@ -484,27 +528,25 @@ static_assert(tested::is_same_v<
     decltype(tested::ranges::data(
         tested::declval<interface_view&>()
     )),
-    int*
->);
+    int*>);
 
 static_assert(tested::is_same_v<
     decltype(tested::ranges::data(
         tested::declval<const interface_view&>()
     )),
-    const int*
->);
+    const int*>);
 
 static_assert(tested::is_same_v<
     tested::add_pointer_t<
         tested::ranges::range_reference_t<interface_view>
     >,
-    int*
->);
+    int*>);
 
 static_assert(tested::ranges::contiguous_range<interface_view>);
 static_assert(tested::ranges::contiguous_range<const interface_view>);
 
-constexpr bool range_iterator_operations_work() {
+constexpr bool range_iterator_operations_work()
+{
     int values[] = {1, 2, 3, 4};
     int* iterator = values;
 
@@ -559,7 +601,8 @@ constexpr bool range_iterator_operations_work() {
 
 static_assert(range_iterator_operations_work());
 
-constexpr bool ranges_constexpr_works() {
+constexpr bool ranges_constexpr_works()
+{
     int values[] = {1, 2, 3, 4};
 
     if (tested::ranges::begin(values) != values)
@@ -764,25 +807,483 @@ constexpr bool ranges_constexpr_works() {
     if (single[0] != 42)
         return false;
 
+    tested::ranges::subrange sub(values, values + 4);
+
+    if (sub.begin() != values)
+        return false;
+
+    if (sub.end() != values + 4)
+        return false;
+
+    if (sub.size() != 4)
+        return false;
+
+    auto next = sub.next(2);
+
+    if (next.begin() != values + 2)
+        return false;
+
+    auto prev = next.prev(1);
+
+    if (prev.begin() != values + 1)
+        return false;
+
     return true;
 }
 
 static_assert(ranges_constexpr_works());
 
-bool ftl_test() {
+static_assert(tested::ranges::view<
+    tested::ranges::subrange<int*>
+>);
+
+static_assert(tested::ranges::borrowed_range<
+    tested::ranges::subrange<int*>
+>);
+
+static_assert(tested::is_same_v<
+    decltype(tested::ranges::get<0>(
+        tested::declval<const tested::ranges::subrange<int*>&>()
+    )),
+    int*>);
+
+static_assert(tested::is_same_v<
+    decltype(tested::ranges::get<1>(
+        tested::declval<const tested::ranges::subrange<int*>&>()
+    )),
+    int*>);
+
+struct identity_adaptor
+        : tested::ranges::range_adaptor_closure<identity_adaptor>
+{
+    template<tested::ranges::range R>
+    constexpr R&& operator()(R&& range) const
+    {
+        return static_cast<R&&>(range);
+    }
+};
+
+static_assert(
+    tested::ranges::detail::range_adaptor_closure_object<
+        identity_adaptor
+    >
+);
+
+constexpr bool pipeline_works()
+{
+    int values[] = {1, 2, 3, 4};
+
+    identity_adaptor identity{};
+
+    auto result =
+            values | identity | identity;
+
+    return result == values;
+}
+
+static_assert(pipeline_works());
+
+struct move_only
+{
+    int value;
+
+    constexpr move_only(int v)
+        : value(v) {}
+
+    move_only(const move_only&) = delete;
+
+    move_only& operator=(const move_only&) = delete;
+
+    constexpr move_only(move_only&&) = default;
+
+    constexpr move_only& operator=(move_only&&) = default;
+};
+
+static_assert(
+    tested::movable<move_only>
+);
+
+constexpr bool movable_box_works()
+{
+    tested::ranges::single_view<move_only> view(
+        move_only{42}
+    );
+
+    return view.front().value == 42;
+}
+
+static_assert(movable_box_works());
+
+static_assert(
+    tested::ranges::borrowed_range<
+        tested::ranges::owning_view<
+            borrowed_member_range
+        >
+    >
+);
+
+constexpr bool view_interface_const_operations_work()
+{
+    int values[] = {1, 2, 3, 4};
+
+    const interface_view view{values, values + 4};
+
+    if (view.empty())
+        return false;
+
+    if (view.front() != 1)
+        return false;
+
+    if (view.back() != 4)
+        return false;
+
+    if (view[2] != 3)
+        return false;
+
+    if (view.size() != 4)
+        return false;
+
+    if (view.data() != values)
+        return false;
+
+    if (!static_cast<bool>(view))
+        return false;
+
+    return true;
+}
+
+static_assert(view_interface_const_operations_work());
+
+
+// subrange: unsized sentinel storage
+
+struct unsized_sentinel
+{
+    int* value = nullptr;
+
+    constexpr unsized_sentinel() noexcept = default;
+
+    constexpr explicit unsized_sentinel(int* pointer) noexcept
+        : value(pointer) {}
+
+    friend constexpr bool operator==(
+        unsized_sentinel left,
+        unsized_sentinel right
+    ) noexcept
+    {
+        return left.value == right.value;
+    }
+
+    friend constexpr bool operator!=(
+        unsized_sentinel left,
+        unsized_sentinel right
+    ) noexcept
+    {
+        return !(left == right);
+    }
+
+    friend constexpr bool operator==(
+        int* iterator,
+        unsized_sentinel sentinel
+    ) noexcept
+    {
+        return iterator == sentinel.value;
+    }
+
+    friend constexpr bool operator==(
+        unsized_sentinel sentinel,
+        int* iterator
+    ) noexcept
+    {
+        return sentinel.value == iterator;
+    }
+
+    friend constexpr bool operator!=(
+        int* iterator,
+        unsized_sentinel sentinel
+    ) noexcept
+    {
+        return !(iterator == sentinel);
+    }
+
+    friend constexpr bool operator!=(
+        unsized_sentinel sentinel,
+        int* iterator
+    ) noexcept
+    {
+        return !(sentinel == iterator);
+    }
+};
+
+static_assert(
+    tested::sentinel_for<
+        unsized_sentinel,
+        int*
+    >
+);
+
+constexpr bool unsized_subrange_works()
+{
+    int values[] = {1, 2, 3, 4};
+
+    tested::ranges::subrange<
+        int*,
+        unsized_sentinel,
+        tested::ranges::subrange_kind::unsized
+    > range(values, unsized_sentinel{values + 4});
+
+    if (range.begin() != values)
+        return false;
+
+    if (range.end().value != values + 4)
+        return false;
+
+    if (range.empty())
+        return false;
+
+    return true;
+}
+
+static_assert(unsized_subrange_works());
+
+
+// subrange: explicit size storage
+
+constexpr bool sized_subrange_storage_works()
+{
+    int values[] = {1, 2, 3, 4};
+
+    tested::ranges::subrange<
+        int*,
+        unsized_sentinel,
+        tested::ranges::subrange_kind::sized
+    > range(
+        values,
+        unsized_sentinel{values + 4},
+        4
+    );
+
+    if (range.size() != 4)
+        return false;
+
+    range.advance(2);
+
+    if (range.begin() != values + 2)
+        return false;
+
+    if (range.size() != 2)
+        return false;
+
+    return true;
+}
+
+static_assert(sized_subrange_storage_works());
+
+
+// subrange tuple conversion
+
+constexpr bool subrange_tuple_conversion_works()
+{
+    int values[] = {1, 2, 3};
+
+    tested::ranges::subrange range(values, values + 3);
+
+    auto pair =
+        static_cast<
+            tested::pair<int*, int*>
+        >(range);
+
+    return pair.first == values &&
+           pair.second == values + 3;
+}
+
+static_assert(subrange_tuple_conversion_works());
+
+
+// subrange structured binding support
+
+static_assert(
+    requires(const tested::ranges::subrange<int*>& range)
+    {
+        tested::ranges::get<0>(range);
+        tested::ranges::get<1>(range);
+    }
+);
+
+constexpr bool get_works()
+{
+    int values[] = {1,2,3};
+
+    tested::ranges::subrange range(values, values+3);
+
+    return tested::ranges::get<0>(range) == values &&
+           tested::ranges::get<1>(range) == values+3;
+}
+
+static_assert(get_works());
+
+static_assert(
+    requires(tested::ranges::subrange<int*>& range)
+    {
+        get<0>(range);
+        get<1>(range);
+    }
+);
+
+static_assert(
+    tested::tuple_size_v<
+        tested::ranges::subrange<int*>
+    > == 2
+);
+
+constexpr bool get_subrange_works()
+{
+    int values[] = {1, 2, 3};
+
+    tested::ranges::subrange range(values, values + 3);
+
+    return get<0>(range) == values &&
+           get<1>(range) == values + 3;
+}
+
+static_assert(get_subrange_works());
+
+static_assert(tested::is_same_v<
+    typename tested::tuple_element_t<
+        0,
+        tested::ranges::subrange<int*>
+    >,
+    int*
+>);
+
+static_assert(tested::is_same_v<
+    typename tested::tuple_element_t<
+        1,
+        tested::ranges::subrange<int*>
+    >,
+    int*
+>);
+
+static_assert(
+    tested::tuple_size_v<
+        tested::ranges::subrange<int*>
+    > == 2
+);
+
+static_assert(tested::is_same_v<
+    tested::tuple_element_t<
+        0,
+        tested::ranges::subrange<int*>
+    >,
+    int*
+>);
+
+#ifdef FTL_REPLACE_STL
+
+constexpr bool subrange_structured_binding_works()
+{
+    int values[] = {1, 2, 3};
+
+    tested::ranges::subrange range(values, values + 3);
+
+    auto [first, last] = range;
+
+    return first == values &&
+           last == values + 3;
+}
+
+static_assert(subrange_structured_binding_works());
+
+#endif
+
+
+// ref_view const behavior
+
+constexpr bool ref_view_const_behavior_works()
+{
+    int values[] = {1, 2, 3};
+
+    member_range range{values, values + 3};
+
+    const tested::ranges::ref_view<
+        member_range
+    > view(range);
+
+    if (view.base().begin() != values)
+        return false;
+
+    if (view.begin() != values)
+        return false;
+
+    return true;
+}
+
+static_assert(ref_view_const_behavior_works());
+
+
+// owning_view const access
+
+constexpr bool owning_view_const_behavior_works()
+{
+    int values[] = {1, 2, 3};
+
+    tested::ranges::owning_view<
+        member_range
+    > view(
+        member_range{
+            values,
+            values + 3
+        }
+    );
+
+    const auto& constant = view;
+
+    if (constant.begin() != values)
+        return false;
+
+    if (constant.end() != values + 3)
+        return false;
+
+    return true;
+}
+
+static_assert(owning_view_const_behavior_works());
+
+
+// movable_box move-only lifetime path
+
+constexpr bool movable_box_move_only_path_works()
+{
+    tested::ranges::single_view<move_only> first(
+        move_only{42}
+    );
+
+    auto second = static_cast<
+        tested::ranges::single_view<move_only>&&
+    >(first);
+
+    return second.front().value == 42;
+}
+
+static_assert(movable_box_move_only_path_works());
+
+bool ftl_test()
+{
     int values[] = {1, 2, 3, 4};
 
     borrowed_member_range borrowed{values, values + 4};
 
     if (tested::ranges::begin(
             static_cast<borrowed_member_range&&>(borrowed)
-        ) != values) {
+        ) != values)
+    {
         return false;
     }
 
     if (tested::ranges::end(
             static_cast<borrowed_member_range&&>(borrowed)
-        ) != values + 4) {
+        ) != values + 4)
+    {
         return false;
     }
 
@@ -818,7 +1319,7 @@ bool ftl_test() {
         return false;
 
     auto moved_base =
-        static_cast<decltype(owned)&&>(owned).base();
+            static_cast<decltype(owned)&&>(owned).base();
 
     if (moved_base.begin() != values)
         return false;
