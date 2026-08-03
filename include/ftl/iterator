@@ -717,7 +717,6 @@ struct iter_concept<
 template<class Iterator>
 using iter_concept_t =
     typename iter_concept<Iterator>::type;
-
 } // namespace detail
 
 template<class Iterator>
@@ -1315,28 +1314,57 @@ struct unreachable_sentinel_t {
 
 inline constexpr unreachable_sentinel_t unreachable_sentinel{};
 
+namespace detail
+{
+
+template<class Iterator, class = void>
+struct counted_iterator_concept_base
+{
+};
+
+template<class Iterator>
+struct counted_iterator_concept_base<
+    Iterator,
+    void_t<typename Iterator::iterator_concept>
+>
+{
+    using iterator_concept =
+        typename Iterator::iterator_concept;
+};
+
+
+template<class Iterator, class = void>
+struct counted_iterator_category_base
+{
+};
+
+template<class Iterator>
+struct counted_iterator_category_base<
+    Iterator,
+    void_t<typename Iterator::iterator_category>
+>
+{
+    using iterator_category =
+        typename Iterator::iterator_category;
+};
+
+} // namespace detail
+
 template<input_or_output_iterator Iterator>
-class counted_iterator {
+class counted_iterator
+    : public detail::counted_iterator_concept_base<
+          Iterator
+      >,
+      public detail::counted_iterator_category_base<
+          Iterator
+      >
+{
 private:
     Iterator current{};
     iter_difference_t<Iterator> length{};
 
 public:
     using iterator_type = Iterator;
-    using iterator_concept = detail::iter_concept_t<Iterator>;
-
-    using iterator_category =
-        conditional_t<
-            requires {
-                typename iterator_traits<
-                    Iterator
-                >::iterator_category;
-            },
-            typename iterator_traits<
-                Iterator
-            >::iterator_category,
-            input_iterator_tag
-        >;
 
     using value_type = iter_value_t<Iterator>;
     using difference_type = iter_difference_t<Iterator>;
@@ -1444,12 +1472,17 @@ public:
         return iterator.length == 0;
     }
 
-    template<class U>
-    friend constexpr auto operator<=>(
+    template<common_with<Iterator> OtherIterator>
+    [[nodiscard]]
+    friend constexpr strong_ordering operator<=>(
         const counted_iterator& left,
-        const counted_iterator<U>& right
-    ) {
-        return right.count() <=> left.length;
+        const counted_iterator<OtherIterator>& right
+    )
+    {
+        return compare_three_way{}(
+            right.count(),
+            left.count()
+        );
     }
 
     friend constexpr counted_iterator operator+(
@@ -2018,7 +2051,21 @@ public:
 };
 template<class I,class S> struct incrementable_traits<common_iterator<I,S>> { using difference_type=iter_difference_t<I>; };
 template<input_iterator I,class S> struct iterator_traits<common_iterator<I,S>> { using iterator_concept=conditional_t<forward_iterator<I>,forward_iterator_tag,input_iterator_tag>; using iterator_category=typename iterator_traits<I>::iterator_category; using value_type=iter_value_t<I>; using difference_type=iter_difference_t<I>; using pointer=void; using reference=iter_reference_t<I>; };
-template<input_iterator I> struct iterator_traits<counted_iterator<I>> : iterator_traits<I> {};
+template<input_iterator I>
+    requires same_as<
+        detail::iter_traits_t<I>,
+        iterator_traits<I>
+    >
+struct iterator_traits<counted_iterator<I>>
+    : iterator_traits<I>
+{
+    using pointer =
+        conditional_t<
+            contiguous_iterator<I>,
+            add_pointer_t<iter_reference_t<I>>,
+            void
+        >;
+};
 
 template<class T> struct char_traits; template<class C,class T> class basic_istream; template<class C,class T> class basic_ostream; template<class C,class T> class basic_streambuf;
 template<class T,class C=char,class Traits=char_traits<C>,class Distance=ptrdiff_t> class istream_iterator {

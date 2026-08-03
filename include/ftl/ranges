@@ -2303,6 +2303,790 @@ inline constexpr iota_fn iota{};
 namespace detail
 {
 
+template<
+    class T,
+    bool = view<T> && range<const T>
+>
+struct take_simple_view_impl
+{
+    static constexpr bool value = false;
+};
+
+template<class T>
+struct take_simple_view_impl<T, true>
+{
+    static constexpr bool value =
+        same_as<
+            iterator_t<T>,
+            iterator_t<const T>
+        > &&
+        same_as<
+            sentinel_t<T>,
+            sentinel_t<const T>
+        >;
+};
+
+template<class T>
+concept take_simple_view =
+    take_simple_view_impl<T>::value;
+
+} // namespace detail
+
+
+template<view V>
+class take_view
+    : public view_interface<take_view<V>>
+{
+private:
+    FTL_NO_UNIQUE_ADDRESS
+    V base_ = V();
+
+    range_difference_t<V> count_ = 0;
+
+    template<bool Const>
+    class sentinel;
+
+public:
+    take_view()
+        requires default_initializable<V>
+        = default;
+
+    constexpr explicit take_view(
+        V base,
+        range_difference_t<V> count
+    )
+        : base_(static_cast<V&&>(base)),
+          count_(count)
+    {
+    }
+
+    [[nodiscard]]
+    constexpr V base() const&
+        requires copy_constructible<V>
+    {
+        return base_;
+    }
+
+    [[nodiscard]]
+    constexpr V base() &&
+    {
+        return static_cast<V&&>(base_);
+    }
+
+    [[nodiscard]]
+    constexpr auto begin()
+        requires (!detail::take_simple_view<V>)
+    {
+        if constexpr (sized_range<V>)
+        {
+            if constexpr (random_access_range<V>)
+            {
+                return ranges::begin(base_);
+            }
+            else
+            {
+                using difference_type =
+                    range_difference_t<V>;
+
+                const auto length =
+                    static_cast<difference_type>(
+                        size()
+                    );
+
+                return counted_iterator<
+                    iterator_t<V>
+                >(
+                    ranges::begin(base_),
+                    length
+                );
+            }
+        }
+        else if constexpr (
+            sized_sentinel_for<
+                sentinel_t<V>,
+                iterator_t<V>
+            >
+        )
+        {
+            auto iterator =
+                ranges::begin(base_);
+
+            const auto available =
+                ranges::end(base_) - iterator;
+
+            const auto length =
+                available < count_
+                    ? available
+                    : count_;
+
+            return counted_iterator<
+                iterator_t<V>
+            >(
+                static_cast<
+                    iterator_t<V>&&
+                >(iterator),
+                length
+            );
+        }
+        else
+        {
+            return counted_iterator<
+                iterator_t<V>
+            >(
+                ranges::begin(base_),
+                count_
+            );
+        }
+    }
+
+    [[nodiscard]]
+    constexpr auto begin() const
+        requires range<const V>
+    {
+        if constexpr (sized_range<const V>)
+        {
+            if constexpr (
+                random_access_range<const V>
+            )
+            {
+                return ranges::begin(base_);
+            }
+            else
+            {
+                using difference_type =
+                    range_difference_t<const V>;
+
+                const auto length =
+                    static_cast<difference_type>(
+                        size()
+                    );
+
+                return counted_iterator<
+                    iterator_t<const V>
+                >(
+                    ranges::begin(base_),
+                    length
+                );
+            }
+        }
+        else if constexpr (
+            sized_sentinel_for<
+                sentinel_t<const V>,
+                iterator_t<const V>
+            >
+        )
+        {
+            using difference_type =
+                range_difference_t<const V>;
+
+            auto iterator =
+                ranges::begin(base_);
+
+            const auto available =
+                ranges::end(base_) - iterator;
+
+            const auto requested =
+                static_cast<difference_type>(
+                    count_
+                );
+
+            const auto length =
+                available < requested
+                    ? available
+                    : requested;
+
+            return counted_iterator<
+                iterator_t<const V>
+            >(
+                static_cast<
+                    iterator_t<const V>&&
+                >(iterator),
+                length
+            );
+        }
+        else
+        {
+            return counted_iterator<
+                iterator_t<const V>
+            >(
+                ranges::begin(base_),
+                static_cast<
+                    range_difference_t<const V>
+                >(count_)
+            );
+        }
+    }
+
+    [[nodiscard]]
+    constexpr auto end()
+        requires (!detail::take_simple_view<V>)
+    {
+        if constexpr (sized_range<V>)
+        {
+            if constexpr (random_access_range<V>)
+            {
+                return ranges::begin(base_) +
+                    static_cast<
+                        range_difference_t<V>
+                    >(size());
+            }
+            else
+            {
+                return default_sentinel;
+            }
+        }
+        else if constexpr (
+            sized_sentinel_for<
+                sentinel_t<V>,
+                iterator_t<V>
+            >
+        )
+        {
+            return default_sentinel;
+        }
+        else
+        {
+            return sentinel<false>{
+                ranges::end(base_)
+            };
+        }
+    }
+
+    [[nodiscard]]
+    constexpr auto end() const
+        requires range<const V>
+    {
+        if constexpr (sized_range<const V>)
+        {
+            if constexpr (
+                random_access_range<const V>
+            )
+            {
+                return ranges::begin(base_) +
+                    static_cast<
+                        range_difference_t<const V>
+                    >(size());
+            }
+            else
+            {
+                return default_sentinel;
+            }
+        }
+        else if constexpr (
+            sized_sentinel_for<
+                sentinel_t<const V>,
+                iterator_t<const V>
+            >
+        )
+        {
+            return default_sentinel;
+        }
+        else
+        {
+            return sentinel<true>{
+                ranges::end(base_)
+            };
+        }
+    }
+
+    [[nodiscard]]
+    constexpr auto size()
+        requires sized_range<V>
+    {
+        auto base_size =
+            ranges::size(base_);
+
+        const auto requested =
+            static_cast<decltype(base_size)>(
+                count_
+            );
+
+        return base_size < requested
+            ? base_size
+            : requested;
+    }
+
+    [[nodiscard]]
+    constexpr auto size() const
+        requires sized_range<const V>
+    {
+        auto base_size =
+            ranges::size(base_);
+
+        const auto requested =
+            static_cast<decltype(base_size)>(
+                count_
+            );
+
+        return base_size < requested
+            ? base_size
+            : requested;
+    }
+};
+
+
+template<view V>
+template<bool Const>
+class take_view<V>::sentinel
+{
+private:
+    using Base =
+        conditional_t<
+            Const,
+            const V,
+            V
+        >;
+
+    template<bool OtherConst>
+    using CountedIterator =
+        counted_iterator<
+            iterator_t<
+                conditional_t<
+                    OtherConst,
+                    const V,
+                    V
+                >
+            >
+        >;
+
+    FTL_NO_UNIQUE_ADDRESS
+    sentinel_t<Base> end_ =
+        sentinel_t<Base>();
+
+    template<bool>
+    friend class sentinel;
+
+public:
+    sentinel() = default;
+
+    constexpr explicit sentinel(
+        sentinel_t<Base> end
+    )
+        : end_(
+            static_cast<
+                sentinel_t<Base>&&
+            >(end)
+        )
+    {
+    }
+
+    constexpr sentinel(
+        sentinel<!Const> other
+    )
+        requires (
+            Const &&
+            convertible_to<
+                sentinel_t<V>,
+                sentinel_t<Base>
+            >
+        )
+        : end_(
+            static_cast<
+                sentinel_t<V>&&
+            >(other.end_)
+        )
+    {
+    }
+
+    [[nodiscard]]
+    constexpr sentinel_t<Base> base() const
+    {
+        return end_;
+    }
+
+    friend constexpr bool operator==(
+        const CountedIterator<Const>& iterator,
+        const sentinel& bound
+    )
+    {
+        return
+            iterator.count() == 0 ||
+            iterator.base() == bound.end_;
+    }
+
+    friend constexpr bool operator==(
+        const sentinel& bound,
+        const CountedIterator<Const>& iterator
+    )
+    {
+        return iterator == bound;
+    }
+
+    friend constexpr bool operator!=(
+        const CountedIterator<Const>& iterator,
+        const sentinel& bound
+    )
+    {
+        return !(iterator == bound);
+    }
+
+    friend constexpr bool operator!=(
+        const sentinel& bound,
+        const CountedIterator<Const>& iterator
+    )
+    {
+        return !(bound == iterator);
+    }
+
+    template<bool OtherConst = !Const>
+        requires sentinel_for<
+            sentinel_t<Base>,
+            iterator_t<
+                conditional_t<
+                    OtherConst,
+                    const V,
+                    V
+                >
+            >
+        >
+    friend constexpr bool operator==(
+        const CountedIterator<OtherConst>& iterator,
+        const sentinel& bound
+    )
+    {
+        return
+            iterator.count() == 0 ||
+            iterator.base() == bound.end_;
+    }
+
+    template<bool OtherConst = !Const>
+        requires sentinel_for<
+            sentinel_t<Base>,
+            iterator_t<
+                conditional_t<
+                    OtherConst,
+                    const V,
+                    V
+                >
+            >
+        >
+    friend constexpr bool operator==(
+        const sentinel& bound,
+        const CountedIterator<OtherConst>& iterator
+    )
+    {
+        return iterator == bound;
+    }
+
+    template<bool OtherConst = !Const>
+        requires sentinel_for<
+            sentinel_t<Base>,
+            iterator_t<
+                conditional_t<
+                    OtherConst,
+                    const V,
+                    V
+                >
+            >
+        >
+    friend constexpr bool operator!=(
+        const CountedIterator<OtherConst>& iterator,
+        const sentinel& bound
+    )
+    {
+        return !(iterator == bound);
+    }
+
+    template<bool OtherConst = !Const>
+        requires sentinel_for<
+            sentinel_t<Base>,
+            iterator_t<
+                conditional_t<
+                    OtherConst,
+                    const V,
+                    V
+                >
+            >
+        >
+    friend constexpr bool operator!=(
+        const sentinel& bound,
+        const CountedIterator<OtherConst>& iterator
+    )
+    {
+        return !(bound == iterator);
+    }
+};
+
+
+template<class R>
+take_view(
+    R&&,
+    range_difference_t<R>
+) -> take_view<views::all_t<R>>;
+
+
+template<class V>
+inline constexpr bool
+enable_borrowed_range<take_view<V>> =
+    enable_borrowed_range<V>;
+
+
+namespace views
+{
+
+namespace detail
+{
+
+template<class T>
+struct take_is_empty_view
+    : false_type
+{
+};
+
+template<class T>
+struct take_is_empty_view<empty_view<T>>
+    : true_type
+{
+};
+
+template<class T>
+inline constexpr bool
+take_is_empty_view_v =
+    take_is_empty_view<T>::value;
+
+
+template<class T>
+struct take_is_subrange
+    : false_type
+{
+};
+
+template<
+    class Iterator,
+    class Sentinel,
+    subrange_kind Kind
+>
+struct take_is_subrange<
+    subrange<Iterator, Sentinel, Kind>
+> : true_type
+{
+};
+
+template<class T>
+inline constexpr bool
+take_is_subrange_v =
+    take_is_subrange<T>::value;
+
+
+template<class T>
+struct take_is_iota_view
+    : false_type
+{
+};
+
+template<class W, class Bound>
+struct take_is_iota_view<
+    iota_view<W, Bound>
+> : true_type
+{
+};
+
+template<class T>
+inline constexpr bool
+take_is_iota_view_v =
+    take_is_iota_view<T>::value;
+
+
+template<
+    viewable_range R,
+    class Count
+>
+    requires convertible_to<
+        Count,
+        range_difference_t<R>
+    >
+[[nodiscard]]
+constexpr auto apply_take(
+    R&& range,
+    Count&& count
+)
+{
+    using raw_range =
+        remove_cvref_t<R>;
+
+    using difference_type =
+        range_difference_t<R>;
+
+    const difference_type requested =
+        static_cast<difference_type>(
+            static_cast<Count&&>(count)
+        );
+
+    if constexpr (
+        take_is_empty_view_v<raw_range>
+    )
+    {
+        return static_cast<R&&>(range);
+    }
+    else if constexpr (
+        take_is_subrange_v<raw_range> &&
+        random_access_range<raw_range> &&
+        sized_range<raw_range>
+    )
+    {
+        const difference_type distance =
+            static_cast<difference_type>(
+                ranges::distance(range)
+            );
+
+        const difference_type length =
+            distance < requested
+                ? distance
+                : requested;
+
+        auto first =
+            ranges::begin(range);
+
+        return subrange<iterator_t<R>>(
+            first,
+            first + length
+        );
+    }
+    else if constexpr (
+        take_is_iota_view_v<raw_range> &&
+        random_access_range<raw_range> &&
+        sized_range<raw_range>
+    )
+    {
+        const difference_type distance =
+            static_cast<difference_type>(
+                ranges::distance(range)
+            );
+
+        const difference_type length =
+            distance < requested
+                ? distance
+                : requested;
+
+        auto first =
+            ranges::begin(range);
+
+        return iota_view(
+            *first,
+            *(first + length)
+        );
+    }
+    else
+    {
+        using base_type =
+            all_t<R>;
+
+        return take_view<base_type>(
+            all(static_cast<R&&>(range)),
+            requested
+        );
+    }
+}
+
+
+template<class Count>
+class take_closure
+    : public range_adaptor_closure<
+        take_closure<Count>
+    >
+{
+private:
+    FTL_NO_UNIQUE_ADDRESS
+    Count count_;
+
+public:
+    constexpr explicit take_closure(
+        Count count
+    )
+        : count_(
+            static_cast<Count&&>(count)
+        )
+    {
+    }
+
+    template<viewable_range R>
+        requires convertible_to<
+            const Count&,
+            range_difference_t<R>
+        >
+    [[nodiscard]]
+    constexpr auto operator()(
+        R&& range
+    ) const&
+    {
+        return apply_take(
+            static_cast<R&&>(range),
+            count_
+        );
+    }
+
+    template<viewable_range R>
+        requires convertible_to<
+            Count,
+            range_difference_t<R>
+        >
+    [[nodiscard]]
+    constexpr auto operator()(
+        R&& range
+    ) &&
+    {
+        return apply_take(
+            static_cast<R&&>(range),
+            static_cast<Count&&>(count_)
+        );
+    }
+};
+
+} // namespace detail
+
+
+struct take_fn
+{
+    template<
+        viewable_range R,
+        class Count
+    >
+        requires convertible_to<
+            Count,
+            range_difference_t<R>
+        >
+    [[nodiscard]]
+    constexpr auto operator()(
+        R&& range,
+        Count&& count
+    ) const
+    {
+        return detail::apply_take(
+            static_cast<R&&>(range),
+            static_cast<Count&&>(count)
+        );
+    }
+
+    template<class Count>
+        requires constructible_from<
+            decay_t<Count>,
+            Count
+        >
+    [[nodiscard]]
+    constexpr auto operator()(
+        Count&& count
+    ) const
+    {
+        using stored_type =
+            decay_t<Count>;
+
+        return detail::take_closure<
+            stored_type
+        >(
+            stored_type(
+                static_cast<Count&&>(count)
+            )
+        );
+    }
+};
+
+inline constexpr take_fn take{};
+
+} // namespace views
+
+namespace detail
+{
+
 struct reverse_view_empty_cache
 {
 };
