@@ -1014,10 +1014,809 @@ static_assert(
     unsized_reverse_subrange_normalization_works()
 );
 
+// iota_view
+
+struct forward_counter
+{
+    using difference_type = tested::ptrdiff_t;
+
+    int value = 0;
+
+    constexpr forward_counter() noexcept = default;
+
+    constexpr explicit forward_counter(int initial) noexcept
+        : value(initial)
+    {
+    }
+
+    constexpr forward_counter& operator++() noexcept
+    {
+        ++value;
+        return *this;
+    }
+
+    constexpr forward_counter operator++(int) noexcept
+    {
+        auto previous = *this;
+        ++*this;
+        return previous;
+    }
+
+    friend constexpr bool operator==(
+        forward_counter left,
+        forward_counter right
+    ) noexcept
+    {
+        return left.value == right.value;
+    }
+
+    friend constexpr bool operator!=(
+        forward_counter left,
+        forward_counter right
+    ) noexcept
+    {
+        return !(left == right);
+    }
+};
+
+
+struct bidirectional_counter
+{
+    using difference_type = tested::ptrdiff_t;
+
+    int value = 0;
+
+    constexpr bidirectional_counter() noexcept = default;
+
+    constexpr explicit bidirectional_counter(
+        int initial
+    ) noexcept
+        : value(initial)
+    {
+    }
+
+    constexpr bidirectional_counter&
+    operator++() noexcept
+    {
+        ++value;
+        return *this;
+    }
+
+    constexpr bidirectional_counter
+    operator++(int) noexcept
+    {
+        auto previous = *this;
+        ++*this;
+        return previous;
+    }
+
+    constexpr bidirectional_counter&
+    operator--() noexcept
+    {
+        --value;
+        return *this;
+    }
+
+    constexpr bidirectional_counter
+    operator--(int) noexcept
+    {
+        auto previous = *this;
+        --*this;
+        return previous;
+    }
+
+    friend constexpr bool operator==(
+        bidirectional_counter left,
+        bidirectional_counter right
+    ) noexcept
+    {
+        return left.value == right.value;
+    }
+
+    friend constexpr bool operator!=(
+        bidirectional_counter left,
+        bidirectional_counter right
+    ) noexcept
+    {
+        return !(left == right);
+    }
+};
+
+
+struct integer_bound
+{
+    int value = 0;
+
+    constexpr integer_bound() noexcept = default;
+
+    constexpr explicit integer_bound(int bound) noexcept
+        : value(bound)
+    {
+    }
+
+    friend constexpr bool operator==(
+        int current,
+        integer_bound bound
+    ) noexcept
+    {
+        return current == bound.value;
+    }
+
+    friend constexpr bool operator==(
+        integer_bound bound,
+        int current
+    ) noexcept
+    {
+        return bound.value == current;
+    }
+
+    friend constexpr bool operator!=(
+        int current,
+        integer_bound bound
+    ) noexcept
+    {
+        return !(current == bound);
+    }
+
+    friend constexpr bool operator!=(
+        integer_bound bound,
+        int current
+    ) noexcept
+    {
+        return !(bound == current);
+    }
+
+    friend constexpr tested::iter_difference_t<int>
+    operator-(
+        integer_bound bound,
+        int current
+    ) noexcept
+    {
+        return static_cast<
+            tested::iter_difference_t<int>
+        >(bound.value - current);
+    }
+
+    friend constexpr tested::iter_difference_t<int>
+    operator-(
+        int current,
+        integer_bound bound
+    ) noexcept
+    {
+        return static_cast<
+            tested::iter_difference_t<int>
+        >(current - bound.value);
+    }
+};
+
+
+using bounded_iota =
+    tested::ranges::iota_view<int, int>;
+
+using unbounded_iota =
+    tested::ranges::iota_view<int>;
+
+using different_bound_iota =
+    tested::ranges::iota_view<
+        int,
+        integer_bound
+    >;
+
+using forward_iota =
+    tested::ranges::iota_view<
+        forward_counter,
+        forward_counter
+    >;
+
+using bidirectional_iota =
+    tested::ranges::iota_view<
+        bidirectional_counter,
+        bidirectional_counter
+    >;
+
+
+static_assert(
+    tested::ranges::view<bounded_iota>
+);
+
+static_assert(
+    tested::ranges::borrowed_range<bounded_iota>
+);
+
+static_assert(
+    tested::ranges::common_range<bounded_iota>
+);
+
+static_assert(
+    tested::ranges::sized_range<bounded_iota>
+);
+
+static_assert(
+    tested::ranges::random_access_range<bounded_iota>
+);
+
+static_assert(
+    !tested::ranges::contiguous_range<bounded_iota>
+);
+
+static_assert(tested::is_same_v<
+    tested::ranges::range_value_t<bounded_iota>,
+    int
+>);
+
+static_assert(tested::is_same_v<
+    tested::ranges::range_reference_t<bounded_iota>,
+    int
+>);
+
+static_assert(
+    tested::signed_integral<
+        tested::ranges::range_difference_t<
+            bounded_iota
+        >
+    >
+);
+
+
+static_assert(
+    tested::ranges::view<unbounded_iota>
+);
+
+static_assert(
+    tested::ranges::borrowed_range<unbounded_iota>
+);
+
+static_assert(
+    tested::ranges::random_access_range<unbounded_iota>
+);
+
+static_assert(
+    !tested::ranges::common_range<unbounded_iota>
+);
+
+static_assert(
+    !tested::ranges::sized_range<unbounded_iota>
+);
+
+static_assert(tested::is_same_v<
+    tested::ranges::sentinel_t<unbounded_iota>,
+    tested::unreachable_sentinel_t
+>);
+
+
+static_assert(
+    tested::ranges::view<different_bound_iota>
+);
+
+static_assert(
+    tested::ranges::random_access_range<
+        different_bound_iota
+    >
+);
+
+static_assert(
+    !tested::ranges::common_range<
+        different_bound_iota
+    >
+);
+
+static_assert(
+    !tested::ranges::sized_range<
+        different_bound_iota
+    >
+);
+
+
+static_assert(
+    tested::ranges::forward_range<forward_iota>
+);
+
+static_assert(
+    !tested::ranges::bidirectional_range<
+        forward_iota
+    >
+);
+
+static_assert(
+    !tested::ranges::sized_range<forward_iota>
+);
+
+
+static_assert(
+    tested::ranges::bidirectional_range<
+        bidirectional_iota
+    >
+);
+
+static_assert(
+    !tested::ranges::random_access_range<
+        bidirectional_iota
+    >
+);
+
+static_assert(
+    !tested::ranges::sized_range<
+        bidirectional_iota
+    >
+);
+
+
+template<class T>
+concept can_make_single_iota =
+    requires(T&& value)
+    {
+        tested::ranges::views::iota(
+            static_cast<T&&>(value)
+        );
+    };
+
+template<class T, class U>
+concept can_make_double_iota =
+    requires(T&& value, U&& bound)
+    {
+        tested::ranges::views::iota(
+            static_cast<T&&>(value),
+            static_cast<U&&>(bound)
+        );
+    };
+
+static_assert(
+    can_make_single_iota<int>
+);
+
+static_assert(
+    can_make_double_iota<int, int>
+);
+
+// The deduction guide rejects mixed signedness for integer-like types.
+
+static_assert(
+    !can_make_double_iota<int, unsigned int>
+);
+
+// LWG 4096: views::iota(existing_iota_view) is not another iota factory.
+
+static_assert(
+    !can_make_single_iota<bounded_iota>
+);
+
+
+constexpr bool bounded_iota_works()
+{
+    auto view =
+        tested::ranges::views::iota(-2, 3);
+
+    static_assert(tested::is_same_v<
+        decltype(view),
+        bounded_iota
+    >);
+
+    if (view.empty())
+        return false;
+
+    if (view.size() != 5)
+        return false;
+
+    if (view.front() != -2)
+        return false;
+
+    if (view.back() != 2)
+        return false;
+
+    if (view[0] != -2)
+        return false;
+
+    if (view[2] != 0)
+        return false;
+
+    if (view[4] != 2)
+        return false;
+
+    auto iterator = view.begin();
+
+    if (*iterator != -2)
+        return false;
+
+    auto previous = iterator++;
+
+    if (*previous != -2)
+        return false;
+
+    if (*iterator != -1)
+        return false;
+
+    ++iterator;
+
+    if (*iterator != 0)
+        return false;
+
+    --iterator;
+
+    if (*iterator != -1)
+        return false;
+
+    iterator += 3;
+
+    if (*iterator != 2)
+        return false;
+
+    iterator -= 2;
+
+    if (*iterator != 0)
+        return false;
+
+    if (iterator[2] != 2)
+        return false;
+
+    auto advanced = iterator + 2;
+
+    if (*advanced != 2)
+        return false;
+
+    auto commuted = 2 + iterator;
+
+    if (*commuted != 2)
+        return false;
+
+    auto retreated = advanced - 3;
+
+    if (*retreated != -1)
+        return false;
+
+    if (advanced - iterator != 2)
+        return false;
+
+    if (iterator - advanced != -2)
+        return false;
+
+    if (!(iterator < advanced))
+        return false;
+
+    if (!(advanced > iterator))
+        return false;
+
+    if (!(iterator <= advanced))
+        return false;
+
+    if (!(advanced >= iterator))
+        return false;
+
+    if (view.end() - view.begin() != 5)
+        return false;
+
+    return true;
+}
+
+static_assert(bounded_iota_works());
+
+
+constexpr bool empty_iota_works()
+{
+    auto view =
+        tested::ranges::views::iota(4, 4);
+
+    if (!view.empty())
+        return false;
+
+    if (view.size() != 0)
+        return false;
+
+    if (view.begin() != view.end())
+        return false;
+
+    return true;
+}
+
+static_assert(empty_iota_works());
+
+
+constexpr bool unbounded_iota_works()
+{
+    auto view =
+        tested::ranges::views::iota(7);
+
+    static_assert(tested::is_same_v<
+        decltype(view),
+        unbounded_iota
+    >);
+
+    if (view.empty())
+        return false;
+
+    auto iterator = view.begin();
+
+    if (*iterator++ != 7)
+        return false;
+
+    if (*iterator++ != 8)
+        return false;
+
+    if (*iterator++ != 9)
+        return false;
+
+    iterator += 10;
+
+    if (*iterator != 20)
+        return false;
+
+    if (iterator == view.end())
+        return false;
+
+    return true;
+}
+
+static_assert(unbounded_iota_works());
+
+
+constexpr bool unsigned_iota_arithmetic_works()
+{
+    auto view =
+        tested::ranges::views::iota(
+            2u,
+            8u
+        );
+
+    auto iterator = view.begin();
+
+    iterator += 4;
+
+    if (*iterator != 6u)
+        return false;
+
+    iterator += -2;
+
+    if (*iterator != 4u)
+        return false;
+
+    iterator -= -3;
+
+    if (*iterator != 7u)
+        return false;
+
+    iterator -= 5;
+
+    if (*iterator != 2u)
+        return false;
+
+    auto last = view.end();
+
+    if (last - iterator != 6)
+        return false;
+
+    if (iterator - last != -6)
+        return false;
+
+    return true;
+}
+
+static_assert(unsigned_iota_arithmetic_works());
+
+
+constexpr bool different_bound_iota_works()
+{
+    auto view =
+        tested::ranges::views::iota(
+            3,
+            integer_bound{7}
+        );
+
+    static_assert(tested::is_same_v<
+        decltype(view),
+        different_bound_iota
+    >);
+
+    if (view.empty())
+        return false;
+
+    auto iterator = view.begin();
+
+    if (*iterator++ != 3)
+        return false;
+
+    if (*iterator++ != 4)
+        return false;
+
+    if (*iterator++ != 5)
+        return false;
+
+    if (*iterator++ != 6)
+        return false;
+
+    if (iterator != view.end())
+        return false;
+
+    return true;
+}
+
+static_assert(different_bound_iota_works());
+
+
+constexpr bool forward_iota_works()
+{
+    auto view =
+        tested::ranges::views::iota(
+            forward_counter{1},
+            forward_counter{4}
+        );
+
+    auto iterator = view.begin();
+
+    if ((*iterator++).value != 1)
+        return false;
+
+    if ((*iterator++).value != 2)
+        return false;
+
+    if ((*iterator++).value != 3)
+        return false;
+
+    if (iterator != view.end())
+        return false;
+
+    return true;
+}
+
+static_assert(forward_iota_works());
+
+
+constexpr bool bidirectional_iota_works()
+{
+    auto view =
+        tested::ranges::views::iota(
+            bidirectional_counter{1},
+            bidirectional_counter{4}
+        );
+
+    auto iterator = view.end();
+
+    --iterator;
+
+    if ((*iterator).value != 3)
+        return false;
+
+    --iterator;
+
+    if ((*iterator).value != 2)
+        return false;
+
+    auto previous = iterator--;
+
+    if ((*previous).value != 2)
+        return false;
+
+    if ((*iterator).value != 1)
+        return false;
+
+    if (iterator != view.begin())
+        return false;
+
+    return true;
+}
+
+static_assert(bidirectional_iota_works());
+
+
+constexpr bool iota_iterator_constructor_works()
+{
+    using view_type =
+        tested::ranges::iota_view<int, int>;
+
+    view_type original(2, 6);
+
+    view_type reconstructed(
+        original.begin(),
+        original.end()
+    );
+
+    if (reconstructed.size() != 4)
+        return false;
+
+    if (reconstructed.front() != 2)
+        return false;
+
+    if (reconstructed.back() != 5)
+        return false;
+
+    return true;
+}
+
+static_assert(iota_iterator_constructor_works());
+
+
+constexpr bool iota_reverse_integration_works()
+{
+    auto reversed =
+        tested::ranges::views::iota(1, 5) |
+        tested::ranges::views::reverse;
+
+    if (reversed.size() != 4)
+        return false;
+
+    if (reversed[0] != 4)
+        return false;
+
+    if (reversed[1] != 3)
+        return false;
+
+    if (reversed[2] != 2)
+        return false;
+
+    if (reversed[3] != 1)
+        return false;
+
+    return true;
+}
+
+static_assert(iota_reverse_integration_works());
+
+using mixed_integral_iota =
+    tested::ranges::iota_view<int, long>;
+
+static_assert(
+    tested::ranges::view<
+        mixed_integral_iota
+    >
+);
+
+static_assert(
+    !tested::ranges::common_range<
+        mixed_integral_iota
+    >
+);
+
+static_assert(
+    tested::ranges::sized_range<
+        mixed_integral_iota
+    >
+);
+
+static_assert(
+    tested::ranges::random_access_range<
+        mixed_integral_iota
+    >
+);
+
+constexpr bool mixed_integral_iota_works()
+{
+    auto view =
+        tested::ranges::views::iota(
+            3,
+            7L
+        );
+
+    static_assert(tested::is_same_v<
+        decltype(view),
+        mixed_integral_iota
+    >);
+
+    if (view.size() != 4)
+        return false;
+
+    auto iterator = view.begin();
+
+    if (*iterator++ != 3)
+        return false;
+
+    if (*iterator++ != 4)
+        return false;
+
+    if (*iterator++ != 5)
+        return false;
+
+    if (*iterator++ != 6)
+        return false;
+
+    if (iterator != view.end())
+        return false;
+
+    return true;
+}
+
+static_assert(mixed_integral_iota_works());
+
 bool ftl_test()
 {
-    return
-        reverse_view_direct_works() &&
+    return reverse_view_direct_works() &&
         reverse_view_empty_works() &&
         reverse_adaptor_call_works() &&
         reverse_adaptor_pipeline_works() &&
@@ -1027,5 +1826,15 @@ bool ftl_test()
         reverse_non_common_cache_works() &&
         reverse_view_normalization_works() &&
         sized_reverse_subrange_normalization_works() &&
-        unsized_reverse_subrange_normalization_works();
+        unsized_reverse_subrange_normalization_works() &&
+        bounded_iota_works() &&
+        empty_iota_works() &&
+        unbounded_iota_works() &&
+        unsigned_iota_arithmetic_works() &&
+        different_bound_iota_works() &&
+        forward_iota_works() &&
+        bidirectional_iota_works() &&
+        iota_iterator_constructor_works() &&
+        iota_reverse_integration_works() &&
+        mixed_integral_iota_works();
 }
