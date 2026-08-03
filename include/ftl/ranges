@@ -3987,6 +3987,248 @@ inline constexpr take_fn take{};
 namespace detail
 {
 
+template<
+    class V,
+    bool = forward_range<V>
+>
+struct drop_while_cache
+{
+};
+
+
+template<class V>
+struct drop_while_cache<V, true>
+{
+    non_propagating_cache<
+        iterator_t<V>
+    > cached_begin;
+};
+
+} // namespace detail
+
+template<
+    view V,
+    class Pred
+>
+    requires (
+        input_range<V> &&
+        is_object_v<Pred> &&
+        indirect_unary_predicate<
+            const Pred,
+            iterator_t<V>
+        >
+    )
+class drop_while_view
+    : public view_interface<
+        drop_while_view<V, Pred>
+    >
+{
+private:
+    FTL_NO_UNIQUE_ADDRESS
+    V base_ = V();
+
+    FTL_NO_UNIQUE_ADDRESS
+    detail::movable_box<Pred> pred_;
+
+    FTL_NO_UNIQUE_ADDRESS
+    detail::drop_while_cache<V> cache_{};
+
+public:
+    drop_while_view()
+        requires (
+            default_initializable<V> &&
+            default_initializable<Pred>
+        )
+        = default;
+
+    constexpr explicit drop_while_view(
+        V base,
+        Pred pred
+    )
+        : base_(
+            FTL_RANGES_NAMESPACE::move(base)
+        ),
+          pred_(
+            FTL_RANGES_NAMESPACE::move(pred)
+        )
+    {
+    }
+
+    [[nodiscard]]
+    constexpr V base() const&
+        requires copy_constructible<V>
+    {
+        return base_;
+    }
+
+    [[nodiscard]]
+    constexpr V base() &&
+    {
+        return FTL_RANGES_NAMESPACE::move(base_);
+    }
+
+    [[nodiscard]]
+    constexpr const Pred& pred() const
+    {
+        return *pred_;
+    }
+
+    [[nodiscard]]
+    constexpr auto begin()
+    {
+        if constexpr (forward_range<V>)
+        {
+            auto& cached =
+                cache_.cached_begin;
+
+            if (!cached.has_value())
+            {
+                auto iterator =
+                    ranges::begin(base_);
+
+                const auto bound =
+                    ranges::end(base_);
+
+                while (
+                    iterator != bound &&
+                    FTL_RANGES_NAMESPACE::invoke(
+                        *pred_,
+                        *iterator
+                    )
+                )
+                {
+                    ++iterator;
+                }
+
+                cached.emplace(
+                    FTL_RANGES_NAMESPACE::move(
+                        iterator
+                    )
+                );
+            }
+
+            return *cached;
+        }
+        else
+        {
+            auto iterator =
+                ranges::begin(base_);
+
+            const auto bound =
+                ranges::end(base_);
+
+            while (
+                iterator != bound &&
+                FTL_RANGES_NAMESPACE::invoke(
+                    *pred_,
+                    *iterator
+                )
+            )
+            {
+                ++iterator;
+            }
+
+            return iterator;
+        }
+    }
+
+    [[nodiscard]]
+    constexpr auto end()
+    {
+        return ranges::end(base_);
+    }
+};
+
+template<class R, class Pred>
+drop_while_view(
+    R&&,
+    Pred
+) -> drop_while_view<
+    views::all_t<R>,
+    Pred
+>;
+
+
+template<class V, class Pred>
+inline constexpr bool
+enable_borrowed_range<
+    drop_while_view<V, Pred>
+> = enable_borrowed_range<V>;
+
+namespace views
+{
+
+namespace detail
+{
+
+struct drop_while_fn
+{
+    template<
+        viewable_range R,
+        class Pred
+    >
+        requires (
+            input_range<all_t<R>> &&
+            constructible_from<
+                decay_t<Pred>,
+                Pred
+            > &&
+            indirect_unary_predicate<
+                const decay_t<Pred>,
+                iterator_t<all_t<R>>
+            >
+        )
+    [[nodiscard]]
+    constexpr auto operator()(
+        R&& range,
+        Pred&& pred
+    ) const
+    {
+        using base_type =
+            all_t<R>;
+
+        using predicate_type =
+            decay_t<Pred>;
+
+        return drop_while_view<
+            base_type,
+            predicate_type
+        >(
+            all(static_cast<R&&>(range)),
+            predicate_type(
+                static_cast<Pred&&>(pred)
+            )
+        );
+    }
+
+    template<class Pred>
+        requires constructible_from<
+            decay_t<Pred>,
+            Pred
+        >
+    [[nodiscard]]
+    constexpr auto operator()(
+        Pred&& pred
+    ) const
+    {
+        return FTL_RANGES_NAMESPACE::ranges::detail::
+            partial_adaptor<drop_while_fn>(
+                static_cast<Pred&&>(pred)
+            );
+    }
+};
+
+} // namespace detail
+
+
+inline constexpr detail::drop_while_fn
+drop_while{};
+
+} // namespace views
+
+namespace detail
+{
+
 struct reverse_view_empty_cache
 {
 };

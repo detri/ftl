@@ -4234,6 +4234,186 @@ static_assert(
     take_while_pipe_works()
 );
 
+using drop_while_pointer_view =
+    tested::ranges::drop_while_view<
+        pointer_view,
+        less_than_four
+    >;
+
+static_assert(
+    tested::ranges::view<
+        drop_while_pointer_view
+    >
+);
+
+static_assert(
+    tested::ranges::random_access_range<
+        drop_while_pointer_view
+    >
+);
+
+static_assert(
+    tested::ranges::common_range<
+        drop_while_pointer_view
+    >
+);
+
+static_assert(
+    !tested::ranges::range<
+        const drop_while_pointer_view
+    >
+);
+
+using borrowed_drop_while_view =
+    tested::ranges::drop_while_view<
+        tested::ranges::iota_view<int, int>,
+        less_than_four
+    >;
+
+static_assert(
+    tested::ranges::borrowed_range<
+        borrowed_drop_while_view
+    >
+);
+
+constexpr bool drop_while_direct_works()
+{
+    int values[] = {
+        1,
+        2,
+        3,
+        4,
+        1
+    };
+
+    pointer_view base{
+        values,
+        values + 5
+    };
+
+    auto dropped =
+        tested::ranges::views::drop_while(
+            base,
+            less_than_four{}
+        );
+
+    static_assert(tested::is_same_v<
+        decltype(dropped),
+        drop_while_pointer_view
+    >);
+
+    auto iterator =
+        dropped.begin();
+
+    return
+        iterator != dropped.end() &&
+        *iterator++ == 4 &&
+        iterator != dropped.end() &&
+        *iterator++ == 1 &&
+        iterator == dropped.end();
+}
+
+static_assert(
+    drop_while_direct_works()
+);
+
+constexpr bool drop_while_pipe_works()
+{
+    int values[] = {
+        1,
+        2,
+        3,
+        4,
+        5
+    };
+
+    pointer_view base{
+        values,
+        values + 5
+    };
+
+    auto dropped =
+        base |
+        tested::ranges::views::drop_while(
+            less_than_four{}
+        );
+
+    auto iterator =
+        dropped.begin();
+
+    return
+        *iterator++ == 4 &&
+        *iterator++ == 5 &&
+        iterator == dropped.end();
+}
+
+static_assert(
+    drop_while_pipe_works()
+);
+
+struct counting_less_than_four
+{
+    int* calls;
+
+    constexpr bool operator()(
+        int value
+    ) const noexcept
+    {
+        ++*calls;
+        return value < 4;
+    }
+};
+
+
+constexpr bool drop_while_caches_begin()
+{
+    int values[] = {
+        1,
+        2,
+        3,
+        4,
+        5
+    };
+
+    int calls = 0;
+
+    pointer_view base{
+        values,
+        values + 5
+    };
+
+    auto dropped =
+        tested::ranges::views::drop_while(
+            base,
+            counting_less_than_four{
+                &calls
+            }
+        );
+
+    auto first =
+        dropped.begin();
+
+    if (
+        first == dropped.end() ||
+        *first != 4 ||
+        calls != 4
+    )
+    {
+        return false;
+    }
+
+    auto second =
+        dropped.begin();
+
+    return
+        second == first &&
+        calls == 4;
+}
+
+static_assert(
+    drop_while_caches_begin()
+);
+
 bool ftl_test()
 {
     return reverse_view_direct_works() &&
