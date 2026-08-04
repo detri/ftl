@@ -1709,9 +1709,22 @@ public:
         const basic_const_iterator& right) requires random_access_iterator<Iterator> {
         return !(left < right);
     }
-    friend constexpr auto operator<=>(const basic_const_iterator& left,
-        const basic_const_iterator& right) requires random_access_iterator<Iterator> && three_way_comparable<Iterator> {
-        return left <=> right;
+    friend constexpr auto operator<=>(
+        const basic_const_iterator& left,
+        const basic_const_iterator& right
+    )
+#ifdef FTL_REPLACE_STL
+        requires random_access_iterator<Iterator> &&
+                 three_way_comparable<Iterator>
+#else
+        requires random_access_iterator<Iterator>
+#endif
+    {
+#ifdef FTL_REPLACE_STL
+        return left.current <=> right.current;
+#else
+        return compare_three_way{}(left.current, right.current);
+#endif
     }
 
     template<input_iterator U> requires (!same_as<U, Iterator>) && totally_ordered_with<Iterator, U>
@@ -1726,7 +1739,11 @@ public:
     friend constexpr bool operator>=(const basic_const_iterator& left, const basic_const_iterator<U>& right) { return !(left < right); }
     template<input_iterator U> requires (!same_as<U, Iterator>) && totally_ordered_with<Iterator, U>
     friend constexpr auto operator<=>(const basic_const_iterator& left, const basic_const_iterator<U>& right) {
-        return left.current <=> right.current;
+#ifdef FTL_REPLACE_STL
+        return left.current <=> right.base();
+#else
+        return compare_three_way{}(left.current, right.base());
+#endif
     }
 
     template<class U> requires (!requires { typename remove_cvref_t<U>::basic_const_iterator_tag; })
