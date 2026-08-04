@@ -5301,7 +5301,7 @@ public:
             : end_(FTL_RANGES_NAMESPACE::move(other.end_)) {}
         constexpr sentinel_t<Base> base() const { return end_; }
         friend constexpr bool operator==(const iterator<Const>& current, const sentinel& end)
-        { return current.current_ == end.end_; }
+        { return current.base() == end.end_; }
         friend constexpr range_difference_t<Base> operator-(const iterator<Const>& current, const sentinel& end)
             requires sized_sentinel_for<sentinel_t<Base>, iterator_t<Base>> { return current.current_ - end.end_; }
         friend constexpr range_difference_t<Base> operator-(const sentinel& end, const iterator<Const>& current)
@@ -8989,6 +8989,10 @@ class enumerate_view : public view_interface<enumerate_view<V>> {
     class iterator {
         using Base = detail::maybe_const_t<Const, V>;
 
+        template<bool OtherConst>
+        using common_iterator_t =
+            iterator_t<detail::maybe_const_t<Const || OtherConst, V>>;
+
     public:
         using iterator_concept =
             conditional_t<random_access_range<Base>, random_access_iterator_tag,
@@ -9023,6 +9027,10 @@ class enumerate_view : public view_interface<enumerate_view<V>> {
         constexpr auto operator*() const {
             return tuple<difference_type, range_reference_t<Base>>(
                 position_, *current_);
+        }
+
+        constexpr const iterator_t<Base>& base() const noexcept {
+            return current_;
         }
 
         constexpr iterator& operator++() {
@@ -9084,9 +9092,9 @@ class enumerate_view : public view_interface<enumerate_view<V>> {
             const iterator& left,
             const iterator<OtherConst>& right
         )
-            requires requires { left.current_ == right.current_; }
+            requires requires { left.base() == right.base(); }
         {
-            return left.current_ == right.current_;
+            return left.base() == right.base();
         }
 
         template<bool OtherConst>
@@ -9094,9 +9102,9 @@ class enumerate_view : public view_interface<enumerate_view<V>> {
             const iterator& left,
             const iterator<OtherConst>& right
         )
-            requires requires { left.current_ < right.current_; }
+            requires requires { left.base() < right.base(); }
         {
-            return left.current_ < right.current_;
+            return left.base() < right.base();
         }
 
         template<bool OtherConst>
@@ -9161,13 +9169,24 @@ class enumerate_view : public view_interface<enumerate_view<V>> {
             const iterator& left,
             const iterator<OtherConst>& right
         )
-            requires requires { left.current_ - right.current_; }
+            requires constructible_from<
+                common_iterator_t<OtherConst>,
+                const iterator_t<Base>&
+            > &&
+            constructible_from<
+                common_iterator_t<OtherConst>,
+                const iterator_t<
+                    detail::maybe_const_t<OtherConst, V>
+                >&
+            > &&
+            sized_sentinel_for<
+                common_iterator_t<OtherConst>,
+                common_iterator_t<OtherConst>
+            >
         {
-            return left.current_ - right.current_;
-        }
-
-        constexpr const iterator_t<Base>& base() const noexcept {
-            return current_;
+            common_iterator_t<OtherConst> left_current(left.base());
+            common_iterator_t<OtherConst> right_current(right.base());
+            return left_current - right_current;
         }
 
         constexpr difference_type position() const noexcept {
