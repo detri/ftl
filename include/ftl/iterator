@@ -2037,13 +2037,31 @@ using const_iterator =
         basic_const_iterator<Iterator>
     >;
 
+namespace detail {
+
+template<
+    semiregular Sentinel,
+    bool = input_iterator<Sentinel>
+>
+struct const_sentinel_impl {
+    using type = Sentinel;
+};
+
+template<semiregular Sentinel>
+struct const_sentinel_impl<
+    Sentinel,
+    true
+> {
+    using type = const_iterator<Sentinel>;
+};
+
+} // namespace detail
+
 template<semiregular Sentinel>
 using const_sentinel =
-    conditional_t<
-        input_iterator<Sentinel>,
-        const_iterator<Sentinel>,
+    typename detail::const_sentinel_impl<
         Sentinel
-    >;
+    >::type;
 
 template<input_iterator Iterator>
 constexpr const_iterator<Iterator>
