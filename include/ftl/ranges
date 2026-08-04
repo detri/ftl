@@ -5946,31 +5946,79 @@ public:
 template<class R, class P>
 lazy_split_view(R&&, P&&) -> lazy_split_view<views::all_t<R>, views::all_t<P>>;
 
-template<input_range V> requires view<V>
-class as_const_view : public view_interface<as_const_view<V>> {
+template<input_range V>
+    requires view<V>
+class as_const_view
+    : public view_interface<as_const_view<V>>
+{
+private:
     V base_ = V();
+
 public:
-    as_const_view() requires default_initializable<V> = default;
-    constexpr explicit as_const_view(V base) : base_(FTL_RANGES_NAMESPACE::move(base)) {}
-    constexpr V base() const& requires copy_constructible<V> { return base_; }
-    constexpr V base() && { return FTL_RANGES_NAMESPACE::move(base_); }
-    constexpr auto begin() { return make_const_iterator(ranges::begin(base_)); }
-    constexpr auto begin() const requires range<const V> {
-        return make_const_iterator(ranges::begin(base_));
+    as_const_view()
+        requires default_initializable<V>
+        = default;
+
+    constexpr explicit as_const_view(V base)
+        : base_(
+            FTL_RANGES_NAMESPACE::move(base)
+        ) {}
+
+    constexpr V base() const&
+        requires copy_constructible<V>
+    {
+        return base_;
     }
-    constexpr auto end() { return make_const_sentinel(ranges::end(base_)); }
-    constexpr auto end() const requires range<const V> {
-        return make_const_sentinel(ranges::end(base_));
+
+    constexpr V base() && {
+        return FTL_RANGES_NAMESPACE::move(base_);
     }
-    constexpr auto size() requires sized_range<V> { return ranges::size(base_); }
-    constexpr auto size() const requires sized_range<const V> { return ranges::size(base_); }
+
+    constexpr auto begin()
+        requires (!detail::simple_view<V>)
+    {
+        return ranges::cbegin(base_);
+    }
+
+    constexpr auto begin() const
+        requires range<const V>
+    {
+        return ranges::cbegin(base_);
+    }
+
+    constexpr auto end()
+        requires (!detail::simple_view<V>)
+    {
+        return ranges::cend(base_);
+    }
+
+    constexpr auto end() const
+        requires range<const V>
+    {
+        return ranges::cend(base_);
+    }
+
+    constexpr auto size()
+        requires sized_range<V>
+    {
+        return ranges::size(base_);
+    }
+
+    constexpr auto size() const
+        requires sized_range<const V>
+    {
+        return ranges::size(base_);
+    }
 };
 
 template<class R>
-as_const_view(R&&) -> as_const_view<views::all_t<R>>;
+as_const_view(R&&)
+    -> as_const_view<views::all_t<R>>;
 
 template<class V>
-inline constexpr bool enable_borrowed_range<as_const_view<V>> = enable_borrowed_range<V>;
+inline constexpr bool
+enable_borrowed_range<as_const_view<V>> =
+    enable_borrowed_range<V>;
 
 template<class W, class Bound = unreachable_sentinel_t>
     requires is_object_v<W> && same_as<W, remove_cv_t<W>> &&
@@ -7022,16 +7070,132 @@ struct counted_fn {
 inline constexpr detail::counted_fn counted{};
 
 namespace detail {
-struct as_const_fn : range_adaptor_closure<as_const_fn> {
+
+template<class T>
+struct as_const_empty_view_traits {
+    static constexpr bool matches = false;
+};
+
+template<class Element>
+struct as_const_empty_view_traits<
+    empty_view<Element>
+> {
+    static constexpr bool matches = true;
+    using element_type = Element;
+};
+
+template<class T>
+struct as_const_span_traits {
+    static constexpr bool matches = false;
+};
+
+template<class Element, size_t Extent>
+struct as_const_span_traits<
+    span<Element, Extent>
+> {
+    static constexpr bool matches = true;
+    using element_type = Element;
+    static constexpr size_t extent = Extent;
+};
+
+template<class T>
+struct as_const_ref_view_traits {
+    static constexpr bool constant = false;
+    static constexpr bool matches = false;
+};
+
+template<class Range>
+struct as_const_ref_view_traits<
+    ref_view<Range>
+> {
+    static constexpr bool matches = true;
+    static constexpr bool constant =
+        constant_range<const Range>;
+
+    using range_type = Range;
+};
+
+struct as_const_fn
+    : range_adaptor_closure<as_const_fn>
+{
     template<viewable_range R>
     constexpr auto operator()(R&& range) const {
-        if constexpr (constant_range<all_t<R>>)
-            return all(static_cast<R&&>(range));
-        else
-            return as_const_view<all_t<R>>(all(static_cast<R&&>(range)));
+        using source_type = remove_cvref_t<R>;
+
+        if constexpr (
+            constant_range<all_t<R>>
+        ) {
+            return all(
+                static_cast<R&&>(range)
+            );
+        } else if constexpr (
+            as_const_empty_view_traits<
+                source_type
+            >::matches
+        ) {
+            using element_type =
+                typename as_const_empty_view_traits<
+                    source_type
+                >::element_type;
+
+            return views::empty<const element_type>;
+        } else if constexpr (
+            as_const_span_traits<
+                source_type
+            >::matches
+        ) {
+            using traits =
+                as_const_span_traits<
+                    source_type
+                >;
+
+            using element_type =
+                typename traits::element_type;
+
+            return span<
+                const element_type,
+                traits::extent
+            >(
+                static_cast<R&&>(range)
+            );
+        } else if constexpr (
+            as_const_ref_view_traits<
+                source_type
+            >::matches &&
+            as_const_ref_view_traits<
+                source_type
+            >::constant
+        ) {
+            using range_type =
+                typename as_const_ref_view_traits<
+                    source_type
+                >::range_type;
+
+            return ref_view<const range_type>(
+                static_cast<const range_type&>(
+                    range.base()
+                )
+            );
+        } else if constexpr (
+            is_lvalue_reference_v<R&&> &&
+            constant_range<const source_type> &&
+            !view<source_type>
+        ) {
+            return ref_view<const source_type>(
+                static_cast<const source_type&>(
+                    range
+                )
+            );
+        } else {
+            return as_const_view<all_t<R>>(
+                all(static_cast<R&&>(range))
+            );
+        }
     }
 };
+
 } // namespace detail
+
 inline constexpr detail::as_const_fn as_const{};
 
 namespace detail {
