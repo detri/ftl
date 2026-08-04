@@ -7060,6 +7060,11 @@ private:
             ) {}
 
         [[nodiscard]]
+        constexpr const auto& base() const noexcept {
+            return current_;
+        }
+
+        [[nodiscard]]
         constexpr reference operator*() const {
             return dereference(
                 index_sequence_for<
@@ -7893,9 +7898,722 @@ template<class F, class V, size_t N>
 concept adjacent_invocable = adjacent_invocable_impl<F, V>(make_index_sequence<N>{});
 } // namespace detail
 
-template<class F, input_range... Views>
-    requires (view<Views> && ...) && (sizeof...(Views) > 0) && is_object_v<F>
-using zip_transform_view = transform_view<zip_view<Views...>, detail::tuple_invoke<F>>;
+namespace detail {
+
+template<class T>
+using zip_transform_with_reference = T&;
+
+template<class T>
+concept zip_transform_can_reference =
+    requires {
+        typename zip_transform_with_reference<T>;
+    };
+
+template<
+    bool Const,
+    class F,
+    class... Views
+>
+struct zip_transform_iterator_category {
+};
+
+template<
+    bool Const,
+    class F,
+    class... Views
+>
+    requires (
+        forward_range<
+            maybe_const_t<
+                Const,
+                Views
+            >
+        > &&
+        ...
+    )
+struct zip_transform_iterator_category<
+    Const,
+    F,
+    Views...
+> {
+private:
+    using result_type =
+        invoke_result_t<
+            maybe_const_t<
+                Const,
+                F
+            >&,
+            range_reference_t<
+                maybe_const_t<
+                    Const,
+                    Views
+                >
+            >...
+        >;
+
+public:
+    using iterator_category =
+        conditional_t<
+            !is_reference_v<result_type>,
+            input_iterator_tag,
+            conditional_t<
+                (
+                    derived_from<
+                        typename iterator_traits<
+                            iterator_t<
+                                maybe_const_t<
+                                    Const,
+                                    Views
+                                >
+                            >
+                        >::iterator_category,
+                        random_access_iterator_tag
+                    > &&
+                    ...
+                ),
+                random_access_iterator_tag,
+                conditional_t<
+                    (
+                        derived_from<
+                            typename iterator_traits<
+                                iterator_t<
+                                    maybe_const_t<
+                                        Const,
+                                        Views
+                                    >
+                                >
+                            >::iterator_category,
+                            bidirectional_iterator_tag
+                        > &&
+                        ...
+                    ),
+                    bidirectional_iterator_tag,
+                    conditional_t<
+                        (
+                            derived_from<
+                                typename iterator_traits<
+                                    iterator_t<
+                                        maybe_const_t<
+                                            Const,
+                                            Views
+                                        >
+                                    >
+                                >::iterator_category,
+                                forward_iterator_tag
+                            > &&
+                            ...
+                        ),
+                        forward_iterator_tag,
+                        input_iterator_tag
+                    >
+                >
+            >
+        >;
+};
+
+} // namespace detail
+
+template<
+    move_constructible F,
+    input_range... Views
+>
+    requires (
+        (view<Views> && ...) &&
+        sizeof...(Views) > 0 &&
+        is_object_v<F> &&
+        regular_invocable<
+            F&,
+            range_reference_t<Views>...
+        > &&
+        detail::zip_transform_can_reference<
+            invoke_result_t<
+                F&,
+                range_reference_t<Views>...
+            >
+        >
+    )
+class zip_transform_view
+    : public view_interface<
+        zip_transform_view<
+            F,
+            Views...
+        >
+    >
+{
+private:
+    FTL_NO_UNIQUE_ADDRESS
+    detail::movable_box<F> fun_;
+
+    FTL_NO_UNIQUE_ADDRESS
+    zip_view<Views...> zip_;
+
+    using inner_view =
+        zip_view<Views...>;
+
+    template<bool Const>
+    using parent_type =
+        detail::maybe_const_t<
+            Const,
+            zip_transform_view
+        >;
+
+    template<bool Const>
+    using base_type =
+        detail::maybe_const_t<
+            Const,
+            inner_view
+        >;
+
+    template<bool Const>
+    using zip_iterator =
+        iterator_t<
+            base_type<Const>
+        >;
+
+    template<bool Const>
+    using zip_sentinel =
+        sentinel_t<
+            base_type<Const>
+        >;
+
+    template<bool Const>
+    class iterator;
+
+    template<bool Const>
+    class sentinel;
+
+    template<bool Const>
+    class iterator
+        : public detail::
+            zip_transform_iterator_category<
+                Const,
+                F,
+                Views...
+            >
+    {
+    private:
+        using Parent =
+            parent_type<Const>;
+
+        using Base =
+            base_type<Const>;
+
+    public:
+        using iterator_concept =
+            typename zip_iterator<
+                Const
+            >::iterator_concept;
+
+        using value_type =
+            remove_cvref_t<
+                invoke_result_t<
+                    detail::maybe_const_t<
+                        Const,
+                        F
+                    >&,
+                    range_reference_t<
+                        detail::maybe_const_t<
+                            Const,
+                            Views
+                        >
+                    >...
+                >
+            >;
+
+        using difference_type =
+            range_difference_t<Base>;
+
+    private:
+        Parent* parent_ = nullptr;
+
+        zip_iterator<Const> inner_{};
+
+        template<size_t... Index>
+        constexpr decltype(auto)
+        dereference(
+            index_sequence<Index...>
+        ) const
+            noexcept(
+                noexcept(
+                    FTL_RANGES_NAMESPACE::invoke(
+                        *parent_->fun_,
+                        (
+                            *get<Index>(
+                                inner_.base()
+                            )
+                        )...
+                    )
+                )
+            )
+        {
+            return FTL_RANGES_NAMESPACE::invoke(
+                *parent_->fun_,
+                (
+                    *get<Index>(
+                        inner_.base()
+                    )
+                )...
+            );
+        }
+
+        template<class ComponentIterator>
+        static constexpr decltype(auto)
+        subscript_component(
+            const ComponentIterator& iterator,
+            difference_type offset
+        ) {
+            return iterator[
+                static_cast<
+                    iter_difference_t<
+                        ComponentIterator
+                    >
+                >(offset)
+            ];
+        }
+
+        template<size_t... Index>
+        constexpr decltype(auto)
+        subscript(
+            difference_type offset,
+            index_sequence<Index...>
+        ) const {
+            return FTL_RANGES_NAMESPACE::invoke(
+                *parent_->fun_,
+                subscript_component(
+                    get<Index>(
+                        inner_.base()
+                    ),
+                    offset
+                )...
+            );
+        }
+
+        constexpr iterator(
+            Parent& parent,
+            zip_iterator<Const> inner
+        )
+            : parent_(
+                FTL_RANGES_NAMESPACE::
+                    addressof(parent)
+            ),
+              inner_(
+                  FTL_RANGES_NAMESPACE::move(
+                      inner
+                  )
+              ) {}
+
+        friend class zip_transform_view;
+        friend class iterator<!Const>;
+
+        template<bool>
+        friend class sentinel;
+
+    public:
+        iterator() = default;
+
+        constexpr iterator(
+            iterator<!Const> other
+        )
+            requires (
+                Const &&
+                convertible_to<
+                    zip_iterator<false>,
+                    zip_iterator<Const>
+                >
+            )
+            : parent_(other.parent_),
+              inner_(
+                  FTL_RANGES_NAMESPACE::move(
+                      other.inner_
+                  )
+              ) {}
+
+        [[nodiscard]]
+        constexpr decltype(auto)
+        operator*() const
+            noexcept(
+                noexcept(
+                    dereference(
+                        index_sequence_for<
+                            Views...
+                        >{}
+                    )
+                )
+            )
+        {
+            return dereference(
+                index_sequence_for<
+                    Views...
+                >{}
+            );
+        }
+
+        constexpr iterator& operator++() {
+            ++inner_;
+            return *this;
+        }
+
+        constexpr void operator++(int) {
+            ++*this;
+        }
+
+        constexpr iterator operator++(int)
+            requires forward_range<Base>
+        {
+            auto previous = *this;
+            ++*this;
+            return previous;
+        }
+
+        constexpr iterator& operator--()
+            requires bidirectional_range<Base>
+        {
+            --inner_;
+            return *this;
+        }
+
+        constexpr iterator operator--(int)
+            requires bidirectional_range<Base>
+        {
+            auto previous = *this;
+            --*this;
+            return previous;
+        }
+
+        constexpr iterator& operator+=(
+            difference_type offset
+        )
+            requires random_access_range<Base>
+        {
+            inner_ += offset;
+            return *this;
+        }
+
+        constexpr iterator& operator-=(
+            difference_type offset
+        )
+            requires random_access_range<Base>
+        {
+            inner_ -= offset;
+            return *this;
+        }
+
+        [[nodiscard]]
+        constexpr decltype(auto)
+        operator[](
+            difference_type offset
+        ) const
+            requires random_access_range<Base>
+        {
+            return subscript(
+                offset,
+                index_sequence_for<
+                    Views...
+                >{}
+            );
+        }
+
+        friend constexpr bool operator==(
+            const iterator& left,
+            const iterator& right
+        )
+            requires equality_comparable<
+                zip_iterator<Const>
+            >
+        {
+            return
+                left.inner_ ==
+                right.inner_;
+        }
+
+        friend constexpr auto operator<=>(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base>
+        {
+            return
+                left.inner_ <=>
+                right.inner_;
+        }
+
+        friend constexpr iterator operator+(
+            const iterator& value,
+            difference_type offset
+        )
+            requires random_access_range<Base>
+        {
+            return iterator(
+                *value.parent_,
+                value.inner_ + offset
+            );
+        }
+
+        friend constexpr iterator operator+(
+            difference_type offset,
+            const iterator& value
+        )
+            requires random_access_range<Base>
+        {
+            return iterator(
+                *value.parent_,
+                value.inner_ + offset
+            );
+        }
+
+        friend constexpr iterator operator-(
+            const iterator& value,
+            difference_type offset
+        )
+            requires random_access_range<Base>
+        {
+            return iterator(
+                *value.parent_,
+                value.inner_ - offset
+            );
+        }
+
+        friend constexpr difference_type
+        operator-(
+            const iterator& left,
+            const iterator& right
+        )
+            requires sized_sentinel_for<
+                zip_iterator<Const>,
+                zip_iterator<Const>
+            >
+        {
+            return
+                left.inner_ -
+                right.inner_;
+        }
+    };
+
+    template<bool Const>
+    class sentinel {
+    private:
+        zip_sentinel<Const> inner_{};
+
+        constexpr explicit sentinel(
+            zip_sentinel<Const> inner
+        )
+            : inner_(
+                FTL_RANGES_NAMESPACE::move(
+                    inner
+                )
+            ) {}
+
+        template<bool OtherConst>
+        constexpr bool equal(
+            const iterator<OtherConst>& value
+        ) const
+            requires sentinel_for<
+                zip_sentinel<Const>,
+                zip_iterator<OtherConst>
+            >
+        {
+            return
+                value.inner_ ==
+                inner_;
+        }
+
+        template<bool OtherConst>
+        constexpr auto distance_from(
+            const iterator<OtherConst>& value
+        ) const
+            -> range_difference_t<
+                base_type<OtherConst>
+            >
+            requires sized_sentinel_for<
+                zip_sentinel<Const>,
+                zip_iterator<OtherConst>
+            >
+        {
+            return
+                value.inner_ -
+                inner_;
+        }
+
+        friend class zip_transform_view;
+        friend class sentinel<!Const>;
+
+    public:
+        sentinel() = default;
+
+        constexpr sentinel(
+            sentinel<!Const> other
+        )
+            requires (
+                Const &&
+                convertible_to<
+                    zip_sentinel<false>,
+                    zip_sentinel<Const>
+                >
+            )
+            : inner_(
+                FTL_RANGES_NAMESPACE::move(
+                    other.inner_
+                )
+            ) {}
+
+        template<bool OtherConst>
+            requires sentinel_for<
+                zip_sentinel<Const>,
+                zip_iterator<OtherConst>
+            >
+        friend constexpr bool operator==(
+            const iterator<OtherConst>& value,
+            const sentinel& bound
+        ) {
+            return bound.equal(value);
+        }
+
+        template<bool OtherConst>
+            requires sized_sentinel_for<
+                zip_sentinel<Const>,
+                zip_iterator<OtherConst>
+            >
+        friend constexpr auto operator-(
+            const iterator<OtherConst>& value,
+            const sentinel& bound
+        )
+            -> range_difference_t<
+                base_type<OtherConst>
+            >
+        {
+            return bound.distance_from(value);
+        }
+
+        template<bool OtherConst>
+            requires sized_sentinel_for<
+                zip_sentinel<Const>,
+                zip_iterator<OtherConst>
+            >
+        friend constexpr auto operator-(
+            const sentinel& bound,
+            const iterator<OtherConst>& value
+        )
+            -> range_difference_t<
+                base_type<OtherConst>
+            >
+        {
+            return -bound.distance_from(value);
+        }
+    };
+
+public:
+    zip_transform_view() = default;
+
+    constexpr explicit zip_transform_view(
+        F function,
+        Views... views
+    )
+        : fun_(
+            FTL_RANGES_NAMESPACE::move(
+                function
+            )
+        ),
+          zip_(
+              FTL_RANGES_NAMESPACE::move(
+                  views
+              )...
+          ) {}
+
+    [[nodiscard]]
+    constexpr auto begin() {
+        return iterator<false>(
+            *this,
+            zip_.begin()
+        );
+    }
+
+    [[nodiscard]]
+    constexpr auto begin() const
+        requires (
+            range<const inner_view> &&
+            regular_invocable<
+                const F&,
+                range_reference_t<
+                    const Views
+                >...
+            >
+        )
+    {
+        return iterator<true>(
+            *this,
+            zip_.begin()
+        );
+    }
+
+    [[nodiscard]]
+    constexpr auto end() {
+        if constexpr (
+            common_range<inner_view>
+        ) {
+            return iterator<false>(
+                *this,
+                zip_.end()
+            );
+        } else {
+            return sentinel<false>(
+                zip_.end()
+            );
+        }
+    }
+
+    [[nodiscard]]
+    constexpr auto end() const
+        requires (
+            range<const inner_view> &&
+            regular_invocable<
+                const F&,
+                range_reference_t<
+                    const Views
+                >...
+            >
+        )
+    {
+        if constexpr (
+            common_range<
+                const inner_view
+            >
+        ) {
+            return iterator<true>(
+                *this,
+                zip_.end()
+            );
+        } else {
+            return sentinel<true>(
+                zip_.end()
+            );
+        }
+    }
+
+    [[nodiscard]]
+    constexpr auto size()
+        requires sized_range<inner_view>
+    {
+        return zip_.size();
+    }
+
+    [[nodiscard]]
+    constexpr auto size() const
+        requires sized_range<
+            const inner_view
+        >
+    {
+        return zip_.size();
+    }
+};
+
+template<class F, class... Ranges>
+zip_transform_view(
+    F,
+    Ranges&&...
+) -> zip_transform_view<
+    F,
+    views::all_t<Ranges>...
+>;
 
 template<forward_range V, size_t N> requires view<V> && (N > 0)
 class adjacent_view : public view_interface<adjacent_view<V, N>> {
@@ -8740,20 +9458,111 @@ struct enumerate_fn : range_adaptor_closure<enumerate_fn> {
 inline constexpr detail::enumerate_fn enumerate{};
 
 namespace detail {
+
 struct zip_transform_fn {
-    template<class F, viewable_range... R>
-        requires (sizeof...(R) > 0) && constructible_from<decay_t<F>, F> &&
-            regular_invocable<decay_t<F>&, range_reference_t<all_t<R>>...> &&
-            (!is_void_v<invoke_result_t<decay_t<F>&, range_reference_t<all_t<R>>...>>)
-    constexpr auto operator()(F&& function, R&&... ranges) const {
-        using Fn = decay_t<F>;
-        using Z = zip_view<all_t<R>...>;
-        return zip_transform_view<Fn, all_t<R>...>(
-            Z(all(static_cast<R&&>(ranges))...),
-            tuple_invoke<Fn>{static_cast<F&&>(function)});
+    template<class F>
+        requires (
+            move_constructible<
+                decay_t<F>
+            > &&
+            regular_invocable<
+                decay_t<F>&
+            > &&
+            is_object_v<
+                decay_t<
+                    invoke_result_t<
+                        decay_t<F>&
+                    >
+                >
+            >
+        )
+    constexpr auto operator()(
+        F&& function
+    ) const {
+        /*
+         * N4950 requires evaluation of the function
+         * expression, but does not store or invoke it.
+         */
+        static_cast<void>(function);
+
+        using result_type =
+            decay_t<
+                invoke_result_t<
+                    decay_t<F>&
+                >
+            >;
+
+        return empty_view<
+            result_type
+        >{};
+    }
+
+    template<
+        class F,
+        viewable_range... Ranges
+    >
+        requires (
+            sizeof...(Ranges) > 0 &&
+            move_constructible<
+                decay_t<F>
+            > &&
+            constructible_from<
+                decay_t<F>,
+                F
+            > &&
+            is_object_v<
+                decay_t<F>
+            > &&
+            (
+                input_range<
+                    all_t<Ranges>
+                > &&
+                ...
+            ) &&
+            regular_invocable<
+                decay_t<F>&,
+                range_reference_t<
+                    all_t<Ranges>
+                >...
+            > &&
+            FTL_RANGES_NAMESPACE::ranges::
+                detail::
+                zip_transform_can_reference<
+                    invoke_result_t<
+                        decay_t<F>&,
+                        range_reference_t<
+                            all_t<Ranges>
+                        >...
+                    >
+                >
+        )
+    constexpr auto operator()(
+        F&& function,
+        Ranges&&... ranges
+    ) const {
+        using function_type =
+            decay_t<F>;
+
+        return zip_transform_view<
+            function_type,
+            all_t<Ranges>...
+        >(
+            function_type(
+                static_cast<F&&>(
+                    function
+                )
+            ),
+            all(
+                static_cast<Ranges&&>(
+                    ranges
+                )
+            )...
+        );
     }
 };
+
 } // namespace detail
+
 inline constexpr detail::zip_transform_fn zip_transform{};
 
 namespace detail {
