@@ -5177,6 +5177,52 @@ concept transform_view_constraints =
     regular_invocable<F&, range_reference_t<V>> &&
     !is_void_v<invoke_result_t<F&, range_reference_t<V>>>;
 
+namespace detail {
+
+template<
+    class Base,
+    class Function,
+    bool = forward_range<Base>
+>
+struct transform_iterator_category {
+};
+
+template<class Base, class Function>
+struct transform_iterator_category<
+    Base,
+    Function,
+    true
+> {
+private:
+    using base_category =
+        typename iterator_traits<
+            iterator_t<Base>
+        >::iterator_category;
+
+    using result_type =
+        invoke_result_t<
+            Function&,
+            range_reference_t<Base>
+        >;
+
+public:
+    using iterator_category =
+        conditional_t<
+            is_reference_v<result_type>,
+            conditional_t<
+                derived_from<
+                    base_category,
+                    contiguous_iterator_tag
+                >,
+                random_access_iterator_tag,
+                base_category
+            >,
+            input_iterator_tag
+        >;
+};
+
+} // namespace detail
+
 template<view V, class F>
     requires transform_view_constraints<V, F>
 class transform_view : public view_interface<transform_view<V, F>> {
@@ -5219,7 +5265,16 @@ public:
     constexpr auto size() const requires sized_range<const V> { return ranges::size(base_); }
 
     template<bool Const>
-    class iterator {
+    class iterator
+        : public detail::transform_iterator_category<
+              base_t<Const>,
+              conditional_t<
+                  Const,
+                  const F,
+                  F
+              >
+          >
+    {
         using Parent = conditional_t<Const, const transform_view, transform_view>;
         using Base = base_t<Const>;
         iterator_t<Base> current_{};
@@ -5234,12 +5289,6 @@ public:
             random_access_range<Base>, random_access_iterator_tag,
             conditional_t<bidirectional_range<Base>, bidirectional_iterator_tag,
             conditional_t<forward_range<Base>, forward_iterator_tag, input_iterator_tag>>>;
-        using iterator_category = conditional_t<
-            is_lvalue_reference_v<invoke_result_t<conditional_t<Const, const F&, F&>, range_reference_t<Base>>>,
-            conditional_t<derived_from<typename iterator_traits<iterator_t<Base>>::iterator_category, random_access_iterator_tag>,
-                random_access_iterator_tag,
-                typename iterator_traits<iterator_t<Base>>::iterator_category>,
-            input_iterator_tag>;
         using value_type = remove_cvref_t<invoke_result_t<conditional_t<Const, const F&, F&>, range_reference_t<Base>>>;
         using difference_type = range_difference_t<Base>;
 
@@ -5493,6 +5542,67 @@ struct join_inner_storage<I, true> {
     constexpr void set(I current) { value = FTL_RANGES_NAMESPACE::move(current); }
     constexpr void clear() { value = I(); }
 };
+
+template<
+    class Base,
+    bool =
+        is_reference_v<
+            range_reference_t<Base>
+        > &&
+        forward_range<Base> &&
+        forward_range<
+            range_reference_t<Base>
+        >
+>
+struct join_iterator_category {
+};
+
+template<class Base>
+struct join_iterator_category<
+    Base,
+    true
+> {
+private:
+    using outer_category =
+        typename iterator_traits<
+            iterator_t<Base>
+        >::iterator_category;
+
+    using inner_range =
+        range_reference_t<Base>;
+
+    using inner_category =
+        typename iterator_traits<
+            iterator_t<inner_range>
+        >::iterator_category;
+
+public:
+    using iterator_category =
+        conditional_t<
+            derived_from<
+                outer_category,
+                bidirectional_iterator_tag
+            > &&
+            derived_from<
+                inner_category,
+                bidirectional_iterator_tag
+            > &&
+            common_range<inner_range>,
+            bidirectional_iterator_tag,
+            conditional_t<
+                derived_from<
+                    outer_category,
+                    forward_iterator_tag
+                > &&
+                derived_from<
+                    inner_category,
+                    forward_iterator_tag
+                >,
+                forward_iterator_tag,
+                input_iterator_tag
+            >
+        >;
+};
 } // namespace detail
 
 template<input_range V>
@@ -5547,7 +5657,11 @@ public:
     }
 
     template<bool Const>
-    class iterator {
+    class iterator
+        : public detail::join_iterator_category<
+              Base<Const>
+          >
+    {
         using Parent = conditional_t<Const, const join_view, join_view>;
         using BaseType = Base<Const>;
         using OuterType = Outer<Const>;
@@ -5597,9 +5711,6 @@ public:
                 common_range<range_reference_t<BaseType>>, bidirectional_iterator_tag,
             conditional_t<ref && forward_range<BaseType> && forward_range<range_reference_t<BaseType>>,
                 forward_iterator_tag, input_iterator_tag>>;
-        using iterator_category = conditional_t<same_as<iterator_concept, bidirectional_iterator_tag>,
-            bidirectional_iterator_tag, conditional_t<same_as<iterator_concept, forward_iterator_tag>,
-            forward_iterator_tag, input_iterator_tag>>;
         using value_type = range_value_t<range_reference_t<BaseType>>;
         using difference_type = common_type_t<range_difference_t<BaseType>,
             range_difference_t<range_reference_t<BaseType>>>;
@@ -7236,6 +7347,40 @@ template<class W, class Bound>
 repeat_view(W, Bound)
     -> repeat_view<W, Bound>;
 
+namespace detail {
+
+template<
+    class Base,
+    bool = forward_range<Base>
+>
+struct stride_iterator_category {
+};
+
+template<class Base>
+struct stride_iterator_category<
+    Base,
+    true
+> {
+private:
+    using base_category =
+        typename iterator_traits<
+            iterator_t<Base>
+        >::iterator_category;
+
+public:
+    using iterator_category =
+        conditional_t<
+            derived_from<
+                base_category,
+                random_access_iterator_tag
+            >,
+            random_access_iterator_tag,
+            base_category
+        >;
+};
+
+} // namespace detail
+
 template<input_range V>
     requires view<V>
 class stride_view : public view_interface<stride_view<V>> {
@@ -7243,7 +7388,14 @@ class stride_view : public view_interface<stride_view<V>> {
     range_difference_t<V> stride_ = 1;
 
     template<bool Const>
-    class iterator {
+    class iterator
+        : public detail::stride_iterator_category<
+              detail::maybe_const_t<
+                  Const,
+                  V
+              >
+          >
+    {
         using Base = detail::maybe_const_t<Const, V>;
 
         iterator_t<Base> current_{};
@@ -7273,7 +7425,6 @@ class stride_view : public view_interface<stride_view<V>> {
             conditional_t<forward_range<Base>, forward_iterator_tag,
                           input_iterator_tag>>>;
 
-        using iterator_category = iterator_concept;
         using value_type = range_value_t<Base>;
         using difference_type = range_difference_t<Base>;
 
