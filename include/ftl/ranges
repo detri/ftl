@@ -5787,164 +5787,977 @@ struct split_fn {
 inline constexpr detail::split_fn split{};
 } // namespace views
 
-// lazy_split_view
+/// lazy_split_view
 
 namespace detail {
-template<class P>
-concept tiny_range = sized_range<P> && requires {
-    typename integral_constant<size_t, remove_reference_t<P>::size()>;
-} && (remove_reference_t<P>::size() <= 1);
-} // namespace detail
 
-template<input_range V, forward_range Pattern, bool = forward_range<V>>
-    requires view<V> && view<Pattern> &&
-        indirectly_comparable<iterator_t<V>, iterator_t<Pattern>, equal_to> &&
-        (forward_range<V> || detail::tiny_range<Pattern>)
-class lazy_split_view;
+template<class Pattern>
+concept tiny_range =
+    sized_range<Pattern> &&
+    requires {
+        typename integral_constant<
+            size_t,
+            remove_reference_t<
+                Pattern
+            >::size()
+        >;
+    } &&
+    (
+        remove_reference_t<
+            Pattern
+        >::size() <= 1
+    );
 
-template<input_range V, forward_range Pattern>
-    requires view<V> && view<Pattern> &&
-        indirectly_comparable<iterator_t<V>, iterator_t<Pattern>, equal_to> &&
-        forward_range<V>
-class lazy_split_view<V, Pattern, true>
-    : public view_interface<lazy_split_view<V, Pattern, true>> {
-    split_view<V, Pattern> split_;
-public:
-    using inner_view = subrange<iterator_t<V>>;
-    lazy_split_view() requires default_initializable<V> && default_initializable<Pattern> = default;
-    constexpr explicit lazy_split_view(V base, Pattern pattern)
-        : split_(FTL_RANGES_NAMESPACE::move(base), FTL_RANGES_NAMESPACE::move(pattern)) {}
-    constexpr V base() const& requires copy_constructible<V> { return split_.base(); }
-    constexpr V base() && { return FTL_RANGES_NAMESPACE::move(split_).base(); }
-    constexpr auto begin() { return split_.begin(); }
-    constexpr auto end() { return split_.end(); }
+template<
+    class V,
+    bool = forward_range<V>
+>
+struct lazy_split_current_storage {
 };
 
-template<input_range V, forward_range Pattern>
-    requires view<V> && view<Pattern> &&
-        indirectly_comparable<iterator_t<V>, iterator_t<Pattern>, equal_to> &&
-        (!forward_range<V>) && detail::tiny_range<Pattern>
-class lazy_split_view<V, Pattern, false>
-    : public view_interface<lazy_split_view<V, Pattern, false>> {
-    V base_ = V();
-    Pattern pattern_ = Pattern();
-    iterator_t<V> current_{};
-    bool initialized_ = false;
-    bool done_ = false;
-    bool trailing_empty_ = false;
-    bool inner_consumed_ = false;
+template<class V>
+struct lazy_split_current_storage<
+    V,
+    false
+> {
+    non_propagating_cache<
+        iterator_t<V>
+    > value;
+};
 
-    constexpr bool empty_pattern() { return ranges::begin(pattern_) == ranges::end(pattern_); }
-    constexpr bool at_delimiter() {
-        return current_ != ranges::end(base_) && !empty_pattern() &&
-            *current_ == *ranges::begin(pattern_);
-    }
+template<
+    class Base,
+    bool = forward_range<Base>
+>
+struct lazy_split_position_storage {
+};
+
+template<class Base>
+struct lazy_split_position_storage<
+    Base,
+    true
+> {
+    iterator_t<Base> value =
+        iterator_t<Base>();
+
+    constexpr lazy_split_position_storage()
+        = default;
+
+    constexpr explicit
+    lazy_split_position_storage(
+        iterator_t<Base> current
+    )
+        : value(
+            FTL_RANGES_NAMESPACE::move(
+                current
+            )
+        ) {}
+};
+
+template<
+    class Base,
+    bool = forward_range<Base>
+>
+struct lazy_split_outer_category {
+};
+
+template<class Base>
+struct lazy_split_outer_category<
+    Base,
+    true
+> {
+    using iterator_category =
+        input_iterator_tag;
+};
+
+template<
+    class Base,
+    bool = forward_range<Base>
+>
+struct lazy_split_inner_category {
+};
+
+template<class Base>
+struct lazy_split_inner_category<
+    Base,
+    true
+> {
+private:
+    using base_category =
+        typename iterator_traits<
+            iterator_t<Base>
+        >::iterator_category;
 
 public:
-    class outer_iterator;
-    class inner_view;
+    using iterator_category =
+        conditional_t<
+            derived_from<
+                base_category,
+                forward_iterator_tag
+            >,
+            forward_iterator_tag,
+            base_category
+        >;
+};
 
-    lazy_split_view() requires default_initializable<V> && default_initializable<Pattern> = default;
-    constexpr explicit lazy_split_view(V base, Pattern pattern)
-        : base_(FTL_RANGES_NAMESPACE::move(base)), pattern_(FTL_RANGES_NAMESPACE::move(pattern)) {}
-    constexpr V base() const& requires copy_constructible<V> { return base_; }
-    constexpr V base() && { return FTL_RANGES_NAMESPACE::move(base_); }
+} // namespace detail
 
-    constexpr outer_iterator begin() {
-        current_ = ranges::begin(base_);
-        initialized_ = true;
-        done_ = current_ == ranges::end(base_);
-        trailing_empty_ = false;
-        return outer_iterator(*this);
-    }
-    constexpr default_sentinel_t end() const noexcept { return {}; }
+template<
+    input_range V,
+    forward_range Pattern
+>
+    requires (
+        view<V> &&
+        view<Pattern> &&
+        indirectly_comparable<
+            iterator_t<V>,
+            iterator_t<Pattern>,
+            equal_to
+        > &&
+        (
+            forward_range<V> ||
+            detail::tiny_range<Pattern>
+        )
+    )
+class lazy_split_view
+    : public view_interface<
+        lazy_split_view<V, Pattern>
+    >
+{
+private:
+    FTL_NO_UNIQUE_ADDRESS
+    V base_ = V();
 
-    constexpr bool inner_done(bool incremented) {
-        return current_ == ranges::end(base_) || at_delimiter() ||
-            (empty_pattern() && incremented);
-    }
-    constexpr bool done() const noexcept { return done_; }
+    FTL_NO_UNIQUE_ADDRESS
+    Pattern pattern_ = Pattern();
 
-    class inner_view : public view_interface<inner_view> {
-        lazy_split_view* parent_ = nullptr;
-    public:
-        class iterator {
-            lazy_split_view* parent_ = nullptr;
-            bool incremented_ = false;
-        public:
-            using iterator_concept = input_iterator_tag;
-            using iterator_category = input_iterator_tag;
-            using value_type = range_value_t<V>;
-            using difference_type = range_difference_t<V>;
-            iterator() = default;
-            constexpr explicit iterator(lazy_split_view& parent)
-                : parent_(FTL_RANGES_NAMESPACE::addressof(parent)) {}
-            constexpr decltype(auto) operator*() const { return *parent_->current_; }
-            constexpr iterator& operator++() {
-                ++parent_->current_;
-                incremented_ = true;
-                if (parent_->empty_pattern()) parent_->inner_consumed_ = true;
-                return *this;
-            }
-            constexpr void operator++(int) { ++*this; }
-            friend constexpr bool operator==(const iterator& current, default_sentinel_t) {
-                return current.parent_->inner_done(current.incremented_);
-            }
-        };
-        inner_view() = default;
-        constexpr explicit inner_view(lazy_split_view& parent)
-            : parent_(FTL_RANGES_NAMESPACE::addressof(parent)) {}
-        constexpr iterator begin() {
-            parent_->inner_consumed_ = false;
-            return iterator(*parent_);
+    FTL_NO_UNIQUE_ADDRESS
+    detail::lazy_split_current_storage<V>
+        current_{};
+
+    template<bool Const>
+    class cursor {
+    private:
+        using Parent =
+            detail::maybe_const_t<
+                Const,
+                lazy_split_view
+            >;
+
+        using Base =
+            detail::maybe_const_t<
+                Const,
+                V
+            >;
+
+        Parent* parent_ = nullptr;
+
+        detail::lazy_split_position_storage<
+            Base
+        > position_{};
+
+        bool trailing_empty_ = false;
+
+        template<bool>
+        friend class cursor;
+
+        template<class Left, class Right>
+        static constexpr bool equal_elements(
+            Left&& left,
+            Right&& right
+        ) {
+            return FTL_RANGES_NAMESPACE::invoke(
+                equal_to{},
+                static_cast<Left&&>(left),
+                static_cast<Right&&>(right)
+            );
         }
-        constexpr default_sentinel_t end() const noexcept { return {}; }
+
+    public:
+        cursor() = default;
+
+        cursor(
+            const cursor&
+        ) = default;
+
+        cursor(
+            cursor&&
+        ) = default;
+
+        constexpr cursor& operator=(
+            const cursor&
+        ) = default;
+
+        constexpr cursor& operator=(
+            cursor&&
+        ) = default;
+
+        constexpr explicit cursor(
+            Parent& parent
+        )
+            requires (
+                !forward_range<Base>
+            )
+            : parent_(
+                FTL_RANGES_NAMESPACE::
+                    addressof(parent)
+            ) {}
+
+        constexpr cursor(
+            Parent& parent,
+            iterator_t<Base> current
+        )
+            requires forward_range<Base>
+            : parent_(
+                FTL_RANGES_NAMESPACE::
+                    addressof(parent)
+            ),
+              position_(
+                  FTL_RANGES_NAMESPACE::move(
+                      current
+                  )
+              ) {}
+
+        constexpr cursor(
+            cursor<false>&& other
+        )
+            requires (
+                Const &&
+                convertible_to<
+                    iterator_t<V>,
+                    iterator_t<Base>
+                >
+            )
+            : parent_(other.parent_),
+              position_(
+                  iterator_t<Base>(
+                      FTL_RANGES_NAMESPACE::move(
+                          other.position_.value
+                      )
+                  )
+              ),
+              trailing_empty_(
+                  other.trailing_empty_
+              ) {}
+
+        [[nodiscard]]
+        constexpr iterator_t<Base>&
+        current() {
+            if constexpr (
+                forward_range<Base>
+            ) {
+                return position_.value;
+            } else {
+                return *parent_->
+                    current_.value;
+            }
+        }
+
+        [[nodiscard]]
+        constexpr const iterator_t<Base>&
+        current() const {
+            if constexpr (
+                forward_range<Base>
+            ) {
+                return position_.value;
+            } else {
+                return *parent_->
+                    current_.value;
+            }
+        }
+
+        [[nodiscard]]
+        constexpr bool same_position(
+            const cursor& other
+        ) const
+            requires forward_range<Base>
+        {
+            return
+                current() ==
+                    other.current() &&
+                trailing_empty_ ==
+                    other.trailing_empty_;
+        }
+
+        [[nodiscard]]
+        constexpr bool outer_at_end() const {
+            return
+                current() ==
+                    ranges::end(
+                        parent_->base_
+                    ) &&
+                !trailing_empty_;
+        }
+
+        constexpr void next_outer() {
+            const auto bound =
+                ranges::end(
+                    parent_->base_
+                );
+
+            auto& current_value =
+                current();
+
+            if (current_value == bound) {
+                trailing_empty_ = false;
+                return;
+            }
+
+            const auto pattern_begin =
+                ranges::begin(
+                    parent_->pattern_
+                );
+
+            const auto pattern_end =
+                ranges::end(
+                    parent_->pattern_
+                );
+
+            if (
+                pattern_begin ==
+                pattern_end
+            ) {
+                ++current_value;
+            } else if constexpr (
+                detail::tiny_range<Pattern>
+            ) {
+                while (
+                    current_value != bound &&
+                    !equal_elements(
+                        *current_value,
+                        *pattern_begin
+                    )
+                ) {
+                    ++current_value;
+                }
+
+                if (current_value != bound) {
+                    ++current_value;
+
+                    if (
+                        current_value ==
+                        bound
+                    ) {
+                        trailing_empty_ =
+                            true;
+                    }
+                }
+            } else {
+                do {
+                    auto base_probe =
+                        current_value;
+
+                    auto pattern_probe =
+                        pattern_begin;
+
+                    while (
+                        base_probe != bound &&
+                        pattern_probe !=
+                            pattern_end &&
+                        equal_elements(
+                            *base_probe,
+                            *pattern_probe
+                        )
+                    ) {
+                        ++base_probe;
+                        ++pattern_probe;
+                    }
+
+                    if (
+                        pattern_probe ==
+                        pattern_end
+                    ) {
+                        current_value =
+                            FTL_RANGES_NAMESPACE::
+                                move(base_probe);
+
+                        if (
+                            current_value ==
+                            bound
+                        ) {
+                            trailing_empty_ =
+                                true;
+                        }
+
+                        break;
+                    }
+                }
+                while (
+                    ++current_value != bound
+                );
+            }
+        }
+
+        [[nodiscard]]
+        constexpr bool inner_at_end(
+            bool incremented
+        ) const {
+            const auto pattern_begin =
+                ranges::begin(
+                    parent_->pattern_
+                );
+
+            const auto pattern_end =
+                ranges::end(
+                    parent_->pattern_
+                );
+
+            const auto bound =
+                ranges::end(
+                    parent_->base_
+                );
+
+            if constexpr (
+                detail::tiny_range<Pattern>
+            ) {
+                const auto& current_value =
+                    current();
+
+                if (
+                    current_value ==
+                    bound
+                ) {
+                    return true;
+                }
+
+                if (
+                    pattern_begin ==
+                    pattern_end
+                ) {
+                    return incremented;
+                }
+
+                return equal_elements(
+                    *current_value,
+                    *pattern_begin
+                );
+            } else {
+                auto base_probe =
+                    current();
+
+                auto pattern_probe =
+                    pattern_begin;
+
+                if (base_probe == bound) {
+                    return true;
+                }
+
+                if (
+                    pattern_probe ==
+                    pattern_end
+                ) {
+                    return incremented;
+                }
+
+                do {
+                    if (
+                        !equal_elements(
+                            *base_probe,
+                            *pattern_probe
+                        )
+                    ) {
+                        return false;
+                    }
+
+                    ++pattern_probe;
+
+                    if (
+                        pattern_probe ==
+                        pattern_end
+                    ) {
+                        return true;
+                    }
+
+                    ++base_probe;
+                }
+                while (
+                    base_probe != bound
+                );
+
+                return false;
+            }
+        }
     };
 
-    class outer_iterator {
-        lazy_split_view* parent_ = nullptr;
+public:
+    template<bool Const>
+    class inner_iterator
+        : public detail::
+            lazy_split_inner_category<
+                detail::maybe_const_t<
+                    Const,
+                    V
+                >
+            >
+    {
+    private:
+        using Base =
+            detail::maybe_const_t<
+                Const,
+                V
+            >;
+
+        cursor<Const> state_{};
+
+        bool incremented_ = false;
+
+        template<bool>
+        friend class outer_iterator;
+
     public:
-        using iterator_concept = input_iterator_tag;
-        using iterator_category = input_iterator_tag;
-        using value_type = inner_view;
-        using difference_type = range_difference_t<V>;
-        outer_iterator() = default;
-        constexpr explicit outer_iterator(lazy_split_view& parent)
-            : parent_(FTL_RANGES_NAMESPACE::addressof(parent)) {}
-        constexpr inner_view operator*() const { return inner_view(*parent_); }
-        constexpr outer_iterator& operator++() {
-            if (parent_->trailing_empty_) {
-                parent_->trailing_empty_ = false;
-                parent_->done_ = true;
-                return *this;
+        using iterator_concept =
+            conditional_t<
+                forward_range<Base>,
+                forward_iterator_tag,
+                input_iterator_tag
+            >;
+
+        using value_type =
+            range_value_t<Base>;
+
+        using difference_type =
+            range_difference_t<Base>;
+
+        inner_iterator() = default;
+
+        constexpr explicit inner_iterator(
+            cursor<Const> state
+        )
+            : state_(
+                FTL_RANGES_NAMESPACE::move(
+                    state
+                )
+            ) {}
+
+        [[nodiscard]]
+        constexpr const iterator_t<Base>&
+        base() const& noexcept {
+            return state_.current();
+        }
+
+        [[nodiscard]]
+        constexpr iterator_t<Base>
+        base() &&
+            requires forward_range<V>
+        {
+            return FTL_RANGES_NAMESPACE::move(
+                state_.current()
+            );
+        }
+
+        [[nodiscard]]
+        constexpr decltype(auto)
+        operator*() const {
+            return *state_.current();
+        }
+
+        constexpr inner_iterator&
+        operator++() {
+            incremented_ = true;
+
+            if constexpr (
+                !forward_range<Base>
+            ) {
+                if constexpr (
+                    remove_reference_t<
+                        Pattern
+                    >::size() == 0
+                ) {
+                    return *this;
+                }
             }
-            const bool empty = parent_->empty_pattern();
-            if (empty) {
-                if (!parent_->inner_consumed_ && parent_->current_ != ranges::end(parent_->base_))
-                    ++parent_->current_;
-                parent_->inner_consumed_ = false;
-                parent_->done_ = parent_->current_ == ranges::end(parent_->base_);
-                return *this;
-            }
-            while (parent_->current_ != ranges::end(parent_->base_) && !parent_->at_delimiter())
-                ++parent_->current_;
-            if (parent_->current_ == ranges::end(parent_->base_)) {
-                parent_->done_ = true;
-                return *this;
-            }
-            ++parent_->current_;
-            if (parent_->current_ == ranges::end(parent_->base_)) parent_->trailing_empty_ = true;
+
+            ++state_.current();
             return *this;
         }
-        constexpr void operator++(int) { ++*this; }
-        friend constexpr bool operator==(const outer_iterator& current, default_sentinel_t) {
-            return current.parent_->done();
+
+        constexpr void operator++(int) {
+            ++*this;
+        }
+
+        constexpr inner_iterator
+        operator++(int)
+            requires forward_range<Base>
+        {
+            auto previous = *this;
+            ++*this;
+            return previous;
+        }
+
+        friend constexpr bool operator==(
+            const inner_iterator& left,
+            const inner_iterator& right
+        )
+            requires forward_range<Base>
+        {
+            return
+                left.state_.current() ==
+                right.state_.current();
+        }
+
+        friend constexpr bool operator==(
+            const inner_iterator& value,
+            default_sentinel_t
+        ) {
+            return value.state_.inner_at_end(
+                value.incremented_
+            );
+        }
+
+        friend constexpr decltype(auto)
+        iter_move(
+            const inner_iterator& value
+        )
+            noexcept(
+                noexcept(
+                    ranges::iter_move(
+                        value.state_.current()
+                    )
+                )
+            )
+        {
+            return ranges::iter_move(
+                value.state_.current()
+            );
+        }
+
+        friend constexpr void iter_swap(
+            const inner_iterator& left,
+            const inner_iterator& right
+        )
+            noexcept(
+                noexcept(
+                    ranges::iter_swap(
+                        left.state_.current(),
+                        right.state_.current()
+                    )
+                )
+            )
+            requires indirectly_swappable<
+                iterator_t<Base>
+            >
+        {
+            ranges::iter_swap(
+                left.state_.current(),
+                right.state_.current()
+            );
         }
     };
+
+    template<bool Const>
+    class outer_iterator
+        : public detail::
+            lazy_split_outer_category<
+                detail::maybe_const_t<
+                    Const,
+                    V
+                >
+            >
+    {
+    private:
+        using Parent =
+            detail::maybe_const_t<
+                Const,
+                lazy_split_view
+            >;
+
+        using Base =
+            detail::maybe_const_t<
+                Const,
+                V
+            >;
+
+        cursor<Const> state_{};
+
+        template<bool>
+        friend class outer_iterator;
+
+    public:
+        class value_type
+            : public view_interface<
+                value_type
+            >
+        {
+        private:
+            cursor<Const> state_{};
+
+        public:
+            value_type() = default;
+
+            constexpr explicit value_type(
+                cursor<Const> state
+            )
+                : state_(
+                    FTL_RANGES_NAMESPACE::move(
+                        state
+                    )
+                ) {}
+
+            [[nodiscard]]
+            constexpr inner_iterator<Const>
+            begin() const {
+                return inner_iterator<Const>(
+                    state_
+                );
+            }
+
+            [[nodiscard]]
+            constexpr default_sentinel_t
+            end() const noexcept {
+                return default_sentinel;
+            }
+        };
+
+        using iterator_concept =
+            conditional_t<
+                forward_range<Base>,
+                forward_iterator_tag,
+                input_iterator_tag
+            >;
+
+        using difference_type =
+            range_difference_t<Base>;
+
+        outer_iterator() = default;
+
+        constexpr explicit outer_iterator(
+            Parent& parent
+        )
+            requires (
+                !forward_range<Base>
+            )
+            : state_(parent) {}
+
+        constexpr outer_iterator(
+            Parent& parent,
+            iterator_t<Base> current
+        )
+            requires forward_range<Base>
+            : state_(
+                parent,
+                FTL_RANGES_NAMESPACE::move(
+                    current
+                )
+            ) {}
+
+        constexpr outer_iterator(
+            outer_iterator<!Const> other
+        )
+            requires (
+                Const &&
+                convertible_to<
+                    iterator_t<V>,
+                    iterator_t<Base>
+                >
+            )
+            : state_(
+                FTL_RANGES_NAMESPACE::move(
+                    other.state_
+                )
+            ) {}
+
+        [[nodiscard]]
+        constexpr value_type
+        operator*() const {
+            return value_type(state_);
+        }
+
+        constexpr outer_iterator&
+        operator++() {
+            state_.next_outer();
+            return *this;
+        }
+
+        constexpr void operator++(int) {
+            ++*this;
+        }
+
+        constexpr outer_iterator
+        operator++(int)
+            requires forward_range<Base>
+        {
+            auto previous = *this;
+            ++*this;
+            return previous;
+        }
+
+        friend constexpr bool operator==(
+            const outer_iterator& left,
+            const outer_iterator& right
+        )
+            requires forward_range<Base>
+        {
+            return left.state_.same_position(
+                right.state_
+            );
+        }
+
+        friend constexpr bool operator==(
+            const outer_iterator& value,
+            default_sentinel_t
+        ) {
+            return value.state_.outer_at_end();
+        }
+    };
+
+    lazy_split_view()
+        requires (
+            default_initializable<V> &&
+            default_initializable<Pattern>
+        )
+        = default;
+
+    constexpr explicit lazy_split_view(
+        V base,
+        Pattern pattern
+    )
+        : base_(
+            FTL_RANGES_NAMESPACE::move(
+                base
+            )
+        ),
+          pattern_(
+              FTL_RANGES_NAMESPACE::move(
+                  pattern
+              )
+          ) {}
+
+    template<input_range R>
+        requires (
+            constructible_from<
+                V,
+                views::all_t<R>
+            > &&
+            constructible_from<
+                Pattern,
+                single_view<
+                    range_value_t<R>
+                >
+            >
+        )
+    constexpr explicit lazy_split_view(
+        R&& range,
+        range_value_t<R> element
+    )
+        : base_(
+            views::all(
+                static_cast<R&&>(range)
+            )
+        ),
+          pattern_(
+              single_view<
+                  range_value_t<R>
+              >(
+                  FTL_RANGES_NAMESPACE::move(
+                      element
+                  )
+              )
+          ) {}
+
+    [[nodiscard]]
+    constexpr V base() const&
+        requires copy_constructible<V>
+    {
+        return base_;
+    }
+
+    [[nodiscard]]
+    constexpr V base() && {
+        return FTL_RANGES_NAMESPACE::move(
+            base_
+        );
+    }
+
+    [[nodiscard]]
+    constexpr auto begin() {
+        if constexpr (forward_range<V>) {
+            constexpr bool use_const =
+                detail::simple_view<V> &&
+                detail::simple_view<Pattern>;
+
+            return outer_iterator<
+                use_const
+            >(
+                *this,
+                ranges::begin(base_)
+            );
+        } else {
+            current_.value.emplace(
+                ranges::begin(base_)
+            );
+
+            return outer_iterator<false>(
+                *this
+            );
+        }
+    }
+
+    [[nodiscard]]
+    constexpr auto begin() const
+        requires (
+            forward_range<V> &&
+            forward_range<const V>
+        )
+    {
+        return outer_iterator<true>(
+            *this,
+            ranges::begin(base_)
+        );
+    }
+
+    [[nodiscard]]
+    constexpr auto end()
+        requires (
+            forward_range<V> &&
+            common_range<V>
+        )
+    {
+        constexpr bool use_const =
+            detail::simple_view<V> &&
+            detail::simple_view<Pattern>;
+
+        return outer_iterator<
+            use_const
+        >(
+            *this,
+            ranges::end(base_)
+        );
+    }
+
+    [[nodiscard]]
+    constexpr auto end() const {
+        if constexpr (
+            forward_range<V> &&
+            forward_range<const V> &&
+            common_range<const V>
+        ) {
+            return outer_iterator<true>(
+                *this,
+                ranges::end(base_)
+            );
+        } else {
+            return default_sentinel;
+        }
+    }
 };
 
 template<class R, class P>
-lazy_split_view(R&&, P&&) -> lazy_split_view<views::all_t<R>, views::all_t<P>>;
+lazy_split_view(R&&, P&&)
+    -> lazy_split_view<
+        views::all_t<R>,
+        views::all_t<P>
+    >;
+
+template<input_range R>
+lazy_split_view(
+    R&&,
+    range_value_t<R>
+) -> lazy_split_view<
+    views::all_t<R>,
+    single_view<
+        range_value_t<R>
+    >
+>;
 
 template<input_range V>
     requires view<V>
