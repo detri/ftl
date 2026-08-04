@@ -36,6 +36,7 @@
 #include <ftl/initializer_list>
 #include <ftl/iterator>
 #include <ftl/memory>
+#include <ftl/span>
 #include <ftl/tuple>
 #include <ftl/type_traits>
 #include <ftl/utility>
@@ -6939,14 +6940,85 @@ struct lazy_split_fn {
 inline constexpr detail::lazy_split_fn lazy_split{};
 
 namespace detail {
+
 struct counted_fn {
-    template<input_or_output_iterator I>
-    constexpr auto operator()(I iterator, iter_difference_t<I> count) const {
-        return subrange(counted_iterator<I>(FTL_RANGES_NAMESPACE::move(iterator), count),
-            default_sentinel);
+    template<class Iterator, class DifferenceType>
+        requires (
+            input_or_output_iterator<
+                decay_t<Iterator>
+            > &&
+            convertible_to<
+                DifferenceType&&,
+                iter_difference_t<
+                    decay_t<Iterator>
+                >
+            >
+        )
+    constexpr auto operator()(
+        Iterator&& iterator,
+        DifferenceType&& count
+    ) const {
+        using iterator_type =
+            decay_t<Iterator>;
+
+        using difference_type =
+            iter_difference_t<iterator_type>;
+
+        if constexpr (
+            contiguous_iterator<iterator_type>
+        ) {
+            return span(
+                FTL_RANGES_NAMESPACE::to_address(
+                    iterator
+                ),
+                static_cast<size_t>(
+                    static_cast<difference_type>(
+                        static_cast<
+                            DifferenceType&&
+                        >(count)
+                    )
+                )
+            );
+        } else if constexpr (
+            random_access_iterator<iterator_type>
+        ) {
+            /*
+             * N4950 explicitly requires that the iterator
+             * expression be evaluated only once.
+             */
+            iterator_type first(
+                static_cast<Iterator&&>(iterator)
+            );
+
+            const difference_type length =
+                static_cast<difference_type>(
+                    static_cast<
+                        DifferenceType&&
+                    >(count)
+                );
+
+            return subrange(
+                first,
+                first + length
+            );
+        } else {
+            return subrange(
+                counted_iterator<iterator_type>(
+                    static_cast<
+                        Iterator&&
+                    >(iterator),
+                    static_cast<
+                        DifferenceType&&
+                    >(count)
+                ),
+                default_sentinel
+            );
+        }
     }
 };
+
 } // namespace detail
+
 inline constexpr detail::counted_fn counted{};
 
 namespace detail {
