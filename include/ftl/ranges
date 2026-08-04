@@ -7236,118 +7236,414 @@ template<class W, class Bound>
 repeat_view(W, Bound)
     -> repeat_view<W, Bound>;
 
-template<input_range V> requires view<V>
+template<input_range V>
+    requires view<V>
 class stride_view : public view_interface<stride_view<V>> {
     V base_ = V();
     range_difference_t<V> stride_ = 1;
-public:
+
+    template<bool Const>
     class iterator {
-        iterator_t<V> current_{};
-        sentinel_t<V> end_{};
-        range_difference_t<V> stride_ = 1;
-        range_difference_t<V> missing_ = 0;
+        using Base = detail::maybe_const_t<Const, V>;
+
+        iterator_t<Base> current_{};
+        sentinel_t<Base> end_{};
+        range_difference_t<Base> stride_ = 1;
+        range_difference_t<Base> missing_ = 0;
+
+        friend class stride_view;
+        template<bool>
+        friend class iterator;
+
+        constexpr iterator(
+            iterator_t<Base> current,
+            sentinel_t<Base> end,
+            range_difference_t<Base> stride,
+            range_difference_t<Base> missing = 0
+        )
+            : current_(FTL_RANGES_NAMESPACE::move(current)),
+              end_(FTL_RANGES_NAMESPACE::move(end)),
+              stride_(stride),
+              missing_(missing) {}
+
     public:
-        using iterator_concept = conditional_t<random_access_range<V>, random_access_iterator_tag,
-            conditional_t<bidirectional_range<V>, bidirectional_iterator_tag,
-            conditional_t<forward_range<V>, forward_iterator_tag, input_iterator_tag>>>;
+        using iterator_concept =
+            conditional_t<random_access_range<Base>, random_access_iterator_tag,
+            conditional_t<bidirectional_range<Base>, bidirectional_iterator_tag,
+            conditional_t<forward_range<Base>, forward_iterator_tag,
+                          input_iterator_tag>>>;
+
         using iterator_category = iterator_concept;
-        using value_type = range_value_t<V>;
-        using difference_type = range_difference_t<V>;
-        iterator() = default;
-        constexpr iterator(iterator_t<V> current, sentinel_t<V> end, difference_type stride,
-            difference_type missing = 0)
-            : current_(FTL_RANGES_NAMESPACE::move(current)), end_(FTL_RANGES_NAMESPACE::move(end)),
-              stride_(stride), missing_(missing) {}
-        template<class Other>
-            requires (!same_as<remove_cvref_t<Other>, iterator>) &&
-                constructible_from<iterator_t<V>, decltype(declval<const Other&>().base())> &&
-                constructible_from<sentinel_t<V>, decltype(declval<const Other&>().end_base())>
-        constexpr iterator(const Other& other)
-            : current_(other.base()), end_(other.end_base()), stride_(other.stride()), missing_(other.missing()) {}
-        constexpr decltype(auto) operator*() const { return *current_; }
+        using value_type = range_value_t<Base>;
+        using difference_type = range_difference_t<Base>;
+
+        iterator()
+            requires default_initializable<iterator_t<Base>>
+            = default;
+
+        constexpr iterator(iterator<!Const> other)
+            requires Const &&
+                     convertible_to<iterator_t<V>, iterator_t<Base>> &&
+                     convertible_to<sentinel_t<V>, sentinel_t<Base>>
+            : current_(FTL_RANGES_NAMESPACE::move(other.current_)),
+              end_(FTL_RANGES_NAMESPACE::move(other.end_)),
+              stride_(other.stride_),
+              missing_(other.missing_) {}
+
+        constexpr iterator_t<Base> base() && {
+            return FTL_RANGES_NAMESPACE::move(current_);
+        }
+
+        constexpr const iterator_t<Base>& base() const& noexcept {
+            return current_;
+        }
+
+        constexpr decltype(auto) operator*() const {
+            return *current_;
+        }
+
         constexpr iterator& operator++() {
             missing_ = ranges::advance(current_, stride_, end_);
             return *this;
         }
-        constexpr auto operator++(int) {
-            if constexpr (forward_range<V>) { auto copy = *this; ++*this; return copy; }
-            else ++*this;
+
+        constexpr void operator++(int) {
+            ++*this;
         }
-        constexpr iterator& operator--() requires bidirectional_range<V> {
+
+        constexpr iterator operator++(int)
+            requires forward_range<Base>
+        {
+            auto copy = *this;
+            ++*this;
+            return copy;
+        }
+
+        constexpr iterator& operator--()
+            requires bidirectional_range<Base>
+        {
             ranges::advance(current_, missing_ - stride_);
             missing_ = 0;
             return *this;
         }
-        constexpr iterator operator--(int) requires bidirectional_range<V> {
-            auto copy = *this; --*this; return copy;
+
+        constexpr iterator operator--(int)
+            requires bidirectional_range<Base>
+        {
+            auto copy = *this;
+            --*this;
+            return copy;
         }
-        constexpr iterator& operator+=(difference_type n) requires random_access_range<V> {
-            if (n > 0) missing_ = ranges::advance(current_, stride_ * n, end_);
-            else if (n < 0) { ranges::advance(current_, stride_ * n + missing_); missing_ = 0; }
+
+        constexpr iterator& operator+=(difference_type n)
+            requires random_access_range<Base>
+        {
+            if (n > 0) {
+                ranges::advance(current_, stride_ * (n - 1));
+                missing_ = ranges::advance(current_, stride_, end_);
+            } else if (n < 0) {
+                ranges::advance(current_, stride_ * n + missing_);
+                missing_ = 0;
+            }
+
             return *this;
         }
-        constexpr iterator& operator-=(difference_type n) requires random_access_range<V> { return *this += -n; }
-        constexpr decltype(auto) operator[](difference_type n) const requires random_access_range<V> {
-            return current_[n * stride_];
+
+        constexpr iterator& operator-=(difference_type n)
+            requires random_access_range<Base>
+        {
+            return *this += -n;
         }
-        friend constexpr bool operator==(const iterator& a, const iterator& b)
-            requires equality_comparable<iterator_t<V>> { return a.current_ == b.current_; }
-        friend constexpr bool operator<(const iterator& a, const iterator& b) requires random_access_range<V> { return a.current_ < b.current_; }
-        friend constexpr bool operator>(const iterator& a, const iterator& b) requires random_access_range<V> { return b < a; }
-        friend constexpr bool operator<=(const iterator& a, const iterator& b) requires random_access_range<V> { return !(b < a); }
-        friend constexpr bool operator>=(const iterator& a, const iterator& b) requires random_access_range<V> { return !(a < b); }
-        friend constexpr iterator operator+(iterator i, difference_type n) requires random_access_range<V> { return i += n; }
-        friend constexpr iterator operator+(difference_type n, iterator i) requires random_access_range<V> { return i += n; }
-        friend constexpr iterator operator-(iterator i, difference_type n) requires random_access_range<V> { return i -= n; }
-        friend constexpr difference_type operator-(const iterator& a, const iterator& b) requires random_access_range<V> {
-            return (a.current_ - b.current_ + a.missing_ - b.missing_) / a.stride_;
+
+        constexpr decltype(auto) operator[](difference_type n) const
+            requires random_access_range<Base>
+        {
+            return *(*this + n);
         }
-        constexpr const iterator_t<V>& base() const noexcept { return current_; }
-        constexpr const sentinel_t<V>& end_base() const noexcept { return end_; }
-        constexpr difference_type stride() const noexcept { return stride_; }
-        constexpr difference_type missing() const noexcept { return missing_; }
-    };
-    class sentinel {
-        sentinel_t<V> end_{};
-    public:
-        sentinel() = default;
-        constexpr explicit sentinel(sentinel_t<V> end) : end_(FTL_RANGES_NAMESPACE::move(end)) {}
-        template<class Other> requires constructible_from<sentinel_t<V>, decltype(declval<const Other&>().base())>
-        constexpr sentinel(const Other& other) : end_(other.base()) {}
-        constexpr const sentinel_t<V>& base() const noexcept { return end_; }
-        friend constexpr bool operator==(const iterator& current, const sentinel& end) {
-            return current.base() == end.end_;
+
+        friend constexpr bool operator==(
+            const iterator& value,
+            default_sentinel_t
+        ) {
+            return value.current_ == value.end_;
+        }
+
+        friend constexpr bool operator==(
+            const iterator& left,
+            const iterator& right
+        )
+            requires equality_comparable<iterator_t<Base>>
+        {
+            return left.current_ == right.current_;
+        }
+
+        friend constexpr bool operator<(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base>
+        {
+            return left.current_ < right.current_;
+        }
+
+        friend constexpr bool operator>(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base>
+        {
+            return right < left;
+        }
+
+        friend constexpr bool operator<=(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base>
+        {
+            return !(right < left);
+        }
+
+        friend constexpr bool operator>=(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base>
+        {
+            return !(left < right);
+        }
+
+        friend constexpr auto operator<=>(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base> &&
+                     three_way_comparable<iterator_t<Base>>
+        {
+            return left.current_ <=> right.current_;
+        }
+
+        friend constexpr iterator operator+(
+            const iterator& value,
+            difference_type n
+        )
+            requires random_access_range<Base>
+        {
+            auto result = value;
+            result += n;
+            return result;
+        }
+
+        friend constexpr iterator operator+(
+            difference_type n,
+            const iterator& value
+        )
+            requires random_access_range<Base>
+        {
+            return value + n;
+        }
+
+        friend constexpr iterator operator-(
+            const iterator& value,
+            difference_type n
+        )
+            requires random_access_range<Base>
+        {
+            auto result = value;
+            result -= n;
+            return result;
+        }
+
+        friend constexpr difference_type operator-(
+            const iterator& left,
+            const iterator& right
+        )
+            requires sized_sentinel_for<iterator_t<Base>, iterator_t<Base>>
+        {
+            auto distance = left.current_ - right.current_;
+
+            if constexpr (forward_range<Base>) {
+                return (
+                    distance +
+                    left.missing_ -
+                    right.missing_
+                ) / left.stride_;
+            } else if (distance < 0) {
+                return -(
+                    (-distance + left.stride_ - 1) /
+                    left.stride_
+                );
+            } else {
+                return (
+                    distance +
+                    left.stride_ -
+                    1
+                ) / left.stride_;
+            }
+        }
+
+        friend constexpr difference_type operator-(
+            default_sentinel_t,
+            const iterator& value
+        )
+            requires sized_sentinel_for<sentinel_t<Base>, iterator_t<Base>>
+        {
+            auto distance = value.end_ - value.current_;
+            return (distance + value.stride_ - 1) / value.stride_;
+        }
+
+        friend constexpr difference_type operator-(
+            const iterator& value,
+            default_sentinel_t sentinel
+        )
+            requires sized_sentinel_for<sentinel_t<Base>, iterator_t<Base>>
+        {
+            return -(sentinel - value);
+        }
+
+        friend constexpr range_rvalue_reference_t<Base> iter_move(
+            const iterator& value
+        ) noexcept(noexcept(ranges::iter_move(value.current_))) {
+            return ranges::iter_move(value.current_);
+        }
+
+        friend constexpr void iter_swap(
+            const iterator& left,
+            const iterator& right
+        ) noexcept(noexcept(ranges::iter_swap(
+            left.current_,
+            right.current_
+        )))
+            requires indirectly_swappable<iterator_t<Base>>
+        {
+            ranges::iter_swap(left.current_, right.current_);
         }
     };
 
-    stride_view() requires default_initializable<V> = default;
+public:
+    stride_view()
+        requires default_initializable<V>
+        = default;
+
     constexpr explicit stride_view(V base, range_difference_t<V> stride)
-        : base_(FTL_RANGES_NAMESPACE::move(base)), stride_(stride) {}
-    constexpr V base() const& requires copy_constructible<V> { return base_; }
-    constexpr V base() && { return FTL_RANGES_NAMESPACE::move(base_); }
-    constexpr iterator begin() { return iterator(ranges::begin(base_), ranges::end(base_), stride_); }
-    constexpr auto begin() const requires input_range<const V> {
-        using C = views::all_t<const V&>;
-        return stride_view<C>(views::all(base_), static_cast<range_difference_t<C>>(stride_)).begin();
+        : base_(FTL_RANGES_NAMESPACE::move(base)),
+          stride_(stride) {}
+
+    constexpr V base() const&
+        requires copy_constructible<V>
+    {
+        return base_;
     }
-    constexpr auto end() {
-        if constexpr (common_range<V>) {
-            range_difference_t<V> missing = 0;
-            if constexpr (sized_range<V>) missing = (stride_ - ranges::distance(base_) % stride_) % stride_;
-            return iterator(ranges::end(base_), ranges::end(base_), stride_, missing);
-        } else return sentinel(ranges::end(base_));
+
+    constexpr V base() && {
+        return FTL_RANGES_NAMESPACE::move(base_);
     }
-    constexpr auto end() const requires input_range<const V> {
-        using C = views::all_t<const V&>;
-        return stride_view<C>(views::all(base_), static_cast<range_difference_t<C>>(stride_)).end();
+
+    constexpr range_difference_t<V> stride() const noexcept {
+        return stride_;
     }
-    constexpr auto size() requires sized_range<V> {
+
+    constexpr auto begin()
+        requires (!detail::simple_view<V>)
+    {
+        return iterator<false>(
+            ranges::begin(base_),
+            ranges::end(base_),
+            stride_
+        );
+    }
+
+    constexpr auto begin() const
+        requires range<const V>
+    {
+        return iterator<true>(
+            ranges::begin(base_),
+            ranges::end(base_),
+            static_cast<range_difference_t<const V>>(stride_)
+        );
+    }
+
+    constexpr auto end()
+        requires (!detail::simple_view<V>)
+    {
+        if constexpr (
+            common_range<V> &&
+            sized_range<V> &&
+            forward_range<V>
+        ) {
+            auto missing =
+                (stride_ - ranges::distance(base_) % stride_) %
+                stride_;
+
+            return iterator<false>(
+                ranges::end(base_),
+                ranges::end(base_),
+                stride_,
+                missing
+            );
+        } else if constexpr (
+            common_range<V> &&
+            !bidirectional_range<V>
+        ) {
+            return iterator<false>(
+                ranges::end(base_),
+                ranges::end(base_),
+                stride_
+            );
+        } else {
+            return default_sentinel;
+        }
+    }
+
+    constexpr auto end() const
+        requires range<const V>
+    {
+        using difference_type = range_difference_t<const V>;
+        auto stride = static_cast<difference_type>(stride_);
+
+        if constexpr (
+            common_range<const V> &&
+            sized_range<const V> &&
+            forward_range<const V>
+        ) {
+            auto missing =
+                (stride - ranges::distance(base_) % stride) %
+                stride;
+
+            return iterator<true>(
+                ranges::end(base_),
+                ranges::end(base_),
+                stride,
+                missing
+            );
+        } else if constexpr (
+            common_range<const V> &&
+            !bidirectional_range<const V>
+        ) {
+            return iterator<true>(
+                ranges::end(base_),
+                ranges::end(base_),
+                stride
+            );
+        } else {
+            return default_sentinel;
+        }
+    }
+
+    constexpr auto size()
+        requires sized_range<V>
+    {
         auto count = ranges::size(base_);
-        return (count + static_cast<decltype(count)>(stride_ - 1)) / static_cast<decltype(count)>(stride_);
+        auto stride = static_cast<decltype(count)>(stride_);
+        return (count + stride - 1) / stride;
     }
-    constexpr auto size() const requires sized_range<const V> {
+
+    constexpr auto size() const
+        requires sized_range<const V>
+    {
         auto count = ranges::size(base_);
-        return (count + static_cast<decltype(count)>(stride_ - 1)) / static_cast<decltype(count)>(stride_);
+        auto stride = static_cast<decltype(count)>(stride_);
+        return (count + stride - 1) / stride;
     }
 };
 
@@ -8684,80 +8980,299 @@ enable_borrowed_range<
         ...
     );
 
-template<view V> requires input_range<V>
+template<view V>
+    requires input_range<V>
 class enumerate_view : public view_interface<enumerate_view<V>> {
     V base_ = V();
-public:
+
+    template<bool Const>
     class iterator {
-        iterator_t<V> current_{};
-        range_difference_t<V> position_ = 0;
+        using Base = detail::maybe_const_t<Const, V>;
+
     public:
-        using iterator_concept = conditional_t<random_access_range<V>, random_access_iterator_tag,
-            conditional_t<bidirectional_range<V>, bidirectional_iterator_tag,
-            conditional_t<forward_range<V>, forward_iterator_tag, input_iterator_tag>>>;
+        using iterator_concept =
+            conditional_t<random_access_range<Base>, random_access_iterator_tag,
+            conditional_t<bidirectional_range<Base>, bidirectional_iterator_tag,
+            conditional_t<forward_range<Base>, forward_iterator_tag,
+                          input_iterator_tag>>>;
+
         using iterator_category = input_iterator_tag;
-        using value_type = tuple<range_difference_t<V>, range_value_t<V>>;
-        using difference_type = range_difference_t<V>;
+        using value_type = tuple<range_difference_t<Base>, range_value_t<Base>>;
+        using difference_type = range_difference_t<Base>;
+
+    private:
+        iterator_t<Base> current_{};
+        difference_type position_ = 0;
+
+        friend class enumerate_view;
+        template<bool> friend class iterator;
+
+        constexpr iterator(iterator_t<Base> current, difference_type position)
+            : current_(FTL_RANGES_NAMESPACE::move(current)),
+              position_(position) {}
+
+    public:
         iterator() = default;
-        constexpr iterator(iterator_t<V> current, difference_type position)
-            : current_(FTL_RANGES_NAMESPACE::move(current)), position_(position) {}
-        template<class Other>
-            requires (!same_as<remove_cvref_t<Other>, iterator>) &&
-                constructible_from<iterator_t<V>, decltype(declval<const Other&>().base())>
-        constexpr iterator(const Other& other) : current_(other.base()), position_(other.position()) {}
-        constexpr auto operator*() const { return tuple<difference_type, range_reference_t<V>>(position_, *current_); }
-        constexpr iterator& operator++() { ++current_; ++position_; return *this; }
-        constexpr auto operator++(int) {
-            if constexpr (forward_range<V>) { auto copy = *this; ++*this; return copy; }
-            else ++*this;
+
+        constexpr iterator(iterator<!Const> other)
+            requires Const &&
+                     convertible_to<iterator_t<V>, iterator_t<const V>>
+            : current_(FTL_RANGES_NAMESPACE::move(other.current_)),
+              position_(other.position_) {}
+
+        constexpr auto operator*() const {
+            return tuple<difference_type, range_reference_t<Base>>(
+                position_, *current_);
         }
-        constexpr iterator& operator--() requires bidirectional_range<V> { --current_; --position_; return *this; }
-        constexpr iterator operator--(int) requires bidirectional_range<V> { auto copy = *this; --*this; return copy; }
-        constexpr iterator& operator+=(difference_type n) requires random_access_range<V> { current_ += n; position_ += n; return *this; }
-        constexpr iterator& operator-=(difference_type n) requires random_access_range<V> { return *this += -n; }
-        constexpr auto operator[](difference_type n) const requires random_access_range<V> { return *(*this + n); }
-        friend constexpr bool operator==(const iterator& a, const iterator& b) requires equality_comparable<iterator_t<V>> { return a.current_ == b.current_; }
-        friend constexpr bool operator<(const iterator& a, const iterator& b) requires random_access_range<V> { return a.current_ < b.current_; }
-        friend constexpr bool operator>(const iterator& a, const iterator& b) requires random_access_range<V> { return b < a; }
-        friend constexpr bool operator<=(const iterator& a, const iterator& b) requires random_access_range<V> { return !(b < a); }
-        friend constexpr bool operator>=(const iterator& a, const iterator& b) requires random_access_range<V> { return !(a < b); }
-        friend constexpr iterator operator+(iterator i, difference_type n) requires random_access_range<V> { return i += n; }
-        friend constexpr iterator operator+(difference_type n, iterator i) requires random_access_range<V> { return i += n; }
-        friend constexpr iterator operator-(iterator i, difference_type n) requires random_access_range<V> { return i -= n; }
-        friend constexpr difference_type operator-(const iterator& a, const iterator& b) requires random_access_range<V> { return a.current_ - b.current_; }
-        constexpr const iterator_t<V>& base() const noexcept { return current_; }
-        constexpr difference_type position() const noexcept { return position_; }
+
+        constexpr iterator& operator++() {
+            ++current_;
+            ++position_;
+            return *this;
+        }
+
+        constexpr void operator++(int) {
+            ++*this;
+        }
+
+        constexpr iterator operator++(int)
+            requires forward_range<Base>
+        {
+            auto copy = *this;
+            ++*this;
+            return copy;
+        }
+
+        constexpr iterator& operator--()
+            requires bidirectional_range<Base>
+        {
+            --current_;
+            --position_;
+            return *this;
+        }
+
+        constexpr iterator operator--(int)
+            requires bidirectional_range<Base>
+        {
+            auto copy = *this;
+            --*this;
+            return copy;
+        }
+
+        constexpr iterator& operator+=(difference_type offset)
+            requires random_access_range<Base>
+        {
+            current_ += offset;
+            position_ += offset;
+            return *this;
+        }
+
+        constexpr iterator& operator-=(difference_type offset)
+            requires random_access_range<Base>
+        {
+            return *this += -offset;
+        }
+
+        constexpr auto operator[](difference_type offset) const
+            requires random_access_range<Base>
+        {
+            return *(*this + offset);
+        }
+
+        template<bool OtherConst>
+        friend constexpr bool operator==(
+            const iterator& left,
+            const iterator<OtherConst>& right
+        )
+            requires requires { left.current_ == right.current_; }
+        {
+            return left.current_ == right.current_;
+        }
+
+        template<bool OtherConst>
+        friend constexpr bool operator<(
+            const iterator& left,
+            const iterator<OtherConst>& right
+        )
+            requires requires { left.current_ < right.current_; }
+        {
+            return left.current_ < right.current_;
+        }
+
+        template<bool OtherConst>
+        friend constexpr bool operator>(
+            const iterator& left,
+            const iterator<OtherConst>& right
+        )
+            requires requires { right < left; }
+        {
+            return right < left;
+        }
+
+        template<bool OtherConst>
+        friend constexpr bool operator<=(
+            const iterator& left,
+            const iterator<OtherConst>& right
+        )
+            requires requires { right < left; }
+        {
+            return !(right < left);
+        }
+
+        template<bool OtherConst>
+        friend constexpr bool operator>=(
+            const iterator& left,
+            const iterator<OtherConst>& right
+        )
+            requires requires { left < right; }
+        {
+            return !(left < right);
+        }
+
+        friend constexpr iterator operator+(
+            iterator value,
+            difference_type offset
+        )
+            requires random_access_range<Base>
+        {
+            return value += offset;
+        }
+
+        friend constexpr iterator operator+(
+            difference_type offset,
+            iterator value
+        )
+            requires random_access_range<Base>
+        {
+            return value += offset;
+        }
+
+        friend constexpr iterator operator-(
+            iterator value,
+            difference_type offset
+        )
+            requires random_access_range<Base>
+        {
+            return value -= offset;
+        }
+
+        template<bool OtherConst>
+        friend constexpr auto operator-(
+            const iterator& left,
+            const iterator<OtherConst>& right
+        )
+            requires requires { left.current_ - right.current_; }
+        {
+            return left.current_ - right.current_;
+        }
+
+        constexpr const iterator_t<Base>& base() const noexcept {
+            return current_;
+        }
+
+        constexpr difference_type position() const noexcept {
+            return position_;
+        }
     };
+
+    template<bool Const>
     class sentinel {
-        sentinel_t<V> end_{};
+        using Base = detail::maybe_const_t<Const, V>;
+
+        sentinel_t<Base> end_{};
+
+        friend class enumerate_view;
+        template<bool> friend class sentinel;
+
+        constexpr explicit sentinel(sentinel_t<Base> end)
+            : end_(FTL_RANGES_NAMESPACE::move(end)) {}
+
     public:
         sentinel() = default;
-        constexpr explicit sentinel(sentinel_t<V> end) : end_(FTL_RANGES_NAMESPACE::move(end)) {}
-        template<class Other> requires constructible_from<sentinel_t<V>, decltype(declval<const Other&>().base())>
-        constexpr sentinel(const Other& other) : end_(other.base()) {}
-        constexpr const sentinel_t<V>& base() const noexcept { return end_; }
-        friend constexpr bool operator==(const iterator& current, const sentinel& end) { return current.base() == end.end_; }
+
+        constexpr sentinel(sentinel<!Const> other)
+            requires Const &&
+                     convertible_to<sentinel_t<V>, sentinel_t<const V>>
+            : end_(FTL_RANGES_NAMESPACE::move(other.end_)) {}
+
+        constexpr const sentinel_t<Base>& base() const noexcept {
+            return end_;
+        }
+
+        template<bool OtherConst>
+        friend constexpr bool operator==(
+            const iterator<OtherConst>& current,
+            const sentinel& end
+        )
+            requires requires { current.base() == end.end_; }
+        {
+            return current.base() == end.end_;
+        }
     };
-    enumerate_view() requires default_initializable<V> = default;
-    constexpr explicit enumerate_view(V base) : base_(FTL_RANGES_NAMESPACE::move(base)) {}
-    constexpr V base() const& requires copy_constructible<V> { return base_; }
-    constexpr V base() && { return FTL_RANGES_NAMESPACE::move(base_); }
-    constexpr iterator begin() { return iterator(ranges::begin(base_), 0); }
-    constexpr auto begin() const requires input_range<const V> {
-        using C = views::all_t<const V&>;
-        return enumerate_view<C>(views::all(base_)).begin();
+
+public:
+    enumerate_view()
+        requires default_initializable<V>
+        = default;
+
+    constexpr explicit enumerate_view(V base)
+        : base_(FTL_RANGES_NAMESPACE::move(base)) {}
+
+    constexpr V base() const&
+        requires copy_constructible<V>
+    {
+        return base_;
     }
+
+    constexpr V base() && {
+        return FTL_RANGES_NAMESPACE::move(base_);
+    }
+
+    constexpr iterator<false> begin() {
+        return iterator<false>(ranges::begin(base_), 0);
+    }
+
+    constexpr iterator<true> begin() const
+        requires input_range<const V>
+    {
+        return iterator<true>(ranges::begin(base_), 0);
+    }
+
     constexpr auto end() {
-        if constexpr (common_range<V> && sized_range<V>)
-            return iterator(ranges::end(base_), static_cast<range_difference_t<V>>(ranges::size(base_)));
-        else return sentinel(ranges::end(base_));
+        if constexpr (common_range<V> && sized_range<V>) {
+            return iterator<false>(
+                ranges::end(base_),
+                static_cast<range_difference_t<V>>(ranges::size(base_))
+            );
+        } else {
+            return sentinel<false>(ranges::end(base_));
+        }
     }
-    constexpr auto end() const requires input_range<const V> {
-        using C = views::all_t<const V&>;
-        return enumerate_view<C>(views::all(base_)).end();
+
+    constexpr auto end() const
+        requires input_range<const V>
+    {
+        if constexpr (common_range<const V> && sized_range<const V>) {
+            return iterator<true>(
+                ranges::end(base_),
+                static_cast<range_difference_t<const V>>(ranges::size(base_))
+            );
+        } else {
+            return sentinel<true>(ranges::end(base_));
+        }
     }
-    constexpr auto size() requires sized_range<V> { return ranges::size(base_); }
-    constexpr auto size() const requires sized_range<const V> { return ranges::size(base_); }
+
+    constexpr auto size()
+        requires sized_range<V>
+    {
+        return ranges::size(base_);
+    }
+
+    constexpr auto size() const
+        requires sized_range<const V>
+    {
+        return ranges::size(base_);
+    }
 };
 
 template<class R> enumerate_view(R&&) -> enumerate_view<views::all_t<R>>;
@@ -8766,18 +9281,93 @@ template<class V>
 inline constexpr bool enable_borrowed_range<enumerate_view<V>> = enable_borrowed_range<V>;
 
 namespace detail {
+template<class F, class Tuple, size_t... I>
+consteval bool tuple_invocable_impl(index_sequence<I...>) {
+    return regular_invocable<
+        F,
+        decltype(get<I>(declval<Tuple>()))...
+    >;
+}
+
+template<class F, class Tuple>
+consteval bool tuple_invocable() {
+    if constexpr (!requires {
+        typename tuple_size<remove_cvref_t<Tuple>>::type;
+    }) {
+        return false;
+    } else {
+        return tuple_invocable_impl<F, Tuple>(
+            make_index_sequence<tuple_size_v<remove_cvref_t<Tuple>>>{}
+        );
+    }
+}
+
+template<class F, class Tuple, size_t... I>
+consteval bool tuple_nothrow_invocable_impl(index_sequence<I...>) {
+    return is_nothrow_invocable_v<
+        F,
+        decltype(get<I>(declval<Tuple>()))...
+    >;
+}
+
+template<class F, class Tuple>
+consteval bool tuple_nothrow_invocable() {
+    if constexpr (!tuple_invocable<F, Tuple>()) {
+        return false;
+    } else {
+        return tuple_nothrow_invocable_impl<F, Tuple>(
+            make_index_sequence<tuple_size_v<remove_cvref_t<Tuple>>>{}
+        );
+    }
+}
+
+template<class F, class Tuple, size_t... I>
+    requires (tuple_invocable_impl<F, Tuple>(index_sequence<I...>{}))
+constexpr decltype(auto) invoke_tuple(
+    F&& function,
+    Tuple&& values,
+    index_sequence<I...>
+) noexcept(tuple_nothrow_invocable_impl<F, Tuple>(
+    index_sequence<I...>{}
+)) {
+    return FTL_RANGES_NAMESPACE::invoke(
+        static_cast<F&&>(function),
+        get<I>(static_cast<Tuple&&>(values))...
+    );
+}
+
 template<class F>
 struct tuple_invoke {
     F function;
-    template<class T>
-    constexpr decltype(auto) operator()(T&& values) {
-        return FTL_RANGES_NAMESPACE::apply(function, static_cast<T&&>(values));
-    }
-    template<class T>
-    constexpr decltype(auto) operator()(T&& values) const
-        requires requires { FTL_RANGES_NAMESPACE::apply(function, static_cast<T&&>(values)); }
+
+    template<class G>
+        requires constructible_from<F, G>
+    constexpr explicit tuple_invoke(G&& value)
+        noexcept(is_nothrow_constructible_v<F, G>)
+        : function(static_cast<G&&>(value)) {}
+
+    template<class Tuple>
+        requires (tuple_invocable<F&, Tuple&&>())
+    constexpr decltype(auto) operator()(Tuple&& values) &
+        noexcept(tuple_nothrow_invocable<F&, Tuple&&>())
     {
-        return FTL_RANGES_NAMESPACE::apply(function, static_cast<T&&>(values));
+        return invoke_tuple(
+            function,
+            static_cast<Tuple&&>(values),
+            make_index_sequence<tuple_size_v<remove_cvref_t<Tuple>>>{}
+        );
+    }
+
+    template<class Tuple>
+        requires (tuple_invocable<const F&, Tuple&&>())
+    constexpr decltype(auto) operator()(Tuple&& values) const&
+        noexcept(tuple_nothrow_invocable<const F&, Tuple&&>())
+    {
+        return invoke_tuple(
+            function,
+            static_cast<Tuple&&>(values),
+            make_index_sequence<tuple_size_v<remove_cvref_t<Tuple>>>{}
+        );
     }
 };
 
@@ -8949,6 +9539,29 @@ public:
             >
         >;
 };
+
+template<class V>
+concept slide_caches_nothing = random_access_range<V> && sized_range<V>;
+
+template<class V>
+concept slide_caches_last =
+    !slide_caches_nothing<V> &&
+    bidirectional_range<V> &&
+    common_range<V>;
+
+template<class V>
+concept slide_caches_first =
+    !slide_caches_nothing<V> &&
+    !slide_caches_last<V>;
+
+struct empty_slide_cache {};
+
+template<class V>
+using slide_cache_t = conditional_t<
+    slide_caches_nothing<V>,
+    empty_slide_cache,
+    non_propagating_cache<iterator_t<V>>
+>;
 
 } // namespace detail
 
@@ -9554,80 +10167,534 @@ zip_transform_view(
     views::all_t<Ranges>...
 >;
 
-template<forward_range V, size_t N> requires view<V> && (N > 0)
+template<forward_range V, size_t N>
+    requires view<V> && (N > 0)
 class adjacent_view : public view_interface<adjacent_view<V, N>> {
     V base_ = V();
-    constexpr iterator_t<V> stop() {
-        auto first = ranges::begin(base_);
-        auto probe = first;
-        if (ranges::advance(probe, static_cast<range_difference_t<V>>(N - 1), ranges::end(base_)) != 0)
-            return first;
-        while (probe != ranges::end(base_)) { ++first; ++probe; }
-        return first;
-    }
-public:
+
+    struct as_sentinel {};
+
+    template<bool Const>
+    class iterator;
+
+    template<bool Const>
+    class sentinel;
+
+    template<bool Const>
     class iterator {
-        iterator_t<V> current_{};
-        template<size_t... I> constexpr auto deref_values(index_sequence<I...>) const {
-            return tuple<decltype(*ranges::next(current_, static_cast<range_difference_t<V>>(I)))...>(
-                *ranges::next(current_, static_cast<range_difference_t<V>>(I))...);
+        using Base = detail::maybe_const_t<Const, V>;
+
+        array<iterator_t<Base>, N> current_{};
+
+        friend class adjacent_view;
+        template<bool> friend class iterator;
+        template<bool> friend class sentinel;
+
+        constexpr iterator(iterator_t<Base> first, sentinel_t<Base> last) {
+            current_[0] = FTL_RANGES_NAMESPACE::move(first);
+
+            for (size_t index = 1; index < N; ++index) {
+                current_[index] = ranges::next(current_[index - 1], 1, last);
+            }
         }
+
+        constexpr iterator(
+            as_sentinel,
+            iterator_t<Base> first,
+            iterator_t<Base> last
+        ) {
+            if constexpr (!bidirectional_range<Base>) {
+                for (size_t index = 0; index < N; ++index) {
+                    current_[index] = last;
+                }
+            } else {
+                current_[N - 1] = FTL_RANGES_NAMESPACE::move(last);
+
+                for (size_t index = N - 1; index > 0; --index) {
+                    current_[index - 1] =
+                        ranges::prev(current_[index], 1, first);
+                }
+            }
+        }
+
+        template<size_t... Index>
+        static auto value_type_impl(index_sequence<Index...>)
+            -> tuple<
+                conditional_t<
+                    true,
+                    range_value_t<Base>,
+                    integral_constant<size_t, Index>
+                >...
+            >;
+
+        template<size_t... Index>
+        constexpr auto dereference(index_sequence<Index...>) const {
+            return tuple<decltype(*current_[Index])...>(
+                *current_[Index]...
+            );
+        }
+
+        template<size_t... Index>
+        constexpr auto subscript(
+            range_difference_t<Base> offset,
+            index_sequence<Index...>
+        ) const {
+            return tuple<decltype(current_[Index][offset])...>(
+                current_[Index][offset]...
+            );
+        }
+
+        template<size_t... Index>
+        constexpr auto move_values(index_sequence<Index...>) const
+            noexcept(
+                (noexcept(ranges::iter_move(current_[Index])) && ...) &&
+                (
+                    is_nothrow_move_constructible_v<
+                        decltype(ranges::iter_move(current_[Index]))
+                    > &&
+                    ...
+                )
+            )
+        {
+            return tuple<
+                decltype(ranges::iter_move(current_[Index]))...
+            >(
+                ranges::iter_move(current_[Index])...
+            );
+        }
+
+        template<size_t... Index>
+        static constexpr void swap_values(
+            const iterator& left,
+            const iterator& right,
+            index_sequence<Index...>
+        )
+            noexcept(
+                (
+                    noexcept(
+                        ranges::iter_swap(
+                            left.current_[Index],
+                            right.current_[Index]
+                        )
+                    ) &&
+                    ...
+                )
+            )
+        {
+            (
+                ranges::iter_swap(
+                    left.current_[Index],
+                    right.current_[Index]
+                ),
+                ...
+            );
+        }
+
     public:
-        using iterator_concept = conditional_t<random_access_range<V>, random_access_iterator_tag,
-            conditional_t<bidirectional_range<V>, bidirectional_iterator_tag, forward_iterator_tag>>;
+        using iterator_concept =
+            conditional_t<
+                random_access_range<Base>,
+                random_access_iterator_tag,
+                conditional_t<
+                    bidirectional_range<Base>,
+                    bidirectional_iterator_tag,
+                    forward_iterator_tag
+                >
+            >;
+
         using iterator_category = input_iterator_tag;
-        using value_type = decltype([]<size_t... I>(index_sequence<I...>) {
-            return tuple<conditional_t<true, range_value_t<V>, integral_constant<size_t, I>>...>{};
-        }(make_index_sequence<N>{}));
-        using difference_type = range_difference_t<V>;
+
+        using value_type = decltype(
+            value_type_impl(make_index_sequence<N>{})
+        );
+
+        using difference_type = range_difference_t<Base>;
+
         iterator() = default;
-        constexpr explicit iterator(iterator_t<V> current) : current_(FTL_RANGES_NAMESPACE::move(current)) {}
-        template<class Other>
-            requires (!same_as<remove_cvref_t<Other>, iterator>) &&
-                constructible_from<iterator_t<V>, decltype(declval<const Other&>().base())>
-        constexpr iterator(const Other& other) : current_(other.base()) {}
-        constexpr auto operator*() const { return deref_values(make_index_sequence<N>{}); }
-        constexpr iterator& operator++() { ++current_; return *this; }
-        constexpr iterator operator++(int) { auto copy = *this; ++*this; return copy; }
-        constexpr iterator& operator--() requires bidirectional_range<V> { --current_; return *this; }
-        constexpr iterator operator--(int) requires bidirectional_range<V> { auto copy = *this; --*this; return copy; }
-        constexpr iterator& operator+=(difference_type n) requires random_access_range<V> { current_ += n; return *this; }
-        constexpr iterator& operator-=(difference_type n) requires random_access_range<V> { return *this += -n; }
-        constexpr auto operator[](difference_type n) const requires random_access_range<V> { return *(*this + n); }
-        friend constexpr bool operator==(const iterator&, const iterator&) = default;
-        friend constexpr bool operator<(const iterator& a, const iterator& b) requires random_access_range<V> { return a.current_ < b.current_; }
-        friend constexpr bool operator>(const iterator& a, const iterator& b) requires random_access_range<V> { return b < a; }
-        friend constexpr bool operator<=(const iterator& a, const iterator& b) requires random_access_range<V> { return !(b < a); }
-        friend constexpr bool operator>=(const iterator& a, const iterator& b) requires random_access_range<V> { return !(a < b); }
-        friend constexpr iterator operator+(iterator i, difference_type n) requires random_access_range<V> { return i += n; }
-        friend constexpr iterator operator+(difference_type n, iterator i) requires random_access_range<V> { return i += n; }
-        friend constexpr iterator operator-(iterator i, difference_type n) requires random_access_range<V> { return i -= n; }
-        friend constexpr difference_type operator-(const iterator& a, const iterator& b) requires random_access_range<V> { return a.current_ - b.current_; }
-        constexpr const iterator_t<V>& base() const noexcept { return current_; }
+
+        constexpr iterator(iterator<!Const> other)
+            requires (
+                Const &&
+                convertible_to<iterator_t<V>, iterator_t<Base>>
+            )
+        {
+            for (size_t index = 0; index < N; ++index) {
+                current_[index] =
+                    FTL_RANGES_NAMESPACE::move(other.current_[index]);
+            }
+        }
+
+        constexpr auto operator*() const {
+            return dereference(make_index_sequence<N>{});
+        }
+
+        constexpr iterator& operator++() {
+            for (size_t index = 0; index < N; ++index) {
+                ++current_[index];
+            }
+
+            return *this;
+        }
+
+        constexpr iterator operator++(int) {
+            auto previous = *this;
+            ++*this;
+            return previous;
+        }
+
+        constexpr iterator& operator--()
+            requires bidirectional_range<Base>
+        {
+            for (size_t index = 0; index < N; ++index) {
+                --current_[index];
+            }
+
+            return *this;
+        }
+
+        constexpr iterator operator--(int)
+            requires bidirectional_range<Base>
+        {
+            auto previous = *this;
+            --*this;
+            return previous;
+        }
+
+        constexpr iterator& operator+=(difference_type offset)
+            requires random_access_range<Base>
+        {
+            for (size_t index = 0; index < N; ++index) {
+                current_[index] += offset;
+            }
+
+            return *this;
+        }
+
+        constexpr iterator& operator-=(difference_type offset)
+            requires random_access_range<Base>
+        {
+            for (size_t index = 0; index < N; ++index) {
+                current_[index] -= offset;
+            }
+
+            return *this;
+        }
+
+        constexpr auto operator[](difference_type offset) const
+            requires random_access_range<Base>
+        {
+            return subscript(offset, make_index_sequence<N>{});
+        }
+
+        friend constexpr bool operator==(
+            const iterator& left,
+            const iterator& right
+        ) {
+            return left.current_[N - 1] == right.current_[N - 1];
+        }
+
+        friend constexpr bool operator<(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base>
+        {
+            return left.current_[N - 1] < right.current_[N - 1];
+        }
+
+        friend constexpr bool operator>(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base>
+        {
+            return right < left;
+        }
+
+        friend constexpr bool operator<=(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base>
+        {
+            return !(right < left);
+        }
+
+        friend constexpr bool operator>=(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base>
+        {
+            return !(left < right);
+        }
+
+        friend constexpr auto operator<=>(
+            const iterator& left,
+            const iterator& right
+        )
+            requires (
+                random_access_range<Base> &&
+                three_way_comparable<iterator_t<Base>>
+            )
+        {
+            return left.current_[N - 1] <=> right.current_[N - 1];
+        }
+
+        friend constexpr iterator operator+(
+            const iterator& value,
+            difference_type offset
+        )
+            requires random_access_range<Base>
+        {
+            auto result = value;
+            result += offset;
+            return result;
+        }
+
+        friend constexpr iterator operator+(
+            difference_type offset,
+            const iterator& value
+        )
+            requires random_access_range<Base>
+        {
+            return value + offset;
+        }
+
+        friend constexpr iterator operator-(
+            const iterator& value,
+            difference_type offset
+        )
+            requires random_access_range<Base>
+        {
+            auto result = value;
+            result -= offset;
+            return result;
+        }
+
+        friend constexpr difference_type operator-(
+            const iterator& left,
+            const iterator& right
+        )
+            requires sized_sentinel_for<
+                iterator_t<Base>,
+                iterator_t<Base>
+            >
+        {
+            return left.current_[N - 1] - right.current_[N - 1];
+        }
+
+        friend constexpr auto iter_move(const iterator& value)
+            noexcept(
+                noexcept(
+                    value.move_values(make_index_sequence<N>{})
+                )
+            )
+        {
+            return value.move_values(make_index_sequence<N>{});
+        }
+
+        friend constexpr void iter_swap(
+            const iterator& left,
+            const iterator& right
+        )
+            noexcept(
+                noexcept(
+                    swap_values(
+                        left,
+                        right,
+                        make_index_sequence<N>{}
+                    )
+                )
+            )
+            requires indirectly_swappable<iterator_t<Base>>
+        {
+            swap_values(left, right, make_index_sequence<N>{});
+        }
     };
-    adjacent_view() requires default_initializable<V> = default;
-    constexpr explicit adjacent_view(V base) : base_(FTL_RANGES_NAMESPACE::move(base)) {}
-    constexpr V base() const& requires copy_constructible<V> { return base_; }
-    constexpr V base() && { return FTL_RANGES_NAMESPACE::move(base_); }
-    constexpr iterator begin() { return iterator(ranges::begin(base_)); }
-    constexpr iterator end() { return iterator(stop()); }
-    constexpr auto begin() const requires forward_range<const V> {
-        using C = views::all_t<const V&>;
-        return adjacent_view<C, N>(views::all(base_)).begin();
+
+    template<bool Const>
+    class sentinel {
+        using Base = detail::maybe_const_t<Const, V>;
+
+        sentinel_t<Base> end_{};
+
+        friend class adjacent_view;
+        template<bool> friend class sentinel;
+
+        constexpr explicit sentinel(sentinel_t<Base> end)
+            : end_(FTL_RANGES_NAMESPACE::move(end)) {}
+
+        template<bool OtherConst>
+        constexpr bool equal(const iterator<OtherConst>& value) const
+            requires sentinel_for<
+                sentinel_t<Base>,
+                iterator_t<
+                    detail::maybe_const_t<OtherConst, V>
+                >
+            >
+        {
+            return value.current_[N - 1] == end_;
+        }
+
+        template<bool OtherConst>
+        constexpr auto distance_from(
+            const iterator<OtherConst>& value
+        ) const
+            requires sized_sentinel_for<
+                sentinel_t<Base>,
+                iterator_t<
+                    detail::maybe_const_t<OtherConst, V>
+                >
+            >
+        {
+            return end_ - value.current_[N - 1];
+        }
+
+    public:
+        sentinel() = default;
+
+        constexpr sentinel(sentinel<!Const> other)
+            requires (
+                Const &&
+                convertible_to<sentinel_t<V>, sentinel_t<Base>>
+            )
+            : end_(FTL_RANGES_NAMESPACE::move(other.end_)) {}
+
+        template<bool OtherConst>
+        friend constexpr bool operator==(
+            const iterator<OtherConst>& value,
+            const sentinel& bound
+        )
+            requires sentinel_for<
+                sentinel_t<Base>,
+                iterator_t<
+                    detail::maybe_const_t<OtherConst, V>
+                >
+            >
+        {
+            return bound.equal(value);
+        }
+
+        template<bool OtherConst>
+        friend constexpr auto operator-(
+            const iterator<OtherConst>& value,
+            const sentinel& bound
+        )
+            requires sized_sentinel_for<
+                sentinel_t<Base>,
+                iterator_t<
+                    detail::maybe_const_t<OtherConst, V>
+                >
+            >
+        {
+            return -bound.distance_from(value);
+        }
+
+        template<bool OtherConst>
+        friend constexpr auto operator-(
+            const sentinel& bound,
+            const iterator<OtherConst>& value
+        )
+            requires sized_sentinel_for<
+                sentinel_t<Base>,
+                iterator_t<
+                    detail::maybe_const_t<OtherConst, V>
+                >
+            >
+        {
+            return bound.distance_from(value);
+        }
+    };
+
+public:
+    adjacent_view()
+        requires default_initializable<V>
+        = default;
+
+    constexpr explicit adjacent_view(V base)
+        : base_(FTL_RANGES_NAMESPACE::move(base)) {}
+
+    constexpr V base() const&
+        requires copy_constructible<V>
+    {
+        return base_;
     }
-    constexpr auto end() const requires forward_range<const V> {
-        using C = views::all_t<const V&>;
-        return adjacent_view<C, N>(views::all(base_)).end();
+
+    constexpr V base() && {
+        return FTL_RANGES_NAMESPACE::move(base_);
     }
-    constexpr auto size() requires sized_range<V> {
+
+    constexpr auto begin()
+        requires (!detail::simple_view<V>)
+    {
+        return iterator<false>(
+            ranges::begin(base_),
+            ranges::end(base_)
+        );
+    }
+
+    constexpr auto begin() const
+        requires range<const V>
+    {
+        return iterator<true>(
+            ranges::begin(base_),
+            ranges::end(base_)
+        );
+    }
+
+    constexpr auto end()
+        requires (!detail::simple_view<V>)
+    {
+        if constexpr (common_range<V>) {
+            return iterator<false>(
+                as_sentinel{},
+                ranges::begin(base_),
+                ranges::end(base_)
+            );
+        } else {
+            return sentinel<false>(ranges::end(base_));
+        }
+    }
+
+    constexpr auto end() const
+        requires range<const V>
+    {
+        if constexpr (common_range<const V>) {
+            return iterator<true>(
+                as_sentinel{},
+                ranges::begin(base_),
+                ranges::end(base_)
+            );
+        } else {
+            return sentinel<true>(ranges::end(base_));
+        }
+    }
+
+    constexpr auto size()
+        requires sized_range<V>
+    {
         auto count = ranges::size(base_);
-        auto width = static_cast<decltype(count)>(N);
-        return count < width ? 0 : count - width + 1;
+        using common_type = common_type_t<decltype(count), size_t>;
+
+        auto result = static_cast<common_type>(count);
+        auto removed = static_cast<common_type>(N - 1);
+
+        result -= result < removed ? result : removed;
+        return static_cast<decltype(count)>(result);
     }
-    constexpr auto size() const requires sized_range<const V> {
+
+    constexpr auto size() const
+        requires sized_range<const V>
+    {
         auto count = ranges::size(base_);
-        auto width = static_cast<decltype(count)>(N);
-        return count < width ? 0 : count - width + 1;
+        using common_type = common_type_t<decltype(count), size_t>;
+
+        auto result = static_cast<common_type>(count);
+        auto removed = static_cast<common_type>(N - 1);
+
+        result -= result < removed ? result : removed;
+        return static_cast<decltype(count)>(result);
     }
 };
 
@@ -9638,78 +10705,376 @@ template<class F, forward_range V, size_t N>
     requires view<V> && (N > 0) && is_object_v<F>
 using adjacent_transform_view = transform_view<adjacent_view<V, N>, detail::tuple_invoke<F>>;
 
-template<forward_range V> requires view<V>
+template<forward_range V>
+    requires view<V>
 class slide_view : public view_interface<slide_view<V>> {
     V base_ = V();
     range_difference_t<V> count_ = 1;
-    constexpr iterator_t<V> stop() {
-        auto first = ranges::begin(base_);
-        auto probe = first;
-        if (ranges::advance(probe, count_ - 1, ranges::end(base_)) != 0) return first;
-        while (probe != ranges::end(base_)) { ++first; ++probe; }
-        return first;
-    }
-public:
+
+    FTL_NO_UNIQUE_ADDRESS detail::slide_cache_t<V> cache_;
+
+    class sentinel;
+
+    template<bool Const>
     class iterator {
-        iterator_t<V> current_{};
-        range_difference_t<V> count_ = 1;
-    public:
-        using iterator_concept = conditional_t<random_access_range<V>, random_access_iterator_tag,
-            conditional_t<bidirectional_range<V>, bidirectional_iterator_tag, forward_iterator_tag>>;
-        using iterator_category = input_iterator_tag;
-        using value_type = subrange<iterator_t<V>>;
-        using difference_type = range_difference_t<V>;
-        iterator() = default;
-        constexpr iterator(iterator_t<V> current, difference_type count)
+        using Base = detail::maybe_const_t<Const, V>;
+
+        iterator_t<Base> current_{};
+        FTL_NO_UNIQUE_ADDRESS detail::maybe_present<
+            iterator_t<Base>,
+            detail::slide_caches_first<Base>
+        > last_ele_{};
+        range_difference_t<Base> count_ = 0;
+
+        friend class slide_view;
+        friend class sentinel;
+        template<bool> friend class iterator;
+
+        constexpr iterator(iterator_t<Base> current, range_difference_t<Base> count)
+            requires (!detail::slide_caches_first<Base>)
             : current_(FTL_RANGES_NAMESPACE::move(current)), count_(count) {}
-        template<class Other>
-            requires (!same_as<remove_cvref_t<Other>, iterator>) &&
-                constructible_from<iterator_t<V>, decltype(declval<const Other&>().base())>
-        constexpr iterator(const Other& other) : current_(other.base()), count_(other.count()) {}
-        constexpr auto operator*() const { return subrange(current_, ranges::next(current_, count_)); }
-        constexpr iterator& operator++() { ++current_; return *this; }
-        constexpr iterator operator++(int) { auto copy = *this; ++*this; return copy; }
-        constexpr iterator& operator--() requires bidirectional_range<V> { --current_; return *this; }
-        constexpr iterator operator--(int) requires bidirectional_range<V> { auto copy = *this; --*this; return copy; }
-        constexpr iterator& operator+=(difference_type n) requires random_access_range<V> { current_ += n; return *this; }
-        constexpr iterator& operator-=(difference_type n) requires random_access_range<V> { return *this += -n; }
-        constexpr auto operator[](difference_type n) const requires random_access_range<V> { return *(*this + n); }
-        friend constexpr bool operator==(const iterator&, const iterator&) = default;
-        friend constexpr bool operator<(const iterator& a, const iterator& b) requires random_access_range<V> { return a.current_ < b.current_; }
-        friend constexpr bool operator>(const iterator& a, const iterator& b) requires random_access_range<V> { return b < a; }
-        friend constexpr bool operator<=(const iterator& a, const iterator& b) requires random_access_range<V> { return !(b < a); }
-        friend constexpr bool operator>=(const iterator& a, const iterator& b) requires random_access_range<V> { return !(a < b); }
-        friend constexpr iterator operator+(iterator i, difference_type n) requires random_access_range<V> { return i += n; }
-        friend constexpr iterator operator+(difference_type n, iterator i) requires random_access_range<V> { return i += n; }
-        friend constexpr iterator operator-(iterator i, difference_type n) requires random_access_range<V> { return i -= n; }
-        friend constexpr difference_type operator-(const iterator& a, const iterator& b) requires random_access_range<V> { return a.current_ - b.current_; }
-        constexpr const iterator_t<V>& base() const noexcept { return current_; }
-        constexpr difference_type count() const noexcept { return count_; }
+
+        constexpr iterator(
+            iterator_t<Base> current,
+            iterator_t<Base> last_ele,
+            range_difference_t<Base> count
+        )
+            requires detail::slide_caches_first<Base>
+            : current_(FTL_RANGES_NAMESPACE::move(current)),
+              last_ele_{FTL_RANGES_NAMESPACE::move(last_ele)},
+              count_(count) {}
+
+    public:
+        using iterator_category = input_iterator_tag;
+        using iterator_concept = conditional_t<
+            random_access_range<Base>,
+            random_access_iterator_tag,
+            conditional_t<
+                bidirectional_range<Base>,
+                bidirectional_iterator_tag,
+                forward_iterator_tag
+            >
+        >;
+        using value_type = subrange<iterator_t<Base>>;
+        using difference_type = range_difference_t<Base>;
+
+        iterator() = default;
+
+        constexpr iterator(iterator<!Const> other)
+            requires Const &&
+                     convertible_to<iterator_t<V>, iterator_t<Base>>
+            : current_(FTL_RANGES_NAMESPACE::move(other.current_)),
+              count_(static_cast<difference_type>(other.count_)) {}
+
+        constexpr auto operator*() const {
+            return subrange(
+                current_,
+                ranges::next(current_, count_)
+            );
+        }
+
+        constexpr iterator& operator++() {
+            ++current_;
+            if constexpr (detail::slide_caches_first<Base>)
+                ++last_ele_.value;
+            return *this;
+        }
+
+        constexpr iterator operator++(int) {
+            auto copy = *this;
+            ++*this;
+            return copy;
+        }
+
+        constexpr iterator& operator--()
+            requires bidirectional_range<Base>
+        {
+            --current_;
+            if constexpr (detail::slide_caches_first<Base>)
+                --last_ele_.value;
+            return *this;
+        }
+
+        constexpr iterator operator--(int)
+            requires bidirectional_range<Base>
+        {
+            auto copy = *this;
+            --*this;
+            return copy;
+        }
+
+        constexpr iterator& operator+=(difference_type offset)
+            requires random_access_range<Base>
+        {
+            current_ += offset;
+            if constexpr (detail::slide_caches_first<Base>)
+                last_ele_.value += offset;
+            return *this;
+        }
+
+        constexpr iterator& operator-=(difference_type offset)
+            requires random_access_range<Base>
+        {
+            current_ -= offset;
+            if constexpr (detail::slide_caches_first<Base>)
+                last_ele_.value -= offset;
+            return *this;
+        }
+
+        constexpr auto operator[](difference_type offset) const
+            requires random_access_range<Base>
+        {
+            auto first = current_ + offset;
+            return subrange(
+                first,
+                ranges::next(first, count_)
+            );
+        }
+
+        friend constexpr bool operator==(
+            const iterator& left,
+            const iterator& right
+        ) {
+            if constexpr (detail::slide_caches_first<Base>)
+                return left.last_ele_.value == right.last_ele_.value;
+            else
+                return left.current_ == right.current_;
+        }
+
+        friend constexpr bool operator<(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base>
+        {
+            return left.current_ < right.current_;
+        }
+
+        friend constexpr bool operator>(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base>
+        {
+            return right < left;
+        }
+
+        friend constexpr bool operator<=(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base>
+        {
+            return !(right < left);
+        }
+
+        friend constexpr bool operator>=(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base>
+        {
+            return !(left < right);
+        }
+
+        friend constexpr auto operator<=>(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base> &&
+                     three_way_comparable<iterator_t<Base>>
+        {
+            return left.current_ <=> right.current_;
+        }
+
+        friend constexpr iterator operator+(
+            const iterator& value,
+            difference_type offset
+        )
+            requires random_access_range<Base>
+        {
+            auto result = value;
+            result += offset;
+            return result;
+        }
+
+        friend constexpr iterator operator+(
+            difference_type offset,
+            const iterator& value
+        )
+            requires random_access_range<Base>
+        {
+            return value + offset;
+        }
+
+        friend constexpr iterator operator-(
+            const iterator& value,
+            difference_type offset
+        )
+            requires random_access_range<Base>
+        {
+            auto result = value;
+            result -= offset;
+            return result;
+        }
+
+        friend constexpr difference_type operator-(
+            const iterator& left,
+            const iterator& right
+        )
+            requires sized_sentinel_for<iterator_t<Base>, iterator_t<Base>>
+        {
+            if constexpr (detail::slide_caches_first<Base>)
+                return left.last_ele_.value - right.last_ele_.value;
+            else
+                return left.current_ - right.current_;
+        }
     };
-    slide_view() requires default_initializable<V> = default;
+
+    class sentinel {
+        sentinel_t<V> end_{};
+
+        friend class slide_view;
+
+        constexpr explicit sentinel(sentinel_t<V> end)
+            : end_(FTL_RANGES_NAMESPACE::move(end)) {}
+
+    public:
+        sentinel() = default;
+
+        friend constexpr bool operator==(
+            const iterator<false>& value,
+            const sentinel& bound
+        ) {
+            return value.last_ele_.value == bound.end_;
+        }
+
+        friend constexpr range_difference_t<V> operator-(
+            const iterator<false>& value,
+            const sentinel& bound
+        )
+            requires sized_sentinel_for<sentinel_t<V>, iterator_t<V>>
+        {
+            return value.last_ele_.value - bound.end_;
+        }
+
+        friend constexpr range_difference_t<V> operator-(
+            const sentinel& bound,
+            const iterator<false>& value
+        )
+            requires sized_sentinel_for<sentinel_t<V>, iterator_t<V>>
+        {
+            return bound.end_ - value.last_ele_.value;
+        }
+    };
+
+public:
     constexpr explicit slide_view(V base, range_difference_t<V> count)
         : base_(FTL_RANGES_NAMESPACE::move(base)), count_(count) {}
-    constexpr V base() const& requires copy_constructible<V> { return base_; }
-    constexpr V base() && { return FTL_RANGES_NAMESPACE::move(base_); }
-    constexpr iterator begin() { return iterator(ranges::begin(base_), count_); }
-    constexpr iterator end() { return iterator(stop(), count_); }
-    constexpr auto begin() const requires forward_range<const V> {
-        using C = views::all_t<const V&>;
-        return slide_view<C>(views::all(base_), static_cast<range_difference_t<C>>(count_)).begin();
+
+    constexpr V base() const&
+        requires copy_constructible<V>
+    {
+        return base_;
     }
-    constexpr auto end() const requires forward_range<const V> {
-        using C = views::all_t<const V&>;
-        return slide_view<C>(views::all(base_), static_cast<range_difference_t<C>>(count_)).end();
+
+    constexpr V base() && {
+        return FTL_RANGES_NAMESPACE::move(base_);
     }
-    constexpr auto size() requires sized_range<V> {
-        auto size = ranges::size(base_);
-        auto count = static_cast<decltype(size)>(count_);
-        return size < count ? 0 : size - count + 1;
+
+    constexpr auto begin()
+        requires (!(
+            detail::simple_view<V> &&
+            detail::slide_caches_nothing<const V>
+        ))
+    {
+        auto first = ranges::begin(base_);
+
+        if constexpr (detail::slide_caches_first<V>) {
+            if (!cache_.has_value()) {
+                cache_.emplace(
+                    ranges::next(first, count_ - 1, ranges::end(base_))
+                );
+            }
+
+            return iterator<false>(first, *cache_, count_);
+        } else {
+            return iterator<false>(first, count_);
+        }
     }
-    constexpr auto size() const requires sized_range<const V> {
-        auto size = ranges::size(base_);
-        auto count = static_cast<decltype(size)>(count_);
-        return size < count ? 0 : size - count + 1;
+
+    constexpr auto begin() const
+        requires detail::slide_caches_nothing<const V>
+    {
+        return iterator<true>(
+            ranges::begin(base_),
+            static_cast<range_difference_t<const V>>(count_)
+        );
+    }
+
+    constexpr auto end()
+        requires (!(
+            detail::simple_view<V> &&
+            detail::slide_caches_nothing<const V>
+        ))
+    {
+        if constexpr (detail::slide_caches_nothing<V>) {
+            return iterator<false>(
+                ranges::begin(base_) +
+                    static_cast<range_difference_t<V>>(size()),
+                count_
+            );
+        } else if constexpr (detail::slide_caches_last<V>) {
+            if (!cache_.has_value()) {
+                cache_.emplace(
+                    ranges::prev(
+                        ranges::end(base_),
+                        count_ - 1,
+                        ranges::begin(base_)
+                    )
+                );
+            }
+
+            return iterator<false>(*cache_, count_);
+        } else if constexpr (common_range<V>) {
+            return iterator<false>(
+                ranges::end(base_),
+                ranges::end(base_),
+                count_
+            );
+        } else {
+            return sentinel(ranges::end(base_));
+        }
+    }
+
+    constexpr auto end() const
+        requires detail::slide_caches_nothing<const V>
+    {
+        return begin() +
+            static_cast<range_difference_t<const V>>(size());
+    }
+
+    constexpr auto size()
+        requires sized_range<V>
+    {
+        auto result = ranges::distance(base_) - count_ + 1;
+        if (result < 0)
+            result = 0;
+        return detail::to_unsigned_like(result);
+    }
+
+    constexpr auto size() const
+        requires sized_range<const V>
+    {
+        auto result =
+            ranges::distance(base_) -
+            static_cast<range_difference_t<const V>>(count_) +
+            1;
+
+        if (result < 0)
+            result = 0;
+
+        return detail::to_unsigned_like(result);
     }
 };
 
@@ -9792,101 +11157,378 @@ chunk_by_view(R&&, Pred) -> chunk_by_view<views::all_t<R>, Pred>;
 template<view V, bool = forward_range<V>> requires input_range<V>
 class chunk_view;
 
-template<view V> requires forward_range<V>
+template<forward_range V>
+    requires view<V>
 class chunk_view<V, true> : public view_interface<chunk_view<V, true>> {
     V base_ = V();
     range_difference_t<V> count_ = 1;
-public:
+
+    template<bool Const>
     class iterator {
-        iterator_t<V> current_{};
-        sentinel_t<V> end_{};
-        range_difference_t<V> count_ = 1;
-        range_difference_t<V> missing_ = 0;
+        using Base = detail::maybe_const_t<Const, V>;
+
+        iterator_t<Base> current_{};
+        sentinel_t<Base> end_{};
+        range_difference_t<Base> count_ = 1;
+        range_difference_t<Base> missing_ = 0;
+
+        friend class chunk_view;
+        template<bool> friend class iterator;
+
+        constexpr iterator(iterator_t<Base> current, sentinel_t<Base> end,
+                           range_difference_t<Base> count,
+                           range_difference_t<Base> missing = 0)
+            : current_(FTL_RANGES_NAMESPACE::move(current)),
+              end_(FTL_RANGES_NAMESPACE::move(end)),
+              count_(count),
+              missing_(missing) {}
+
     public:
-        using iterator_concept = conditional_t<random_access_range<V>, random_access_iterator_tag,
-            conditional_t<bidirectional_range<V>, bidirectional_iterator_tag, forward_iterator_tag>>;
+        using iterator_concept =
+            conditional_t<random_access_range<Base>, random_access_iterator_tag,
+            conditional_t<bidirectional_range<Base>, bidirectional_iterator_tag,
+                          forward_iterator_tag>>;
+
         using iterator_category = input_iterator_tag;
-        using value_type = subrange<iterator_t<V>>;
-        using difference_type = range_difference_t<V>;
+        using value_type = decltype(
+            views::take(
+                subrange(current_, end_),
+                count_
+            )
+        );
+        using difference_type = range_difference_t<Base>;
+
         iterator() = default;
-        constexpr iterator(iterator_t<V> current, sentinel_t<V> end, difference_type count, difference_type missing = 0)
-            : current_(FTL_RANGES_NAMESPACE::move(current)), end_(FTL_RANGES_NAMESPACE::move(end)),
-              count_(count), missing_(missing) {}
-        template<class Other>
-            requires (!same_as<remove_cvref_t<Other>, iterator>) &&
-                constructible_from<iterator_t<V>, decltype(declval<const Other&>().base())> &&
-                constructible_from<sentinel_t<V>, decltype(declval<const Other&>().end_base())>
-        constexpr iterator(const Other& other)
-            : current_(other.base()), end_(other.end_base()), count_(other.count()), missing_(other.missing()) {}
-        constexpr auto operator*() const { return subrange(current_, ranges::next(current_, count_, end_)); }
-        constexpr iterator& operator++() { missing_ = ranges::advance(current_, count_, end_); return *this; }
-        constexpr iterator operator++(int) { auto copy = *this; ++*this; return copy; }
-        constexpr iterator& operator--() requires bidirectional_range<V> {
-            ranges::advance(current_, missing_ - count_); missing_ = 0; return *this;
+
+        constexpr iterator(iterator<!Const> other)
+            requires Const &&
+                     convertible_to<iterator_t<V>, iterator_t<Base>> &&
+                     convertible_to<sentinel_t<V>, sentinel_t<Base>>
+            : current_(FTL_RANGES_NAMESPACE::move(other.current_)),
+              end_(FTL_RANGES_NAMESPACE::move(other.end_)),
+              count_(static_cast<difference_type>(other.count_)),
+              missing_(static_cast<difference_type>(other.missing_)) {}
+
+        constexpr iterator_t<Base> base() const {
+            return current_;
         }
-        constexpr iterator operator--(int) requires bidirectional_range<V> { auto copy = *this; --*this; return copy; }
-        constexpr iterator& operator+=(difference_type n) requires random_access_range<V> {
-            if (n > 0) missing_ = ranges::advance(current_, count_ * n, end_);
-            else if (n < 0) { ranges::advance(current_, count_ * n + missing_); missing_ = 0; }
+
+        constexpr value_type operator*() const {
+            return views::take(
+                subrange(current_, end_),
+                count_
+            );
+        }
+
+        constexpr iterator& operator++() {
+            missing_ = ranges::advance(current_, count_, end_);
             return *this;
         }
-        constexpr iterator& operator-=(difference_type n) requires random_access_range<V> { return *this += -n; }
-        constexpr auto operator[](difference_type n) const requires random_access_range<V> { return *(*this + n); }
-        friend constexpr bool operator==(const iterator& a, const iterator& b) { return a.current_ == b.current_; }
-        friend constexpr bool operator<(const iterator& a, const iterator& b) requires random_access_range<V> { return a.current_ < b.current_; }
-        friend constexpr bool operator>(const iterator& a, const iterator& b) requires random_access_range<V> { return b < a; }
-        friend constexpr bool operator<=(const iterator& a, const iterator& b) requires random_access_range<V> { return !(b < a); }
-        friend constexpr bool operator>=(const iterator& a, const iterator& b) requires random_access_range<V> { return !(a < b); }
-        friend constexpr iterator operator+(iterator i, difference_type n) requires random_access_range<V> { return i += n; }
-        friend constexpr iterator operator+(difference_type n, iterator i) requires random_access_range<V> { return i += n; }
-        friend constexpr iterator operator-(iterator i, difference_type n) requires random_access_range<V> { return i -= n; }
-        friend constexpr difference_type operator-(const iterator& a, const iterator& b) requires random_access_range<V> {
-            return (a.current_ - b.current_ + a.missing_ - b.missing_) / a.count_;
+
+        constexpr iterator operator++(int) {
+            auto copy = *this;
+            ++*this;
+            return copy;
         }
-        constexpr const iterator_t<V>& base() const noexcept { return current_; }
-        constexpr const sentinel_t<V>& end_base() const noexcept { return end_; }
-        constexpr difference_type count() const noexcept { return count_; }
-        constexpr difference_type missing() const noexcept { return missing_; }
+
+        constexpr iterator& operator--()
+            requires bidirectional_range<Base>
+        {
+            ranges::advance(current_, missing_ - count_);
+            missing_ = 0;
+            return *this;
+        }
+
+        constexpr iterator operator--(int)
+            requires bidirectional_range<Base>
+        {
+            auto copy = *this;
+            --*this;
+            return copy;
+        }
+
+        constexpr iterator& operator+=(difference_type offset)
+            requires random_access_range<Base>
+        {
+            if (offset > 0) {
+                ranges::advance(current_, count_ * (offset - 1));
+                missing_ = ranges::advance(current_, count_, end_);
+            } else if (offset < 0) {
+                ranges::advance(current_, count_ * offset + missing_);
+                missing_ = 0;
+            }
+
+            return *this;
+        }
+
+        constexpr iterator& operator-=(difference_type offset)
+            requires random_access_range<Base>
+        {
+            return *this += -offset;
+        }
+
+        constexpr value_type operator[](difference_type offset) const
+            requires random_access_range<Base>
+        {
+            return views::take(
+                subrange(current_ + offset * count_, end_),
+                count_
+            );
+        }
+
+        friend constexpr bool operator==(
+            const iterator& left,
+            const iterator& right
+        ) {
+            return left.current_ == right.current_;
+        }
+
+        friend constexpr bool operator==(
+            const iterator& value,
+            default_sentinel_t
+        ) {
+            return value.current_ == value.end_;
+        }
+
+        friend constexpr bool operator<(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base>
+        {
+            return left.current_ < right.current_;
+        }
+
+        friend constexpr bool operator>(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base>
+        {
+            return right < left;
+        }
+
+        friend constexpr bool operator<=(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base>
+        {
+            return !(right < left);
+        }
+
+        friend constexpr bool operator>=(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base>
+        {
+            return !(left < right);
+        }
+
+        friend constexpr auto operator<=>(
+            const iterator& left,
+            const iterator& right
+        )
+            requires random_access_range<Base> &&
+                     three_way_comparable<iterator_t<Base>>
+        {
+            return left.current_ <=> right.current_;
+        }
+
+        friend constexpr iterator operator+(
+            const iterator& value,
+            difference_type offset
+        )
+            requires random_access_range<Base>
+        {
+            auto result = value;
+            result += offset;
+            return result;
+        }
+
+        friend constexpr iterator operator+(
+            difference_type offset,
+            const iterator& value
+        )
+            requires random_access_range<Base>
+        {
+            return value + offset;
+        }
+
+        friend constexpr iterator operator-(
+            const iterator& value,
+            difference_type offset
+        )
+            requires random_access_range<Base>
+        {
+            auto result = value;
+            result -= offset;
+            return result;
+        }
+
+        friend constexpr difference_type operator-(
+            const iterator& left,
+            const iterator& right
+        )
+            requires sized_sentinel_for<
+                iterator_t<Base>,
+                iterator_t<Base>
+            >
+        {
+            return (
+                left.current_ -
+                right.current_ +
+                left.missing_ -
+                right.missing_
+            ) / left.count_;
+        }
+
+        friend constexpr difference_type operator-(
+            default_sentinel_t,
+            const iterator& value
+        )
+            requires sized_sentinel_for<
+                sentinel_t<Base>,
+                iterator_t<Base>
+            >
+        {
+            auto distance = value.end_ - value.current_;
+            return (
+                distance +
+                value.count_ -
+                1
+            ) / value.count_;
+        }
+
+        friend constexpr difference_type operator-(
+            const iterator& value,
+            default_sentinel_t sentinel
+        )
+            requires sized_sentinel_for<
+                sentinel_t<Base>,
+                iterator_t<Base>
+            >
+        {
+            return -(sentinel - value);
+        }
     };
-    class sentinel {
-        sentinel_t<V> end_{};
-    public:
-        sentinel() = default;
-        constexpr explicit sentinel(sentinel_t<V> end) : end_(FTL_RANGES_NAMESPACE::move(end)) {}
-        template<class Other> requires constructible_from<sentinel_t<V>, decltype(declval<const Other&>().base())>
-        constexpr sentinel(const Other& other) : end_(other.base()) {}
-        constexpr const sentinel_t<V>& base() const noexcept { return end_; }
-        friend constexpr bool operator==(const iterator& current, const sentinel& end) { return current.base() == end.end_; }
-    };
-    chunk_view() requires default_initializable<V> = default;
+
+public:
+    chunk_view()
+        requires default_initializable<V>
+        = default;
+
     constexpr explicit chunk_view(V base, range_difference_t<V> count)
-        : base_(FTL_RANGES_NAMESPACE::move(base)), count_(count) {}
-    constexpr V base() const& requires copy_constructible<V> { return base_; }
-    constexpr V base() && { return FTL_RANGES_NAMESPACE::move(base_); }
-    constexpr iterator begin() { return iterator(ranges::begin(base_), ranges::end(base_), count_); }
-    constexpr auto begin() const requires forward_range<const V> {
-        using C = views::all_t<const V&>;
-        return chunk_view<C>(views::all(base_), static_cast<range_difference_t<C>>(count_)).begin();
+        : base_(FTL_RANGES_NAMESPACE::move(base)),
+          count_(count) {}
+
+    constexpr V base() const&
+        requires copy_constructible<V>
+    {
+        return base_;
     }
-    constexpr auto end() {
-        if constexpr (common_range<V>) {
-            range_difference_t<V> missing = 0;
-            if constexpr (sized_range<V>) missing = (count_ - ranges::distance(base_) % count_) % count_;
-            auto last = ranges::end(base_);
-            return iterator(last, last, count_, missing);
-        } else return sentinel(ranges::end(base_));
+
+    constexpr V base() && {
+        return FTL_RANGES_NAMESPACE::move(base_);
     }
-    constexpr auto end() const requires forward_range<const V> {
-        using C = views::all_t<const V&>;
-        return chunk_view<C>(views::all(base_), static_cast<range_difference_t<C>>(count_)).end();
+
+    constexpr auto begin()
+        requires (!detail::simple_view<V>)
+    {
+        return iterator<false>(
+            ranges::begin(base_),
+            ranges::end(base_),
+            count_
+        );
     }
-    constexpr auto size() requires sized_range<V> {
+
+    constexpr auto begin() const
+        requires forward_range<const V>
+    {
+        return iterator<true>(
+            ranges::begin(base_),
+            ranges::end(base_),
+            static_cast<range_difference_t<const V>>(count_)
+        );
+    }
+
+    constexpr auto end()
+        requires (!detail::simple_view<V>)
+    {
+        if constexpr (common_range<V> && sized_range<V>) {
+            auto missing =
+                (count_ - ranges::distance(base_) % count_) %
+                count_;
+
+            return iterator<false>(
+                ranges::end(base_),
+                ranges::end(base_),
+                count_,
+                missing
+            );
+        } else if constexpr (
+            common_range<V> &&
+            !bidirectional_range<V>
+        ) {
+            return iterator<false>(
+                ranges::end(base_),
+                ranges::end(base_),
+                count_
+            );
+        } else {
+            return default_sentinel;
+        }
+    }
+
+    constexpr auto end() const
+        requires forward_range<const V>
+    {
+        using difference_type = range_difference_t<const V>;
+        auto count = static_cast<difference_type>(count_);
+
+        if constexpr (
+            common_range<const V> &&
+            sized_range<const V>
+        ) {
+            auto missing =
+                (count - ranges::distance(base_) % count) %
+                count;
+
+            return iterator<true>(
+                ranges::end(base_),
+                ranges::end(base_),
+                count,
+                missing
+            );
+        } else if constexpr (
+            common_range<const V> &&
+            !bidirectional_range<const V>
+        ) {
+            return iterator<true>(
+                ranges::end(base_),
+                ranges::end(base_),
+                count
+            );
+        } else {
+            return default_sentinel;
+        }
+    }
+
+    constexpr auto size()
+        requires sized_range<V>
+    {
         auto size = ranges::size(base_);
-        return (size + static_cast<decltype(size)>(count_ - 1)) / static_cast<decltype(size)>(count_);
+        auto count = static_cast<decltype(size)>(count_);
+        return (size + count - 1) / count;
     }
-    constexpr auto size() const requires sized_range<const V> {
+
+    constexpr auto size() const
+        requires sized_range<const V>
+    {
         auto size = ranges::size(base_);
-        return (size + static_cast<decltype(size)>(count_ - 1)) / static_cast<decltype(size)>(count_);
+        auto count = static_cast<decltype(size)>(count_);
+        return (size + count - 1) / count;
     }
 };
 
@@ -10532,64 +12174,37 @@ struct adjacent_fn : range_adaptor_closure<adjacent_fn<N>> {
         return adjacent_view<all_t<R>, N>(all(static_cast<R&&>(range)));
     }
 };
+
+template<class F, class R, size_t N>
+consteval bool adjacent_transform_adaptor_constraints() {
+    if constexpr (N == 0) {
+        return false;
+    } else {
+        using function_type = decay_t<F>;
+        using base_type = all_t<R>;
+
+        return forward_range<base_type> &&
+               move_constructible<function_type> &&
+               is_object_v<function_type> &&
+               constructible_from<function_type, F> &&
+               adjacent_transformable<function_type, base_type, N>;
+    }
+}
+
 template<size_t N>
 struct adjacent_transform_fn {
-    template<
-        class F,
-        viewable_range R
-    >
-        requires (
-            N > 0 &&
-            forward_range<all_t<R>> &&
-            move_constructible<
-                decay_t<F>
-            > &&
-            is_object_v<
-                decay_t<F>
-            > &&
-            constructible_from<
-                decay_t<F>,
-                F
-            > &&
-            adjacent_transformable<
-                decay_t<F>,
-                all_t<R>,
-                N
-            >
-        )
-    constexpr auto operator()(
-        R&& range,
-        F&& function
-    ) const {
-        using function_type =
-            decay_t<F>;
+    template<class F, viewable_range R>
+    requires (adjacent_transform_adaptor_constraints<F, R, N>())
+    constexpr auto operator()(R&& range, F&& function) const {
+        using function_type = decay_t<F>;
+        using base_type = all_t<R>;
 
-        using base_type =
-            all_t<R>;
-
-        return adjacent_transform_view<
-            function_type,
-            base_type,
-            N
-        >(
-            adjacent_view<
-                base_type,
-                N
-            >(
-                all(
-                    static_cast<R&&>(
-                        range
-                    )
-                )
+        return adjacent_transform_view<function_type, base_type, N>(
+            adjacent_view<base_type, N>(
+                all(static_cast<R&&>(range))
             ),
-            tuple_invoke<
-                function_type
-            >{
-                function_type(
-                    static_cast<F&&>(
-                        function
-                    )
-                )
+            tuple_invoke<function_type>{
+                function_type(static_cast<F&&>(function))
             }
         );
     }

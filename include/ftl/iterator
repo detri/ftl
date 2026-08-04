@@ -1164,6 +1164,7 @@ public:
         : current(iterator) {}
 
     template<class U>
+        requires (!same_as<U, Iterator> && convertible_to<const U&, Iterator>)
     constexpr reverse_iterator(const reverse_iterator<U>& other)
         : current(other.base()) {}
 

@@ -198,6 +198,7 @@ foreach(header IN ITEMS
         basic_const_iterator
         ranges_adaptor_constraints
         ranges_adaptor_callables
+        ranges_iterator_interop
 )
     add_ftl_test(${header})
 endforeach()
