@@ -11618,6 +11618,32 @@ chunk_view(R&&, range_difference_t<views::all_t<R>>) -> chunk_view<views::all_t<
 template<class V, bool Forward>
 inline constexpr bool enable_borrowed_range<chunk_view<V, Forward>> = Forward && enable_borrowed_range<V>;
 
+namespace detail {
+
+template<class R>
+concept cartesian_product_common_argument =
+    common_range<R> ||
+    (
+        random_access_range<R> &&
+        sized_range<R>
+    );
+
+template<cartesian_product_common_argument R>
+constexpr auto
+cartesian_product_common_argument_end(
+    R& range
+) {
+    if constexpr (common_range<R>) {
+        return ranges::end(range);
+    } else {
+        return
+            ranges::begin(range) +
+            ranges::distance(range);
+    }
+}
+
+} // namespace detail
+
 template<input_range First, forward_range... Views>
     requires view<First> && (view<Views> && ...)
 class cartesian_product_view : public view_interface<cartesian_product_view<First, Views...>> {
@@ -11706,7 +11732,23 @@ public:
         }
         constexpr iterator& operator-=(difference_type n) requires same_as<iterator_concept, random_access_iterator_tag> { return *this += -n; }
         constexpr auto operator[](difference_type n) const requires same_as<iterator_concept, random_access_iterator_tag> { return *(*this + n); }
-        friend constexpr bool operator==(const iterator& a, const iterator& b) requires forward_range<base_t<Const, First>> { return a.done_ == b.done_ && (a.done_ || a.current_ == b.current_); }
+        friend constexpr bool operator==(
+            const iterator& a,
+            const iterator& b
+        )
+            requires equality_comparable<
+                iterator_t<
+                    base_t<Const, First>
+                >
+            >
+        {
+            return
+                a.done_ == b.done_ &&
+                (
+                    a.done_ ||
+                    a.current_ == b.current_
+                );
+        }
         friend constexpr bool operator==(const iterator& current, default_sentinel_t) { return current.done_; }
         friend constexpr bool operator<(const iterator& a, const iterator& b) requires same_as<iterator_concept, random_access_iterator_tag> { return a.position_ < b.position_; }
         friend constexpr bool operator>(const iterator& a, const iterator& b) requires same_as<iterator_concept, random_access_iterator_tag> { return b < a; }
@@ -11734,7 +11776,95 @@ public:
             return iterator<true>(*this, FTL_RANGES_NAMESPACE::move(current), done);
         }(make_index_sequence<count>{});
     }
-    constexpr default_sentinel_t end() const noexcept { return {}; }
+    constexpr iterator<false> end()
+        requires detail::
+            cartesian_product_common_argument<
+                First
+            >
+    {
+        return [&]<size_t... I>(
+            index_sequence<I...>
+        ) {
+            auto current =
+                tuple<
+                    iterator_t<First>,
+                    iterator_t<Views>...
+                >(
+                    detail::
+                        cartesian_product_common_argument_end(
+                            get<0>(views_)
+                        ),
+                    ranges::begin(
+                        get<I + 1>(views_)
+                    )...
+                );
+
+            return iterator<false>(
+                *this,
+                FTL_RANGES_NAMESPACE::move(
+                    current
+                ),
+                true
+            );
+        }(
+            make_index_sequence<
+                sizeof...(Views)
+            >{}
+        );
+    }
+
+    constexpr iterator<true> end() const
+        requires (
+            input_range<const First> &&
+            (
+                forward_range<
+                    const Views
+                > &&
+                ...
+            ) &&
+            detail::
+                cartesian_product_common_argument<
+                    const First
+                >
+        )
+    {
+        return [&]<size_t... I>(
+            index_sequence<I...>
+        ) {
+            auto current =
+                tuple<
+                    iterator_t<const First>,
+                    iterator_t<
+                        const Views
+                    >...
+                >(
+                    detail::
+                        cartesian_product_common_argument_end(
+                            get<0>(views_)
+                        ),
+                    ranges::begin(
+                        get<I + 1>(views_)
+                    )...
+                );
+
+            return iterator<true>(
+                *this,
+                FTL_RANGES_NAMESPACE::move(
+                    current
+                ),
+                true
+            );
+        }(
+            make_index_sequence<
+                sizeof...(Views)
+            >{}
+        );
+    }
+
+    constexpr default_sentinel_t
+    end() const noexcept {
+        return {};
+    }
     constexpr auto size() requires sized_range<First> && (sized_range<Views> && ...) { return size_impl(make_index_sequence<count>{}); }
     constexpr auto size() const requires sized_range<const First> && (sized_range<const Views> && ...) { return size_impl(make_index_sequence<count>{}); }
 };
