@@ -87,5 +87,15 @@
 #define __cpp_lib_optional 202110L
 #define __cpp_lib_coroutine 201902L
 #define __cpp_lib_span 202002L
+#define __cpp_lib_ranges 202110L
+#define __cpp_lib_ranges_zip 202110L
+#define __cpp_lib_ranges_chunk 202202L
+#define __cpp_lib_ranges_slide 202202L
+#define __cpp_lib_ranges_chunk_by 202202L
+#define __cpp_lib_ranges_stride 202207L
+#define __cpp_lib_ranges_cartesian_product 202207L
+#define __cpp_lib_ranges_as_const 202207L
+#define __cpp_lib_ranges_enumerate 202302L
+#define __cpp_lib_ranges_repeat 202207L
 
 #endif

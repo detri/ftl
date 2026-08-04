@@ -8,6 +8,7 @@
 #include <ftl/expected>
 #include <ftl/optional>
 #include <ftl/variant>
+#include <ftl/ranges>
 
 #if __cpp_lib_byte != 201603L
 #error <cstddef> must advertise std::byte
@@ -74,6 +75,15 @@
 #if __cpp_lib_any != 201606L || __cpp_lib_expected != 202211L || \
     __cpp_lib_optional != 202110L || __cpp_lib_variant != 202106L
 #error Stage 2.5 vocabulary feature macros are incomplete
+#endif
+
+#if __cpp_lib_ranges != 202110L || __cpp_lib_ranges_zip != 202110L || \
+    __cpp_lib_ranges_chunk != 202202L || __cpp_lib_ranges_slide != 202202L || \
+    __cpp_lib_ranges_chunk_by != 202202L || __cpp_lib_ranges_stride != 202207L || \
+    __cpp_lib_ranges_cartesian_product != 202207L || \
+    __cpp_lib_ranges_as_const != 202207L || __cpp_lib_ranges_enumerate != 202302L || \
+    __cpp_lib_ranges_repeat != 202207L
+#error <ranges> must advertise its completed C++23 facilities
 #endif
 
 int main() {}

@@ -1576,9 +1576,11 @@ concept constant_iterator =
 template<input_iterator Iterator>
 class basic_const_iterator {
 private:
+    template<input_iterator> friend class basic_const_iterator;
     Iterator current{};
 
 public:
+    using basic_const_iterator_tag = void;
     using iterator_concept = detail::iter_concept_t<Iterator>;
     using iterator_category =
         typename iterator_traits<Iterator>::iterator_category;
@@ -1666,7 +1668,22 @@ public:
         return static_cast<reference>(current[offset]);
     }
 
-    template<class U>
+    friend constexpr bool operator==(
+        const basic_const_iterator& left,
+        const basic_const_iterator& right
+    ) requires equality_comparable<Iterator> {
+        return left.current == right.current;
+    }
+
+    template<input_iterator U> requires (!same_as<U, Iterator>) && equality_comparable_with<Iterator, U>
+    friend constexpr bool operator==(
+        const basic_const_iterator& left,
+        const basic_const_iterator<U>& right
+    ) {
+        return left.current == right.current;
+    }
+
+    template<class U> requires (!requires { typename remove_cvref_t<U>::basic_const_iterator_tag; })
     friend constexpr bool operator==(
         const basic_const_iterator& left,
         const U& right
@@ -1674,7 +1691,45 @@ public:
         return left.current == right;
     }
 
-    template<class U>
+    friend constexpr bool operator<(
+        const basic_const_iterator& left,
+        const basic_const_iterator& right
+    ) requires random_access_iterator<Iterator> {
+        return left.current < right.current;
+    }
+    friend constexpr bool operator>(const basic_const_iterator& left,
+        const basic_const_iterator& right) requires random_access_iterator<Iterator> {
+        return right < left;
+    }
+    friend constexpr bool operator<=(const basic_const_iterator& left,
+        const basic_const_iterator& right) requires random_access_iterator<Iterator> {
+        return !(right < left);
+    }
+    friend constexpr bool operator>=(const basic_const_iterator& left,
+        const basic_const_iterator& right) requires random_access_iterator<Iterator> {
+        return !(left < right);
+    }
+    friend constexpr auto operator<=>(const basic_const_iterator& left,
+        const basic_const_iterator& right) requires random_access_iterator<Iterator> && three_way_comparable<Iterator> {
+        return left <=> right;
+    }
+
+    template<input_iterator U> requires (!same_as<U, Iterator>) && totally_ordered_with<Iterator, U>
+    friend constexpr bool operator<(const basic_const_iterator& left, const basic_const_iterator<U>& right) {
+        return left.current < right.current;
+    }
+    template<input_iterator U> requires (!same_as<U, Iterator>) && totally_ordered_with<Iterator, U>
+    friend constexpr bool operator>(const basic_const_iterator& left, const basic_const_iterator<U>& right) { return right < left; }
+    template<input_iterator U> requires (!same_as<U, Iterator>) && totally_ordered_with<Iterator, U>
+    friend constexpr bool operator<=(const basic_const_iterator& left, const basic_const_iterator<U>& right) { return !(right < left); }
+    template<input_iterator U> requires (!same_as<U, Iterator>) && totally_ordered_with<Iterator, U>
+    friend constexpr bool operator>=(const basic_const_iterator& left, const basic_const_iterator<U>& right) { return !(left < right); }
+    template<input_iterator U> requires (!same_as<U, Iterator>) && totally_ordered_with<Iterator, U>
+    friend constexpr auto operator<=>(const basic_const_iterator& left, const basic_const_iterator<U>& right) {
+        return left.current <=> right.current;
+    }
+
+    template<class U> requires (!requires { typename remove_cvref_t<U>::basic_const_iterator_tag; })
     friend constexpr auto operator<=>(
         const basic_const_iterator& left,
         const U& right
@@ -1714,7 +1769,22 @@ public:
         return iterator;
     }
 
-    template<class U>
+    friend constexpr difference_type operator-(
+        const basic_const_iterator& left,
+        const basic_const_iterator& right
+    ) requires sized_sentinel_for<Iterator, Iterator> {
+        return left.current - right.current;
+    }
+
+    template<input_iterator U> requires (!same_as<U, Iterator>) && sized_sentinel_for<Iterator, U>
+    friend constexpr difference_type operator-(
+        const basic_const_iterator& left,
+        const basic_const_iterator<U>& right
+    ) {
+        return left.current - right.current;
+    }
+
+    template<class U> requires (!requires { typename remove_cvref_t<U>::basic_const_iterator_tag; })
     friend constexpr auto operator-(
         const basic_const_iterator& left,
         const U& right
@@ -1722,7 +1792,7 @@ public:
         return left.current - right;
     }
 
-    template<class U>
+    template<class U> requires (!requires { typename remove_cvref_t<U>::basic_const_iterator_tag; })
     friend constexpr auto operator-(
         const U& left,
         const basic_const_iterator& right
@@ -1750,13 +1820,13 @@ using const_sentinel =
 template<input_iterator Iterator>
 constexpr const_iterator<Iterator>
 make_const_iterator(Iterator iterator) {
-    return iterator;
+    return const_iterator<Iterator>(FTL_ITER_NS::move(iterator));
 }
 
 template<semiregular Sentinel>
 constexpr const_sentinel<Sentinel>
 make_const_sentinel(Sentinel sentinel) {
-    return sentinel;
+    return const_sentinel<Sentinel>(FTL_ITER_NS::move(sentinel));
 }
 
 template<class T, common_with<T> U>

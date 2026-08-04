@@ -176,6 +176,25 @@ foreach(header IN ITEMS
         span
         ranges
         views
+        transform_views
+        common_views
+        elements_views
+        join_views
+        split_views
+        lazy_split_views
+        counted_views
+        as_const_views
+        repeat_views
+        stride_views
+        zip_views
+        enumerate_views
+        zip_transform_views
+        adjacent_views
+        slide_views
+        chunk_by_views
+        chunk_views
+        cartesian_product_views
+        ranges_audit
 )
     add_ftl_test(${header})
 endforeach()
