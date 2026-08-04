@@ -14,50 +14,55 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
-struct input_iterator {
+struct input_iterator
+{
     using value_type = int;
 
     using difference_type =
-        tested::ptrdiff_t;
+    tested::ptrdiff_t;
 
     using iterator_concept =
-        tested::input_iterator_tag;
+    tested::input_iterator_tag;
 
     int* current = nullptr;
 
-    constexpr int& operator*() const {
+    constexpr int& operator*() const
+    {
         return *current;
     }
 
     constexpr input_iterator&
-    operator++() {
+    operator++()
+    {
         ++current;
         return *this;
     }
 
-    constexpr void operator++(int) {
+    constexpr void operator++(int)
+    {
         ++current;
     }
 
     friend constexpr bool operator==(
         input_iterator,
-        input_iterator
-    ) = default;
+        input_iterator) = default;
 };
 
-struct input_sentinel {
+struct input_sentinel
+{
     int* end = nullptr;
 
     friend constexpr bool operator==(
         input_iterator current,
         input_sentinel bound
-    ) {
+    )
+    {
         return current.current == bound.end;
     }
 };
 
 struct input_view
-    : tested::ranges::view_base
+        : tested::ranges::view_base
 {
     int* first = nullptr;
     int* last = nullptr;
@@ -71,45 +76,51 @@ struct input_view
         : first(first),
           last(last) {}
 
-    constexpr input_iterator begin() {
+    constexpr input_iterator begin()
+    {
         return input_iterator{
             first
         };
     }
 
-    constexpr input_sentinel end() {
+    constexpr input_sentinel end()
+    {
         return input_sentinel{
             last
         };
     }
 };
 
-struct forward_iterator {
+struct forward_iterator
+{
     using value_type = int;
 
     using difference_type =
-        tested::ptrdiff_t;
+    tested::ptrdiff_t;
 
     using iterator_concept =
-        tested::forward_iterator_tag;
+    tested::forward_iterator_tag;
 
     using iterator_category =
-        tested::forward_iterator_tag;
+    tested::forward_iterator_tag;
 
     int* current = nullptr;
 
-    constexpr int& operator*() const {
+    constexpr int& operator*() const
+    {
         return *current;
     }
 
     constexpr forward_iterator&
-    operator++() {
+    operator++()
+    {
         ++current;
         return *this;
     }
 
     constexpr forward_iterator
-    operator++(int) {
+    operator++(int)
+    {
         auto previous = *this;
         ++*this;
         return previous;
@@ -121,19 +132,21 @@ struct forward_iterator {
     ) = default;
 };
 
-struct forward_sentinel {
+struct forward_sentinel
+{
     int* end = nullptr;
 
     friend constexpr bool operator==(
         forward_iterator current,
         forward_sentinel bound
-    ) {
+    )
+    {
         return current.current == bound.end;
     }
 };
 
 struct forward_view
-    : tested::ranges::view_base
+        : tested::ranges::view_base
 {
     int* first = nullptr;
     int* last = nullptr;
@@ -147,13 +160,15 @@ struct forward_view
         : first(first),
           last(last) {}
 
-    constexpr forward_iterator begin() const {
+    constexpr forward_iterator begin() const
+    {
         return forward_iterator{
             first
         };
     }
 
-    constexpr forward_sentinel end() const {
+    constexpr forward_sentinel end() const
+    {
         return forward_sentinel{
             last
         };
@@ -162,20 +177,22 @@ struct forward_view
 
 template<class Iterator>
 concept has_iterator_category =
-    requires {
-        typename Iterator::iterator_category;
-    };
+        requires
+        {
+            typename Iterator::iterator_category;
+        };
 
 template<
     class Range,
     class Pattern
 >
 concept can_lazy_split =
-    requires(
-        Range&& range,
-        Pattern&& pattern
-    ) {
-        tested::ranges::views::
+        requires(
+    Range&& range,
+    Pattern&& pattern
+)
+        {
+            tested::ranges::views::
             lazy_split(
                 static_cast<Range&&>(
                     range
@@ -184,29 +201,32 @@ concept can_lazy_split =
                     pattern
                 )
             );
-    };
+        };
 
 constexpr bool equal_sequence(
     auto&& range,
     const int* expected,
     tested::size_t size
-) {
+)
+{
     auto current =
-        tested::ranges::begin(range);
+            tested::ranges::begin(range);
 
     const auto bound =
-        tested::ranges::end(range);
+            tested::ranges::end(range);
 
     for (
         tested::size_t index = 0;
         index < size;
         ++index,
         ++current
-    ) {
+    )
+    {
         if (
             current == bound ||
             *current != expected[index]
-        ) {
+        )
+        {
             return false;
         }
     }
@@ -219,12 +239,13 @@ constexpr bool equal_parts(
     const int* expected,
     const tested::size_t* lengths,
     tested::size_t count
-) {
+)
+{
     auto outer =
-        tested::ranges::begin(range);
+            tested::ranges::begin(range);
 
     const auto bound =
-        tested::ranges::end(range);
+            tested::ranges::end(range);
 
     tested::size_t offset = 0;
 
@@ -232,7 +253,8 @@ constexpr bool equal_parts(
         tested::size_t index = 0;
         index < count;
         ++index
-    ) {
+    )
+    {
         if (outer == bound)
             return false;
 
@@ -242,7 +264,8 @@ constexpr bool equal_parts(
                 expected + offset,
                 lengths[index]
             )
-        ) {
+        )
+        {
             return false;
         }
 
@@ -256,63 +279,62 @@ constexpr bool equal_parts(
 using array_type = int[4];
 
 using forward_lazy_view =
-    decltype(
-        tested::ranges::views::
-            lazy_split(
-                tested::declval<
-                    array_type&
-                >(),
-                0
-            )
-    );
+decltype(
+    tested::ranges::views::
+    lazy_split(
+        tested::declval<
+            array_type&>(),
+        0
+    )
+);
 
 using forward_outer_iterator =
-    tested::ranges::iterator_t<
-        forward_lazy_view
-    >;
+tested::ranges::iterator_t<
+    forward_lazy_view
+>;
 
 using forward_inner_view =
-    tested::ranges::range_value_t<
-        forward_lazy_view
-    >;
+tested::ranges::range_value_t<
+    forward_lazy_view
+>;
 
 using forward_inner_iterator =
-    tested::ranges::iterator_t<
-        forward_inner_view
-    >;
+tested::ranges::iterator_t<
+    forward_inner_view
+>;
 
 using input_lazy_view =
-    decltype(
-        tested::ranges::views::
-            lazy_split(
-                input_view{},
-                0
-            )
-    );
+decltype(
+    tested::ranges::views::
+    lazy_split(
+        input_view{},
+        0
+    )
+);
 
 using input_outer_iterator =
-    tested::ranges::iterator_t<
-        input_lazy_view
-    >;
+tested::ranges::iterator_t<
+    input_lazy_view
+>;
 
 using input_inner_view =
-    tested::ranges::range_value_t<
-        input_lazy_view
-    >;
+tested::ranges::range_value_t<
+    input_lazy_view
+>;
 
 using input_inner_iterator =
-    tested::ranges::iterator_t<
-        input_inner_view
-    >;
+tested::ranges::iterator_t<
+    input_inner_view
+>;
 
 using non_common_lazy_view =
-    decltype(
-        tested::ranges::views::
-            lazy_split(
-                forward_view{},
-                0
-            )
-    );
+decltype(
+    tested::ranges::views::
+    lazy_split(
+        forward_view{},
+        0
+    )
+);
 
 /*
  * Forward-base outer range behavior.
@@ -338,14 +360,12 @@ static_assert(
 
 static_assert(
     tested::ranges::range<
-        const forward_lazy_view
-    >
+        const forward_lazy_view>
 );
 
 static_assert(
     tested::ranges::common_range<
-        const forward_lazy_view
-    >
+        const forward_lazy_view>
 );
 
 /*
@@ -367,7 +387,7 @@ static_assert(
 
 static_assert(tested::same_as<
     typename forward_outer_iterator::
-        iterator_concept,
+    iterator_concept,
     tested::forward_iterator_tag
 >);
 
@@ -380,7 +400,7 @@ static_assert(tested::same_as<
 
 static_assert(tested::same_as<
     typename forward_inner_iterator::
-        iterator_concept,
+    iterator_concept,
     tested::forward_iterator_tag
 >);
 
@@ -394,8 +414,7 @@ static_assert(tested::same_as<
 static_assert(tested::same_as<
     decltype(
         tested::declval<
-            forward_outer_iterator&
-        >()++
+            forward_outer_iterator&>()++
     ),
     forward_outer_iterator
 >);
@@ -403,8 +422,7 @@ static_assert(tested::same_as<
 static_assert(tested::same_as<
     decltype(
         tested::declval<
-            forward_inner_iterator&
-        >()++
+            forward_inner_iterator&>()++
     ),
     forward_inner_iterator
 >);
@@ -427,8 +445,7 @@ static_assert(
 
 static_assert(
     !tested::ranges::range<
-        const input_lazy_view
-    >
+        const input_lazy_view>
 );
 
 static_assert(
@@ -451,13 +468,13 @@ static_assert(
 
 static_assert(tested::same_as<
     typename input_outer_iterator::
-        iterator_concept,
+    iterator_concept,
     tested::input_iterator_tag
 >);
 
 static_assert(tested::same_as<
     typename input_inner_iterator::
-        iterator_concept,
+    iterator_concept,
     tested::input_iterator_tag
 >);
 
@@ -476,20 +493,16 @@ static_assert(
 static_assert(tested::same_as<
     decltype(
         tested::declval<
-            input_outer_iterator&
-        >()++
+            input_outer_iterator&>()++
     ),
-    void
->);
+    void>);
 
 static_assert(tested::same_as<
     decltype(
         tested::declval<
-            input_inner_iterator&
-        >()++
+            input_inner_iterator&>()++
     ),
-    void
->);
+    void>);
 
 /*
  * A non-common forward base remains forward but produces
@@ -510,14 +523,12 @@ static_assert(
 
 static_assert(
     tested::ranges::range<
-        const non_common_lazy_view
-    >
+        const non_common_lazy_view>
 );
 
 static_assert(
     !tested::ranges::common_range<
-        const non_common_lazy_view
-    >
+        const non_common_lazy_view>
 );
 
 /*
@@ -532,8 +543,7 @@ static_assert(
 static_assert(
     can_lazy_split<
         input_view,
-        int
-    >
+        int>
 );
 
 static_assert(
@@ -558,7 +568,8 @@ static_assert(
 );
 
 constexpr bool
-input_element_delimiter_works() {
+input_element_delimiter_works()
+{
     int values[] = {
         0,
         1,
@@ -569,11 +580,11 @@ input_element_delimiter_works() {
     };
 
     auto view =
-        input_view(
-            values,
-            values + 6
-        ) |
-        tested::ranges::views::
+            input_view(
+                values,
+                values + 6
+            ) |
+            tested::ranges::views::
             lazy_split(0);
 
     const int expected[] = {
@@ -598,11 +609,12 @@ input_element_delimiter_works() {
 }
 
 constexpr bool
-input_empty_base_works() {
+input_empty_base_works()
+{
     int value = 0;
 
     auto view =
-        tested::ranges::views::
+            tested::ranges::views::
             lazy_split(
                 input_view(
                     &value,
@@ -612,12 +624,13 @@ input_empty_base_works() {
             );
 
     return
-        tested::ranges::begin(view) ==
-        tested::ranges::end(view);
+            tested::ranges::begin(view) ==
+            tested::ranges::end(view);
 }
 
 constexpr bool
-input_empty_pattern_works() {
+input_empty_pattern_works()
+{
     int values[] = {
         4,
         5,
@@ -625,14 +638,14 @@ input_empty_pattern_works() {
     };
 
     auto view =
-        tested::ranges::views::
+            tested::ranges::views::
             lazy_split(
                 input_view(
                     values,
                     values + 3
                 ),
                 tested::ranges::
-                    empty_view<int>{}
+                empty_view<int>{}
             );
 
     const int expected[] = {
@@ -656,7 +669,8 @@ input_empty_pattern_works() {
 }
 
 constexpr bool
-input_skipped_and_partial_parts_work() {
+input_skipped_and_partial_parts_work()
+{
     int values[] = {
         1,
         2,
@@ -668,7 +682,7 @@ input_skipped_and_partial_parts_work() {
     };
 
     auto view =
-        tested::ranges::views::
+            tested::ranges::views::
             lazy_split(
                 input_view(
                     values,
@@ -678,7 +692,7 @@ input_skipped_and_partial_parts_work() {
             );
 
     auto outer =
-        view.begin();
+            view.begin();
 
     /*
      * Skip the first inner range without calling begin().
@@ -693,12 +707,13 @@ input_skipped_and_partial_parts_work() {
      * cursor positioned at 4.
      */
     auto inner =
-        (*outer).begin();
+            (*outer).begin();
 
     if (
         inner == (*outer).end() ||
         *inner != 3
-    ) {
+    )
+    {
         return false;
     }
 
@@ -707,7 +722,8 @@ input_skipped_and_partial_parts_work() {
     if (
         inner == (*outer).end() ||
         *inner != 4
-    ) {
+    )
+    {
         return false;
     }
 
@@ -730,7 +746,8 @@ input_skipped_and_partial_parts_work() {
             expected,
             1
         )
-    ) {
+    )
+    {
         return false;
     }
 
@@ -740,7 +757,8 @@ input_skipped_and_partial_parts_work() {
 }
 
 constexpr bool
-forward_element_delimiter_works() {
+forward_element_delimiter_works()
+{
     int values[] = {
         0,
         1,
@@ -751,7 +769,7 @@ forward_element_delimiter_works() {
     };
 
     auto view =
-        tested::ranges::views::
+            tested::ranges::views::
             lazy_split(
                 values,
                 0
@@ -777,12 +795,13 @@ forward_element_delimiter_works() {
             lengths,
             5
         )
-    ) {
+    )
+    {
         return false;
     }
 
     const auto& constant_view =
-        view;
+            view;
 
     return equal_parts(
         constant_view,
@@ -793,7 +812,8 @@ forward_element_delimiter_works() {
 }
 
 constexpr bool
-forward_multi_element_pattern_works() {
+forward_multi_element_pattern_works()
+{
     int values[] = {
         1,
         9,
@@ -811,7 +831,7 @@ forward_multi_element_pattern_works() {
     };
 
     auto direct =
-        tested::ranges::views::
+            tested::ranges::views::
             lazy_split(
                 values,
                 pattern
@@ -837,7 +857,8 @@ forward_multi_element_pattern_works() {
             lengths,
             3
         )
-    ) {
+    )
+    {
         return false;
     }
 
@@ -846,13 +867,13 @@ forward_multi_element_pattern_works() {
      * range pattern.
      */
     auto pattern_view =
-        tested::ranges::views::all(
-            pattern
-        );
+            tested::ranges::views::all(
+                pattern
+            );
 
     auto piped =
-        values |
-        tested::ranges::views::
+            values |
+            tested::ranges::views::
             lazy_split(pattern_view);
 
     return equal_parts(
@@ -864,7 +885,8 @@ forward_multi_element_pattern_works() {
 }
 
 constexpr bool
-forward_consecutive_patterns_work() {
+forward_consecutive_patterns_work()
+{
     int values[] = {
         1,
         0,
@@ -880,7 +902,7 @@ forward_consecutive_patterns_work() {
     };
 
     auto view =
-        tested::ranges::views::
+            tested::ranges::views::
             lazy_split(
                 values,
                 pattern
@@ -906,7 +928,8 @@ forward_consecutive_patterns_work() {
 }
 
 constexpr bool
-forward_empty_pattern_works() {
+forward_empty_pattern_works()
+{
     int values[] = {
         7,
         8,
@@ -914,11 +937,11 @@ forward_empty_pattern_works() {
     };
 
     auto view =
-        tested::ranges::views::
+            tested::ranges::views::
             lazy_split(
                 values,
                 tested::ranges::
-                    empty_view<int>{}
+                empty_view<int>{}
             );
 
     const int expected[] = {
@@ -942,7 +965,8 @@ forward_empty_pattern_works() {
 }
 
 constexpr bool
-forward_inner_iteration_is_independent() {
+forward_inner_iteration_is_independent()
+{
     int values[] = {
         1,
         2,
@@ -951,17 +975,17 @@ forward_inner_iteration_is_independent() {
     };
 
     auto view =
-        tested::ranges::views::
+            tested::ranges::views::
             lazy_split(
                 values,
                 0
             );
 
     auto outer =
-        view.begin();
+            view.begin();
 
     auto inner =
-        (*outer).begin();
+            (*outer).begin();
 
     if (*inner != 1)
         return false;
@@ -971,7 +995,8 @@ forward_inner_iteration_is_independent() {
     if (
         inner == (*outer).end() ||
         *inner != 2
-    ) {
+    )
+    {
         return false;
     }
 
@@ -996,7 +1021,8 @@ forward_inner_iteration_is_independent() {
 }
 
 constexpr bool
-non_common_forward_base_works() {
+non_common_forward_base_works()
+{
     int values[] = {
         1,
         0,
@@ -1011,7 +1037,7 @@ non_common_forward_base_works() {
     );
 
     auto view =
-        tested::ranges::views::
+            tested::ranges::views::
             lazy_split(
                 source,
                 0
@@ -1036,12 +1062,13 @@ non_common_forward_base_works() {
             lengths,
             4
         )
-    ) {
+    )
+    {
         return false;
     }
 
     const auto& constant_view =
-        view;
+            view;
 
     return equal_parts(
         constant_view,
@@ -1052,7 +1079,8 @@ non_common_forward_base_works() {
 }
 
 constexpr bool
-inner_customizations_work() {
+inner_customizations_work()
+{
     int values[] = {
         1,
         0,
@@ -1060,25 +1088,25 @@ inner_customizations_work() {
     };
 
     auto view =
-        tested::ranges::views::
+            tested::ranges::views::
             lazy_split(
                 values,
                 0
             );
 
     auto first_outer =
-        view.begin();
+            view.begin();
 
     auto second_outer =
-        first_outer;
+            first_outer;
 
     ++second_outer;
 
     auto first_inner =
-        (*first_outer).begin();
+            (*first_outer).begin();
 
     auto second_inner =
-        (*second_outer).begin();
+            (*second_outer).begin();
 
     static_assert(tested::same_as<
         decltype(
@@ -1086,13 +1114,12 @@ inner_customizations_work() {
                 first_inner
             )
         ),
-        int&&
-    >);
+        int&&>);
 
     auto&& moved =
-        tested::ranges::iter_move(
-            first_inner
-        );
+            tested::ranges::iter_move(
+                first_inner
+            );
 
     if (moved != 1)
         return false;
@@ -1105,12 +1132,13 @@ inner_customizations_work() {
     );
 
     return
-        values[0] == 2 &&
-        values[2] == 4;
+            values[0] == 2 &&
+            values[2] == 4;
 }
 
 constexpr bool
-direct_construction_works() {
+direct_construction_works()
+{
     int values[] = {
         1,
         0,
@@ -1118,10 +1146,10 @@ direct_construction_works() {
     };
 
     tested::ranges::lazy_split_view
-        element_view(
-            values,
-            0
-        );
+            element_view(
+                values,
+                0
+            );
 
     const int expected[] = {
         1,
@@ -1140,7 +1168,8 @@ direct_construction_works() {
             lengths,
             2
         )
-    ) {
+    )
+    {
         return false;
     }
 
@@ -1149,10 +1178,10 @@ direct_construction_works() {
     };
 
     tested::ranges::lazy_split_view
-        pattern_view(
-            values,
-            pattern
-        );
+            pattern_view(
+                values,
+                pattern
+            );
 
     if (
         !equal_parts(
@@ -1161,39 +1190,42 @@ direct_construction_works() {
             lengths,
             2
         )
-    ) {
+    )
+    {
         return false;
     }
 
     auto copied_base =
-        element_view.base();
+            element_view.base();
 
     return
-        tested::ranges::begin(
-            copied_base
-        ) == values;
+            tested::ranges::begin(
+                copied_base
+            ) == values;
 }
 
-constexpr bool lazy_split_works() {
+constexpr bool lazy_split_works()
+{
     return
-        input_element_delimiter_works() &&
-        input_empty_base_works() &&
-        input_empty_pattern_works() &&
-        input_skipped_and_partial_parts_work() &&
-        forward_element_delimiter_works() &&
-        forward_multi_element_pattern_works() &&
-        forward_consecutive_patterns_work() &&
-        forward_empty_pattern_works() &&
-        forward_inner_iteration_is_independent() &&
-        non_common_forward_base_works() &&
-        inner_customizations_work() &&
-        direct_construction_works();
+            input_element_delimiter_works() &&
+            input_empty_base_works() &&
+            input_empty_pattern_works() &&
+            input_skipped_and_partial_parts_work() &&
+            forward_element_delimiter_works() &&
+            forward_multi_element_pattern_works() &&
+            forward_consecutive_patterns_work() &&
+            forward_empty_pattern_works() &&
+            forward_inner_iteration_is_independent() &&
+            non_common_forward_base_works() &&
+            inner_customizations_work() &&
+            direct_construction_works();
 }
 
 static_assert(
     lazy_split_works()
 );
 
-bool ftl_test() {
+bool ftl_test()
+{
     return lazy_split_works();
 }
