@@ -583,7 +583,9 @@ struct iter_move_fn {
     }
 };
 
+inline namespace cpo {
 inline constexpr iter_move_fn iter_move{};
+}
 
 } // namespace ranges
 
@@ -849,7 +851,9 @@ struct iter_swap_fn {
     }
 };
 
+inline namespace cpo {
 inline constexpr iter_swap_fn iter_swap{};
+}
 
 } // namespace ranges
 

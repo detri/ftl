@@ -6465,126 +6465,1327 @@ stride_view(R&&, range_difference_t<views::all_t<R>>) -> stride_view<views::all_
 template<class V>
 inline constexpr bool enable_borrowed_range<stride_view<V>> = enable_borrowed_range<V>;
 
-template<input_range... Views> requires (view<Views> && ...) && (sizeof...(Views) > 0)
-class zip_view : public view_interface<zip_view<Views...>> {
-    tuple<Views...> views_{};
-    template<size_t... I>
-    constexpr auto begin_impl(index_sequence<I...>) {
-        return iterator(tuple<iterator_t<Views>...>(ranges::begin(get<I>(views_))...));
+namespace detail {
+
+template<class... Ranges>
+concept zip_is_common =
+    (
+        sizeof...(Ranges) == 1 &&
+        (common_range<Ranges> && ...)
+    ) ||
+    (
+        !(bidirectional_range<Ranges> && ...) &&
+        (common_range<Ranges> && ...)
+    ) ||
+    (
+        (random_access_range<Ranges> && ...) &&
+        (sized_range<Ranges> && ...)
+    );
+
+template<bool Const, class... Views>
+concept zip_all_random_access =
+    (
+        random_access_range<
+            maybe_const_t<Const, Views>
+        > &&
+        ...
+    );
+
+template<bool Const, class... Views>
+concept zip_all_bidirectional =
+    (
+        bidirectional_range<
+            maybe_const_t<Const, Views>
+        > &&
+        ...
+    );
+
+template<bool Const, class... Views>
+concept zip_all_forward =
+    (
+        forward_range<
+            maybe_const_t<Const, Views>
+        > &&
+        ...
+    );
+
+template<bool Const, class... Views>
+struct zip_iterator_category {};
+
+template<bool Const, class... Views>
+    requires zip_all_forward<
+        Const,
+        Views...
+    >
+struct zip_iterator_category<
+    Const,
+    Views...
+> {
+    using iterator_category =
+        input_iterator_tag;
+};
+
+template<class Difference>
+constexpr auto zip_absolute_value(
+    Difference value
+) noexcept {
+    using unsigned_type =
+        make_unsigned_like_t<Difference>;
+
+    const auto converted =
+        static_cast<unsigned_type>(value);
+
+    if constexpr (is_signed_v<Difference>) {
+        if (value < Difference{0}) {
+            return
+                unsigned_type{0} -
+                converted;
+        }
     }
-    template<size_t... I>
-    constexpr auto end_impl(index_sequence<I...>) {
-        return sentinel(tuple<sentinel_t<Views>...>(ranges::end(get<I>(views_))...));
+
+    return converted;
+}
+
+template<
+    class Difference,
+    class LeftTuple,
+    class RightTuple,
+    size_t... Index
+>
+constexpr Difference
+zip_min_absolute_difference(
+    const LeftTuple& left,
+    const RightTuple& right,
+    index_sequence<Index...>
+) {
+    Difference result =
+        static_cast<Difference>(
+            get<0>(left) -
+            get<0>(right)
+        );
+
+    (
+        [&] {
+            const Difference candidate =
+                static_cast<Difference>(
+                    get<Index>(left) -
+                    get<Index>(right)
+                );
+
+            if (
+                zip_absolute_value(candidate) <
+                zip_absolute_value(result)
+            ) {
+                result = candidate;
+            }
+        }(),
+        ...
+    );
+
+    return result;
+}
+
+} // namespace detail
+
+template<input_range... Views>
+    requires (
+        (view<Views> && ...) &&
+        sizeof...(Views) > 0
+    )
+class zip_view
+    : public view_interface<
+        zip_view<Views...>
+    >
+{
+private:
+    tuple<Views...> views_;
+
+    template<bool Const>
+    class iterator;
+
+    template<bool Const>
+    class sentinel;
+
+    template<size_t... Index>
+    constexpr iterator<false>
+    begin_impl(
+        index_sequence<Index...>
+    ) {
+        return iterator<false>(
+            tuple<iterator_t<Views>...>(
+                ranges::begin(
+                    get<Index>(views_)
+                )...
+            )
+        );
     }
-    template<size_t... I>
-    constexpr auto size_impl(index_sequence<I...>) requires (sized_range<Views> && ...) {
-        common_type_t<range_size_t<Views>...> result = static_cast<common_type_t<range_size_t<Views>...>>(-1);
-        ((result = result < ranges::size(get<I>(views_)) ? result : ranges::size(get<I>(views_))), ...);
+
+    template<size_t... Index>
+    constexpr iterator<true>
+    begin_impl(
+        index_sequence<Index...>
+    ) const {
+        return iterator<true>(
+            tuple<
+                iterator_t<const Views>...
+            >(
+                ranges::begin(
+                    get<Index>(views_)
+                )...
+            )
+        );
+    }
+
+    template<size_t... Index>
+    constexpr sentinel<false>
+    sentinel_end_impl(
+        index_sequence<Index...>
+    ) {
+        return sentinel<false>(
+            tuple<sentinel_t<Views>...>(
+                ranges::end(
+                    get<Index>(views_)
+                )...
+            )
+        );
+    }
+
+    template<size_t... Index>
+    constexpr sentinel<true>
+    sentinel_end_impl(
+        index_sequence<Index...>
+    ) const {
+        return sentinel<true>(
+            tuple<
+                sentinel_t<const Views>...
+            >(
+                ranges::end(
+                    get<Index>(views_)
+                )...
+            )
+        );
+    }
+
+    template<size_t... Index>
+    constexpr iterator<false>
+    iterator_end_impl(
+        index_sequence<Index...>
+    ) {
+        return iterator<false>(
+            tuple<iterator_t<Views>...>(
+                ranges::end(
+                    get<Index>(views_)
+                )...
+            )
+        );
+    }
+
+    template<size_t... Index>
+    constexpr iterator<true>
+    iterator_end_impl(
+        index_sequence<Index...>
+    ) const {
+        return iterator<true>(
+            tuple<
+                iterator_t<const Views>...
+            >(
+                ranges::end(
+                    get<Index>(views_)
+                )...
+            )
+        );
+    }
+
+    template<size_t... Index>
+    constexpr auto size_impl(
+        index_sequence<Index...>
+    )
+        requires (
+            sized_range<Views> &&
+            ...
+        )
+    {
+        using size_type =
+            detail::make_unsigned_like_t<
+                common_type_t<
+                    range_size_t<Views>...
+                >
+            >;
+
+        size_type result =
+            static_cast<size_type>(
+                ranges::size(
+                    get<0>(views_)
+                )
+            );
+
+        (
+            [&] {
+                const size_type candidate =
+                    static_cast<size_type>(
+                        ranges::size(
+                            get<Index>(views_)
+                        )
+                    );
+
+                if (candidate < result) {
+                    result = candidate;
+                }
+            }(),
+            ...
+        );
+
         return result;
     }
-public:
-    class iterator {
-        tuple<iterator_t<Views>...> current_{};
-        template<size_t... I> constexpr auto deref(index_sequence<I...>) const {
-            return tuple<range_reference_t<Views>...>(*get<I>(current_)...);
-        }
-        template<size_t... I> constexpr void increment(index_sequence<I...>) { (++get<I>(current_), ...); }
-        template<size_t... I> constexpr void decrement(index_sequence<I...>) { (--get<I>(current_), ...); }
-        template<size_t... I> constexpr void advance(common_type_t<range_difference_t<Views>...> n, index_sequence<I...>) {
-            ((get<I>(current_) += static_cast<range_difference_t<Views>>(n)), ...);
-        }
+
+    template<size_t... Index>
+    constexpr auto size_impl(
+        index_sequence<Index...>
+    ) const
+        requires (
+            sized_range<const Views> &&
+            ...
+        )
+    {
+        using size_type =
+            detail::make_unsigned_like_t<
+                common_type_t<
+                    range_size_t<
+                        const Views
+                    >...
+                >
+            >;
+
+        size_type result =
+            static_cast<size_type>(
+                ranges::size(
+                    get<0>(views_)
+                )
+            );
+
+        (
+            [&] {
+                const size_type candidate =
+                    static_cast<size_type>(
+                        ranges::size(
+                            get<Index>(views_)
+                        )
+                    );
+
+                if (candidate < result) {
+                    result = candidate;
+                }
+            }(),
+            ...
+        );
+
+        return result;
+    }
+
+    template<bool Const>
+    class iterator
+        : public detail::zip_iterator_category<
+            Const,
+            Views...
+        >
+    {
     public:
-        using iterator_concept = conditional_t<(random_access_range<Views> && ...), random_access_iterator_tag,
-            conditional_t<(bidirectional_range<Views> && ...), bidirectional_iterator_tag,
-            conditional_t<(forward_range<Views> && ...), forward_iterator_tag, input_iterator_tag>>>;
-        using iterator_category = input_iterator_tag;
-        using value_type = tuple<range_value_t<Views>...>;
-        using difference_type = common_type_t<range_difference_t<Views>...>;
+        using iterator_concept =
+            conditional_t<
+                detail::zip_all_random_access<
+                    Const,
+                    Views...
+                >,
+                random_access_iterator_tag,
+                conditional_t<
+                    detail::zip_all_bidirectional<
+                        Const,
+                        Views...
+                    >,
+                    bidirectional_iterator_tag,
+                    conditional_t<
+                        detail::zip_all_forward<
+                            Const,
+                            Views...
+                        >,
+                        forward_iterator_tag,
+                        input_iterator_tag
+                    >
+                >
+            >;
+
+        using value_type =
+            tuple<
+                range_value_t<
+                    detail::maybe_const_t<
+                        Const,
+                        Views
+                    >
+                >...
+            >;
+
+        using difference_type =
+            common_type_t<
+                range_difference_t<
+                    detail::maybe_const_t<
+                        Const,
+                        Views
+                    >
+                >...
+            >;
+
+        using reference =
+            tuple<
+                range_reference_t<
+                    detail::maybe_const_t<
+                        Const,
+                        Views
+                    >
+                >...
+            >;
+
+    private:
+        using current_tuple =
+            tuple<
+                iterator_t<
+                    detail::maybe_const_t<
+                        Const,
+                        Views
+                    >
+                >...
+            >;
+
+        current_tuple current_;
+
+        // private helpers...
+
+        constexpr explicit iterator(
+            current_tuple current
+        )
+            : current_(
+                FTL_RANGES_NAMESPACE::move(
+                    current
+                )
+            ) {}
+
+        template<size_t... Index>
+        constexpr reference dereference(
+            index_sequence<Index...>
+        ) const {
+            return reference(
+                *get<Index>(current_)...
+            );
+        }
+
+        template<size_t... Index>
+        constexpr void increment(
+            index_sequence<Index...>
+        ) {
+            (
+                ++get<Index>(current_),
+                ...
+            );
+        }
+
+        template<size_t... Index>
+        constexpr void decrement(
+            index_sequence<Index...>
+        ) {
+            (
+                --get<Index>(current_),
+                ...
+            );
+        }
+
+        template<size_t... Index>
+        constexpr void advance(
+            difference_type offset,
+            index_sequence<Index...>
+        ) {
+            (
+                (
+                    get<Index>(current_) +=
+                    static_cast<
+                        range_difference_t<
+                            detail::maybe_const_t<
+                                Const,
+                                Views
+                            >
+                        >
+                    >(offset)
+                ),
+                ...
+            );
+        }
+
+        template<size_t... Index>
+        constexpr void retreat(
+            difference_type offset,
+            index_sequence<Index...>
+        ) {
+            (
+                (
+                    get<Index>(current_) -=
+                    static_cast<
+                        range_difference_t<
+                            detail::maybe_const_t<
+                                Const,
+                                Views
+                            >
+                        >
+                    >(offset)
+                ),
+                ...
+            );
+        }
+
+        template<size_t... Index>
+        constexpr auto move_values(
+            index_sequence<Index...>
+        ) const
+            noexcept(
+                (
+                    noexcept(
+                        ranges::iter_move(
+                            get<Index>(
+                                current_
+                            )
+                        )
+                    ) &&
+                    ...
+                ) &&
+                (
+                    is_nothrow_move_constructible_v<
+                        range_rvalue_reference_t<
+                            detail::maybe_const_t<
+                                Const,
+                                Views
+                            >
+                        >
+                    > &&
+                    ...
+                )
+            )
+        {
+            return tuple<
+                range_rvalue_reference_t<
+                    detail::maybe_const_t<
+                        Const,
+                        Views
+                    >
+                >...
+            >(
+                ranges::iter_move(
+                    get<Index>(current_)
+                )...
+            );
+        }
+
+        template<size_t... Index>
+        static consteval bool
+        swap_is_noexcept(
+            index_sequence<Index...>
+        ) {
+            return (
+                noexcept(
+                    ranges::iter_swap(
+                        get<Index>(
+                            declval<
+                                const current_tuple&
+                            >()
+                        ),
+                        get<Index>(
+                            declval<
+                                const current_tuple&
+                            >()
+                        )
+                    )
+                ) &&
+                ...
+            );
+        }
+
+        template<size_t... Index>
+        static constexpr void swap_values(
+            const iterator& left,
+            const iterator& right,
+            index_sequence<Index...>
+        )
+            noexcept(
+                swap_is_noexcept(
+                    index_sequence<Index...>{}
+                )
+            )
+        {
+            (
+                ranges::iter_swap(
+                    get<Index>(
+                        left.current_
+                    ),
+                    get<Index>(
+                        right.current_
+                    )
+                ),
+                ...
+            );
+        }
+
+        friend class zip_view;
+        friend class iterator<!Const>;
+        friend class sentinel<Const>;
+        friend class sentinel<!Const>;
+
+    public:
         iterator() = default;
-        constexpr explicit iterator(tuple<iterator_t<Views>...> current)
-            : current_(FTL_RANGES_NAMESPACE::move(current)) {}
-        template<class Other>
-            requires (!same_as<remove_cvref_t<Other>, iterator>) &&
-                constructible_from<tuple<iterator_t<Views>...>, decltype(declval<const Other&>().base())>
-        constexpr iterator(const Other& other) : current_(other.base()) {}
-        constexpr auto operator*() const { return deref(index_sequence_for<Views...>{}); }
-        constexpr iterator& operator++() { increment(index_sequence_for<Views...>{}); return *this; }
-        constexpr auto operator++(int) {
-            if constexpr ((forward_range<Views> && ...)) { auto copy = *this; ++*this; return copy; }
-            else ++*this;
+
+        constexpr iterator(
+            iterator<!Const> other
+        )
+            requires (
+                Const &&
+                (
+                    convertible_to<
+                        iterator_t<Views>,
+                        iterator_t<
+                            const Views
+                        >
+                    > &&
+                    ...
+                )
+            )
+            : current_(
+                FTL_RANGES_NAMESPACE::move(
+                    other.current_
+                )
+            ) {}
+
+        [[nodiscard]]
+        constexpr reference operator*() const {
+            return dereference(
+                index_sequence_for<
+                    Views...
+                >{}
+            );
         }
-        constexpr iterator& operator--() requires (bidirectional_range<Views> && ...) {
-            decrement(index_sequence_for<Views...>{}); return *this;
+
+        constexpr iterator& operator++() {
+            increment(
+                index_sequence_for<
+                    Views...
+                >{}
+            );
+
+            return *this;
         }
-        constexpr iterator operator--(int) requires (bidirectional_range<Views> && ...) {
-            auto copy = *this; --*this; return copy;
+
+        constexpr void operator++(int) {
+            ++*this;
         }
-        constexpr iterator& operator+=(difference_type n) requires (random_access_range<Views> && ...) {
-            advance(n, index_sequence_for<Views...>{}); return *this;
+
+        constexpr iterator operator++(int)
+            requires (
+                detail::zip_all_forward<
+                    Const,
+                    Views...
+                >
+            )
+        {
+            auto previous = *this;
+            ++*this;
+            return previous;
         }
-        constexpr iterator& operator-=(difference_type n) requires (random_access_range<Views> && ...) { return *this += -n; }
-        constexpr auto operator[](difference_type n) const requires (random_access_range<Views> && ...) { return *(*this + n); }
-        friend constexpr bool operator==(const iterator& a, const iterator& b) requires (equality_comparable<iterator_t<Views>> && ...) {
-            return get<0>(a.current_) == get<0>(b.current_);
+
+        constexpr iterator& operator--()
+            requires (
+                detail::zip_all_bidirectional<
+                    Const,
+                    Views...
+                >
+            )
+        {
+            decrement(
+                index_sequence_for<
+                    Views...
+                >{}
+            );
+
+            return *this;
         }
-        friend constexpr bool operator<(const iterator& a, const iterator& b) requires (random_access_range<Views> && ...) { return get<0>(a.current_) < get<0>(b.current_); }
-        friend constexpr bool operator>(const iterator& a, const iterator& b) requires (random_access_range<Views> && ...) { return b < a; }
-        friend constexpr bool operator<=(const iterator& a, const iterator& b) requires (random_access_range<Views> && ...) { return !(b < a); }
-        friend constexpr bool operator>=(const iterator& a, const iterator& b) requires (random_access_range<Views> && ...) { return !(a < b); }
-        friend constexpr iterator operator+(iterator i, difference_type n) requires (random_access_range<Views> && ...) { return i += n; }
-        friend constexpr iterator operator+(difference_type n, iterator i) requires (random_access_range<Views> && ...) { return i += n; }
-        friend constexpr iterator operator-(iterator i, difference_type n) requires (random_access_range<Views> && ...) { return i -= n; }
-        friend constexpr difference_type operator-(const iterator& a, const iterator& b) requires (random_access_range<Views> && ...) {
-            return static_cast<difference_type>(get<0>(a.current_) - get<0>(b.current_));
+
+        constexpr iterator operator--(int)
+            requires (
+                detail::zip_all_bidirectional<
+                    Const,
+                    Views...
+                >
+            )
+        {
+            auto previous = *this;
+            --*this;
+            return previous;
         }
-        constexpr const tuple<iterator_t<Views>...>& base() const noexcept { return current_; }
-    };
-    class sentinel {
-        tuple<sentinel_t<Views>...> end_{};
-        template<size_t... I> constexpr bool equal(const iterator& current, index_sequence<I...>) const {
-            return ((get<I>(current.base()) == get<I>(end_)) || ...);
+
+        constexpr iterator& operator+=(
+            difference_type offset
+        )
+            requires (
+                detail::zip_all_random_access<
+                    Const,
+                    Views...
+                >
+            )
+        {
+            advance(
+                offset,
+                index_sequence_for<
+                    Views...
+                >{}
+            );
+
+            return *this;
         }
-    public:
-        sentinel() = default;
-        constexpr explicit sentinel(tuple<sentinel_t<Views>...> end) : end_(FTL_RANGES_NAMESPACE::move(end)) {}
-        template<class Other>
-            requires constructible_from<tuple<sentinel_t<Views>...>, decltype(declval<const Other&>().base())>
-        constexpr sentinel(const Other& other) : end_(other.base()) {}
-        constexpr const tuple<sentinel_t<Views>...>& base() const noexcept { return end_; }
-        friend constexpr bool operator==(const iterator& current, const sentinel& end) {
-            return end.equal(current, index_sequence_for<Views...>{});
+
+        constexpr iterator& operator-=(
+            difference_type offset
+        )
+            requires (
+                detail::zip_all_random_access<
+                    Const,
+                    Views...
+                >
+            )
+        {
+            retreat(
+                offset,
+                index_sequence_for<
+                    Views...
+                >{}
+            );
+
+            return *this;
+        }
+
+        [[nodiscard]]
+        constexpr reference operator[](
+            difference_type offset
+        ) const
+            requires (
+                detail::zip_all_random_access<
+                    Const,
+                    Views...
+                >
+            )
+        {
+            return *(*this + offset);
+        }
+
+        friend constexpr bool operator==(
+            const iterator& left,
+            const iterator& right
+        )
+            requires (
+                equality_comparable<
+                    iterator_t<
+                        detail::maybe_const_t<
+                            Const,
+                            Views
+                        >
+                    >
+                > &&
+                ...
+            )
+        {
+            if constexpr (
+                detail::zip_all_bidirectional<
+                    Const,
+                    Views...
+                >
+            ) {
+                return
+                    left.current_ ==
+                    right.current_;
+            } else {
+                return [&]<size_t... Index>(
+                    index_sequence<Index...>
+                ) {
+                    return (
+                        (
+                            get<Index>(
+                                left.current_
+                            ) ==
+                            get<Index>(
+                                right.current_
+                            )
+                        ) ||
+                        ...
+                    );
+                }(
+                    index_sequence_for<
+                        Views...
+                    >{}
+                );
+            }
+        }
+
+        friend constexpr auto operator<=>(
+            const iterator& left,
+            const iterator& right
+        )
+            requires (
+                detail::zip_all_random_access<
+                    Const,
+                    Views...
+                >
+            )
+        {
+            return
+                left.current_ <=>
+                right.current_;
+        }
+
+        friend constexpr iterator operator+(
+            const iterator& value,
+            difference_type offset
+        )
+            requires (
+                detail::zip_all_random_access<
+                    Const,
+                    Views...
+                >
+            )
+        {
+            auto result = value;
+            result += offset;
+            return result;
+        }
+
+        friend constexpr iterator operator+(
+            difference_type offset,
+            const iterator& value
+        )
+            requires (
+                detail::zip_all_random_access<
+                    Const,
+                    Views...
+                >
+            )
+        {
+            auto result = value;
+            result += offset;
+            return result;
+        }
+
+        friend constexpr iterator operator-(
+            const iterator& value,
+            difference_type offset
+        )
+            requires (
+                detail::zip_all_random_access<
+                    Const,
+                    Views...
+                >
+            )
+        {
+            auto result = value;
+            result -= offset;
+            return result;
+        }
+
+        friend constexpr difference_type
+        operator-(
+            const iterator& left,
+            const iterator& right
+        )
+            requires (
+                sized_sentinel_for<
+                    iterator_t<
+                        detail::maybe_const_t<
+                            Const,
+                            Views
+                        >
+                    >,
+                    iterator_t<
+                        detail::maybe_const_t<
+                            Const,
+                            Views
+                        >
+                    >
+                > &&
+                ...
+            )
+        {
+            return
+                detail::
+                    zip_min_absolute_difference<
+                        difference_type
+                    >(
+                        left.current_,
+                        right.current_,
+                        index_sequence_for<
+                            Views...
+                        >{}
+                    );
+        }
+
+        friend constexpr auto iter_move(
+            const iterator& value
+        )
+            noexcept(
+                (
+                    noexcept(
+                        ranges::iter_move(
+                            declval<
+                                const iterator_t<
+                                    detail::maybe_const_t<
+                                        Const,
+                                        Views
+                                    >
+                                >&
+                            >()
+                        )
+                    ) &&
+                    ...
+                ) &&
+                (
+                    is_nothrow_move_constructible_v<
+                        range_rvalue_reference_t<
+                            detail::maybe_const_t<
+                                Const,
+                                Views
+                            >
+                        >
+                    > &&
+                    ...
+                )
+            )
+        {
+            return value.move_values(
+                index_sequence_for<
+                    Views...
+                >{}
+            );
+        }
+
+        friend constexpr void iter_swap(
+            const iterator& left,
+            const iterator& right
+        )
+            noexcept(
+                swap_is_noexcept(
+                    index_sequence_for<
+                        Views...
+                    >{}
+                )
+            )
+            requires (
+                indirectly_swappable<
+                    iterator_t<
+                        detail::maybe_const_t<
+                            Const,
+                            Views
+                        >
+                    >
+                > &&
+                ...
+            )
+        {
+            swap_values(
+                left,
+                right,
+                index_sequence_for<
+                    Views...
+                >{}
+            );
         }
     };
 
-    zip_view() requires (default_initializable<Views> && ...) = default;
-    constexpr explicit zip_view(Views... views) : views_(FTL_RANGES_NAMESPACE::move(views)...) {}
-    constexpr iterator begin() { return begin_impl(index_sequence_for<Views...>{}); }
-    constexpr sentinel end() { return end_impl(index_sequence_for<Views...>{}); }
-    constexpr auto size() requires (sized_range<Views> && ...) { return size_impl(index_sequence_for<Views...>{}); }
-    constexpr auto begin() const requires (input_range<const Views> && ...) {
-        return [&]<size_t... I>(index_sequence<I...>) {
-            return zip_view<views::all_t<const Views&>...>(views::all(get<I>(views_))...).begin();
-        }(index_sequence_for<Views...>{});
+    template<bool Const>
+    class sentinel {
+    private:
+        using end_tuple =
+            tuple<
+                sentinel_t<
+                    detail::maybe_const_t<
+                        Const,
+                        Views
+                    >
+                >...
+            >;
+
+        end_tuple end_;
+
+        constexpr explicit sentinel(
+            end_tuple end
+        )
+            : end_(
+                FTL_RANGES_NAMESPACE::move(
+                    end
+                )
+            ) {}
+
+        template<bool OtherConst>
+        constexpr bool equal(
+            const iterator<OtherConst>& value
+        ) const
+            requires (
+                sentinel_for<
+                    sentinel_t<
+                        detail::maybe_const_t<
+                            Const,
+                            Views
+                        >
+                    >,
+                    iterator_t<
+                        detail::maybe_const_t<
+                            OtherConst,
+                            Views
+                        >
+                    >
+                > &&
+                ...
+            )
+        {
+            return [&]<size_t... Index>(
+                index_sequence<Index...>
+            ) {
+                return (
+                    (
+                        get<Index>(
+                            value.current_
+                        ) ==
+                        get<Index>(
+                            end_
+                        )
+                    ) ||
+                    ...
+                );
+            }(
+                index_sequence_for<
+                    Views...
+                >{}
+            );
+        }
+
+        template<bool OtherConst>
+        constexpr auto distance_from(
+            const iterator<OtherConst>& value
+        ) const
+            requires (
+                sized_sentinel_for<
+                    sentinel_t<
+                        detail::maybe_const_t<
+                            Const,
+                            Views
+                        >
+                    >,
+                    iterator_t<
+                        detail::maybe_const_t<
+                            OtherConst,
+                            Views
+                        >
+                    >
+                > &&
+                ...
+            )
+        {
+            using difference_type =
+                common_type_t<
+                    range_difference_t<
+                        detail::maybe_const_t<
+                            OtherConst,
+                            Views
+                        >
+                    >...
+                >;
+
+            return
+                detail::
+                    zip_min_absolute_difference<
+                        difference_type
+                    >(
+                        value.current_,
+                        end_,
+                        index_sequence_for<
+                            Views...
+                        >{}
+                    );
+        }
+
+        friend class zip_view;
+        friend class sentinel<!Const>;
+
+    public:
+        sentinel() = default;
+
+        constexpr sentinel(
+            sentinel<!Const> other
+        )
+            requires (
+                Const &&
+                (
+                    convertible_to<
+                        sentinel_t<Views>,
+                        sentinel_t<
+                            const Views
+                        >
+                    > &&
+                    ...
+                )
+            )
+            : end_(
+                FTL_RANGES_NAMESPACE::move(
+                    other.end_
+                )
+            ) {}
+
+        template<bool OtherConst>
+            requires (
+                sentinel_for<
+                    sentinel_t<
+                        detail::maybe_const_t<
+                            Const,
+                            Views
+                        >
+                    >,
+                    iterator_t<
+                        detail::maybe_const_t<
+                            OtherConst,
+                            Views
+                        >
+                    >
+                > &&
+                ...
+            )
+        friend constexpr bool operator==(
+            const iterator<OtherConst>& value,
+            const sentinel& bound
+        ) {
+            return bound.equal(value);
+        }
+
+        template<bool OtherConst>
+            requires (
+                sized_sentinel_for<
+                    sentinel_t<
+                        detail::maybe_const_t<
+                            Const,
+                            Views
+                        >
+                    >,
+                    iterator_t<
+                        detail::maybe_const_t<
+                            OtherConst,
+                            Views
+                        >
+                    >
+                > &&
+                ...
+            )
+        friend constexpr auto operator-(
+            const iterator<OtherConst>& value,
+            const sentinel& bound
+        ) {
+            return bound.distance_from(value);
+        }
+
+        template<bool OtherConst>
+            requires (
+                sized_sentinel_for<
+                    sentinel_t<
+                        detail::maybe_const_t<
+                            Const,
+                            Views
+                        >
+                    >,
+                    iterator_t<
+                        detail::maybe_const_t<
+                            OtherConst,
+                            Views
+                        >
+                    >
+                > &&
+                ...
+            )
+        friend constexpr auto operator-(
+            const sentinel& bound,
+            const iterator<OtherConst>& value
+        ) {
+            return -bound.distance_from(value);
+        }
+    };
+
+public:
+    zip_view() = default;
+
+    constexpr explicit zip_view(
+        Views... views
+    )
+        : views_(
+            FTL_RANGES_NAMESPACE::move(
+                views
+            )...
+        ) {}
+
+    [[nodiscard]]
+    constexpr auto begin()
+        requires (
+            !(detail::simple_view<Views> &&
+              ...)
+        )
+    {
+        return begin_impl(
+            index_sequence_for<
+                Views...
+            >{}
+        );
     }
-    constexpr auto end() const requires (input_range<const Views> && ...) {
-        return [&]<size_t... I>(index_sequence<I...>) {
-            return zip_view<views::all_t<const Views&>...>(views::all(get<I>(views_))...).end();
-        }(index_sequence_for<Views...>{});
+
+    [[nodiscard]]
+    constexpr auto begin() const
+        requires (
+            range<const Views> &&
+            ...
+        )
+    {
+        return begin_impl(
+            index_sequence_for<
+                Views...
+            >{}
+        );
     }
-    constexpr auto size() const requires (sized_range<const Views> && ...) {
-        common_type_t<range_size_t<const Views>...> result = static_cast<common_type_t<range_size_t<const Views>...>>(-1);
-        [&]<size_t... I>(index_sequence<I...>) {
-            ((result = result < ranges::size(get<I>(views_)) ? result : ranges::size(get<I>(views_))), ...);
-        }(index_sequence_for<Views...>{});
-        return result;
+
+    [[nodiscard]]
+    constexpr auto end()
+        requires (
+            !(detail::simple_view<Views> &&
+              ...)
+        )
+    {
+        if constexpr (
+            !detail::zip_is_common<
+                Views...
+            >
+        ) {
+            return sentinel_end_impl(
+                index_sequence_for<
+                    Views...
+                >{}
+            );
+        } else if constexpr (
+            (
+                random_access_range<
+                    Views
+                > &&
+                ...
+            )
+        ) {
+            using result_iterator =
+                iterator<false>;
+
+            return
+                begin() +
+                static_cast<
+                    typename result_iterator::
+                        difference_type
+                >(size());
+        } else {
+            return iterator_end_impl(
+                index_sequence_for<
+                    Views...
+                >{}
+            );
+        }
+    }
+
+    [[nodiscard]]
+    constexpr auto end() const
+        requires (
+            range<const Views> &&
+            ...
+        )
+    {
+        if constexpr (
+            !detail::zip_is_common<
+                const Views...
+            >
+        ) {
+            return sentinel_end_impl(
+                index_sequence_for<
+                    Views...
+                >{}
+            );
+        } else if constexpr (
+            (
+                random_access_range<
+                    const Views
+                > &&
+                ...
+            )
+        ) {
+            using result_iterator =
+                iterator<true>;
+
+            return
+                begin() +
+                static_cast<
+                    typename result_iterator::
+                        difference_type
+                >(size());
+        } else {
+            return iterator_end_impl(
+                index_sequence_for<
+                    Views...
+                >{}
+            );
+        }
+    }
+
+    [[nodiscard]]
+    constexpr auto size()
+        requires (
+            sized_range<Views> &&
+            ...
+        )
+    {
+        return size_impl(
+            index_sequence_for<
+                Views...
+            >{}
+        );
+    }
+
+    [[nodiscard]]
+    constexpr auto size() const
+        requires (
+            sized_range<const Views> &&
+            ...
+        )
+    {
+        return size_impl(
+            index_sequence_for<
+                Views...
+            >{}
+        );
     }
 };
 
-template<class... R>
-zip_view(R&&...) -> zip_view<views::all_t<R>...>;
+template<class... Ranges>
+zip_view(Ranges&&...)
+    -> zip_view<
+        views::all_t<Ranges>...
+    >;
 
-template<class... V>
-inline constexpr bool enable_borrowed_range<zip_view<V...>> = (enable_borrowed_range<V> && ...);
+template<class... Views>
+inline constexpr bool
+enable_borrowed_range<
+    zip_view<Views...>
+> =
+    (
+        enable_borrowed_range<
+            Views
+        > &&
+        ...
+    );
 
 template<view V> requires input_range<V>
 class enumerate_view : public view_interface<enumerate_view<V>> {
