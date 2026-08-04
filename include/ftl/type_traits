@@ -907,12 +907,28 @@ struct common_ref<
 };
 
 template<class T, class U>
-    requires convertible_intrinsic_v<
-                 T&&, typename common_ref<T&, U&>::type&&> &&
-             convertible_intrinsic_v<
-                 U&&, typename common_ref<T&, U&>::type&&>
-struct common_ref<T&&, U&&, void_t<typename common_ref<T&, U&>::type>> {
-    using type = typename common_ref<T&, U&>::type&&;
+using common_ref_rvalue_t =
+    remove_reference_t<
+        typename common_ref<T&, U&>::type
+    >&&;
+
+template<class T, class U>
+    requires (
+        convertible_intrinsic_v<
+            T&&,
+            common_ref_rvalue_t<T, U>
+        > &&
+        convertible_intrinsic_v<
+            U&&,
+            common_ref_rvalue_t<T, U>
+        >
+    )
+struct common_ref<
+    T&&,
+    U&&,
+    void_t<typename common_ref<T&, U&>::type>
+> {
+    using type = common_ref_rvalue_t<T, U>;
 };
 
 template<class T, class U>

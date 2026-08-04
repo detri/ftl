@@ -195,6 +195,7 @@ foreach(header IN ITEMS
         chunk_views
         cartesian_product_views
         ranges_audit
+        basic_const_iterator
 )
     add_ftl_test(${header})
 endforeach()
