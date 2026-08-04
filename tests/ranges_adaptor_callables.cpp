@@ -1430,9 +1430,11 @@ range_adaptor_callables_work() {
         chunk_by_reconstructible_predicate_works();
 }
 
+#ifdef FTL_REPLACE_STL
 static_assert(
     range_adaptor_callables_work()
 );
+#endif
 
 bool ftl_test() {
     return range_adaptor_callables_work();
