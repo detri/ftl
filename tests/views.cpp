@@ -4414,6 +4414,280 @@ static_assert(
     drop_while_caches_begin()
 );
 
+struct is_even
+{
+    constexpr bool operator()(
+        int value
+    ) const noexcept
+    {
+        return value % 2 == 0;
+    }
+};
+
+
+using filter_pointer_view =
+    tested::ranges::filter_view<
+        pointer_view,
+        is_even
+    >;
+
+
+static_assert(
+    tested::ranges::view<
+        filter_pointer_view
+    >
+);
+
+static_assert(
+    tested::ranges::bidirectional_range<
+        filter_pointer_view
+    >
+);
+
+static_assert(
+    !tested::ranges::random_access_range<
+        filter_pointer_view
+    >
+);
+
+static_assert(
+    tested::ranges::common_range<
+        filter_pointer_view
+    >
+);
+
+static_assert(
+    !tested::ranges::sized_range<
+        filter_pointer_view
+    >
+);
+
+static_assert(
+    !tested::ranges::range<
+        const filter_pointer_view
+    >
+);
+
+static_assert(
+    !tested::ranges::borrowed_range<
+        filter_pointer_view
+    >
+);
+
+using filter_pointer_iterator =
+    decltype(
+        tested::declval<
+            filter_pointer_view&
+        >().begin()
+    );
+
+
+static_assert(
+    tested::bidirectional_iterator<
+        filter_pointer_iterator
+    >
+);
+
+static_assert(
+    !tested::random_access_iterator<
+        filter_pointer_iterator
+    >
+);
+
+constexpr bool filter_direct_works()
+{
+    int values[] = {
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+    };
+
+    pointer_view base{
+        values,
+        values + 6
+    };
+
+    auto filtered =
+        tested::ranges::views::filter(
+            base,
+            is_even{}
+        );
+
+    static_assert(tested::is_same_v<
+        decltype(filtered),
+        filter_pointer_view
+    >);
+
+    auto iterator =
+        filtered.begin();
+
+    return
+        iterator != filtered.end() &&
+        *iterator++ == 2 &&
+        iterator != filtered.end() &&
+        *iterator++ == 4 &&
+        iterator != filtered.end() &&
+        *iterator++ == 6 &&
+        iterator == filtered.end();
+}
+
+
+static_assert(
+    filter_direct_works()
+);
+
+constexpr bool filter_pipe_works()
+{
+    int values[] = {
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+    };
+
+    pointer_view base{
+        values,
+        values + 6
+    };
+
+    auto filtered =
+        base |
+        tested::ranges::views::filter(
+            is_even{}
+        );
+
+    auto iterator =
+        filtered.begin();
+
+    return
+        *iterator++ == 2 &&
+        *iterator++ == 4 &&
+        *iterator++ == 6 &&
+        iterator == filtered.end();
+}
+
+
+static_assert(
+    filter_pipe_works()
+);
+
+constexpr bool filter_bidirectional_works()
+{
+    int values[] = {
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+    };
+
+    pointer_view base{
+        values,
+        values + 6
+    };
+
+    auto filtered =
+        tested::ranges::views::filter(
+            base,
+            is_even{}
+        );
+
+    auto iterator =
+        filtered.end();
+
+    --iterator;
+
+    if (*iterator != 6)
+    {
+        return false;
+    }
+
+    --iterator;
+
+    if (*iterator != 4)
+    {
+        return false;
+    }
+
+    --iterator;
+
+    return *iterator == 2;
+}
+
+
+static_assert(
+    filter_bidirectional_works()
+);
+
+struct counting_even
+{
+    int* calls;
+
+    constexpr bool operator()(
+        int value
+    ) const noexcept
+    {
+        ++*calls;
+        return value % 2 == 0;
+    }
+};
+
+
+constexpr bool filter_caches_begin()
+{
+    int values[] = {
+        1,
+        3,
+        4,
+        6
+    };
+
+    int calls = 0;
+
+    pointer_view base{
+        values,
+        values + 4
+    };
+
+    auto filtered =
+        tested::ranges::views::filter(
+            base,
+            counting_even{
+                &calls
+            }
+        );
+
+    auto first =
+        filtered.begin();
+
+    if (
+        first == filtered.end() ||
+        *first != 4 ||
+        calls != 3
+    )
+    {
+        return false;
+    }
+
+    auto second =
+        filtered.begin();
+
+    return
+        second == first &&
+        calls == 3;
+}
+
+
+static_assert(
+    filter_caches_begin()
+);
+
 bool ftl_test()
 {
     return reverse_view_direct_works() &&

@@ -4515,6 +4515,600 @@ inline constexpr reverse_fn reverse{};
 
 } // namespace views
 
+namespace detail
+{
+
+template<
+    class V,
+    bool = forward_range<V>
+>
+struct filter_view_cache
+{
+};
+
+
+template<class V>
+struct filter_view_cache<V, true>
+{
+    non_propagating_cache<
+        iterator_t<V>
+    > cached_begin;
+};
+
+
+template<
+    class V,
+    bool = forward_range<V>
+>
+struct filter_iterator_category
+{
+};
+
+
+template<class V>
+struct filter_iterator_category<V, true>
+{
+private:
+    using base_category =
+        typename iterator_traits<
+            iterator_t<V>
+        >::iterator_category;
+
+public:
+    using iterator_category =
+        conditional_t<
+            derived_from<
+                base_category,
+                bidirectional_iterator_tag
+            >,
+            bidirectional_iterator_tag,
+            conditional_t<
+                derived_from<
+                    base_category,
+                    forward_iterator_tag
+                >,
+                forward_iterator_tag,
+                base_category
+            >
+        >;
+};
+
+
+template<class I>
+concept filter_has_arrow =
+    input_iterator<I> &&
+    (
+        is_pointer_v<I> ||
+        requires(const I iterator)
+        {
+            iterator.operator->();
+        }
+    );
+
+} // namespace detail
+
+template<
+    view V,
+    class Pred
+>
+    requires (
+        input_range<V> &&
+        is_object_v<Pred> &&
+        indirect_unary_predicate<
+            Pred,
+            iterator_t<V>
+        >
+    )
+class filter_view
+    : public view_interface<
+        filter_view<V, Pred>
+    >
+{
+private:
+    class iterator;
+    class sentinel;
+
+    FTL_NO_UNIQUE_ADDRESS
+    V base_ = V();
+
+    FTL_NO_UNIQUE_ADDRESS
+    detail::movable_box<Pred> pred_;
+
+    FTL_NO_UNIQUE_ADDRESS
+    detail::filter_view_cache<V> cache_{};
+
+public:
+    filter_view()
+        requires (
+            default_initializable<V> &&
+            default_initializable<Pred>
+        )
+        = default;
+
+    constexpr explicit filter_view(
+        V base,
+        Pred pred
+    )
+        : base_(
+            FTL_RANGES_NAMESPACE::move(base)
+        ),
+          pred_(
+            FTL_RANGES_NAMESPACE::move(pred)
+        )
+    {
+    }
+
+    [[nodiscard]]
+    constexpr V base() const&
+        requires copy_constructible<V>
+    {
+        return base_;
+    }
+
+    [[nodiscard]]
+    constexpr V base() &&
+    {
+        return FTL_RANGES_NAMESPACE::move(base_);
+    }
+
+    [[nodiscard]]
+    constexpr const Pred& pred() const
+    {
+        return *pred_;
+    }
+
+    [[nodiscard]]
+    constexpr iterator begin();
+
+    [[nodiscard]]
+    constexpr auto end();
+};
+
+template<
+    view V,
+    class Pred
+>
+    requires (
+        input_range<V> &&
+        is_object_v<Pred> &&
+        indirect_unary_predicate<
+            Pred,
+            iterator_t<V>
+        >
+    )
+class filter_view<V, Pred>::iterator
+    : public detail::filter_iterator_category<V>
+{
+private:
+    iterator_t<V> current_;
+
+    filter_view* parent_ = nullptr;
+
+public:
+    using iterator_concept =
+        conditional_t<
+            bidirectional_range<V>,
+            bidirectional_iterator_tag,
+            conditional_t<
+                forward_range<V>,
+                forward_iterator_tag,
+                input_iterator_tag
+            >
+        >;
+
+    using value_type =
+        range_value_t<V>;
+
+    using difference_type =
+        range_difference_t<V>;
+
+    iterator()
+        requires default_initializable<
+            iterator_t<V>
+        >
+        = default;
+
+    constexpr iterator(
+        filter_view& parent,
+        iterator_t<V> current
+    )
+        : current_(
+            FTL_RANGES_NAMESPACE::move(
+                current
+            )
+        ),
+          parent_(
+            FTL_RANGES_NAMESPACE::addressof(
+                parent
+            )
+        )
+    {
+    }
+
+    [[nodiscard]]
+    constexpr const iterator_t<V>&
+    base() const& noexcept
+    {
+        return current_;
+    }
+
+    [[nodiscard]]
+    constexpr iterator_t<V>
+    base() &&
+    {
+        return FTL_RANGES_NAMESPACE::move(
+            current_
+        );
+    }
+
+    [[nodiscard]]
+    constexpr range_reference_t<V>
+    operator*() const
+    {
+        return *current_;
+    }
+
+    [[nodiscard]]
+    constexpr iterator_t<V>
+    operator->() const
+        requires (
+            detail::filter_has_arrow<
+                iterator_t<V>
+            > &&
+            copyable<
+                iterator_t<V>
+            >
+        )
+    {
+        return current_;
+    }
+
+    constexpr iterator&
+    operator++()
+    {
+        ++current_;
+
+        const auto bound =
+            ranges::end(parent_->base_);
+
+        while (
+            current_ != bound &&
+            !FTL_RANGES_NAMESPACE::invoke(
+                *parent_->pred_,
+                *current_
+            )
+        )
+        {
+            ++current_;
+        }
+
+        return *this;
+    }
+
+    constexpr void
+    operator++(int)
+    {
+        ++*this;
+    }
+
+    constexpr iterator
+    operator++(int)
+        requires forward_range<V>
+    {
+        auto previous = *this;
+        ++*this;
+        return previous;
+    }
+
+    constexpr iterator&
+    operator--()
+        requires bidirectional_range<V>
+    {
+        do
+        {
+            --current_;
+        }
+        while (
+            !FTL_RANGES_NAMESPACE::invoke(
+                *parent_->pred_,
+                *current_
+            )
+        );
+
+        return *this;
+    }
+
+    constexpr iterator
+    operator--(int)
+        requires bidirectional_range<V>
+    {
+        auto previous = *this;
+        --*this;
+        return previous;
+    }
+
+    friend constexpr bool operator==(
+        const iterator& left,
+        const iterator& right
+    )
+        requires equality_comparable<
+            iterator_t<V>
+        >
+    {
+        return left.current_ == right.current_;
+    }
+
+    friend constexpr bool operator!=(
+        const iterator& left,
+        const iterator& right
+    )
+        requires equality_comparable<
+            iterator_t<V>
+        >
+    {
+        return !(left == right);
+    }
+};
+
+template<
+    view V,
+    class Pred
+>
+    requires (
+        input_range<V> &&
+        is_object_v<Pred> &&
+        indirect_unary_predicate<
+            Pred,
+            iterator_t<V>
+        >
+    )
+class filter_view<V, Pred>::sentinel
+{
+private:
+    sentinel_t<V> end_ =
+        sentinel_t<V>();
+
+public:
+    sentinel() = default;
+
+    constexpr explicit sentinel(
+        filter_view& parent
+    )
+        : end_(
+            ranges::end(parent.base_)
+        )
+    {
+    }
+
+    [[nodiscard]]
+    constexpr sentinel_t<V>
+    base() const
+    {
+        return end_;
+    }
+
+    friend constexpr bool operator==(
+        const iterator& value,
+        const sentinel& bound
+    )
+    {
+        return value.base() == bound.end_;
+    }
+
+    friend constexpr bool operator==(
+        const sentinel& bound,
+        const iterator& value
+    )
+    {
+        return value == bound;
+    }
+
+    friend constexpr bool operator!=(
+        const iterator& value,
+        const sentinel& bound
+    )
+    {
+        return !(value == bound);
+    }
+
+    friend constexpr bool operator!=(
+        const sentinel& bound,
+        const iterator& value
+    )
+    {
+        return !(bound == value);
+    }
+};
+
+template<
+    view V,
+    class Pred
+>
+    requires (
+        input_range<V> &&
+        is_object_v<Pred> &&
+        indirect_unary_predicate<
+            Pred,
+            iterator_t<V>
+        >
+    )
+constexpr auto
+filter_view<V, Pred>::begin()
+    -> iterator
+{
+    if constexpr (forward_range<V>)
+    {
+        auto& cached =
+            cache_.cached_begin;
+
+        if (!cached.has_value())
+        {
+            auto current =
+                ranges::begin(base_);
+
+            const auto bound =
+                ranges::end(base_);
+
+            while (
+                current != bound &&
+                !FTL_RANGES_NAMESPACE::invoke(
+                    *pred_,
+                    *current
+                )
+            )
+            {
+                ++current;
+            }
+
+            cached.emplace(
+                FTL_RANGES_NAMESPACE::move(
+                    current
+                )
+            );
+        }
+
+        return iterator(
+            *this,
+            *cached
+        );
+    }
+    else
+    {
+        auto current =
+            ranges::begin(base_);
+
+        const auto bound =
+            ranges::end(base_);
+
+        while (
+            current != bound &&
+            !FTL_RANGES_NAMESPACE::invoke(
+                *pred_,
+                *current
+            )
+        )
+        {
+            ++current;
+        }
+
+        return iterator(
+            *this,
+            FTL_RANGES_NAMESPACE::move(
+                current
+            )
+        );
+    }
+}
+
+
+template<
+    view V,
+    class Pred
+>
+    requires (
+        input_range<V> &&
+        is_object_v<Pred> &&
+        indirect_unary_predicate<
+            Pred,
+            iterator_t<V>
+        >
+    )
+constexpr auto
+filter_view<V, Pred>::end()
+{
+    if constexpr (common_range<V>)
+    {
+        return iterator(
+            *this,
+            ranges::end(base_)
+        );
+    }
+    else
+    {
+        return sentinel(*this);
+    }
+}
+
+template<class R, class Pred>
+filter_view(
+    R&&,
+    Pred
+) -> filter_view<
+    views::all_t<R>,
+    Pred
+>;
+
+namespace views
+{
+
+namespace detail
+{
+
+struct filter_fn
+{
+    template<
+        viewable_range R,
+        class Pred
+    >
+        requires (
+            input_range<all_t<R>> &&
+            constructible_from<
+                decay_t<Pred>,
+                Pred
+            > &&
+            indirect_unary_predicate<
+                decay_t<Pred>,
+                iterator_t<all_t<R>>
+            >
+        )
+    [[nodiscard]]
+    constexpr auto operator()(
+        R&& range,
+        Pred&& pred
+    ) const
+    {
+        using base_type =
+            all_t<R>;
+
+        using predicate_type =
+            decay_t<Pred>;
+
+        return filter_view<
+            base_type,
+            predicate_type
+        >(
+            all(static_cast<R&&>(range)),
+            predicate_type(
+                static_cast<Pred&&>(pred)
+            )
+        );
+    }
+
+    template<class Pred>
+        requires constructible_from<
+            decay_t<Pred>,
+            Pred
+        >
+    [[nodiscard]]
+    constexpr auto operator()(
+        Pred&& pred
+    ) const
+    {
+        return FTL_RANGES_NAMESPACE::ranges::detail::
+            partial_adaptor<filter_fn>(
+                static_cast<Pred&&>(pred)
+            );
+    }
+};
+
+} // namespace detail
+
+
+inline constexpr detail::filter_fn
+filter{};
+
+} // namespace views
+
 } // namespace ranges
 
 namespace views = ranges::views;
