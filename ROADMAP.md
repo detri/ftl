@@ -121,6 +121,7 @@ dependency order, not hundreds of individual overloads.
 | `<variant>`          | Stage 2.5         |
 | `<any>`              | Stage 2.5         |
 | `<coroutine>`        | Stage 2.6.1       |
+| `<generator>`        | Stage 2.6.4       |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -156,7 +157,7 @@ remain required when C++23 still specifies them; they are not silently dropped.
 | Area                      | Absent headers                                                                                                                                                                                                      |
 |---------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Concepts/types/vocabulary | `<bitset>`, `<ratio>`                                                                                                                                                                                               |
-| Iteration/ranges          | `<mdspan>`, `<generator>`                                                                                                                                                                                           |
+| Iteration/ranges          | `<mdspan>`                                                                                                                                                                                                          |
 | Algorithms/numerics       | `<algorithm>`, `<numeric>`, `<numbers>`, `<random>`, `<valarray>`, `<execution>`                                                                                                                                    |
 | Containers                | `<deque>`, `<flat_map>`, `<flat_set>`, `<forward_list>`, `<list>`, `<map>`, `<queue>`, `<set>`, `<stack>`, `<unordered_map>`, `<unordered_set>`, `<vector>`                                                         |
 | Text/encoding             | `<charconv>`, `<codecvt>`, `<string>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                                                      |
@@ -300,11 +301,35 @@ Take these closures in order:
 5. `<optional>` + `<expected>` + `<variant>` + `<any>`
 6. `<coroutine>` + `<ranges>` + `<span>` + `<mdspan>` + `<generator>`
     - `<coroutine>` completed as Stage 2.6.1.
-    - `<span>` seeded as Stage 2.6.2. Its generic range constructor, range deduction guide, ranges::enable_view, and ranges::enable_borrowed_range remain deferred to the final Stage 2.6 integration pass.
-    - `<ranges>` reached its Stage 2.6.3 milestone with range access CPOs, concepts, associated types, view infrastructure, subrange, the major C++20 and C++23 views and adaptors, and focused cross-compiler audits for propagation, iterator conformance, constexpr, conditional noexcept, adaptor composition, and constraints.
-    - `<ranges>` remains seeded rather than complete until its remaining N4950 synopsis surface, feature-test macros, header self-sufficiency, and deferred integration work are finished.
-    - Complete `<mdspan>` and `<generator>` as the next Stage 2.6 milestones.
-    - Finish Stage 2.6 with one integration and synopsis-cleanup pass across `<ranges>`, `<span>`, `<mdspan>`, and `<generator>`. No header moves to the complete inventory until its individual completion gates are met.
+    - `<span>` seeded as Stage 2.6.2. Its generic range constructor,
+      range deduction guide, `ranges::enable_view`, and
+      `ranges::enable_borrowed_range` remain deferred to the final Stage 2.6
+      integration pass.
+    - `<ranges>` reached its Stage 2.6.3 milestone with range access CPOs,
+      concepts, associated types, view infrastructure, subrange, the major
+      C++20 and C++23 views and adaptors, and focused cross-compiler audits for
+      propagation, iterator conformance, `constexpr`, conditional `noexcept`,
+      adaptor composition, and constraints.
+    - `<ranges>` remains seeded rather than complete until its remaining N4950
+      synopsis surface, feature-test macros, header self-sufficiency, and
+      deferred integration work are finished.
+    - `<generator>` completed as Stage 2.6.4, including value and reference
+      generation, recursive yielding through `ranges::elements_of`,
+      allocator-aware coroutine frames, statically typed and type-erased
+      allocators, `pmr::generator`, exception propagation, move ownership, and
+      coroutine-frame lifetime coverage.
+    - `<generator>` passes normal and `FTL_REPLACE_STL` tests on MSVC, Clang,
+      AppleClang, and GCC, including optimized-build allocator and destruction
+      regression coverage.
+    - Complete `<mdspan>` as Stage 2.6.5.
+    - Finish Stage 2.6 as Stage 2.6.6 with one integration and
+      synopsis-cleanup pass across `<ranges>`, `<span>`, `<mdspan>`, and
+      `<generator>`. No remaining seeded header moves to the complete inventory
+      until its individual completion gates are met.
+
+**Current Stage 2.6 status:** `<coroutine>` and `<generator>` are complete.
+`<span>` and `<ranges>` remain seeded pending their deferred integration and
+synopsis work. `<mdspan>` is the next active closure.
 
 `optional<T&>` remains tested as an extension and must not distort the C++23
 `optional<T>` ABI or constraints.

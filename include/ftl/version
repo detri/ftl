@@ -97,5 +97,6 @@
 #define __cpp_lib_ranges_as_const 202207L
 #define __cpp_lib_ranges_enumerate 202302L
 #define __cpp_lib_ranges_repeat 202207L
+#define __cpp_lib_generator 202207L
 
 #endif
