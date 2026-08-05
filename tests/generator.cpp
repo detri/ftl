@@ -633,6 +633,23 @@ bool ftl_test() {
              * Move assignment must destroy second's old frame immediately.
              */
             if (!allocator_balanced(second_counts)) {
+                ::printf(
+                    "second_counts: allocations=%zu deallocations=%zu "
+                    "allocated_objects=%zu deallocated_objects=%zu\n",
+                    static_cast<tested::size_t>(
+                        second_counts.allocations
+                    ),
+                    static_cast<tested::size_t>(
+                        second_counts.deallocations
+                    ),
+                    static_cast<tested::size_t>(
+                        second_counts.allocated_objects
+                    ),
+                    static_cast<tested::size_t>(
+                        second_counts.deallocated_objects
+                    )
+                );
+
                 return generator_test_failure(__LINE__);
             }
 

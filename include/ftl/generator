@@ -507,8 +507,16 @@ class generator : public ranges::view_interface<generator<Ref, V, Allocator> > {
             }
         }
 
-        static void operator delete(void* pointer, size_t size) noexcept {
-            allocation_header* header = allocation_header_from(pointer, size);
+        static void operator delete(
+            void* pointer,
+            size_t size
+        ) noexcept
+        {
+            allocation_header* header =
+                allocation_header_from(
+                    pointer,
+                    size
+                );
 
             header->deallocate(pointer, header);
         }
@@ -606,6 +614,16 @@ class generator : public ranges::view_interface<generator<Ref, V, Allocator> > {
         coroutine_handle<promise_type> coroutine_;
     };
 
+#if defined(_MSC_VER)
+    __declspec(noinline)
+#endif
+    static void destroy_coroutine(
+        coroutine_handle<promise_type> coroutine
+    ) noexcept
+    {
+        coroutine.destroy();
+    }
+
    public:
     generator(const generator&) = delete;
 
@@ -613,17 +631,32 @@ class generator : public ranges::view_interface<generator<Ref, V, Allocator> > {
         : coroutine_(
               FTL_GENERATOR_NAMESPACE::exchange(other.coroutine_, nullptr)) {}
 
-    ~generator() {
-        if (coroutine_) {
-            coroutine_.destroy();
+    ~generator()
+    {
+        if (coroutine_)
+        {
+            destroy_coroutine(coroutine_);
         }
     }
 
-    generator& operator=(generator other) noexcept {
-        auto previous =
-            FTL_GENERATOR_NAMESPACE::exchange(coroutine_, other.coroutine_);
+    generator& operator=(generator other) noexcept
+    {
+        auto incoming =
+            FTL_GENERATOR_NAMESPACE::exchange(
+                other.coroutine_,
+                nullptr
+            );
 
-        other.coroutine_ = previous;
+        auto outgoing =
+            FTL_GENERATOR_NAMESPACE::exchange(
+                coroutine_,
+                incoming
+            );
+
+        if (outgoing)
+        {
+            destroy_coroutine(outgoing);
+        }
 
         return *this;
     }
