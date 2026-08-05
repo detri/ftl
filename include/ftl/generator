@@ -35,12 +35,72 @@
 
 FTL_BEGIN_NAMESPACE
 
+namespace detail {
+
+template<class Yielded>
+struct generator_active_node {
+    coroutine_handle<> coroutine = nullptr;
+    generator_active_node* previous = nullptr;
+
+    /*
+     * Points to the active promise's value_ member.
+     *
+     * For example, when Yielded is int&&:
+     *   add_pointer_t<Yielded>  is int*
+     *   value                  is int**
+     */
+    add_pointer_t<Yielded>* value = nullptr;
+};
+
+template<class Yielded>
+struct generator_active_state {
+    generator_active_node<Yielded>* top = nullptr;
+};
+
+template<class Yielded>
+struct generator_access {
+    template<class Promise>
+    static void push_active(
+        Promise& promise,
+        generator_active_state<Yielded>* active
+    ) noexcept {
+        promise.active_ = active;
+
+        promise.node_.previous =
+            active->top;
+
+        active->top =
+            FTL_GENERATOR_NAMESPACE::addressof(
+                promise.node_
+            );
+    }
+
+    template<class Promise>
+    static void rethrow_exception(
+        Promise& promise
+    ) {
+#if FTL_HAS_EXCEPTIONS
+        if (promise.exception_) {
+            FTL_GENERATOR_NAMESPACE::rethrow_exception(
+                promise.exception_
+            );
+        }
+#else
+        (void) promise;
+#endif
+    }
+};
+
+} // namespace detail
+
 template<class Ref, class V = void, class Allocator = void>
 class generator
     : public ranges::view_interface<
           generator<Ref, V, Allocator>
       > {
-private:
+    template<class, class, class>
+    friend class generator;
+
     using value =
         conditional_t<
             is_void_v<V>,
@@ -101,8 +161,103 @@ public:
             const reference&
         >;
 
+    using active_node_type =
+                detail::generator_active_node<yielded>;
+
+    using active_state_type =
+        detail::generator_active_state<yielded>;
+
     class promise_type {
     private:
+        friend struct detail::generator_access<
+            yielded
+        >;
+        class final_awaiter {
+        public:
+            [[nodiscard]]
+            constexpr bool await_ready() const noexcept {
+                return false;
+            }
+
+            [[nodiscard]]
+            coroutine_handle<> await_suspend(
+                coroutine_handle<promise_type> coroutine
+            ) const noexcept {
+                promise_type& promise =
+                    coroutine.promise();
+
+                active_state_type* active =
+                    promise.active_;
+
+                active_node_type* current =
+                    active->top;
+
+                active->top =
+                    current->previous;
+
+                if (active->top) {
+                    return active->top->coroutine;
+                }
+
+                return noop_coroutine();
+            }
+
+            constexpr void await_resume() const noexcept {}
+        };
+
+        template<class NestedGenerator>
+        class recursive_yield_awaiter {
+        public:
+            explicit recursive_yield_awaiter(
+                NestedGenerator&& nested
+            ) noexcept
+                : nested_(
+                      FTL_GENERATOR_NAMESPACE::move(
+                          nested
+                      )
+                  ) {}
+
+            [[nodiscard]]
+            constexpr bool await_ready() const noexcept {
+                return false;
+            }
+
+            [[nodiscard]]
+            coroutine_handle<> await_suspend(
+                coroutine_handle<promise_type> parent
+            ) noexcept {
+                promise_type& parent_promise =
+                    parent.promise();
+
+                auto& nested_promise =
+                    nested_.coroutine_.promise();
+
+                detail::generator_access<
+                    yielded
+                >::push_active(
+                    nested_promise,
+                    parent_promise.active_
+                );
+
+                return nested_.coroutine_;
+            }
+
+            void await_resume() {
+                detail::generator_access<
+                    yielded
+                >::rethrow_exception(
+                    nested_.coroutine_.promise()
+                );
+            }
+
+        private:
+            /*
+             * The awaiter owns the nested generator and therefore its
+             * coroutine frame until recursive yielding finishes.
+             */
+            NestedGenerator nested_;
+        };
+
     #if defined(__STDCPP_DEFAULT_NEW_ALIGNMENT__)
         static constexpr size_t allocation_alignment =
             __STDCPP_DEFAULT_NEW_ALIGNMENT__;
@@ -369,9 +524,18 @@ public:
     public:
         [[nodiscard]]
         generator get_return_object() noexcept {
-            return generator{
-                coroutine_handle<promise_type>::from_promise(*this)
-            };
+            auto coroutine =
+                coroutine_handle<promise_type>::from_promise(
+                    *this
+                );
+
+            node_.coroutine = coroutine;
+            node_.value =
+                FTL_GENERATOR_NAMESPACE::addressof(
+                    value_
+                );
+
+            return generator{coroutine};
         }
 
         [[nodiscard]]
@@ -381,8 +545,7 @@ public:
         }
 
         [[nodiscard]]
-        constexpr suspend_always
-        final_suspend() noexcept {
+        final_awaiter final_suspend() noexcept {
             return {};
         }
 
@@ -417,17 +580,156 @@ public:
             };
         }
 
+        template<
+            class R2,
+            class V2,
+            class Alloc2,
+            class Unused
+        >
+            requires same_as<
+                typename generator<
+                    R2,
+                    V2,
+                    Alloc2
+                >::yielded,
+                yielded
+            >
+        [[nodiscard]]
+        auto yield_value(
+            ranges::elements_of<
+                generator<R2, V2, Alloc2>&&,
+                Unused
+            > elements
+        ) noexcept {
+            using nested_generator =
+                generator<R2, V2, Alloc2>;
+
+            return recursive_yield_awaiter<
+                nested_generator
+            >{
+                FTL_GENERATOR_NAMESPACE::move(
+                    elements.range
+                )
+            };
+        }
+
+        template<
+            class R2,
+            class V2,
+            class Alloc2,
+            class Unused
+        >
+            requires same_as<
+                typename generator<
+                    R2,
+                    V2,
+                    Alloc2
+                >::yielded,
+                yielded
+            >
+        [[nodiscard]]
+        auto yield_value(
+            ranges::elements_of<
+                generator<R2, V2, Alloc2>&,
+                Unused
+            > elements
+        ) noexcept {
+            using nested_generator =
+                generator<R2, V2, Alloc2>;
+
+            /*
+             * elements_of(generator-lvalue) consumes the referenced
+             * generator by moving it into the awaiter.
+             */
+            return recursive_yield_awaiter<
+                nested_generator
+            >{
+                FTL_GENERATOR_NAMESPACE::move(
+                    elements.range
+                )
+            };
+        }
+
+        template<
+            ranges::input_range R,
+            class Alloc
+        >
+            requires convertible_to<
+                ranges::range_reference_t<R>,
+                yielded
+            >
+        [[nodiscard]]
+        auto yield_value(
+            ranges::elements_of<R, Alloc> elements
+        ) noexcept
+#ifdef FTL_REPLACE_STL
+        {
+            auto nested = [](
+                allocator_arg_t,
+                Alloc allocator,
+                ranges::iterator_t<R> current,
+                ranges::sentinel_t<R> last
+            ) -> generator<
+                yielded,
+                void,
+                Alloc
+            > {
+                /*
+                 * The allocator participates in coroutine-frame
+                 * allocation through promise_type::operator new.
+                 */
+                (void) allocator;
+
+                for (; current != last; ++current) {
+                    co_yield static_cast<yielded>(
+                        *current
+                    );
+                }
+            };
+
+            return yield_value(
+                ranges::elements_of(
+                    nested(
+                        allocator_arg,
+                        elements.allocator,
+                        ranges::begin(elements.range),
+                        ranges::end(elements.range)
+                    )
+                )
+            );
+        }
+#else
+;
+#endif
+
         void await_transform() = delete;
 
         constexpr void return_void() const noexcept {}
 
         void unhandled_exception() {
-#if FTL_HAS_EXCEPTIONS
+        #if FTL_HAS_EXCEPTIONS
+            /*
+             * An exception escaping the root generator propagates
+             * directly to the caller of begin() or operator++().
+             */
+            if (
+                active_ &&
+                active_->top ==
+                    FTL_GENERATOR_NAMESPACE::addressof(node_) &&
+                node_.previous == nullptr
+            ) {
+                throw;
+            }
+
+            /*
+             * A nested exception is retained until the parent's
+             * recursive-yield awaiter resumes.
+             */
             exception_ =
                 FTL_GENERATOR_NAMESPACE::current_exception();
-#else
+        #else
             FTL_GENERATOR_NAMESPACE::terminate();
-#endif
+        #endif
         }
 
         [[nodiscard]]
@@ -543,21 +845,23 @@ public:
         friend class generator;
         friend class iterator;
 
-        void rethrow_if_exception() {
-#if FTL_HAS_EXCEPTIONS
-            if (exception_) {
-                FTL_GENERATOR_NAMESPACE::rethrow_exception(
-                    exception_
-                );
-            }
-#endif
-        }
-
         add_pointer_t<yielded> value_ = nullptr;
 
 #if FTL_HAS_EXCEPTIONS
         exception_ptr exception_{};
 #endif
+
+        /*
+         * A root generator uses its own state_. Nested generators
+         * are redirected to the root's state by recursive_yield_awaiter.
+         */
+        active_state_type state_{};
+        active_state_type* active_ =
+            FTL_GENERATOR_NAMESPACE::addressof(
+                state_
+            );
+
+        active_node_type node_{};
     };
 
 private:
@@ -587,20 +891,24 @@ private:
         [[nodiscard]]
         reference operator*() const
             noexcept(
-                is_nothrow_copy_constructible_v<reference>
+                is_nothrow_copy_constructible_v<
+                    reference
+                >
             )
         {
+            active_state_type* active =
+                coroutine_.promise().active_;
+
             return static_cast<reference>(
-                *coroutine_.promise().value_
+                **active->top->value
             );
         }
 
         iterator& operator++() {
-            coroutine_.resume();
+            active_state_type* active =
+                coroutine_.promise().active_;
 
-            if (coroutine_.done()) {
-                coroutine_.promise().rethrow_if_exception();
-            }
+            active->top->coroutine.resume();
 
             return *this;
         }
@@ -659,11 +967,24 @@ public:
 
     [[nodiscard]]
     iterator begin() {
-        coroutine_.resume();
+        promise_type& promise =
+            coroutine_.promise();
 
-        if (coroutine_.done()) {
-            coroutine_.promise().rethrow_if_exception();
-        }
+        /*
+         * Establish the root active stack.
+         */
+        promise.active_ =
+            FTL_GENERATOR_NAMESPACE::addressof(
+                promise.state_
+            );
+
+        promise.node_.previous = nullptr;
+        promise.active_->top =
+            FTL_GENERATOR_NAMESPACE::addressof(
+                promise.node_
+            );
+
+        coroutine_.resume();
 
         return iterator{coroutine_};
     }
@@ -697,5 +1018,7 @@ using generator =
 FTL_END_NAMESPACE
 
 #undef FTL_GENERATOR_NAMESPACE
+
+#define __cpp_lib_generator 202207L
 
 #endif // FTL_GENERATOR_HEADER

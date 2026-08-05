@@ -341,6 +341,18 @@ struct dangling {
     constexpr dangling(Args&&...) noexcept {}
 };
 
+// [range.elementsof]
+
+template<range R, class Allocator = allocator<byte>>
+struct elements_of {
+    FTL_NO_UNIQUE_ADDRESS R range;
+    FTL_NO_UNIQUE_ADDRESS
+    Allocator allocator = Allocator();
+};
+
+template<class R, class Allocator = allocator<byte>>
+elements_of(R&&, Allocator = Allocator()) -> elements_of<R&&, Allocator>;
+
 template<range R>
 using borrowed_iterator_t =
     conditional_t<
