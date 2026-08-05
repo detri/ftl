@@ -36,8 +36,7 @@
 FTL_BEGIN_NAMESPACE
 
 namespace detail {
-
-template<class Yielded>
+template <class Yielded>
 struct generator_active_node {
     coroutine_handle<> coroutine = nullptr;
     generator_active_node* previous = nullptr;
@@ -52,128 +51,81 @@ struct generator_active_node {
     add_pointer_t<Yielded>* value = nullptr;
 };
 
-template<class Yielded>
+template <class Yielded>
 struct generator_active_state {
     generator_active_node<Yielded>* top = nullptr;
 };
 
-template<class Yielded>
+template <class Yielded>
 struct generator_access {
-    template<class Promise>
-    static void push_active(
-        Promise& promise,
-        generator_active_state<Yielded>* active
-    ) noexcept {
+    template <class Promise>
+    static void push_active(Promise& promise,
+                            generator_active_state<Yielded>* active) noexcept {
         promise.active_ = active;
 
-        promise.node_.previous =
-            active->top;
+        promise.node_.previous = active->top;
 
-        active->top =
-            FTL_GENERATOR_NAMESPACE::addressof(
-                promise.node_
-            );
+        active->top = FTL_GENERATOR_NAMESPACE::addressof(promise.node_);
     }
 
-    template<class Promise>
-    static void rethrow_exception(
-        Promise& promise
-    ) {
+    template <class Promise>
+    static void rethrow_exception(Promise& promise) {
 #if FTL_HAS_EXCEPTIONS
         if (promise.exception_) {
-            FTL_GENERATOR_NAMESPACE::rethrow_exception(
-                promise.exception_
-            );
+            FTL_GENERATOR_NAMESPACE::rethrow_exception(promise.exception_);
         }
 #else
-        (void) promise;
+        (void)promise;
 #endif
     }
 };
+}  // namespace detail
 
-} // namespace detail
-
-template<class Ref, class V = void, class Allocator = void>
-class generator
-    : public ranges::view_interface<
-          generator<Ref, V, Allocator>
-      > {
-    template<class, class, class>
+template <class Ref, class V = void, class Allocator = void>
+class generator : public ranges::view_interface<generator<Ref, V, Allocator> > {
+    template <class, class, class>
     friend class generator;
 
-    using value =
-        conditional_t<
-            is_void_v<V>,
-            remove_cvref_t<Ref>,
-            V
-        >;
+    using value = conditional_t<is_void_v<V>, remove_cvref_t<Ref>, V>;
 
-    using reference =
-        conditional_t<
-            is_void_v<V>,
-            Ref&&,
-            Ref
-        >;
+    using reference = conditional_t<is_void_v<V>, Ref&&, Ref>;
 
     using rvalue_reference =
-        conditional_t<
-            is_reference_v<reference>,
-            remove_reference_t<reference>&&,
-            reference
-        >;
+        conditional_t<is_reference_v<reference>,
+                      remove_reference_t<reference>&&, reference>;
 
-    static_assert(
-        is_object_v<value> &&
-        same_as<value, remove_cv_t<value>>,
-        "generator value must be a cv-unqualified object type"
-    );
+    static_assert(is_object_v<value> && same_as<value, remove_cv_t<value> >,
+                  "generator value must be a cv-unqualified object type");
 
-    static_assert(
-        is_reference_v<reference> ||
-        (
-            is_object_v<reference> &&
-            same_as<reference, remove_cv_t<reference>> &&
-            copy_constructible<reference>
-        ),
-        "generator reference must be a reference or a "
-        "cv-unqualified copy-constructible object type"
-    );
+    static_assert(is_reference_v<reference> ||
+                      (is_object_v<reference> &&
+                       same_as<reference, remove_cv_t<reference> > &&
+                       copy_constructible<reference>),
+                  "generator reference must be a reference or a "
+                  "cv-unqualified copy-constructible object type");
 
-    static_assert(
-        common_reference_with<reference&&, value&>
-    );
+    static_assert(common_reference_with<reference&&, value&>);
 
-    static_assert(
-        common_reference_with<reference&&, rvalue_reference&&>
-    );
+    static_assert(common_reference_with<reference&&, rvalue_reference&&>);
 
-    static_assert(
-        common_reference_with<rvalue_reference&&, const value&>
-    );
+    static_assert(common_reference_with<rvalue_reference&&, const value&>);
 
     class iterator;
 
-public:
+   public:
     using yielded =
-        conditional_t<
-            is_reference_v<reference>,
-            reference,
-            const reference&
-        >;
+        conditional_t<is_reference_v<reference>, reference, const reference&>;
 
-    using active_node_type =
-                detail::generator_active_node<yielded>;
+    using active_node_type = detail::generator_active_node<yielded>;
 
-    using active_state_type =
-        detail::generator_active_state<yielded>;
+    using active_state_type = detail::generator_active_state<yielded>;
 
     class promise_type {
-    private:
-        friend struct detail::generator_access<
-            yielded
-        >;
+       private:
+        friend struct detail::generator_access<yielded>;
+
         class final_awaiter {
-        public:
+           public:
             [[nodiscard]]
             constexpr bool await_ready() const noexcept {
                 return false;
@@ -181,19 +133,14 @@ public:
 
             [[nodiscard]]
             coroutine_handle<> await_suspend(
-                coroutine_handle<promise_type> coroutine
-            ) const noexcept {
-                promise_type& promise =
-                    coroutine.promise();
+                coroutine_handle<promise_type> coroutine) const noexcept {
+                promise_type& promise = coroutine.promise();
 
-                active_state_type* active =
-                    promise.active_;
+                active_state_type* active = promise.active_;
 
-                active_node_type* current =
-                    active->top;
+                active_node_type* current = active->top;
 
-                active->top =
-                    current->previous;
+                active->top = current->previous;
 
                 if (active->top) {
                     return active->top->coroutine;
@@ -205,17 +152,11 @@ public:
             constexpr void await_resume() const noexcept {}
         };
 
-        template<class NestedGenerator>
+        template <class NestedGenerator>
         class recursive_yield_awaiter {
-        public:
-            explicit recursive_yield_awaiter(
-                NestedGenerator&& nested
-            ) noexcept
-                : nested_(
-                      FTL_GENERATOR_NAMESPACE::move(
-                          nested
-                      )
-                  ) {}
+           public:
+            explicit recursive_yield_awaiter(NestedGenerator&& nested) noexcept
+                : nested_(FTL_GENERATOR_NAMESPACE::move(nested)) {}
 
             [[nodiscard]]
             constexpr bool await_ready() const noexcept {
@@ -224,33 +165,23 @@ public:
 
             [[nodiscard]]
             coroutine_handle<> await_suspend(
-                coroutine_handle<promise_type> parent
-            ) noexcept {
-                promise_type& parent_promise =
-                    parent.promise();
+                coroutine_handle<promise_type> parent) noexcept {
+                promise_type& parent_promise = parent.promise();
 
-                auto& nested_promise =
-                    nested_.coroutine_.promise();
+                auto& nested_promise = nested_.coroutine_.promise();
 
-                detail::generator_access<
-                    yielded
-                >::push_active(
-                    nested_promise,
-                    parent_promise.active_
-                );
+                detail::generator_access<yielded>::push_active(
+                    nested_promise, parent_promise.active_);
 
                 return nested_.coroutine_;
             }
 
             void await_resume() {
-                detail::generator_access<
-                    yielded
-                >::rethrow_exception(
-                    nested_.coroutine_.promise()
-                );
+                detail::generator_access<yielded>::rethrow_exception(
+                    nested_.coroutine_.promise());
             }
 
-        private:
+           private:
             /*
              * The awaiter owns the nested generator and therefore its
              * coroutine frame until recursive yielding finishes.
@@ -258,32 +189,24 @@ public:
             NestedGenerator nested_;
         };
 
-    #if defined(__STDCPP_DEFAULT_NEW_ALIGNMENT__)
+#if defined(__STDCPP_DEFAULT_NEW_ALIGNMENT__)
         static constexpr size_t allocation_alignment =
             __STDCPP_DEFAULT_NEW_ALIGNMENT__;
-    #else
-        static constexpr size_t allocation_alignment =
-            alignof(max_align_t);
-    #endif
+#else
+        static constexpr size_t allocation_alignment = alignof(max_align_t);
+#endif
 
         struct alignas(allocation_alignment) allocation_unit {
             unsigned char storage[allocation_alignment];
         };
 
-        static_assert(
-            sizeof(allocation_unit) == allocation_alignment
-        );
+        static_assert(sizeof(allocation_unit) == allocation_alignment);
 
-        static_assert(
-            alignof(allocation_unit) == allocation_alignment
-        );
+        static_assert(alignof(allocation_unit) == allocation_alignment);
 
         struct allocation_header {
-            using deallocate_function =
-                void(*)(
-                    void*,
-                    allocation_header*
-                ) noexcept;
+            using deallocate_function = void (*)(void*,
+                                                 allocation_header*) noexcept;
 
             deallocate_function deallocate = nullptr;
             size_t unit_count = 0;
@@ -291,215 +214,126 @@ public:
         };
 
         [[nodiscard]]
-        static constexpr size_t align_up(
-            size_t value,
-            size_t alignment
-        ) noexcept {
-            return (
-                value + alignment - 1
-            ) / alignment * alignment;
+        static constexpr size_t align_up(size_t value,
+                                         size_t alignment) noexcept {
+            return (value + alignment - 1) / alignment * alignment;
         }
 
         [[nodiscard]]
         static allocation_header* allocation_header_from(
-            void* pointer,
-            size_t frame_size
-        ) noexcept {
-            auto* bytes =
-                static_cast<unsigned char*>(pointer);
+            void* pointer, size_t frame_size) noexcept {
+            auto* bytes = static_cast<unsigned char*>(pointer);
 
             const size_t header_offset =
-                align_up(
-                    frame_size,
-                    alignof(allocation_header)
-                );
+                align_up(frame_size, alignof(allocation_header));
 
-            return reinterpret_cast<allocation_header*>(
-                bytes + header_offset
-            );
+            return reinterpret_cast<allocation_header*>(bytes + header_offset);
         }
 
-        template<class ReboundAllocator>
-        static void deallocate_frame(
-            void* pointer,
-            allocation_header* header
-        ) noexcept {
-            using traits =
-                allocator_traits<ReboundAllocator>;
+        template <class ReboundAllocator>
+        static void deallocate_frame(void* pointer,
+                                     allocation_header* header) noexcept {
+            using traits = allocator_traits<ReboundAllocator>;
 
-            auto* bytes =
-                static_cast<unsigned char*>(pointer);
+            auto* bytes = static_cast<unsigned char*>(pointer);
 
-            auto* stored_allocator =
-                reinterpret_cast<ReboundAllocator*>(
-                    bytes + header->allocator_offset
-                );
+            auto* stored_allocator = reinterpret_cast<ReboundAllocator*>(
+                bytes + header->allocator_offset);
 
             /*
              * Keep an equivalent allocator alive while the allocator
              * stored inside the frame allocation is destroyed.
              */
-            ReboundAllocator allocator{
-                *stored_allocator
-            };
+            ReboundAllocator allocator{*stored_allocator};
 
-            const size_t unit_count =
-                header->unit_count;
+            const size_t unit_count = header->unit_count;
 
             destroy_at(stored_allocator);
             destroy_at(header);
 
             traits::deallocate(
-                allocator,
-                static_cast<allocation_unit*>(pointer),
-                unit_count
-            );
+                allocator, static_cast<allocation_unit*>(pointer), unit_count);
         }
 
-        template<class SelectedAllocator>
+        template <class SelectedAllocator>
         [[nodiscard]]
-        static void* allocate_frame(
-            size_t frame_size,
-            const SelectedAllocator& allocator
-        ) {
-            using rebound_allocator =
-                typename allocator_traits<
-                    SelectedAllocator
-                >::template rebind_alloc<
-                    allocation_unit
-                >;
+        static void* allocate_frame(size_t frame_size,
+                                    const SelectedAllocator& allocator) {
+            using rebound_allocator = typename allocator_traits<
+                SelectedAllocator>::template rebind_alloc<allocation_unit>;
 
-            using rebound_traits =
-                allocator_traits<rebound_allocator>;
+            using rebound_traits = allocator_traits<rebound_allocator>;
 
-            static_assert(
-                is_pointer_v<
-                    typename rebound_traits::pointer
-                >,
-                "generator frame allocator must use a raw pointer"
-            );
+            static_assert(is_pointer_v<typename rebound_traits::pointer>,
+                          "generator frame allocator must use a raw pointer");
 
-            static_assert(
-                alignof(rebound_allocator) <=
-                    allocation_alignment,
-                "generator frame allocator has unsupported "
-                "over-alignment"
-            );
+            static_assert(alignof(rebound_allocator) <= allocation_alignment,
+                          "generator frame allocator has unsupported "
+                          "over-alignment");
 
-            rebound_allocator rebound{
-                allocator
-            };
+            rebound_allocator rebound{allocator};
 
             const size_t header_offset =
-                align_up(
-                    frame_size,
-                    alignof(allocation_header)
-                );
+                align_up(frame_size, alignof(allocation_header));
 
             const size_t allocator_offset =
-                align_up(
-                    header_offset +
-                        sizeof(allocation_header),
-                    alignof(rebound_allocator)
-                );
+                align_up(header_offset + sizeof(allocation_header),
+                         alignof(rebound_allocator));
 
             const size_t total_size =
-                allocator_offset +
-                sizeof(rebound_allocator);
+                allocator_offset + sizeof(rebound_allocator);
 
             const size_t unit_count =
-                (
-                    total_size +
-                    sizeof(allocation_unit) -
-                    1
-                ) / sizeof(allocation_unit);
+                (total_size + sizeof(allocation_unit) - 1) /
+                sizeof(allocation_unit);
 
             allocation_unit* allocation =
-                rebound_traits::allocate(
-                    rebound,
-                    unit_count
-                );
+                rebound_traits::allocate(rebound, unit_count);
 
-            auto* bytes =
-                reinterpret_cast<unsigned char*>(
-                    allocation
-                );
+            auto* bytes = reinterpret_cast<unsigned char*>(allocation);
 
             auto* header =
-                reinterpret_cast<allocation_header*>(
-                    bytes + header_offset
-                );
+                reinterpret_cast<allocation_header*>(bytes + header_offset);
 
             auto* stored_allocator =
-                reinterpret_cast<rebound_allocator*>(
-                    bytes + allocator_offset
-                );
+                reinterpret_cast<rebound_allocator*>(bytes + allocator_offset);
 
-    #if FTL_HAS_EXCEPTIONS
+#if FTL_HAS_EXCEPTIONS
             bool header_constructed = false;
 
             try {
-                construct_at(
-                    header,
-                    allocation_header{
-                        &deallocate_frame<
-                            rebound_allocator
-                        >,
-                        unit_count,
-                        allocator_offset
-                    }
-                );
+                construct_at(header, allocation_header{
+                                         &deallocate_frame<rebound_allocator>,
+                                         unit_count, allocator_offset});
 
                 header_constructed = true;
 
-                construct_at(
-                    stored_allocator,
-                    rebound
-                );
+                construct_at(stored_allocator, rebound);
             } catch (...) {
                 if (header_constructed) {
                     destroy_at(header);
                 }
 
-                rebound_traits::deallocate(
-                    rebound,
-                    allocation,
-                    unit_count
-                );
+                rebound_traits::deallocate(rebound, allocation, unit_count);
 
                 throw;
             }
-    #else
-            construct_at(
-                header,
-                allocation_header{
-                    &deallocate_frame<
-                        rebound_allocator
-                    >,
-                    unit_count,
-                    allocator_offset
-                }
-            );
+#else
+            construct_at(header,
+                         allocation_header{&deallocate_frame<rebound_allocator>,
+                                           unit_count, allocator_offset});
 
-            construct_at(
-                stored_allocator,
-                rebound
-            );
-    #endif
+            construct_at(stored_allocator, rebound);
+#endif
 
             return allocation;
         }
 
-        template<class Stored>
+        template <class Stored>
         class copied_yield_awaiter {
-        public:
-            copied_yield_awaiter(
-                promise_type& promise,
-                const Stored& value
-            )
-                : promise_(
-                      FTL_GENERATOR_NAMESPACE::addressof(promise)
-                  ),
+           public:
+            copied_yield_awaiter(promise_type& promise, const Stored& value)
+                : promise_(FTL_GENERATOR_NAMESPACE::addressof(promise)),
                   value_(value) {}
 
             [[nodiscard]]
@@ -507,40 +341,31 @@ public:
                 return false;
             }
 
-            void await_suspend(
-                coroutine_handle<>
-            ) noexcept {
-                promise_->value_ =
-                    FTL_GENERATOR_NAMESPACE::addressof(value_);
+            void await_suspend(coroutine_handle<>) noexcept {
+                promise_->value_ = FTL_GENERATOR_NAMESPACE::addressof(value_);
             }
 
             constexpr void await_resume() const noexcept {}
 
-        private:
+           private:
             promise_type* promise_;
             Stored value_;
         };
 
-    public:
+       public:
         [[nodiscard]]
         generator get_return_object() noexcept {
             auto coroutine =
-                coroutine_handle<promise_type>::from_promise(
-                    *this
-                );
+                coroutine_handle<promise_type>::from_promise(*this);
 
             node_.coroutine = coroutine;
-            node_.value =
-                FTL_GENERATOR_NAMESPACE::addressof(
-                    value_
-                );
+            node_.value = FTL_GENERATOR_NAMESPACE::addressof(value_);
 
             return generator{coroutine};
         }
 
         [[nodiscard]]
-        constexpr suspend_always
-        initial_suspend() const noexcept {
+        constexpr suspend_always initial_suspend() const noexcept {
             return {};
         }
 
@@ -550,300 +375,159 @@ public:
         }
 
         [[nodiscard]]
-        suspend_always yield_value(
-            yielded value
-        ) noexcept {
-            value_ =
-                FTL_GENERATOR_NAMESPACE::addressof(value);
+        suspend_always yield_value(yielded value) noexcept {
+            value_ = FTL_GENERATOR_NAMESPACE::addressof(value);
 
             return {};
         }
 
         [[nodiscard]]
-        auto yield_value(
-            const remove_reference_t<yielded>& value
-        )
-            requires (
-                is_rvalue_reference_v<yielded> &&
-                constructible_from<
-                    remove_cvref_t<yielded>,
-                    const remove_reference_t<yielded>&
-                >
-            )
+        auto yield_value(const remove_reference_t<yielded>& value)
+            requires(is_rvalue_reference_v<yielded> &&
+                     constructible_from<remove_cvref_t<yielded>,
+                                        const remove_reference_t<yielded>&>)
         {
-            using stored_type =
-                remove_cvref_t<yielded>;
+            using stored_type = remove_cvref_t<yielded>;
 
-            return copied_yield_awaiter<stored_type>{
-                *this,
-                value
-            };
+            return copied_yield_awaiter<stored_type>{*this, value};
         }
 
-        template<
-            class R2,
-            class V2,
-            class Alloc2,
-            class Unused
-        >
-            requires same_as<
-                typename generator<
-                    R2,
-                    V2,
-                    Alloc2
-                >::yielded,
-                yielded
-            >
+        template <class R2, class V2, class Alloc2, class Unused>
+            requires same_as<typename generator<R2, V2, Alloc2>::yielded,
+                             yielded>
         [[nodiscard]]
         auto yield_value(
-            ranges::elements_of<
-                generator<R2, V2, Alloc2>&&,
-                Unused
-            > elements
-        ) noexcept {
-            using nested_generator =
-                generator<R2, V2, Alloc2>;
+            ranges::elements_of<generator<R2, V2, Alloc2>&&, Unused>
+                elements) noexcept {
+            using nested_generator = generator<R2, V2, Alloc2>;
 
-            return recursive_yield_awaiter<
-                nested_generator
-            >{
-                FTL_GENERATOR_NAMESPACE::move(
-                    elements.range
-                )
-            };
+            return recursive_yield_awaiter<nested_generator>{
+                FTL_GENERATOR_NAMESPACE::move(elements.range)};
         }
 
-        template<
-            class R2,
-            class V2,
-            class Alloc2,
-            class Unused
-        >
-            requires same_as<
-                typename generator<
-                    R2,
-                    V2,
-                    Alloc2
-                >::yielded,
-                yielded
-            >
+        template <class R2, class V2, class Alloc2, class Unused>
+            requires same_as<typename generator<R2, V2, Alloc2>::yielded,
+                             yielded>
         [[nodiscard]]
-        auto yield_value(
-            ranges::elements_of<
-                generator<R2, V2, Alloc2>&,
-                Unused
-            > elements
-        ) noexcept {
-            using nested_generator =
-                generator<R2, V2, Alloc2>;
+        auto yield_value(ranges::elements_of<generator<R2, V2, Alloc2>&, Unused>
+                             elements) noexcept {
+            using nested_generator = generator<R2, V2, Alloc2>;
 
             /*
              * elements_of(generator-lvalue) consumes the referenced
              * generator by moving it into the awaiter.
              */
-            return recursive_yield_awaiter<
-                nested_generator
-            >{
-                FTL_GENERATOR_NAMESPACE::move(
-                    elements.range
-                )
-            };
+            return recursive_yield_awaiter<nested_generator>{
+                FTL_GENERATOR_NAMESPACE::move(elements.range)};
         }
 
-        template<
-            ranges::input_range R,
-            class Alloc
-        >
-            requires convertible_to<
-                ranges::range_reference_t<R>,
-                yielded
-            >
+        template <ranges::input_range R, class Alloc>
+            requires convertible_to<ranges::range_reference_t<R>, yielded>
         [[nodiscard]]
-        auto yield_value(
-            ranges::elements_of<R, Alloc> elements
-        ) noexcept
+        auto yield_value(ranges::elements_of<R, Alloc> elements) noexcept
 #ifdef FTL_REPLACE_STL
         {
-            auto nested = [](
-                allocator_arg_t,
-                Alloc allocator,
-                ranges::iterator_t<R> current,
-                ranges::sentinel_t<R> last
-            ) -> generator<
-                yielded,
-                void,
-                Alloc
-            > {
+            auto nested = [](allocator_arg_t, Alloc allocator,
+                             ranges::iterator_t<R> current,
+                             ranges::sentinel_t<R> last)
+                -> generator<yielded, void, Alloc> {
                 /*
                  * The allocator participates in coroutine-frame
                  * allocation through promise_type::operator new.
                  */
-                (void) allocator;
+                (void)allocator;
 
                 for (; current != last; ++current) {
-                    co_yield static_cast<yielded>(
-                        *current
-                    );
+                    co_yield static_cast<yielded>(*current);
                 }
             };
 
-            return yield_value(
-                ranges::elements_of(
-                    nested(
-                        allocator_arg,
-                        elements.allocator,
-                        ranges::begin(elements.range),
-                        ranges::end(elements.range)
-                    )
-                )
-            );
+            return yield_value(ranges::elements_of(nested(
+                allocator_arg, elements.allocator,
+                ranges::begin(elements.range), ranges::end(elements.range))));
         }
 #else
-;
+            ;
 #endif
 
         void await_transform() = delete;
 
         constexpr void return_void() const noexcept {}
 
-        void unhandled_exception() {
-        #if FTL_HAS_EXCEPTIONS
-            /*
-             * An exception escaping the root generator propagates
-             * directly to the caller of begin() or operator++().
-             */
-            if (
-                active_ &&
-                active_->top ==
-                    FTL_GENERATOR_NAMESPACE::addressof(node_) &&
-                node_.previous == nullptr
-            ) {
-                throw;
-            }
-
-            /*
-             * A nested exception is retained until the parent's
-             * recursive-yield awaiter resumes.
-             */
-            exception_ =
-                FTL_GENERATOR_NAMESPACE::current_exception();
-        #else
+        void unhandled_exception()
+        {
+#if FTL_HAS_EXCEPTIONS
+            exception_ = FTL_GENERATOR_NAMESPACE::current_exception();
+#else
             FTL_GENERATOR_NAMESPACE::terminate();
-        #endif
+#endif
         }
 
         [[nodiscard]]
-        static void* operator new(
-            size_t size
-        )
-            requires (
-                same_as<Allocator, void> ||
-                default_initializable<Allocator>
-            )
+        static void* operator new(size_t size)
+            requires(same_as<Allocator, void> ||
+                     default_initializable<Allocator>)
         {
             if constexpr (same_as<Allocator, void>) {
                 allocator<void> allocator;
-                return allocate_frame(
-                    size,
-                    allocator
-                );
+                return allocate_frame(size, allocator);
             } else {
                 Allocator allocator;
-                return allocate_frame(
-                    size,
-                    allocator
-                );
+                return allocate_frame(size, allocator);
             }
         }
 
-        template<class Alloc, class... Args>
-            requires (
-                same_as<Allocator, void> ||
-                convertible_to<
-                    const Alloc&,
-                    Allocator
-                >
-            )
+        template <class Alloc, class... Args>
+            requires(same_as<Allocator, void> ||
+                     convertible_to<const Alloc&, Allocator>)
         [[nodiscard]]
-        static void* operator new(
-            size_t size,
-            allocator_arg_t,
-            const Alloc& allocator,
-            const Args&...
-        ) {
+        static void* operator new(size_t size, allocator_arg_t,
+                                  const Alloc& allocator, const Args&...) {
             if constexpr (same_as<Allocator, void>) {
-                return allocate_frame(
-                    size,
-                    allocator
-                );
+                return allocate_frame(size, allocator);
             } else {
-                Allocator selected{
-                    allocator
-                };
+                Allocator selected{allocator};
 
-                return allocate_frame(
-                    size,
-                    selected
-                );
+                return allocate_frame(size, selected);
             }
         }
 
-        template<
-            class This,
-            class Alloc,
-            class... Args
-        >
-            requires (
-                same_as<Allocator, void> ||
-                convertible_to<
-                    const Alloc&,
-                    Allocator
-                >
-            )
+        template <class This, class Alloc, class... Args>
+            requires(same_as<Allocator, void> ||
+                     convertible_to<const Alloc&, Allocator>)
         [[nodiscard]]
-        static void* operator new(
-            size_t size,
-            const This&,
-            allocator_arg_t,
-            const Alloc& allocator,
-            const Args&...
-        ) {
+        static void* operator new(size_t size, const This&, allocator_arg_t,
+                                  const Alloc& allocator, const Args&...) {
             if constexpr (same_as<Allocator, void>) {
-                return allocate_frame(
-                    size,
-                    allocator
-                );
+                return allocate_frame(size, allocator);
             } else {
-                Allocator selected{
-                    allocator
-                };
+                Allocator selected{allocator};
 
-                return allocate_frame(
-                    size,
-                    selected
-                );
+                return allocate_frame(size, selected);
             }
         }
 
-        static void operator delete(
-            void* pointer,
-            size_t size
-        ) noexcept {
-            allocation_header* header =
-                allocation_header_from(
-                    pointer,
-                    size
-                );
+        static void operator delete(void* pointer, size_t size) noexcept {
+            allocation_header* header = allocation_header_from(pointer, size);
 
-            header->deallocate(
-                pointer,
-                header
-            );
+            header->deallocate(pointer, header);
         }
 
-    private:
+       private:
         friend class generator;
         friend class iterator;
+
+        void rethrow_if_exception()
+        {
+        #if FTL_HAS_EXCEPTIONS
+            if (exception_)
+            {
+                FTL_GENERATOR_NAMESPACE::rethrow_exception(
+                    exception_
+                );
+            }
+        #endif
+        }
 
         add_pointer_t<yielded> value_ = nullptr;
 
@@ -856,96 +540,78 @@ public:
          * are redirected to the root's state by recursive_yield_awaiter.
          */
         active_state_type state_{};
-        active_state_type* active_ =
-            FTL_GENERATOR_NAMESPACE::addressof(
-                state_
-            );
+        active_state_type* active_ = FTL_GENERATOR_NAMESPACE::addressof(state_);
 
         active_node_type node_{};
     };
 
-private:
+   private:
     class iterator {
-    public:
+       public:
         using value_type = value;
         using difference_type = ptrdiff_t;
 
         iterator(iterator&& other) noexcept
-            : coroutine_(
-                  FTL_GENERATOR_NAMESPACE::exchange(
-                      other.coroutine_,
-                      nullptr
-                  )
-              ) {}
+            : coroutine_(FTL_GENERATOR_NAMESPACE::exchange(other.coroutine_,
+                                                           nullptr)) {}
 
         iterator& operator=(iterator&& other) noexcept {
             coroutine_ =
-                FTL_GENERATOR_NAMESPACE::exchange(
-                    other.coroutine_,
-                    nullptr
-                );
+                FTL_GENERATOR_NAMESPACE::exchange(other.coroutine_, nullptr);
 
             return *this;
         }
 
         [[nodiscard]]
         reference operator*() const
-            noexcept(
-                is_nothrow_copy_constructible_v<
-                    reference
-                >
-            )
-        {
-            active_state_type* active =
-                coroutine_.promise().active_;
+            noexcept(is_nothrow_copy_constructible_v<reference>) {
+            active_state_type* active = coroutine_.promise().active_;
 
-            return static_cast<reference>(
-                **active->top->value
-            );
+            return static_cast<reference>(**active->top->value);
         }
 
-        iterator& operator++() {
+        iterator& operator++()
+        {
             active_state_type* active =
                 coroutine_.promise().active_;
 
             active->top->coroutine.resume();
 
+            /*
+             * Nested exceptions are handled by the parent's recursive
+             * awaiter. If the root completed exceptionally, its stored
+             * exception is propagated to the consumer here.
+             */
+            if (coroutine_.done())
+            {
+                coroutine_.promise().rethrow_if_exception();
+            }
+
             return *this;
         }
 
-        void operator++(int) {
-            ++*this;
-        }
+        void operator++(int) { ++*this; }
 
         [[nodiscard]]
-        friend bool operator==(
-            const iterator& value,
-            default_sentinel_t
-        ) {
+        friend bool operator==(const iterator& value, default_sentinel_t) {
             return value.coroutine_.done();
         }
 
-    private:
+       private:
         friend class generator;
 
-        explicit iterator(
-            coroutine_handle<promise_type> coroutine
-        ) noexcept
+        explicit iterator(coroutine_handle<promise_type> coroutine) noexcept
             : coroutine_(coroutine) {}
 
         coroutine_handle<promise_type> coroutine_;
     };
 
-public:
+   public:
     generator(const generator&) = delete;
 
     generator(generator&& other) noexcept
         : coroutine_(
-              FTL_GENERATOR_NAMESPACE::exchange(
-                  other.coroutine_,
-                  nullptr
-              )
-          ) {}
+              FTL_GENERATOR_NAMESPACE::exchange(other.coroutine_, nullptr)) {}
 
     ~generator() {
         if (coroutine_) {
@@ -955,10 +621,7 @@ public:
 
     generator& operator=(generator other) noexcept {
         auto previous =
-            FTL_GENERATOR_NAMESPACE::exchange(
-                coroutine_,
-                other.coroutine_
-            );
+            FTL_GENERATOR_NAMESPACE::exchange(coroutine_, other.coroutine_);
 
         other.coroutine_ = previous;
 
@@ -966,13 +629,11 @@ public:
     }
 
     [[nodiscard]]
-    iterator begin() {
+    iterator begin()
+    {
         promise_type& promise =
             coroutine_.promise();
 
-        /*
-         * Establish the root active stack.
-         */
         promise.active_ =
             FTL_GENERATOR_NAMESPACE::addressof(
                 promise.state_
@@ -986,6 +647,15 @@ public:
 
         coroutine_.resume();
 
+        /*
+         * Handles an empty generator that throws before producing
+         * its first value.
+         */
+        if (coroutine_.done())
+        {
+            promise.rethrow_if_exception();
+        }
+
         return iterator{coroutine_};
     }
 
@@ -994,26 +664,18 @@ public:
         return default_sentinel;
     }
 
-private:
-    explicit generator(
-        coroutine_handle<promise_type> coroutine
-    ) noexcept
+   private:
+    explicit generator(coroutine_handle<promise_type> coroutine) noexcept
         : coroutine_(coroutine) {}
 
     coroutine_handle<promise_type> coroutine_ = nullptr;
 };
 
 namespace pmr {
-
-template<class R, class V = void>
+template <class R, class V = void>
 using generator =
-    FTL_GENERATOR_NAMESPACE::generator<
-        R,
-        V,
-        polymorphic_allocator<>
-    >;
-
-} // namespace pmr
+    FTL_GENERATOR_NAMESPACE::generator<R, V, polymorphic_allocator<> >;
+}  // namespace pmr
 
 FTL_END_NAMESPACE
 
@@ -1021,4 +683,4 @@ FTL_END_NAMESPACE
 
 #define __cpp_lib_generator 202207L
 
-#endif // FTL_GENERATOR_HEADER
+#endif  // FTL_GENERATOR_HEADER
