@@ -568,6 +568,125 @@ bool ftl_test() {
         }
     }
 
+    {
+        allocator_counts counts;
+        byte_allocator allocator{counts};
+
+            {
+            auto sequence =
+                erased_allocator_values(
+                    tested::allocator_arg,
+                    allocator
+                );
+
+            if (
+                counts.allocations != 1 ||
+                counts.deallocations != 0
+            ) {
+                return false;
+            }
+
+            // Deliberately never call begin().
+            }
+
+        if (
+            counts.allocations != 1 ||
+            counts.deallocations != 1 ||
+            counts.allocated_objects !=
+                counts.deallocated_objects
+        ) {
+            return false;
+        }
+    }
+
+    {
+        allocator_counts counts;
+        byte_allocator allocator{counts};
+
+            {
+            auto source =
+                erased_allocator_values(
+                    tested::allocator_arg,
+                    allocator
+                );
+
+            auto destination =
+                tested::move(source);
+
+            int total = 0;
+
+            for (int value : destination) {
+                total += value;
+            }
+
+            if (total != 63) {
+                return false;
+            }
+            }
+
+        if (
+            counts.allocations != 1 ||
+            counts.deallocations != 1 ||
+            counts.allocated_objects !=
+                counts.deallocated_objects
+        ) {
+            return false;
+        }
+    }
+
+    {
+        allocator_counts first_counts;
+        allocator_counts second_counts;
+
+        byte_allocator first_allocator{first_counts};
+        byte_allocator second_allocator{second_counts};
+
+            {
+            auto first =
+                erased_allocator_values(
+                    tested::allocator_arg,
+                    first_allocator
+                );
+
+            auto second =
+                erased_allocator_values(
+                    tested::allocator_arg,
+                    second_allocator
+                );
+
+            second = tested::move(first);
+
+            /*
+             * Move assignment must destroy second's old frame immediately.
+             */
+            if (
+                second_counts.allocations != 1 ||
+                second_counts.deallocations != 1
+            ) {
+                return false;
+            }
+
+            int total = 0;
+
+            for (int value : second) {
+                total += value;
+            }
+
+            if (total != 63) {
+                return false;
+            }
+            }
+
+        if (
+            first_counts.allocations != 1 ||
+            first_counts.deallocations != 1 ||
+            second_counts.allocations != 1 ||
+            second_counts.deallocations != 1
+        ) {
+            return false;
+        }
+    }
+
 #if FTL_HAS_EXCEPTIONS
     {
         bool caught = false;
