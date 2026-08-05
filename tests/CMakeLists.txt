@@ -208,6 +208,7 @@ foreach(header IN ITEMS
         ranges_adaptor_composition
         ranges_constraints
         generator
+        mdspan
 )
     add_ftl_test(${header})
 endforeach()
