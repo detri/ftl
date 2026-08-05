@@ -290,6 +290,206 @@ explicit extents(Integrals...)
     -> extents<size_t,
                (static_cast<void>(sizeof(Integrals)), dynamic_extent)...>;
 
+namespace detail {
+
+template <class T, class = void>
+struct valid_default_accessor_element : false_type {};
+
+template <class T>
+struct valid_default_accessor_element<T, void_t<decltype(sizeof(T))>>
+    : bool_constant<is_object_v<T> && !is_array_v<T> && !is_abstract_v<T>> {};
+
+template <class T>
+inline constexpr bool valid_default_accessor_element_v =
+    valid_default_accessor_element<T>::value;
+
+template <class T>
+struct is_extents : false_type {};
+
+template <class IndexType, size_t... Extents>
+struct is_extents<extents<IndexType, Extents...>> : true_type {};
+
+template <class T>
+inline constexpr bool is_extents_v = is_extents<T>::value;
+
+} // namespace detail
+
+struct layout_left {
+    template <class Extents>
+    class mapping;
+};
+
+struct layout_right {
+    template <class Extents>
+    class mapping;
+};
+
+struct layout_stride {
+    template <class Extents>
+    class mapping;
+};
+
+template <class ElementType>
+struct default_accessor {
+    static_assert(detail::valid_default_accessor_element_v<ElementType>,
+                  "default_accessor requires a complete, non-array, "
+                  "non-abstract object type");
+
+    using offset_policy = default_accessor;
+    using element_type = ElementType;
+    using reference = ElementType&;
+    using data_handle_type = ElementType*;
+
+    constexpr default_accessor() noexcept = default;
+
+    template <class OtherElementType>
+        requires is_convertible_v<OtherElementType (*)[], element_type (*)[]>
+    constexpr default_accessor(
+        default_accessor<OtherElementType>) noexcept {}
+
+    [[nodiscard]] constexpr reference access(data_handle_type pointer,
+                                             size_t index) const noexcept {
+        return pointer[index];
+    }
+
+    [[nodiscard]] constexpr data_handle_type
+    offset(data_handle_type pointer, size_t index) const noexcept {
+        return pointer + index;
+    }
+};
+
+template <class Extents>
+class layout_right::mapping {
+    static_assert(detail::is_extents_v<Extents>,
+                  "layout_right::mapping requires an extents specialization");
+
+public:
+    using extents_type = Extents;
+    using index_type = typename extents_type::index_type;
+    using size_type = typename extents_type::size_type;
+    using rank_type = typename extents_type::rank_type;
+    using layout_type = layout_right;
+
+private:
+    static consteval bool static_size_is_representable() {
+        if constexpr (extents_type::rank_dynamic() != 0) {
+            return true;
+        } else {
+            const size_type limit =
+                static_cast<size_type>(numeric_limits<index_type>::max());
+            size_type product = 1;
+
+            for (rank_type rank = 0; rank < extents_type::rank(); ++rank) {
+                const size_type extent =
+                    static_cast<size_type>(extents_type::static_extent(rank));
+
+                if (extent != 0 && product > limit / extent)
+                    return false;
+
+                product *= extent;
+            }
+
+            return true;
+        }
+    }
+
+    static_assert(static_size_is_representable(),
+                  "layout_right index space is not representable by "
+                  "its index type");
+
+public:
+    constexpr mapping() noexcept = default;
+    constexpr mapping(const mapping&) noexcept = default;
+
+    constexpr mapping(const extents_type& extents) noexcept
+        : extents_(extents) {}
+
+    template <class OtherExtents>
+        requires is_constructible_v<extents_type, OtherExtents>
+    constexpr explicit(!is_convertible_v<OtherExtents, extents_type>)
+        mapping(const layout_right::mapping<OtherExtents>& other) noexcept
+        : extents_(other.extents()) {}
+
+    constexpr mapping& operator=(const mapping&) noexcept = default;
+
+    [[nodiscard]] constexpr const extents_type& extents() const noexcept {
+        return extents_;
+    }
+
+    [[nodiscard]] constexpr index_type required_span_size() const noexcept {
+        index_type result = 1;
+
+        for (rank_type rank = 0; rank < extents_type::rank(); ++rank)
+            result *= extents_.extent(rank);
+
+        return result;
+    }
+
+    template <class... Indices>
+        requires(sizeof...(Indices) == extents_type::rank() &&
+                 (is_convertible_v<Indices, index_type> && ...) &&
+                 (is_nothrow_constructible_v<index_type, Indices> && ...))
+    [[nodiscard]] constexpr index_type
+    operator()(Indices... indices) const noexcept {
+        index_type result = 0;
+        rank_type rank = 0;
+
+        ((result = result * extents_.extent(rank++) +
+                   static_cast<index_type>(indices)),
+         ...);
+
+        return result;
+    }
+
+    [[nodiscard]] static constexpr bool is_always_unique() noexcept {
+        return true;
+    }
+
+    [[nodiscard]] static constexpr bool is_always_exhaustive() noexcept {
+        return true;
+    }
+
+    [[nodiscard]] static constexpr bool is_always_strided() noexcept {
+        return true;
+    }
+
+    [[nodiscard]] static constexpr bool is_unique() noexcept {
+        return true;
+    }
+
+    [[nodiscard]] static constexpr bool is_exhaustive() noexcept {
+        return true;
+    }
+
+    [[nodiscard]] static constexpr bool is_strided() noexcept {
+        return true;
+    }
+
+    [[nodiscard]] constexpr index_type stride(rank_type rank) const noexcept
+        requires(extents_type::rank() > 0)
+    {
+        index_type result = 1;
+
+        for (rank_type current = rank + 1; current < extents_type::rank();
+             ++current) {
+            result *= extents_.extent(current);
+        }
+
+        return result;
+    }
+
+    template <class OtherExtents>
+        requires(extents_type::rank() == OtherExtents::rank())
+    friend constexpr bool
+    operator==(const mapping& left,
+               const layout_right::mapping<OtherExtents>& right) noexcept {
+        return left.extents() == right.extents();
+    }
+
+private:
+    [[no_unique_address]] extents_type extents_{};
+};
+
 FTL_END_NAMESPACE
 
 #endif // FTL_MDSPAN_HEADER
