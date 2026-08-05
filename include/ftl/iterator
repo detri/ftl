@@ -884,30 +884,59 @@ concept contiguous_iterator =
 
 namespace ranges
 {
+    namespace detail {
+
+    template<class T, class U>
+    consteval bool iter_swap_noexcept() {
+        if constexpr (
+            has_adl_iter_swap<T, U>
+        ) {
+            return noexcept(
+                iter_swap(
+                    declval<T&&>(),
+                    declval<U&&>()
+                )
+            );
+        } else {
+            using value_type =
+                iter_value_t<T>;
+
+            return
+                noexcept(
+                    value_type(
+                        ranges::iter_move(
+                            declval<T&&>()
+                        )
+                    )
+                ) &&
+                noexcept(
+                    *declval<T&&>() =
+                        ranges::iter_move(
+                            declval<U&&>()
+                        )
+                ) &&
+                noexcept(
+                    *declval<U&&>() =
+                        declval<value_type&&>()
+                );
+        }
+    }
+
+    } // namespace detail
+
     struct iter_swap_fn
     {
         template<class T, class U>
-        constexpr void operator()(T&& left, U&& right) const
-            noexcept(noexcept(
-                []<class A, class B>(A&& first, B&& second)
-                {
-                    if constexpr (detail::has_adl_iter_swap<A, B>)
-                    {
-                        iter_swap(
-                            static_cast<A&&>(first),
-                            static_cast<B&&>(second)
-                        );
-                    } else
-                    {
-                        auto old = ranges::iter_move(first);
-                        *first = ranges::iter_move(second);
-                        *second = FTL_ITER_NS::move(old);
-                    }
-                }(
-                    static_cast<T&&>(left),
-                    static_cast<U&&>(right)
-                )
-            ))
+        constexpr void operator()(
+            T&& left,
+            U&& right
+        ) const
+            noexcept(
+                detail::iter_swap_noexcept<
+                    T,
+                    U
+                >()
+            )
         {
             if constexpr (detail::has_adl_iter_swap<T, U>)
             {
@@ -917,7 +946,9 @@ namespace ranges
                 );
             } else
             {
-                auto old = ranges::iter_move(left);
+                iter_value_t<T> old(
+                    ranges::iter_move(left)
+                );
                 *left = ranges::iter_move(right);
                 *right = FTL_ITER_NS::move(old);
             }

@@ -1497,7 +1497,11 @@ public:
         : value_(value) {}
 
     constexpr explicit single_view(T&& value)
-        : value_(FTL_RANGES_NAMESPACE::move(value)) {}
+    : value_(
+        FTL_RANGES_NAMESPACE::move(value)
+    )
+    {
+    }
 
     template<class... Args>
         requires constructible_from<T, Args...>
@@ -1614,10 +1618,13 @@ struct single_fn {
         T&& value
     ) const
         noexcept(
-            is_nothrow_constructible_v<
-                decay_t<T>,
-                T
-            >
+            noexcept(
+                single_view<
+                    decay_t<T>
+                >(
+                    static_cast<T&&>(value)
+                )
+            )
         )
     {
         return single_view<decay_t<T>>(
@@ -10417,13 +10424,16 @@ class adjacent_view : public view_interface<adjacent_view<V, N>> {
         template<size_t... Index>
         constexpr auto move_values(index_sequence<Index...>) const
             noexcept(
-                (noexcept(ranges::iter_move(current_[Index])) && ...) &&
-                (
-                    is_nothrow_move_constructible_v<
-                        decltype(ranges::iter_move(current_[Index]))
-                    > &&
-                    ...
-                )
+                noexcept(
+                    ranges::iter_move(
+                        declval<
+                            const iterator_t<Base>&
+                        >()
+                    )
+                ) &&
+                is_nothrow_move_constructible_v<
+                    range_rvalue_reference_t<Base>
+                >
             )
         {
             return tuple<
@@ -10440,14 +10450,15 @@ class adjacent_view : public view_interface<adjacent_view<V, N>> {
             index_sequence<Index...>
         )
             noexcept(
-                (
-                    noexcept(
-                        ranges::iter_swap(
-                            left.current_[Index],
-                            right.current_[Index]
-                        )
-                    ) &&
-                    ...
+                noexcept(
+                    ranges::iter_swap(
+                        declval<
+                            const iterator_t<Base>&
+                        >(),
+                        declval<
+                            const iterator_t<Base>&
+                        >()
+                    )
                 )
             )
         {
@@ -10494,8 +10505,18 @@ class adjacent_view : public view_interface<adjacent_view<V, N>> {
             }
         }
 
-        constexpr auto operator*() const {
-            return dereference(make_index_sequence<N>{});
+        constexpr auto operator*() const
+            noexcept(
+                noexcept(
+                    *declval<
+                        const iterator_t<Base>&
+                    >()
+                )
+            )
+        {
+            return dereference(
+                make_index_sequence<N>{}
+            );
         }
 
         constexpr iterator& operator++() {

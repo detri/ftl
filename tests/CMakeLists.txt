@@ -203,6 +203,7 @@ foreach(header IN ITEMS
         ranges_sized_range_propagation
         ranges_common_range_propagation
         ranges_iterator_category_propagation
+        ranges_conditional_noexcept
 )
     add_ftl_test(${header})
 endforeach()
