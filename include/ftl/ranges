@@ -11874,9 +11874,31 @@ public:
         using value_type = tuple<range_value_t<base_t<Const, First>>, range_value_t<base_t<Const, Views>>...>;
         using difference_type = common_type_t<range_difference_t<base_t<Const, First>>, range_difference_t<base_t<Const, Views>>...>;
         iterator() = default;
-        constexpr iterator(parent_type& parent,
-            tuple<iterator_t<base_t<Const, First>>, iterator_t<base_t<Const, Views>>...> current, bool done)
-            : parent_(FTL_RANGES_NAMESPACE::addressof(parent)), current_(FTL_RANGES_NAMESPACE::move(current)), done_(done) {}
+        constexpr iterator(
+            parent_type& parent,
+            tuple<
+                iterator_t<
+                    base_t<Const, First>
+                >,
+                iterator_t<
+                    base_t<Const, Views>
+                >...
+            > current,
+            bool done,
+            difference_type position = 0
+        )
+            : parent_(
+                FTL_RANGES_NAMESPACE::
+                    addressof(parent)
+            ),
+              current_(
+                  FTL_RANGES_NAMESPACE::
+                      move(current)
+              ),
+              position_(position),
+              done_(done)
+        {
+        }
         template<bool Other>
         constexpr iterator(iterator<Other> other)
             requires Const && (!Other) && convertible_to<iterator_t<First>, iterator_t<const First>> &&
@@ -11971,12 +11993,54 @@ public:
                     )...
                 );
 
-            return iterator<false>(
+            using result_iterator =
+                iterator<false>;
+
+            using difference_type =
+                typename result_iterator::
+                    difference_type;
+
+            difference_type position = 0;
+
+            if constexpr (
+                same_as<
+                    typename result_iterator::
+                        iterator_concept,
+                    random_access_iterator_tag
+                >
+            )
+            {
+                position =
+                    static_cast<difference_type>(
+                        ranges::distance(
+                            get<0>(views_)
+                        )
+                    );
+
+                (
+                    (
+                        position *=
+                            static_cast<
+                                difference_type
+                            >(
+                                ranges::distance(
+                                    get<I + 1>(
+                                        views_
+                                    )
+                                )
+                            )
+                    ),
+                    ...
+                );
+            }
+
+            return result_iterator(
                 *this,
                 FTL_RANGES_NAMESPACE::move(
                     current
                 ),
-                true
+                true,
+                position
             );
         }(
             make_index_sequence<
@@ -12019,12 +12083,54 @@ public:
                     )...
                 );
 
-            return iterator<true>(
+            using result_iterator =
+                iterator<true>;
+
+            using difference_type =
+                typename result_iterator::
+                    difference_type;
+
+            difference_type position = 0;
+
+            if constexpr (
+                same_as<
+                    typename result_iterator::
+                        iterator_concept,
+                    random_access_iterator_tag
+                >
+            )
+            {
+                position =
+                    static_cast<difference_type>(
+                        ranges::distance(
+                            get<0>(views_)
+                        )
+                    );
+
+                (
+                    (
+                        position *=
+                            static_cast<
+                                difference_type
+                            >(
+                                ranges::distance(
+                                    get<I + 1>(
+                                        views_
+                                    )
+                                )
+                            )
+                    ),
+                    ...
+                );
+            }
+
+            return result_iterator(
                 *this,
                 FTL_RANGES_NAMESPACE::move(
                     current
                 ),
-                true
+                true,
+                position
             );
         }(
             make_index_sequence<
