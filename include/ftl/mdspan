@@ -9,12 +9,14 @@
 #include <limits>
 #include <span>
 #include <type_traits>
+#include <utility>
 #else
 #include <ftl/array>
 #include <ftl/cstddef>
 #include <ftl/limits>
 #include <ftl/span>
 #include <ftl/type_traits>
+#include <ftl/utility>
 #endif
 
 FTL_BEGIN_NAMESPACE
@@ -32,51 +34,62 @@ struct make_dextents<IndexType, 0, Values...> {
   using type = extents<IndexType, Values...>;
 };
 
-template<
-    class IndexType,
-    size_t Count
->
-class extents_storage {
+template <class IndexType, size_t Count> class extents_storage {
 public:
-    [[nodiscard]]
-    constexpr IndexType
-    get(size_t index) const noexcept {
-        return values_[index];
-    }
+  [[nodiscard]]
+  constexpr IndexType get(size_t index) const noexcept {
+    return values_[index];
+  }
 
-    constexpr void
-    set(
-        size_t index,
-        IndexType value
-    ) noexcept {
-        values_[index] = value;
-    }
+  constexpr void set(size_t index, IndexType value) noexcept {
+    values_[index] = value;
+  }
 
 private:
-    IndexType values_[Count]{};
+  IndexType values_[Count]{};
 };
 
-template<class IndexType>
-class extents_storage<
-    IndexType,
-    0
-> {
+template <class IndexType> class extents_storage<IndexType, 0> {
 public:
-    [[nodiscard]]
-    constexpr IndexType
-    get(size_t) const noexcept {
-        /*
-         * No valid dynamic index exists. This only keeps discarded
-         * or precondition-violating code paths well-formed.
-         */
-        return IndexType{};
-    }
+  [[nodiscard]]
+  constexpr IndexType get(size_t) const noexcept {
+    /*
+     * No valid dynamic index exists. This only keeps discarded
+     * or precondition-violating code paths well-formed.
+     */
+    return IndexType{};
+  }
 
-    constexpr void
-    set(
-        size_t,
-        IndexType
-    ) noexcept {}
+  constexpr void set(size_t, IndexType) noexcept {}
+};
+
+template <size_t... Values> struct extent_pack {};
+
+template <class To, class From> struct extents_conversion {
+  static constexpr bool compatible = false;
+  static constexpr bool dynamic_to_static = false;
+};
+
+template <> struct extents_conversion<extent_pack<>, extent_pack<>> {
+  static constexpr bool compatible = true;
+  static constexpr bool dynamic_to_static = false;
+};
+
+template <size_t To, size_t... ToRest, size_t From, size_t... FromRest>
+struct extents_conversion<extent_pack<To, ToRest...>,
+                          extent_pack<From, FromRest...>> {
+private:
+  using tail =
+      extents_conversion<extent_pack<ToRest...>, extent_pack<FromRest...>>;
+
+public:
+  static constexpr bool compatible =
+      (From == dynamic_extent || To == dynamic_extent || From == To) &&
+      tail::compatible;
+
+  static constexpr bool dynamic_to_static =
+      (To != dynamic_extent && From == dynamic_extent) ||
+      tail::dynamic_to_static;
 };
 
 } // namespace detail
@@ -131,6 +144,28 @@ private:
     return result;
   }
 
+  template <size_t N, class Sequence>
+  constexpr void assign_from(const Sequence &values) noexcept {
+    if constexpr (N == 0 || rank_dynamic() == 0) {
+      return;
+    } else if constexpr (N == rank_dynamic()) {
+      for (rank_type dynamic = 0; dynamic < rank_dynamic(); ++dynamic) {
+        dynamic_extents_.set(
+            dynamic, static_cast<index_type>(as_const(values[dynamic])));
+      }
+    } else {
+      rank_type dynamic = 0;
+
+      for (rank_type current = 0; current < rank(); ++current) {
+        if (static_extent(current) == dynamic_extent) {
+          dynamic_extents_.set(
+              dynamic, static_cast<index_type>(as_const(values[current])));
+          ++dynamic;
+        }
+      }
+    }
+  }
+
 public:
   [[nodiscard]]
   static constexpr rank_type rank() noexcept {
@@ -168,12 +203,33 @@ public:
       return static_cast<index_type>(static_value);
     }
 
-    return dynamic_extents_.get(
-        dynamic_index(rank_index)
-    );
+    return dynamic_extents_.get(dynamic_index(rank_index));
   }
 
   constexpr extents() noexcept = default;
+
+  template <class OtherIndexType, size_t... OtherExtents>
+    requires detail::extents_conversion<
+        detail::extent_pack<Extents...>,
+        detail::extent_pack<OtherExtents...>>::compatible
+  constexpr explicit(
+      detail::extents_conversion<
+          detail::extent_pack<Extents...>,
+          detail::extent_pack<OtherExtents...>>::dynamic_to_static ||
+      numeric_limits<index_type>::max() < numeric_limits<OtherIndexType>::max())
+      extents(const extents<OtherIndexType, OtherExtents...> &other) noexcept {
+    if constexpr (rank_dynamic() > 0) {
+      rank_type dynamic = 0;
+
+      for (rank_type current = 0; current < rank(); ++current) {
+        if (static_extent(current) == dynamic_extent) {
+          dynamic_extents_.set(dynamic,
+                               static_cast<index_type>(other.extent(current)));
+          ++dynamic;
+        }
+      }
+    }
+  }
 
   template <class... OtherIndexTypes>
     requires((is_convertible_v<OtherIndexTypes, index_type> && ...) &&
@@ -181,40 +237,51 @@ public:
              (sizeof...(OtherIndexTypes) == rank_dynamic() ||
               sizeof...(OtherIndexTypes) == rank()))
   explicit constexpr extents(OtherIndexTypes... values) noexcept {
-    constexpr size_t argument_count = sizeof...(OtherIndexTypes);
+    constexpr size_t count = sizeof...(OtherIndexTypes);
 
-    array<index_type, argument_count> converted{
-        static_cast<index_type>(values)...};
+    array<index_type, count> converted{
+        static_cast<index_type>(move(values))...};
 
-    if constexpr (argument_count == rank_dynamic()) {
-      for (rank_type dynamic = 0; dynamic < rank_dynamic(); ++dynamic) {
-        dynamic_extents_.set(
-            dynamic,
-            converted[dynamic]
-        );
-      }
-    } else {
-      rank_type dynamic = 0;
-
-      for (rank_type current = 0; current < rank(); ++current) {
-        if (static_extent(current) == dynamic_extent) {
-          dynamic_extents_.set(
-                dynamic,
-                converted[current]
-            );
-
-          ++dynamic;
-        }
-      }
-    }
+    assign_from<count>(converted);
   }
 
+  template <class OtherIndexType, size_t N>
+    requires(is_convertible_v<const OtherIndexType &, index_type> &&
+             is_nothrow_constructible_v<index_type, const OtherIndexType &> &&
+             (N == rank_dynamic() || N == rank()))
+  constexpr explicit(N != rank_dynamic())
+      extents(span<OtherIndexType, N> values) noexcept {
+    assign_from<N>(values);
+  }
+
+  template <class OtherIndexType, size_t N>
+    requires(is_convertible_v<const OtherIndexType &, index_type> &&
+             is_nothrow_constructible_v<index_type, const OtherIndexType &> &&
+             (N == rank_dynamic() || N == rank()))
+  constexpr explicit(N != rank_dynamic())
+      extents(const array<OtherIndexType, N> &values) noexcept {
+    assign_from<N>(values);
+  }
+
+    template<class OtherIndexType, size_t... OtherExtents>
+    friend constexpr bool
+    operator==(const extents& left,
+               const extents<OtherIndexType, OtherExtents...>& right) noexcept {
+        if constexpr (rank() != sizeof...(OtherExtents)) {
+            return false;
+        } else {
+            for (rank_type current = 0; current < rank(); ++current) {
+                if (left.extent(current) != right.extent(current))
+                    return false;
+            }
+
+            return true;
+        }
+    }
+
 private:
-      [[no_unique_address]]
-    detail::extents_storage<
-        index_type,
-        rank_dynamic()
-    > dynamic_extents_{};
+  [[no_unique_address]]
+  detail::extents_storage<index_type, rank_dynamic()> dynamic_extents_{};
 };
 
 template <class... Integrals>
