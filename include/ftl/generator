@@ -1,0 +1,355 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_GENERATOR_HEADER
+#define FTL_GENERATOR_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <concepts>
+#include <coroutine>
+#include <cstddef>
+#include <exception>
+#include <iterator>
+#include <memory>
+#include <ranges>
+#include <type_traits>
+#include <utility>
+#else
+#include <ftl/concepts>
+#include <ftl/coroutine>
+#include <ftl/cstddef>
+#include <ftl/exception>
+#include <ftl/iterator>
+#include <ftl/memory>
+#include <ftl/ranges>
+#include <ftl/type_traits>
+#include <ftl/utility>
+#endif
+
+#ifdef FTL_REPLACE_STL
+#define FTL_GENERATOR_NAMESPACE std
+#else
+#define FTL_GENERATOR_NAMESPACE ftl
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+template<class Ref, class V = void, class Allocator = void>
+class generator
+    : public ranges::view_interface<
+          generator<Ref, V, Allocator>
+      > {
+private:
+    using value =
+        conditional_t<
+            is_void_v<V>,
+            remove_cvref_t<Ref>,
+            V
+        >;
+
+    using reference =
+        conditional_t<
+            is_void_v<V>,
+            Ref&&,
+            Ref
+        >;
+
+    using rvalue_reference =
+        conditional_t<
+            is_reference_v<reference>,
+            remove_reference_t<reference>&&,
+            reference
+        >;
+
+    /*
+     * The allocator-aware coroutine-frame machinery is deliberately
+     * deferred to the allocator slice.
+     */
+    static_assert(
+        is_void_v<Allocator>,
+        "allocator-aware generator is not implemented yet"
+    );
+
+    static_assert(
+        is_object_v<value> &&
+        same_as<value, remove_cv_t<value>>,
+        "generator value must be a cv-unqualified object type"
+    );
+
+    static_assert(
+        is_reference_v<reference> ||
+        (
+            is_object_v<reference> &&
+            same_as<reference, remove_cv_t<reference>> &&
+            copy_constructible<reference>
+        ),
+        "generator reference must be a reference or a "
+        "cv-unqualified copy-constructible object type"
+    );
+
+    static_assert(
+        common_reference_with<reference&&, value&>
+    );
+
+    static_assert(
+        common_reference_with<reference&&, rvalue_reference&&>
+    );
+
+    static_assert(
+        common_reference_with<rvalue_reference&&, const value&>
+    );
+
+    class iterator;
+
+public:
+    using yielded =
+        conditional_t<
+            is_reference_v<reference>,
+            reference,
+            const reference&
+        >;
+
+    class promise_type {
+    private:
+        template<class Stored>
+        class copied_yield_awaiter {
+        public:
+            copied_yield_awaiter(
+                promise_type& promise,
+                const Stored& value
+            )
+                : promise_(
+                      FTL_GENERATOR_NAMESPACE::addressof(promise)
+                  ),
+                  value_(value) {}
+
+            [[nodiscard]]
+            constexpr bool await_ready() const noexcept {
+                return false;
+            }
+
+            void await_suspend(
+                coroutine_handle<>
+            ) noexcept {
+                promise_->value_ =
+                    FTL_GENERATOR_NAMESPACE::addressof(value_);
+            }
+
+            constexpr void await_resume() const noexcept {}
+
+        private:
+            promise_type* promise_;
+            Stored value_;
+        };
+
+    public:
+        [[nodiscard]]
+        generator get_return_object() noexcept {
+            return generator{
+                coroutine_handle<promise_type>::from_promise(*this)
+            };
+        }
+
+        [[nodiscard]]
+        constexpr suspend_always
+        initial_suspend() const noexcept {
+            return {};
+        }
+
+        [[nodiscard]]
+        constexpr suspend_always
+        final_suspend() noexcept {
+            return {};
+        }
+
+        [[nodiscard]]
+        suspend_always yield_value(
+            yielded value
+        ) noexcept {
+            value_ =
+                FTL_GENERATOR_NAMESPACE::addressof(value);
+
+            return {};
+        }
+
+        [[nodiscard]]
+        auto yield_value(
+            const remove_reference_t<yielded>& value
+        )
+            requires (
+                is_rvalue_reference_v<yielded> &&
+                constructible_from<
+                    remove_cvref_t<yielded>,
+                    const remove_reference_t<yielded>&
+                >
+            )
+        {
+            using stored_type =
+                remove_cvref_t<yielded>;
+
+            return copied_yield_awaiter<stored_type>{
+                *this,
+                value
+            };
+        }
+
+        void await_transform() = delete;
+
+        constexpr void return_void() const noexcept {}
+
+        void unhandled_exception() {
+#if FTL_HAS_EXCEPTIONS
+            exception_ =
+                FTL_GENERATOR_NAMESPACE::current_exception();
+#else
+            FTL_GENERATOR_NAMESPACE::terminate();
+#endif
+        }
+
+    private:
+        friend class generator;
+        friend class iterator;
+
+        void rethrow_if_exception() {
+#if FTL_HAS_EXCEPTIONS
+            if (exception_) {
+                FTL_GENERATOR_NAMESPACE::rethrow_exception(
+                    exception_
+                );
+            }
+#endif
+        }
+
+        add_pointer_t<yielded> value_ = nullptr;
+
+#if FTL_HAS_EXCEPTIONS
+        exception_ptr exception_{};
+#endif
+    };
+
+private:
+    class iterator {
+    public:
+        using value_type = value;
+        using difference_type = ptrdiff_t;
+
+        iterator(iterator&& other) noexcept
+            : coroutine_(
+                  FTL_GENERATOR_NAMESPACE::exchange(
+                      other.coroutine_,
+                      nullptr
+                  )
+              ) {}
+
+        iterator& operator=(iterator&& other) noexcept {
+            coroutine_ =
+                FTL_GENERATOR_NAMESPACE::exchange(
+                    other.coroutine_,
+                    nullptr
+                );
+
+            return *this;
+        }
+
+        [[nodiscard]]
+        reference operator*() const
+            noexcept(
+                is_nothrow_copy_constructible_v<reference>
+            )
+        {
+            return static_cast<reference>(
+                *coroutine_.promise().value_
+            );
+        }
+
+        iterator& operator++() {
+            coroutine_.resume();
+
+            if (coroutine_.done()) {
+                coroutine_.promise().rethrow_if_exception();
+            }
+
+            return *this;
+        }
+
+        void operator++(int) {
+            ++*this;
+        }
+
+        [[nodiscard]]
+        friend bool operator==(
+            const iterator& value,
+            default_sentinel_t
+        ) {
+            return value.coroutine_.done();
+        }
+
+    private:
+        friend class generator;
+
+        explicit iterator(
+            coroutine_handle<promise_type> coroutine
+        ) noexcept
+            : coroutine_(coroutine) {}
+
+        coroutine_handle<promise_type> coroutine_;
+    };
+
+public:
+    generator(const generator&) = delete;
+
+    generator(generator&& other) noexcept
+        : coroutine_(
+              FTL_GENERATOR_NAMESPACE::exchange(
+                  other.coroutine_,
+                  nullptr
+              )
+          ) {}
+
+    ~generator() {
+        if (coroutine_) {
+            coroutine_.destroy();
+        }
+    }
+
+    generator& operator=(generator other) noexcept {
+        auto previous =
+            FTL_GENERATOR_NAMESPACE::exchange(
+                coroutine_,
+                other.coroutine_
+            );
+
+        other.coroutine_ = previous;
+
+        return *this;
+    }
+
+    [[nodiscard]]
+    iterator begin() {
+        coroutine_.resume();
+
+        if (coroutine_.done()) {
+            coroutine_.promise().rethrow_if_exception();
+        }
+
+        return iterator{coroutine_};
+    }
+
+    [[nodiscard]]
+    default_sentinel_t end() const noexcept {
+        return default_sentinel;
+    }
+
+private:
+    explicit generator(
+        coroutine_handle<promise_type> coroutine
+    ) noexcept
+        : coroutine_(coroutine) {}
+
+    coroutine_handle<promise_type> coroutine_ = nullptr;
+};
+
+FTL_END_NAMESPACE
+
+#undef FTL_GENERATOR_NAMESPACE
+
+#endif // FTL_GENERATOR_HEADER
