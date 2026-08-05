@@ -131,14 +131,15 @@ Normal namespace mode still provides and tests the library types directly.
 The following public headers exist but remain incomplete against their C++23
 synopses:
 
-| Header          | Implemented direction                                                                                               | Major remaining groups                                                                                                    |
-|-----------------|---------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|
-| `<cstring>`     | common byte/string operations                                                                                       | complete C++23 C-string synopsis                                                                                          |
-| `<atomic>`      | integral atomics and memory orders                                                                                  | generic/pointer atomics, `atomic_ref`, flag, fences, wait/notify, lock-free rules                                         |
-| `<array>`       | C++23 surface except `at()` failure type                                                                            | replace trap with `out_of_range` after `<stdexcept>` completes                                                            |
-| `<tuple>`       | C++23 tuple/array/pair surface including allocator-extended construction                                            | `subrange` tuple-like integration after Stage 2.6                                                                         |
-| `<string_view>` | basic `string_view` operations                                                                                      | full `basic_string_view`, traits integration, searches, iterators, literals, I/O/hash integration                         |
-| `<span>`        | fixed- and dynamic-extent views, array/pointer/span construction, subviews, iterators, byte views, deduction guides | generic range constructor and deduction guide; `ranges::enable_view` and `ranges::enable_borrowed_range` after `<ranges>` |
+| Header          | Implemented direction                                                                                                                                                      | Major remaining groups                                                                                                                                                                                |
+|-----------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `<cstring>`     | common byte/string operations                                                                                                                                              | complete C++23 C-string synopsis                                                                                                                                                                      |
+| `<atomic>`      | integral atomics and memory orders                                                                                                                                         | generic/pointer atomics, `atomic_ref`, flag, fences, wait/notify, lock-free rules                                                                                                                     |
+| `<array>`       | C++23 surface except `at()` failure type                                                                                                                                   | replace trap with `out_of_range` after `<stdexcept>` completes                                                                                                                                        |
+| `<tuple>`       | C++23 tuple/array/pair surface including allocator-extended construction                                                                                                   | `subrange` tuple-like integration after Stage 2.6                                                                                                                                                     |
+| `<string_view>` | basic `string_view` operations                                                                                                                                             | full `basic_string_view`, traits integration, searches, iterators, literals, I/O/hash integration                                                                                                     |
+| `<span>`        | fixed- and dynamic-extent views, array/pointer/span construction, subviews, iterators, byte views, deduction guides                                                        | generic range constructor and deduction guide; `ranges::enable_view` and `ranges::enable_borrowed_range`                                                                                              |
+| `<ranges>`      | range access CPOs and concepts, associated types, view infrastructure, subrange, core views, major C++23 views, adaptor composition, and cross-compiler conformance audits | remaining N4950 synopsis groups, zero-width adjacent semantics, public adjacent_transform_view conformance, feature-test macro finalization, header self-sufficiency, and deferred <span> integration |
 
 `include/ftl/detail/rapidhash` is an implementation detail, not a standard
 header or roadmap milestone.
@@ -155,7 +156,7 @@ remain required when C++23 still specifies them; they are not silently dropped.
 | Area                      | Absent headers                                                                                                                                                                                                      |
 |---------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Concepts/types/vocabulary | `<bitset>`, `<ratio>`                                                                                                                                                                                               |
-| Iteration/ranges          | `<ranges>`, `<mdspan>`, `<generator>`                                                                                                                                                                               |
+| Iteration/ranges          | `<mdspan>`, `<generator>`                                                                                                                                                                                           |
 | Algorithms/numerics       | `<algorithm>`, `<numeric>`, `<numbers>`, `<random>`, `<valarray>`, `<execution>`                                                                                                                                    |
 | Containers                | `<deque>`, `<flat_map>`, `<flat_set>`, `<forward_list>`, `<list>`, `<map>`, `<queue>`, `<set>`, `<stack>`, `<unordered_map>`, `<unordered_set>`, `<vector>`                                                         |
 | Text/encoding             | `<charconv>`, `<codecvt>`, `<string>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                                                      |
@@ -231,9 +232,9 @@ iosfwd + string + locale + exception
   -> iostream + fstream + sstream + syncstream + iomanip
 ```
 
-`<span>` has a usable core independent of `<ranges>`, but its C++23 generic
-range constructor, range deduction guide, and range customizations remain part
-of the `<ranges>` closure.
+`<span>` has a usable core independent of `<ranges>`. Its C++23 generic range constructor, range deduction guide,
+and range customizations remain deferred to the final Stage 2.6 integration pass,
+after the `<ranges>`, `<mdspan>`, and `<generator>` milestones are available together.
 
 Some headers form delivery closures and should be completed together:
 
@@ -299,9 +300,11 @@ Take these closures in order:
 5. `<optional>` + `<expected>` + `<variant>` + `<any>`
 6. `<coroutine>` + `<ranges>` + `<span>` + `<mdspan>` + `<generator>`
     - `<coroutine>` completed as Stage 2.6.1.
-    - `<span>` seeded as Stage 2.6.2. Its generic range constructor, range
-      deduction guide, `ranges::enable_view`, and
-      `ranges::enable_borrowed_range` remain deferred until `<ranges>`.
+    - `<span>` seeded as Stage 2.6.2. Its generic range constructor, range deduction guide, ranges::enable_view, and ranges::enable_borrowed_range remain deferred to the final Stage 2.6 integration pass.
+    - `<ranges>` reached its Stage 2.6.3 milestone with range access CPOs, concepts, associated types, view infrastructure, subrange, the major C++20 and C++23 views and adaptors, and focused cross-compiler audits for propagation, iterator conformance, constexpr, conditional noexcept, adaptor composition, and constraints.
+    - `<ranges>` remains seeded rather than complete until its remaining N4950 synopsis surface, feature-test macros, header self-sufficiency, and deferred integration work are finished.
+    - Complete `<mdspan>` and `<generator>` as the next Stage 2.6 milestones.
+    - Finish Stage 2.6 with one integration and synopsis-cleanup pass across `<ranges>`, `<span>`, `<mdspan>`, and `<generator>`. No header moves to the complete inventory until its individual completion gates are met.
 
 `optional<T&>` remains tested as an extension and must not distort the C++23
 `optional<T>` ABI or constraints.

@@ -336,11 +336,11 @@ constexpr const tuple_element_t<Index, tuple<Types...>>& get(const tuple<Types..
 }
 template<size_t Index, class... Types>
 constexpr tuple_element_t<Index, tuple<Types...>>&& get(tuple<Types...>&& value) noexcept {
-    return move(get<Index>(value));
+    return static_cast<tuple_element_t<Index, tuple<Types...>>&&>(get<Index>(value));
 }
 template<size_t Index, class... Types>
 constexpr const tuple_element_t<Index, tuple<Types...>>&& get(const tuple<Types...>&& value) noexcept {
-    return move(get<Index>(value));
+    return static_cast<const tuple_element_t<Index, tuple<Types...>>&&>(get<Index>(value));
 }
 
 template<class T, class... Types> constexpr T& get(tuple<Types...>& value) noexcept {

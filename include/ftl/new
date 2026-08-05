@@ -17,6 +17,12 @@
 #define FTL_NEW_NAMESPACE ftl
 #endif
 
+#if defined(_MSC_VER)
+#define FTL_MSVC_CONSTEXPR [[msvc::constexpr]]
+#else
+#define FTL_MSVC_CONSTEXPR
+#endif
+
 #if !defined(FTL_REPLACE_STL)
 namespace std {
 using new_handler = void(*)();
@@ -129,7 +135,7 @@ void operator delete[](
 
 #if !defined(_NEW) && !defined(_NEW_) && \
     !defined(_LIBCPP___NEW_PLACEMENT_NEW_DELETE_H)
-[[nodiscard]] inline void* operator new(decltype(sizeof(0)), void* place) noexcept {
+[[nodiscard]] FTL_MSVC_CONSTEXPR inline void* operator new(decltype(sizeof(0)), void* place) noexcept {
     return place;
 }
 

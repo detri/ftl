@@ -84,18 +84,8 @@ constexpr decltype(auto) invoke_member_object(
 
 template<class Callable, class... Args>
 constexpr decltype(auto) invoke(Callable&& callable, Args&&... args)
-    noexcept(noexcept([](Callable&& function, Args&&... values)
-        -> decltype(auto) {
-        if constexpr (is_member_function_pointer_v<remove_cvref_t<Callable>>)
-            return detail::invoke_member_function(
-                forward<Callable>(function), forward<Args>(values)...);
-        else if constexpr (
-            is_member_object_pointer_v<remove_cvref_t<Callable>>)
-            return detail::invoke_member_object(
-                forward<Callable>(function), forward<Args>(values)...);
-        else
-            return forward<Callable>(function)(forward<Args>(values)...);
-    }(forward<Callable>(callable), forward<Args>(args)...))) {
+    noexcept(is_nothrow_invocable_v<Callable, Args...>) {
+
     if constexpr (is_member_function_pointer_v<remove_cvref_t<Callable>>)
         return detail::invoke_member_function(
             forward<Callable>(callable), forward<Args>(args)...);
@@ -104,6 +94,7 @@ constexpr decltype(auto) invoke(Callable&& callable, Args&&... args)
             forward<Callable>(callable), forward<Args>(args)...);
     else
         return forward<Callable>(callable)(forward<Args>(args)...);
+
 }
 
 template<class R, class Callable, class... Args>

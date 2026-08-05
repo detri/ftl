@@ -884,19 +884,51 @@ inline constexpr bool convertible_intrinsic_v =
     bool(FTL_IS_CONVERTIBLE(From, To));
 
 template<class T, class U>
-    requires is_reference_v<decltype(false ? declval<T&>() : declval<U&>())>
-struct common_ref<T&, U&, void_t<decltype(false ? declval<T&>()
-                                              : declval<U&>())>> {
-    using type = decltype(false ? declval<T&>() : declval<U&>());
+using copy_cv12_t = typename copy_cv<T, typename copy_cv<U, T>::type>::type;
+
+template<class T, class U>
+using copy_cv21_t = typename copy_cv<U, typename copy_cv<T, U>::type>::type;
+
+template<class T, class U>
+using common_ref_cond_t = decltype(
+    false
+        ? declval<copy_cv12_t<T, U>&>()
+        : declval<copy_cv21_t<T, U>&>()
+);
+
+template<class T, class U>
+    requires is_reference_v<common_ref_cond_t<T, U>>
+struct common_ref<
+    T&,
+    U&,
+    void_t<common_ref_cond_t<T, U>>
+> {
+    using type = common_ref_cond_t<T, U>;
 };
 
 template<class T, class U>
-    requires convertible_intrinsic_v<
-                 T&&, typename common_ref<T&, U&>::type&&> &&
-             convertible_intrinsic_v<
-                 U&&, typename common_ref<T&, U&>::type&&>
-struct common_ref<T&&, U&&, void_t<typename common_ref<T&, U&>::type>> {
-    using type = typename common_ref<T&, U&>::type&&;
+using common_ref_rvalue_t =
+    remove_reference_t<
+        typename common_ref<T&, U&>::type
+    >&&;
+
+template<class T, class U>
+    requires (
+        convertible_intrinsic_v<
+            T&&,
+            common_ref_rvalue_t<T, U>
+        > &&
+        convertible_intrinsic_v<
+            U&&,
+            common_ref_rvalue_t<T, U>
+        >
+    )
+struct common_ref<
+    T&&,
+    U&&,
+    void_t<typename common_ref<T&, U&>::type>
+> {
+    using type = common_ref_rvalue_t<T, U>;
 };
 
 template<class T, class U>
@@ -1860,10 +1892,25 @@ template<class, class F, class... Args>
 struct invoke_result_impl {};
 
 template<class F, class... Args>
-struct invoke_result_impl<void_t<decltype(invoke(
-                              declval<F>(), declval<Args>()...))>,
-                          F, Args...> {
-    using type = decltype(invoke(declval<F>(), declval<Args>()...));
+struct invoke_result_impl<
+    void_t<
+        decltype(
+            detail::invoke(
+                declval<F>(),
+                declval<Args>()...
+            )
+        )
+    >,
+    F,
+    Args...
+> {
+    using type =
+        decltype(
+            detail::invoke(
+                declval<F>(),
+                declval<Args>()...
+            )
+        );
 };
 }
 
@@ -1899,9 +1946,31 @@ inline constexpr bool is_invocable_r_v = is_invocable_r<R, F, Args...>::value;
 
 template<class F, class... Args>
 struct is_nothrow_invocable
-    : bool_constant<is_invocable_v<F, Args...> && requires {
-        requires noexcept(detail::invoke(declval<F>(), declval<Args>()...));
-    }> {};
+    : bool_constant<
+          [] consteval
+          {
+              if constexpr (
+                  !is_invocable_v<
+                      F,
+                      Args...
+                  >
+              )
+              {
+                  return false;
+              }
+              else
+              {
+                  return noexcept(
+                      detail::invoke(
+                          declval<F>(),
+                          declval<Args>()...
+                      )
+                  );
+              }
+          }()
+      >
+{
+};
 
 template<class F, class... Args>
 inline constexpr bool is_nothrow_invocable_v =

@@ -19,6 +19,12 @@
 #define FTL_MEMORY_NAMESPACE ftl
 #endif
 
+#if defined(_MSC_VER)
+#define FTL_MSVC_CONSTEXPR [[msvc::constexpr]]
+#else
+#define FTL_MSVC_CONSTEXPR
+#endif
+
 FTL_BEGIN_NAMESPACE
 
 template<class T> struct hash;
@@ -245,6 +251,7 @@ template<class T, class... Args>
     }
 constexpr T* construct_at(T* location, Args&&... args)
     noexcept(is_nothrow_constructible_v<T, Args...>) {
+    FTL_MSVC_CONSTEXPR
     return ::new (static_cast<void*>(location))
         T(forward<Args>(args)...);
 }
