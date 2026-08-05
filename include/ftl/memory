@@ -1003,8 +1003,16 @@ struct pointer_traits<Pointer,
     template<class T>
     using rebind = typename detail::pointer_rebind<Pointer, T>::type;
 
-    static pointer pointer_to(element_type& value)
-        requires requires { Pointer::pointer_to(value); } {
+    template<class Element = element_type>
+    static pointer pointer_to(Element& value)
+        requires (
+            same_as<Element, element_type> &&
+            !is_void_v<Element> &&
+            requires {
+                Pointer::pointer_to(value);
+            }
+        )
+    {
         return Pointer::pointer_to(value);
     }
 
@@ -1023,7 +1031,13 @@ struct pointer_traits<T*, void> {
     template<class U>
     using rebind = U*;
 
-    static constexpr pointer pointer_to(element_type& value) noexcept {
+    template<class Element = element_type>
+    static constexpr pointer pointer_to(Element& value) noexcept
+        requires (
+            same_as<Element, element_type> &&
+            !is_void_v<Element>
+        )
+    {
         return addressof(value);
     }
 

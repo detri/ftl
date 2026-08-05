@@ -1,6 +1,9 @@
 #ifdef FTL_REPLACE_STL
 #include <generator>
 #include <iterator>
+#include <memory>
+#include <memory_resource>
+#include <new>
 #include <ranges>
 #include <type_traits>
 #include <utility>
@@ -8,6 +11,9 @@ namespace tested = std;
 #else
 #include <ftl/generator>
 #include <ftl/iterator>
+#include <ftl/memory>
+#include <ftl/memory_resource>
+#include <ftl/new>
 #include <ftl/ranges>
 #include <ftl/type_traits>
 #include <ftl/utility>
@@ -163,6 +169,70 @@ static_assert(tested::is_same_v<
     void
 >);
 
+struct allocator_counts {
+    tested::size_t allocations = 0;
+    tested::size_t deallocations = 0;
+    tested::size_t allocated_objects = 0;
+    tested::size_t deallocated_objects = 0;
+};
+
+template<class T>
+class counting_allocator {
+public:
+    using value_type = T;
+
+    template<class>
+    friend class counting_allocator;
+
+    counting_allocator() = delete;
+
+    explicit counting_allocator(
+        allocator_counts& counts
+    ) noexcept
+        : counts_(
+              tested::addressof(counts)
+          ) {}
+
+    template<class U>
+    counting_allocator(
+        const counting_allocator<U>& other
+    ) noexcept
+        : counts_(other.counts_) {}
+
+    [[nodiscard]]
+    T* allocate(tested::size_t count) {
+        ++counts_->allocations;
+        counts_->allocated_objects += count;
+
+        return static_cast<T*>(
+            ::operator new(
+                count * sizeof(T)
+            )
+        );
+    }
+
+    void deallocate(
+        T* pointer,
+        tested::size_t count
+    ) noexcept {
+        ++counts_->deallocations;
+        counts_->deallocated_objects += count;
+
+        ::operator delete(pointer);
+    }
+
+    template<class U>
+    friend bool operator==(
+        const counting_allocator& left,
+        const counting_allocator<U>& right
+    ) noexcept {
+        return left.counts_ == right.counts_;
+    }
+
+private:
+    allocator_counts* counts_;
+};
+
 #ifdef FTL_REPLACE_STL
 
 tested::generator<int> values() {
@@ -212,9 +282,62 @@ tested::generator<int> throwing_values() {
     throw generator_test_exception{};
 }
 
+using byte_allocator =
+    counting_allocator<
+        unsigned char
+    >;
+
+tested::generator<
+    int,
+    void,
+    byte_allocator
+>
+explicit_allocator_values(
+    tested::allocator_arg_t,
+    const byte_allocator& allocator
+) {
+    (void) allocator;
+
+    co_yield 21;
+    co_yield 22;
+}
+
+tested::generator<int>
+erased_allocator_values(
+    tested::allocator_arg_t,
+    const byte_allocator& allocator
+) {
+    (void) allocator;
+
+    co_yield 31;
+    co_yield 32;
+}
+
+struct allocator_generator_owner {
+    tested::generator<int>
+    member_values(
+        tested::allocator_arg_t,
+        const byte_allocator& allocator
+    ) const {
+        (void) allocator;
+
+        co_yield 41;
+        co_yield 42;
+    }
+};
+
 #endif
 
 #endif
+
+static_assert(tested::is_same_v<
+    tested::pmr::generator<int>,
+    tested::generator<
+        int,
+        void,
+        tested::pmr::polymorphic_allocator<>
+    >
+>);
 
 bool ftl_test() {
 #ifdef FTL_REPLACE_STL
@@ -300,6 +423,147 @@ bool ftl_test() {
         ++iterator;
 
         if (iterator != destination.end()) {
+            return false;
+        }
+    }
+
+    {
+        allocator_counts counts;
+        byte_allocator allocator{counts};
+
+        {
+            auto sequence =
+                explicit_allocator_values(
+                    tested::allocator_arg,
+                    allocator
+                );
+
+            int expected = 21;
+
+            for (int value : sequence) {
+                if (value != expected) {
+                    return false;
+                }
+
+                ++expected;
+            }
+
+            if (expected != 23) {
+                return false;
+            }
+
+            if (
+                counts.allocations != 1 ||
+                counts.deallocations != 0
+            ) {
+                return false;
+            }
+        }
+
+        if (
+            counts.allocations != 1 ||
+            counts.deallocations != 1 ||
+            counts.allocated_objects !=
+                counts.deallocated_objects
+        ) {
+            return false;
+        }
+    }
+
+    {
+        allocator_counts counts;
+        byte_allocator allocator{counts};
+
+        {
+            auto sequence =
+                erased_allocator_values(
+                    tested::allocator_arg,
+                    allocator
+                );
+
+            int total = 0;
+
+            for (int value : sequence) {
+                total += value;
+            }
+
+            if (total != 63) {
+                return false;
+            }
+        }
+
+        if (
+            counts.allocations != 1 ||
+            counts.deallocations != 1 ||
+            counts.allocated_objects !=
+                counts.deallocated_objects
+        ) {
+            return false;
+        }
+    }
+
+    {
+        allocator_counts counts;
+        byte_allocator allocator{counts};
+        allocator_generator_owner owner;
+
+        {
+            auto sequence =
+                owner.member_values(
+                    tested::allocator_arg,
+                    allocator
+                );
+
+            int total = 0;
+
+            for (int value : sequence) {
+                total += value;
+            }
+
+            if (total != 83) {
+                return false;
+            }
+        }
+
+        if (
+            counts.allocations != 1 ||
+            counts.deallocations != 1 ||
+            counts.allocated_objects !=
+                counts.deallocated_objects
+        ) {
+            return false;
+        }
+    }
+
+    {
+        allocator_counts counts;
+        byte_allocator allocator{counts};
+
+        {
+            auto source =
+                erased_allocator_values(
+                    tested::allocator_arg,
+                    allocator
+                );
+
+            auto iterator = source.begin();
+
+            if (*iterator != 31) {
+                return false;
+            }
+
+            /*
+             * Destroying a partially consumed generator must still
+             * release its frame through the original allocator.
+             */
+        }
+
+        if (
+            counts.allocations != 1 ||
+            counts.deallocations != 1 ||
+            counts.allocated_objects !=
+                counts.deallocated_objects
+        ) {
             return false;
         }
     }

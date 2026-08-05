@@ -193,6 +193,51 @@ bool extended_memory_works() {
            aware.value == 19;
 }
 
+template<
+    class Pointer,
+    bool =
+        tested::is_void_v<
+            typename tested::pointer_traits<
+                Pointer
+            >::element_type
+        >
+>
+struct has_pointer_to_helper;
+
+template<class Pointer>
+struct has_pointer_to_helper<Pointer, true> {
+    static constexpr bool value = false;
+};
+
+template<class Pointer>
+struct has_pointer_to_helper<Pointer, false> {
+private:
+    using element_type =
+        typename tested::pointer_traits<
+            Pointer
+        >::element_type;
+
+public:
+    static constexpr bool value =
+        requires(element_type& object) {
+        tested::pointer_traits<
+            Pointer
+        >::pointer_to(object);
+        };
+};
+
+template<class Pointer>
+inline constexpr bool has_pointer_to_v =
+    has_pointer_to_helper<Pointer>::value;
+
+static_assert(has_pointer_to_v<int*>);
+static_assert(has_pointer_to_v<const int*>);
+
+static_assert(!has_pointer_to_v<void*>);
+static_assert(!has_pointer_to_v<const void*>);
+static_assert(!has_pointer_to_v<volatile void*>);
+static_assert(!has_pointer_to_v<const volatile void*>);
+
 bool ftl_test() {
     return lifetime_works() &&
            shared_ownership_works() &&
