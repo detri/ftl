@@ -206,6 +206,7 @@ foreach(header IN ITEMS
         ranges_conditional_noexcept
         ranges_constexpr
         ranges_adaptor_composition
+        ranges_constraints
 )
     add_ftl_test(${header})
 endforeach()
