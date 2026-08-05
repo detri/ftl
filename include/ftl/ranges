@@ -666,45 +666,199 @@ private:
 
 public:
     template<class L, class R>
-    constexpr explicit range_adaptor_pipeline(L&& left, R&& right)
-        : left_(static_cast<L&&>(left)),
-          right_(static_cast<R&&>(right)) {}
-
-    template<class R>
-    constexpr decltype(auto) operator()(R&& value) &
-        requires requires(Left& left, Right& right, R&& range) {
-            right(left(static_cast<R&&>(range)));
-        }
+        requires (
+            constructible_from<
+                Left,
+                L&&
+            > &&
+            constructible_from<
+                Right,
+                R&&
+            >
+        )
+    constexpr explicit range_adaptor_pipeline(
+        L&& left,
+        R&& right
+    )
+        noexcept(
+            is_nothrow_constructible_v<
+                Left,
+                L&&
+            > &&
+            is_nothrow_constructible_v<
+                Right,
+                R&&
+            >
+        )
+        : left_(
+              static_cast<L&&>(left)
+          ),
+          right_(
+              static_cast<R&&>(right)
+          )
     {
-        return right_(left_(static_cast<R&&>(value)));
     }
 
     template<class R>
-    constexpr decltype(auto) operator()(R&& value) const&
+    constexpr decltype(auto) operator()(
+        R&& value
+    ) &
+        noexcept(
+            noexcept(
+                declval<Right&>()(
+                    declval<Left&>()(
+                        declval<R&&>()
+                    )
+                )
+            )
+        )
+        requires requires(
+            Left& left,
+            Right& right,
+            R&& range
+        ) {
+            right(
+                left(
+                    static_cast<R&&>(
+                        range
+                    )
+                )
+            );
+        }
+    {
+        return right_(
+            left_(
+                static_cast<R&&>(
+                    value
+                )
+            )
+        );
+    }
+
+    template<class R>
+    constexpr decltype(auto) operator()(
+        R&& value
+    ) const&
+        noexcept(
+            noexcept(
+                declval<const Right&>()(
+                    declval<const Left&>()(
+                        declval<R&&>()
+                    )
+                )
+            )
+        )
         requires requires(
             const Left& left,
             const Right& right,
             R&& range
         ) {
-            right(left(static_cast<R&&>(range)));
-        }
-    {
-        return right_(left_(static_cast<R&&>(value)));
-    }
-
-    template<class R>
-    constexpr decltype(auto) operator()(R&& value) &&
-        requires requires(Left left, Right right, R&& range) {
-            FTL_RANGES_NAMESPACE::move(right)(
-                FTL_RANGES_NAMESPACE::move(left)(
-                    static_cast<R&&>(range)
+            right(
+                left(
+                    static_cast<R&&>(
+                        range
+                    )
                 )
             );
         }
     {
-        return FTL_RANGES_NAMESPACE::move(right_)(
-            FTL_RANGES_NAMESPACE::move(left_)(
-                static_cast<R&&>(value)
+        return right_(
+            left_(
+                static_cast<R&&>(
+                    value
+                )
+            )
+        );
+    }
+
+    template<class R>
+    constexpr decltype(auto) operator()(
+        R&& value
+    ) &&
+        noexcept(
+            noexcept(
+                declval<Right&&>()(
+                    declval<Left&&>()(
+                        declval<R&&>()
+                    )
+                )
+            )
+        )
+        requires requires(
+            Left&& left,
+            Right&& right,
+            R&& range
+        ) {
+            static_cast<Right&&>(
+                right
+            )(
+                static_cast<Left&&>(
+                    left
+                )(
+                    static_cast<R&&>(
+                        range
+                    )
+                )
+            );
+        }
+    {
+        return static_cast<Right&&>(
+            right_
+        )(
+            static_cast<Left&&>(
+                left_
+            )(
+                static_cast<R&&>(
+                    value
+                )
+            )
+        );
+    }
+
+    template<class R>
+    constexpr decltype(auto) operator()(
+        R&& value
+    ) const&&
+        noexcept(
+            noexcept(
+                declval<const Right&&>()(
+                    declval<const Left&&>()(
+                        declval<R&&>()
+                    )
+                )
+            )
+        )
+        requires requires(
+            const Left&& left,
+            const Right&& right,
+            R&& range
+        ) {
+            static_cast<const Right&&>(
+                right
+            )(
+                static_cast<const Left&&>(
+                    left
+                )(
+                    static_cast<R&&>(
+                        range
+                    )
+                )
+            );
+        }
+    {
+        return static_cast<
+            const Right&&
+        >(
+            right_
+        )(
+            static_cast<
+                const Left&&
+            >(
+                left_
+            )(
+                static_cast<R&&>(
+                    value
+                )
             )
         );
     }
@@ -743,8 +897,36 @@ private:
 
 public:
     template<class... Values>
-    constexpr explicit range_adaptor_partial(Values&&... values)
-        : arguments_(static_cast<Values&&>(values)...) {}
+        requires (
+            sizeof...(Values) ==
+                sizeof...(Args) &&
+            (
+                constructible_from<
+                    Args,
+                    Values&&
+                > &&
+                ...
+            )
+        )
+    constexpr explicit range_adaptor_partial(
+        Values&&... values
+    )
+        noexcept(
+            (
+                is_nothrow_constructible_v<
+                    Args,
+                    Values&&
+                > &&
+                ...
+            )
+        )
+        : arguments_(
+              static_cast<Values&&>(
+                  values
+              )...
+          )
+    {
+    }
 
     template<class R>
         requires adaptor_invocable<Adaptor, R, Args&...>
@@ -804,7 +986,21 @@ template<class Range, class Closure>
         invocable<Closure, Range>
     )
 [[nodiscard]]
-constexpr decltype(auto) operator|(Range&& value, Closure&& closure) {
+constexpr decltype(auto) operator|(
+    Range&& value,
+    Closure&& closure
+)
+    noexcept(
+        noexcept(
+            static_cast<Closure&&>(
+                closure
+            )(
+                static_cast<Range&&>(
+                    value
+                )
+            )
+        )
+    ) {
     return static_cast<Closure&&>(closure)(static_cast<Range&&>(value));
 }
 
@@ -816,7 +1012,25 @@ template<class Left, class Right>
         constructible_from<decay_t<Right>, Right>
     )
 [[nodiscard]]
-constexpr auto operator|(Left&& left, Right&& right) {
+constexpr auto operator|(
+    Left&& left,
+    Right&& right
+)
+    noexcept(
+        noexcept(
+            detail::range_adaptor_pipeline<
+                decay_t<Left>,
+                decay_t<Right>
+            >(
+                static_cast<Left&&>(
+                    left
+                ),
+                static_cast<Right&&>(
+                    right
+                )
+            )
+        )
+    ) {
     return detail::range_adaptor_pipeline<
         decay_t<Left>,
         decay_t<Right>
@@ -5739,6 +5953,13 @@ public:
                 inner_.set(InnerType(other.inner_.get()));
         }
 
+        [[nodiscard]]
+        constexpr const OuterType&
+        outer_base() const
+        {
+            return outer();
+        }
+
         constexpr decltype(auto) operator*() const { return *inner_.get(); }
         constexpr InnerType operator->() const requires copyable<InnerType> { return inner_.get(); }
         constexpr iterator& operator++() {
@@ -5788,7 +6009,7 @@ public:
         template<bool C>
         friend constexpr bool operator==(const iterator<C>& current, const sentinel& bound)
             requires sentinel_for<sentinel_t<BaseType>, iterator_t<Base<C>>>
-        { return current.outer() == bound.end_; }
+        { return current.outer_base() == bound.end_; }
     };
 };
 

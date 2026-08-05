@@ -205,6 +205,7 @@ foreach(header IN ITEMS
         ranges_iterator_category_propagation
         ranges_conditional_noexcept
         ranges_constexpr
+        ranges_adaptor_composition
 )
     add_ftl_test(${header})
 endforeach()
