@@ -168,6 +168,32 @@ struct allocator_counts
     tested::size_t deallocated_objects = 0;
 };
 
+[[nodiscard]]
+constexpr bool allocator_live_or_elided(
+    const allocator_counts& counts
+) noexcept
+{
+    /*
+     * A compiler may embed the coroutine state in its caller,
+     * in which case the allocation functions are never called.
+     */
+    return
+        counts.allocations <= 1 &&
+        counts.deallocations == 0 &&
+        counts.deallocated_objects == 0;
+}
+
+[[nodiscard]]
+constexpr bool allocator_balanced(
+    const allocator_counts& counts
+) noexcept
+{
+    return
+        counts.allocations == counts.deallocations &&
+        counts.allocated_objects ==
+            counts.deallocated_objects;
+}
+
 template<class T>
 class counting_allocator
 {
@@ -690,21 +716,13 @@ bool ftl_test()
                 return false;
             }
 
-            if (
-                counts.allocations != 1 ||
-                counts.deallocations != 0
-            )
+            if (!allocator_live_or_elided(counts))
             {
                 return false;
             }
         }
 
-        if (
-            counts.allocations != 1 ||
-            counts.deallocations != 1 ||
-            counts.allocated_objects !=
-            counts.deallocated_objects
-        )
+        if (!allocator_balanced(counts))
         {
             return false;
         }
@@ -734,12 +752,7 @@ bool ftl_test()
             }
         }
 
-        if (
-            counts.allocations != 1 ||
-            counts.deallocations != 1 ||
-            counts.allocated_objects !=
-            counts.deallocated_objects
-        )
+        if (!allocator_balanced(counts))
         {
             return false;
         }
@@ -770,12 +783,7 @@ bool ftl_test()
             }
         }
 
-        if (
-            counts.allocations != 1 ||
-            counts.deallocations != 1 ||
-            counts.allocated_objects !=
-            counts.deallocated_objects
-        )
+        if (!allocator_balanced(counts))
         {
             return false;
         }
@@ -805,12 +813,7 @@ bool ftl_test()
              */
         }
 
-        if (
-            counts.allocations != 1 ||
-            counts.deallocations != 1 ||
-            counts.allocated_objects !=
-            counts.deallocated_objects
-        )
+        if (!allocator_balanced(counts))
         {
             return false;
         }
@@ -827,10 +830,7 @@ bool ftl_test()
                         allocator
                     );
 
-            if (
-                counts.allocations != 1 ||
-                counts.deallocations != 0
-            )
+            if (!allocator_live_or_elided(counts))
             {
                 return false;
             }
@@ -838,12 +838,7 @@ bool ftl_test()
             // Deliberately never call begin().
         }
 
-        if (
-            counts.allocations != 1 ||
-            counts.deallocations != 1 ||
-            counts.allocated_objects !=
-            counts.deallocated_objects
-        )
+        if (!allocator_balanced(counts))
         {
             return false;
         }
@@ -876,12 +871,7 @@ bool ftl_test()
             }
         }
 
-        if (
-            counts.allocations != 1 ||
-            counts.deallocations != 1 ||
-            counts.allocated_objects !=
-            counts.deallocated_objects
-        )
+        if (!allocator_balanced(counts))
         {
             return false;
         }
@@ -912,10 +902,7 @@ bool ftl_test()
             /*
              * Move assignment must destroy second's old frame immediately.
              */
-            if (
-                second_counts.allocations != 1 ||
-                second_counts.deallocations != 1
-            )
+            if (!allocator_balanced(second_counts))
             {
                 return false;
             }
@@ -934,10 +921,8 @@ bool ftl_test()
         }
 
         if (
-            first_counts.allocations != 1 ||
-            first_counts.deallocations != 1 ||
-            second_counts.allocations != 1 ||
-            second_counts.deallocations != 1
+            !allocator_balanced(first_counts) ||
+            !allocator_balanced(second_counts)
         )
         {
             return false;
@@ -983,12 +968,7 @@ bool ftl_test()
             return false;
         }
 
-        if (
-            counts.allocations != 1 ||
-            counts.deallocations != 1 ||
-            counts.allocated_objects !=
-            counts.deallocated_objects
-        )
+        if (!allocator_balanced(counts))
         {
             return false;
         }
@@ -1027,12 +1007,7 @@ bool ftl_test()
              */
             second = tested::move(first);
 
-            if (
-                second_counts.allocations != 1 ||
-                second_counts.deallocations != 1 ||
-                second_counts.allocated_objects !=
-                second_counts.deallocated_objects
-            )
+            if (!allocator_balanced(second_counts))
             {
                 return false;
             }
@@ -1050,16 +1025,7 @@ bool ftl_test()
             }
         }
 
-        if (
-            first_counts.allocations != 1 ||
-            first_counts.deallocations != 1 ||
-            first_counts.allocated_objects !=
-            first_counts.deallocated_objects ||
-            second_counts.allocations != 1 ||
-            second_counts.deallocations != 1 ||
-            second_counts.allocated_objects !=
-            second_counts.deallocated_objects
-        )
+        if (!allocator_balanced(first_counts) || !allocator_balanced(second_counts))
         {
             return false;
         }
@@ -1238,12 +1204,7 @@ bool ftl_test()
          * Only the generated helper coroutine uses this counting
          * allocator. Its frame must have been released.
          */
-        if (
-            counts.allocations != 1 ||
-            counts.deallocations != 1 ||
-            counts.allocated_objects !=
-            counts.deallocated_objects
-        )
+        if (!allocator_balanced(counts))
         {
             return false;
         }
@@ -1278,6 +1239,50 @@ bool ftl_test()
         }
 
         if (destructions != 1)
+        {
+            return false;
+        }
+    }
+
+    {
+        allocator_counts counts;
+        byte_allocator allocator{counts};
+
+        using promise_type =
+            typename tested::generator<
+                int,
+                void,
+                byte_allocator
+            >::promise_type;
+
+        constexpr tested::size_t frame_size = 256;
+
+        void* allocation =
+            promise_type::operator new(
+                frame_size,
+                tested::allocator_arg,
+                allocator
+            );
+
+        if (
+            counts.allocations != 1 ||
+            counts.deallocations != 0
+        )
+        {
+            return false;
+        }
+
+        promise_type::operator delete(
+            allocation,
+            frame_size
+        );
+
+        if (
+            counts.allocations != 1 ||
+            counts.deallocations != 1 ||
+            counts.allocated_objects !=
+                counts.deallocated_objects
+        )
         {
             return false;
         }
