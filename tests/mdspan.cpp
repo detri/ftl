@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <limits>
 #include <mdspan>
+#include <ranges>
 #include <span>
 #include <type_traits>
 namespace tested = std;
@@ -11,6 +12,7 @@ namespace tested = std;
 #include <ftl/cstddef>
 #include <ftl/limits>
 #include <ftl/mdspan>
+#include <ftl/ranges>
 #include <ftl/span>
 #include <ftl/type_traits>
 namespace tested = ftl;
@@ -801,6 +803,12 @@ using fixed_mdspan = tested::mdspan<int, mdspan_fixed_extents>;
 using const_fixed_mdspan = tested::mdspan<const int, mdspan_fixed_extents>;
 
 using dynamic_mdspan = tested::mdspan<int, mdspan_dynamic_extents>;
+
+static_assert(!tested::ranges::range<fixed_mdspan>);
+
+static_assert(!tested::ranges::range<const_fixed_mdspan>);
+
+static_assert(!tested::ranges::range<dynamic_mdspan>);
 
 using stride_mdspan =
     tested::mdspan<int, mdspan_fixed_extents, tested::layout_stride>;

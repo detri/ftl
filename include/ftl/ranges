@@ -3372,7 +3372,7 @@ public:
                        base_t<Const>, conditional_t<Const, const F, F>> {
     using Parent = conditional_t<Const, const transform_view, transform_view>;
     using Base = base_t<Const>;
-    iterator_t<Base> current_{};
+    iterator_t<Base> current_;
     Parent *parent_ = nullptr;
 
     friend class iterator<!Const>;
@@ -3390,7 +3390,9 @@ public:
                                        range_reference_t<Base>>>;
     using difference_type = range_difference_t<Base>;
 
-    iterator() = default;
+    constexpr iterator()
+        requires default_initializable<iterator_t<Base>>
+        : current_() {}
 
     constexpr iterator(Parent &parent, iterator_t<Base> current)
         : current_(FTL_RANGES_NAMESPACE::move(current)),
