@@ -16,6 +16,182 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+#ifndef __cpp_lib_ranges_as_rvalue
+#error "__cpp_lib_ranges_as_rvalue is missing"
+#endif
+
+static_assert(__cpp_lib_ranges_as_rvalue == 202207L);
+
+#ifndef __cpp_lib_ranges_to_container
+#error "__cpp_lib_ranges_to_container is missing"
+#endif
+
+static_assert(__cpp_lib_ranges_to_container == 202202L);
+
+template <class T, tested::size_t Capacity = 16> struct to_buffer_base {
+  using value_type = T;
+
+  using size_type = tested::size_t;
+
+  T storage[Capacity]{};
+
+  size_type count = 0;
+
+  constexpr T *begin() noexcept { return storage; }
+
+  constexpr const T *begin() const noexcept { return storage; }
+
+  constexpr T *end() noexcept { return storage + count; }
+
+  constexpr const T *end() const noexcept { return storage + count; }
+
+  constexpr size_type size() const noexcept { return count; }
+
+protected:
+  template <class U> constexpr T &append_value(U &&value) {
+    const auto index = count++;
+
+    storage[index] = T(static_cast<U &&>(value));
+
+    return storage[index];
+  }
+
+  template <tested::ranges::input_range R>
+  constexpr void append_range(R &&range) {
+    auto current = tested::ranges::begin(range);
+
+    const auto bound = tested::ranges::end(range);
+
+    for (; current != bound; ++current) {
+      append_value(*current);
+    }
+  }
+};
+
+template <class T> struct to_sequence : to_buffer_base<T> {
+  using base_type = to_buffer_base<T>;
+
+  using typename base_type::size_type;
+
+  size_type reserved = 0;
+
+  constexpr void reserve(size_type count) noexcept { reserved = count; }
+
+  constexpr size_type capacity() const noexcept { return 16; }
+
+  constexpr size_type max_size() const noexcept { return 16; }
+
+  template <class U> constexpr T &emplace_back(U &&value) {
+    return this->append_value(static_cast<U &&>(value));
+  }
+};
+
+struct direct_to_container : to_buffer_base<int> {
+  int argument = 0;
+
+  template <tested::ranges::input_range R>
+  constexpr direct_to_container(R &&range, int value) : argument(value) {
+    this->append_range(static_cast<R &&>(range));
+  }
+};
+
+struct from_range_to_container : to_buffer_base<int> {
+  int argument = 0;
+
+  template <tested::ranges::input_range R>
+  constexpr from_range_to_container(tested::from_range_t, R &&range, int value)
+      : argument(value) {
+    this->append_range(static_cast<R &&>(range));
+  }
+};
+
+struct iterator_to_container : to_buffer_base<int> {
+  int argument = 0;
+
+  template <tested::input_iterator I, tested::sentinel_for<I> S>
+  constexpr iterator_to_container(I first, S last, int value)
+      : argument(value) {
+    for (; first != last; ++first) {
+      this->append_value(*first);
+    }
+  }
+};
+
+struct append_priority_container : to_buffer_base<int> {
+  using size_type = tested::size_t;
+
+  int route = 0;
+
+  size_type reserved = 0;
+
+  constexpr void reserve(size_type count) noexcept { reserved = count; }
+
+  constexpr size_type capacity() const noexcept { return 16; }
+
+  constexpr size_type max_size() const noexcept { return 16; }
+
+  template <class U> constexpr int &emplace_back(U &&value) {
+    route = 1;
+
+    return this->append_value(static_cast<U &&>(value));
+  }
+
+  template <class U> constexpr void push_back(U &&value) {
+    route = 2;
+
+    this->append_value(static_cast<U &&>(value));
+  }
+
+  template <class U> constexpr int *emplace_hint(int *, U &&value) {
+    route = 3;
+
+    this->append_value(static_cast<U &&>(value));
+
+    return this->end() - 1;
+  }
+
+  template <class U> constexpr int *insert(int *, U &&value) {
+    route = 4;
+
+    this->append_value(static_cast<U &&>(value));
+
+    return this->end() - 1;
+  }
+};
+
+struct push_back_to_container : to_buffer_base<int> {
+  template <class U> constexpr void push_back(U &&value) {
+    this->append_value(static_cast<U &&>(value));
+  }
+};
+
+struct emplace_hint_to_container : to_buffer_base<int> {
+  template <class U> constexpr int *emplace_hint(int *, U &&value) {
+    this->append_value(static_cast<U &&>(value));
+
+    return this->end() - 1;
+  }
+};
+
+struct insert_to_container : to_buffer_base<int> {
+  template <class U> constexpr int *insert(int *, U &&value) {
+    this->append_value(static_cast<U &&>(value));
+
+    return this->end() - 1;
+  }
+};
+
+template <class T> struct deduced_to_container : to_buffer_base<T> {
+  template <tested::ranges::input_range R>
+  constexpr explicit deduced_to_container(R &&range) {
+    this->append_range(static_cast<R &&>(range));
+  }
+};
+
+template <tested::ranges::input_range R>
+deduced_to_container(R &&)
+    -> deduced_to_container<tested::ranges::range_value_t<R>>;
+
 struct member_range {
   int *first = nullptr;
   int *last = nullptr;
@@ -151,6 +327,52 @@ struct opted_view {
   constexpr int *end() noexcept { return last; }
 };
 
+struct nullary_value {
+  [[nodiscard]]
+  constexpr int operator()() const noexcept {
+    return 42;
+  }
+};
+
+constexpr member_range evaluated_range(int *first, int *last,
+                                       int &evaluations) {
+  ++evaluations;
+
+  return {first, last};
+}
+
+constexpr nullary_value evaluated_function(int &evaluations) {
+  ++evaluations;
+
+  return {};
+}
+
+using tuple_array = tested::tuple<int, long>[2];
+
+using tuple_array_view = tested::ranges::ref_view<tuple_array>;
+
+static_assert(
+    tested::is_same_v<tested::ranges::keys_view<tuple_array_view>,
+                      tested::ranges::elements_view<tuple_array_view, 0>>);
+
+static_assert(
+    tested::is_same_v<tested::ranges::values_view<tuple_array_view>,
+                      tested::ranges::elements_view<tuple_array_view, 1>>);
+
+static_assert(
+    tested::is_same_v<
+        tested::remove_cv_t<decltype(tested::ranges::views::pairwise)>,
+        tested::remove_cv_t<decltype(tested::ranges::views::adjacent<2>)>>);
+
+static_assert(tested::is_same_v<
+              tested::remove_cv_t<
+                  decltype(tested::ranges::views::pairwise_transform)>,
+              tested::remove_cv_t<
+                  decltype(tested::ranges::views::adjacent_transform<2>)>>);
+
+static_assert(tested::is_same_v<decltype(tested::from_range),
+                                const tested::from_range_t>);
+
 namespace adl_test {
 struct range {
   int *first = nullptr;
@@ -254,10 +476,18 @@ static_assert(
     tested::is_same_v<tested::ranges::sentinel_t<member_range>, int *>);
 
 static_assert(tested::is_same_v<tested::ranges::const_iterator_t<member_range>,
-                                const int *>);
+                                tested::const_iterator<int *>>);
 
 static_assert(tested::is_same_v<tested::ranges::const_sentinel_t<member_range>,
+                                tested::const_sentinel<int *>>);
+
+static_assert(tested::is_same_v<decltype(tested::ranges::cbegin(
+                                    tested::declval<member_range &>())),
                                 const int *>);
+
+static_assert(tested::is_same_v<
+              decltype(tested::ranges::cend(tested::declval<member_range &>())),
+              const int *>);
 
 static_assert(
     tested::is_same_v<tested::ranges::range_value_t<member_range>, int>);
@@ -944,6 +1174,320 @@ constexpr bool movable_box_move_only_path_works() {
 
 static_assert(movable_box_move_only_path_works());
 
+constexpr bool ranges_small_surface_works() {
+  int values[] = {1, 2, 3};
+
+  int range_evaluations = 0;
+
+  auto adjacent_zero = tested::ranges::views::adjacent<0>(
+      evaluated_range(values, values + 3, range_evaluations));
+
+  static_assert(tested::is_same_v<decltype(adjacent_zero),
+                                  tested::ranges::empty_view<tested::tuple<>>>);
+
+  if (range_evaluations != 1 || adjacent_zero.size() != 0) {
+    return false;
+  }
+
+  int function_evaluations = 0;
+
+  auto transform_zero = tested::ranges::views::adjacent_transform<0>(
+      evaluated_range(values, values + 3, range_evaluations),
+      evaluated_function(function_evaluations));
+
+  static_assert(tested::is_same_v<decltype(transform_zero),
+                                  tested::ranges::empty_view<int>>);
+
+  if (range_evaluations != 2 || function_evaluations != 1 ||
+      transform_zero.size() != 0) {
+    return false;
+  }
+
+  /*
+   * Verify the closure forms too.
+   */
+  auto piped_adjacent = evaluated_range(values, values + 3, range_evaluations) |
+                        tested::ranges::views::adjacent<0>;
+
+  auto piped_transform =
+      evaluated_range(values, values + 3, range_evaluations) |
+      tested::ranges::views::adjacent_transform<0>(
+          evaluated_function(function_evaluations));
+
+  if (piped_adjacent.size() != 0 || piped_transform.size() != 0 ||
+      range_evaluations != 4 || function_evaluations != 2) {
+    return false;
+  }
+
+  tested::ranges::subrange range{values, values + 3};
+
+  if (tested::get<0>(range) != values || tested::get<1>(range) != values + 3) {
+    return false;
+  }
+
+  return true;
+}
+
+static_assert(ranges_small_surface_works());
+
+struct movable_value {
+  int value = 0;
+
+  constexpr movable_value() = default;
+
+  constexpr explicit movable_value(int initial) : value(initial) {}
+
+  movable_value(const movable_value &) = delete;
+
+  movable_value &operator=(const movable_value &) = delete;
+
+  constexpr movable_value(movable_value &&other) noexcept : value(other.value) {
+    other.value = -1;
+  }
+
+  constexpr movable_value &operator=(movable_value &&other) noexcept {
+    value = other.value;
+    other.value = -1;
+    return *this;
+  }
+};
+
+using movable_array = movable_value (&)[3];
+
+using movable_as_rvalue = decltype(tested::ranges::views::as_rvalue(
+    tested::declval<movable_array>()));
+
+static_assert(tested::ranges::view<movable_as_rvalue>);
+
+static_assert(tested::ranges::random_access_range<movable_as_rvalue>);
+
+static_assert(tested::ranges::common_range<movable_as_rvalue>);
+
+static_assert(tested::ranges::sized_range<movable_as_rvalue>);
+
+static_assert(tested::ranges::borrowed_range<movable_as_rvalue>);
+
+static_assert(tested::is_same_v<
+              tested::ranges::range_value_t<movable_as_rvalue>, movable_value>);
+
+static_assert(
+    tested::is_same_v<tested::ranges::range_reference_t<movable_as_rvalue>,
+                      movable_value &&>);
+
+static_assert(tested::is_same_v<tested::ranges::iterator_t<movable_as_rvalue>,
+                                tested::move_iterator<movable_value *>>);
+
+constexpr bool as_rvalue_view_works() {
+  movable_value values[] = {movable_value{1}, movable_value{2},
+                            movable_value{3}};
+
+  auto view = values | tested::ranges::views::as_rvalue;
+
+  if (view.size() != 3 || view.base().begin() != values) {
+    return false;
+  }
+
+  auto iterator = view.begin();
+
+  movable_value first{*iterator};
+
+  if (first.value != 1 || values[0].value != -1) {
+    return false;
+  }
+
+  ++iterator;
+
+  movable_value second{*iterator};
+
+  if (second.value != 2 || values[1].value != -1) {
+    return false;
+  }
+
+  ++iterator;
+
+  movable_value third{*iterator};
+
+  if (third.value != 3 || values[2].value != -1) {
+    return false;
+  }
+
+  ++iterator;
+
+  if (iterator != view.end()) {
+    return false;
+  }
+
+  return true;
+}
+
+static_assert(as_rvalue_view_works());
+
+using to_source_array = int (&)[4];
+
+static_assert(tested::is_same_v<decltype(tested::ranges::to<to_sequence<int>>(
+                                    tested::declval<to_source_array>())),
+                                to_sequence<int>>);
+
+static_assert(
+    tested::is_same_v<decltype(tested::ranges::to<deduced_to_container>(
+                          tested::declval<to_source_array>())),
+                      deduced_to_container<int>>);
+
+constexpr bool equal_to_values(const auto &range, const int *expected,
+                               tested::size_t count) {
+  if (range.size() != count) {
+    return false;
+  }
+
+  for (tested::size_t index = 0; index < count; ++index) {
+    if (range.begin()[index] != expected[index]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+constexpr bool ranges_to_works() {
+  int values[] = {1, 2, 3, 4};
+
+  {
+    auto result = tested::ranges::to<direct_to_container>(values, 11);
+
+    if (result.argument != 11 || !equal_to_values(result, values, 4)) {
+      return false;
+    }
+  }
+
+  {
+    auto result = tested::ranges::to<from_range_to_container>(values, 12);
+
+    if (result.argument != 12 || !equal_to_values(result, values, 4)) {
+      return false;
+    }
+  }
+
+  {
+    auto result = tested::ranges::to<iterator_to_container>(values, 13);
+
+    if (result.argument != 13 || !equal_to_values(result, values, 4)) {
+      return false;
+    }
+  }
+
+  {
+    auto result = tested::ranges::to<append_priority_container>(values);
+
+    if (result.route != 1 || result.reserved != 4 ||
+        !equal_to_values(result, values, 4)) {
+      return false;
+    }
+  }
+
+  {
+    auto result = tested::ranges::to<push_back_to_container>(values);
+
+    if (!equal_to_values(result, values, 4)) {
+      return false;
+    }
+  }
+
+  {
+    auto result = tested::ranges::to<emplace_hint_to_container>(values);
+
+    if (!equal_to_values(result, values, 4)) {
+      return false;
+    }
+  }
+
+  {
+    auto result = tested::ranges::to<insert_to_container>(values);
+
+    if (!equal_to_values(result, values, 4)) {
+      return false;
+    }
+  }
+
+  {
+    int first_values[] = {1, 2};
+
+    int second_values[] = {3, 4, 5};
+
+    member_range rows[] = {{first_values, first_values + 2},
+                           {second_values, second_values + 3}};
+
+    auto result = tested::ranges::to<to_sequence<to_sequence<int>>>(rows);
+
+    if (result.size() != 2 ||
+        !equal_to_values(result.storage[0], first_values, 2) ||
+        !equal_to_values(result.storage[1], second_values, 3)) {
+      return false;
+    }
+  }
+
+  {
+    auto result = values | tested::ranges::to<to_sequence<int>>();
+
+    if (result.reserved != 4 || !equal_to_values(result, values, 4)) {
+      return false;
+    }
+  }
+
+  {
+    auto result = values | tested::ranges::to<from_range_to_container>(21);
+
+    if (result.argument != 21 || !equal_to_values(result, values, 4)) {
+      return false;
+    }
+  }
+
+  {
+    auto result = tested::ranges::to<deduced_to_container>(values);
+
+    static_assert(
+        tested::is_same_v<decltype(result), deduced_to_container<int>>);
+
+    if (!equal_to_values(result, values, 4)) {
+      return false;
+    }
+  }
+
+  {
+    auto result = values | tested::ranges::to<deduced_to_container>();
+
+    static_assert(
+        tested::is_same_v<decltype(result), deduced_to_container<int>>);
+
+    if (!equal_to_values(result, values, 4)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+static_assert(ranges_to_works());
+
+struct mutable_only_contiguous_range {
+  int *first = nullptr;
+  int *last = nullptr;
+
+  int *begin() noexcept { return first; }
+
+  int *end() noexcept { return last; }
+
+  int *data() noexcept { return first; }
+};
+
+static_assert(tested::ranges::contiguous_range<mutable_only_contiguous_range>);
+
+static_assert(!tested::ranges::range<const mutable_only_contiguous_range>);
+
+static_assert(
+    tested::is_same_v<decltype(tested::ranges::cdata(
+                          tested::declval<mutable_only_contiguous_range &>())),
+                      const int *>);
+
 bool ftl_test() {
   int values[] = {1, 2, 3, 4};
 
@@ -1006,6 +1550,14 @@ bool ftl_test() {
 
   tested::ranges::dangling ignored{values, values + 4};
   (void)ignored;
+
+  if (!ranges_small_surface_works()) {
+    return false;
+  }
+
+  if (!as_rvalue_view_works()) {
+    return false;
+  }
 
   return ranges_constexpr_works() && range_iterator_operations_work();
 }

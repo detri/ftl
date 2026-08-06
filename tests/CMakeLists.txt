@@ -211,6 +211,17 @@ foreach(header IN ITEMS
         ranges_constraints
         generator
         mdspan
+        span_mdspan_integration
+        generator_ranges_integration
+        span_mdspan_generator_ranges_integration
+        adjacent_transform_views
+        join_with_view
+        stdexcept
+        iosfwd
+        streambuf
+        ios
+        istream
+        istream_view
 )
     add_ftl_test(${header})
 endforeach()

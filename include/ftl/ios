@@ -1,0 +1,116 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_IOS_HEADER
+#define FTL_IOS_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <streambuf>
+#else
+#include <ftl/streambuf>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+class ios_base {
+public:
+  using iostate = unsigned int;
+
+  static constexpr iostate goodbit = 0;
+  static constexpr iostate badbit = 1u << 0;
+  static constexpr iostate eofbit = 1u << 1;
+  static constexpr iostate failbit = 1u << 2;
+
+protected:
+  constexpr ios_base() noexcept = default;
+};
+
+template <class Character, class Traits> class basic_ios : public ios_base {
+public:
+  using char_type = Character;
+  using traits_type = Traits;
+  using int_type = typename traits_type::int_type;
+  using pos_type = typename traits_type::pos_type;
+  using off_type = typename traits_type::off_type;
+
+  explicit basic_ios(basic_streambuf<char_type, traits_type> *buffer) {
+    init(buffer);
+  }
+
+  virtual ~basic_ios() = default;
+
+  explicit operator bool() const { return !fail(); }
+
+  bool operator!() const { return fail(); }
+
+  [[nodiscard]]
+  iostate rdstate() const {
+    return state_;
+  }
+
+  void clear(iostate state = goodbit) {
+    state_ = buffer_ == nullptr ? state | badbit : state;
+  }
+
+  void setstate(iostate state) { clear(rdstate() | state); }
+
+  [[nodiscard]]
+  bool good() const {
+    return rdstate() == goodbit;
+  }
+
+  [[nodiscard]]
+  bool eof() const {
+    return (rdstate() & eofbit) != 0;
+  }
+
+  [[nodiscard]]
+  bool fail() const {
+    return (rdstate() & (failbit | badbit)) != 0;
+  }
+
+  [[nodiscard]]
+  bool bad() const {
+    return (rdstate() & badbit) != 0;
+  }
+
+  [[nodiscard]]
+  basic_streambuf<char_type, traits_type> *rdbuf() const {
+    return buffer_;
+  }
+
+  basic_streambuf<char_type, traits_type> *
+  rdbuf(basic_streambuf<char_type, traits_type> *buffer) {
+    auto *previous = buffer_;
+
+    buffer_ = buffer;
+    clear();
+
+    return previous;
+  }
+
+  basic_ios(const basic_ios &) = delete;
+
+  basic_ios &operator=(const basic_ios &) = delete;
+
+protected:
+  basic_ios() = default;
+
+  void init(basic_streambuf<char_type, traits_type> *buffer) {
+    buffer_ = buffer;
+
+    state_ = buffer == nullptr ? badbit : goodbit;
+  }
+
+  void set_rdbuf(basic_streambuf<char_type, traits_type> *buffer) {
+    buffer_ = buffer;
+  }
+
+private:
+  basic_streambuf<char_type, traits_type> *buffer_ = nullptr;
+
+  iostate state_ = badbit;
+};
+
+FTL_END_NAMESPACE
+
+#endif // FTL_IOS_HEADER

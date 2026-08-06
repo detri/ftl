@@ -1293,7 +1293,7 @@ concept can_form_adjacent_view =
 
 template <class Function, class V, tested::size_t Count>
 concept can_form_adjacent_transform_view = requires {
-  typename tested::ranges::adjacent_transform_view<Function, V, Count>;
+  typename tested::ranges::adjacent_transform_view<V, Function, Count>;
 };
 
 template <class V>
