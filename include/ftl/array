@@ -9,217 +9,265 @@
 #if defined(_MSC_VER) && !defined(__clang__)
 extern "C" void __cdecl __fastfail(unsigned int);
 #pragma intrinsic(__fastfail)
-#define FTL_ARRAY_TRAP()        \
-    do {                        \
-        __fastfail(7);          \
-        __assume(0);            \
-    } while (false)
+#define FTL_ARRAY_TRAP()                                                       \
+  do {                                                                         \
+    __fastfail(7);                                                             \
+    __assume(0);                                                               \
+  } while (false)
 #else
-#define FTL_ARRAY_TRAP()        \
-    do {                        \
-        __builtin_trap();       \
-        __builtin_unreachable(); \
-    } while (false)
+#define FTL_ARRAY_TRAP()                                                       \
+  do {                                                                         \
+    __builtin_trap();                                                          \
+    __builtin_unreachable();                                                   \
+  } while (false)
 #endif
 
 #ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <iterator>
+#include <stdexcept>
 #include <utility>
 #else
 #include <ftl/cstddef>
 #include <ftl/iterator>
+#include <ftl/stdexcept>
 #include <ftl/utility>
 #endif
 
 FTL_BEGIN_NAMESPACE
 
 namespace detail {
-template<class I> using array_reverse_iterator = reverse_iterator<I>;
-template<class T, class U>
-constexpr auto array_compare(const T& left, const U& right) {
-    if constexpr (requires { left <=> right; })
-        return left <=> right;
-    else if (left < right)
-        return weak_ordering::less;
-    else if (right < left)
-        return weak_ordering::greater;
-    else
-        return weak_ordering::equivalent;
+template <class I> using array_reverse_iterator = reverse_iterator<I>;
+template <class T, class U>
+constexpr auto array_compare(const T &left, const U &right) {
+  if constexpr (requires { left <=> right; })
+    return left <=> right;
+  else if (left < right)
+    return weak_ordering::less;
+  else if (right < left)
+    return weak_ordering::greater;
+  else
+    return weak_ordering::equivalent;
 }
-template<class T, size_t N>
-constexpr void array_swap(T (&left)[N], T (&right)[N])
-    noexcept(noexcept(swap(left, right))) {
-    swap(left, right);
+template <class T, size_t N>
+constexpr void array_swap(T (&left)[N],
+                          T (&right)[N]) noexcept(noexcept(swap(left, right))) {
+  swap(left, right);
 }
+
+[[noreturn]]
+inline void array_at_failure() {
+#if FTL_HAS_EXCEPTIONS
+  throw out_of_range("array::at");
+#else
+  FTL_ARRAY_TRAP();
+#endif
 }
 
-template<class T, size_t N>
-struct array {
-    using value_type             = T;
-    using size_type              = size_t;
-    using difference_type        = ptrdiff_t;
-    using reference              = T&;
-    using const_reference        = const T&;
-    using pointer                = T*;
-    using const_pointer          = const T*;
-    using iterator               = T*;
-    using const_iterator         = const T*;
-    using reverse_iterator       = detail::array_reverse_iterator<iterator>;
-    using const_reverse_iterator = detail::array_reverse_iterator<const_iterator>;
+} // namespace detail
 
-    T elements[N];
+template <class T, size_t N> struct array {
+  using value_type = T;
+  using size_type = size_t;
+  using difference_type = ptrdiff_t;
+  using reference = T &;
+  using const_reference = const T &;
+  using pointer = T *;
+  using const_pointer = const T *;
+  using iterator = T *;
+  using const_iterator = const T *;
+  using reverse_iterator = detail::array_reverse_iterator<iterator>;
+  using const_reverse_iterator = detail::array_reverse_iterator<const_iterator>;
 
-    // ponytail: bounds errors fast-fail until <stdexcept> provides out_of_range.
-    constexpr reference at(size_type index) {
-        if (index >= N)
-            FTL_ARRAY_TRAP();
-        return elements[index];
-    }
-    constexpr const_reference at(size_type index) const {
-        if (index >= N)
-            FTL_ARRAY_TRAP();
-        return elements[index];
-    }
-    constexpr reference operator[](size_type index) {
-        return elements[index];
-    }
-    constexpr const_reference operator[](size_type index) const {
-        return elements[index];
-    }
-    constexpr reference front() { return elements[0]; }
-    constexpr const_reference front() const { return elements[0]; }
-    constexpr reference back() { return elements[N - 1]; }
-    constexpr const_reference back() const { return elements[N - 1]; }
-    constexpr pointer data() noexcept { return elements; }
-    constexpr const_pointer data() const noexcept { return elements; }
-    constexpr iterator begin() noexcept { return elements; }
-    constexpr const_iterator begin() const noexcept { return elements; }
-    constexpr const_iterator cbegin() const noexcept { return elements; }
-    constexpr iterator end() noexcept { return elements + N; }
-    constexpr const_iterator end() const noexcept { return elements + N; }
-    constexpr const_iterator cend() const noexcept { return elements + N; }
-    constexpr reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
-    constexpr const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
-    constexpr const_reverse_iterator crbegin() const noexcept { return const_reverse_iterator(end()); }
-    constexpr reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
-    constexpr const_reverse_iterator rend() const noexcept { return const_reverse_iterator(begin()); }
-    constexpr const_reverse_iterator crend() const noexcept { return const_reverse_iterator(begin()); }
-    [[nodiscard]] constexpr bool empty() const noexcept { return false; }
-    constexpr size_type size() const noexcept { return N; }
-    constexpr size_type max_size() const noexcept { return N; }
+  T elements[N];
 
-    constexpr void fill(const T& value) {
-        for (auto& element : elements)
-            element = value;
-    }
-    constexpr void swap(array& other)
-        noexcept(noexcept(detail::array_swap(elements, other.elements))) {
-        detail::array_swap(elements, other.elements);
-    }
+  constexpr reference at(size_type index) {
+    if (index >= N)
+      detail::array_at_failure();
+
+    return elements[index];
+  }
+
+  constexpr const_reference at(size_type index) const {
+    if (index >= N)
+      detail::array_at_failure();
+
+    return elements[index];
+  }
+  constexpr reference operator[](size_type index) { return elements[index]; }
+  constexpr const_reference operator[](size_type index) const {
+    return elements[index];
+  }
+  constexpr reference front() { return elements[0]; }
+  constexpr const_reference front() const { return elements[0]; }
+  constexpr reference back() { return elements[N - 1]; }
+  constexpr const_reference back() const { return elements[N - 1]; }
+  constexpr pointer data() noexcept { return elements; }
+  constexpr const_pointer data() const noexcept { return elements; }
+  constexpr iterator begin() noexcept { return elements; }
+  constexpr const_iterator begin() const noexcept { return elements; }
+  constexpr const_iterator cbegin() const noexcept { return elements; }
+  constexpr iterator end() noexcept { return elements + N; }
+  constexpr const_iterator end() const noexcept { return elements + N; }
+  constexpr const_iterator cend() const noexcept { return elements + N; }
+  constexpr reverse_iterator rbegin() noexcept {
+    return reverse_iterator(end());
+  }
+  constexpr const_reverse_iterator rbegin() const noexcept {
+    return const_reverse_iterator(end());
+  }
+  constexpr const_reverse_iterator crbegin() const noexcept {
+    return const_reverse_iterator(end());
+  }
+  constexpr reverse_iterator rend() noexcept {
+    return reverse_iterator(begin());
+  }
+  constexpr const_reverse_iterator rend() const noexcept {
+    return const_reverse_iterator(begin());
+  }
+  constexpr const_reverse_iterator crend() const noexcept {
+    return const_reverse_iterator(begin());
+  }
+  [[nodiscard]] constexpr bool empty() const noexcept { return false; }
+  constexpr size_type size() const noexcept { return N; }
+  constexpr size_type max_size() const noexcept { return N; }
+
+  constexpr void fill(const T &value) {
+    for (auto &element : elements)
+      element = value;
+  }
+  constexpr void swap(array &other) noexcept(
+      noexcept(detail::array_swap(elements, other.elements))) {
+    detail::array_swap(elements, other.elements);
+  }
 };
 
-template<class T>
-struct array<T, 0> {
-    using value_type             = T;
-    using size_type              = size_t;
-    using difference_type        = ptrdiff_t;
-    using reference              = T&;
-    using const_reference        = const T&;
-    using pointer                = T*;
-    using const_pointer          = const T*;
-    using iterator               = T*;
-    using const_iterator         = const T*;
-    using reverse_iterator       = detail::array_reverse_iterator<iterator>;
-    using const_reverse_iterator = detail::array_reverse_iterator<const_iterator>;
+template <class T> struct array<T, 0> {
+  using value_type = T;
+  using size_type = size_t;
+  using difference_type = ptrdiff_t;
+  using reference = T &;
+  using const_reference = const T &;
+  using pointer = T *;
+  using const_pointer = const T *;
+  using iterator = T *;
+  using const_iterator = const T *;
+  using reverse_iterator = detail::array_reverse_iterator<iterator>;
+  using const_reverse_iterator = detail::array_reverse_iterator<const_iterator>;
 
-    constexpr reference at(size_type) { FTL_ARRAY_TRAP(); }
-    constexpr const_reference at(size_type) const { FTL_ARRAY_TRAP(); }
-    constexpr reference operator[](size_type) { FTL_ARRAY_TRAP(); }
-    constexpr const_reference operator[](size_type) const {
-        FTL_ARRAY_TRAP();
-    }
-    constexpr reference front() { FTL_ARRAY_TRAP(); }
-    constexpr const_reference front() const { FTL_ARRAY_TRAP(); }
-    constexpr reference back() { FTL_ARRAY_TRAP(); }
-    constexpr const_reference back() const { FTL_ARRAY_TRAP(); }
-    constexpr pointer data() noexcept { return nullptr; }
-    constexpr const_pointer data() const noexcept { return nullptr; }
-    constexpr iterator begin() noexcept { return nullptr; }
-    constexpr const_iterator begin() const noexcept { return nullptr; }
-    constexpr const_iterator cbegin() const noexcept { return nullptr; }
-    constexpr iterator end() noexcept { return nullptr; }
-    constexpr const_iterator end() const noexcept { return nullptr; }
-    constexpr const_iterator cend() const noexcept { return nullptr; }
-    constexpr reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
-    constexpr const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
-    constexpr const_reverse_iterator crbegin() const noexcept { return const_reverse_iterator(end()); }
-    constexpr reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
-    constexpr const_reverse_iterator rend() const noexcept { return const_reverse_iterator(begin()); }
-    constexpr const_reverse_iterator crend() const noexcept { return const_reverse_iterator(begin()); }
-    [[nodiscard]] constexpr bool empty() const noexcept { return true; }
-    constexpr size_type size() const noexcept { return 0; }
-    constexpr size_type max_size() const noexcept { return 0; }
-    constexpr void fill(const T&) noexcept {}
-    constexpr void swap(array&) noexcept {}
+  constexpr reference at(size_type) { FTL_ARRAY_TRAP(); }
+  constexpr const_reference at(size_type) const { FTL_ARRAY_TRAP(); }
+  constexpr reference operator[](size_type) { FTL_ARRAY_TRAP(); }
+  constexpr const_reference operator[](size_type) const { FTL_ARRAY_TRAP(); }
+  constexpr reference front() { FTL_ARRAY_TRAP(); }
+  constexpr const_reference front() const { FTL_ARRAY_TRAP(); }
+  constexpr reference back() { FTL_ARRAY_TRAP(); }
+  constexpr const_reference back() const { FTL_ARRAY_TRAP(); }
+  constexpr pointer data() noexcept { return nullptr; }
+  constexpr const_pointer data() const noexcept { return nullptr; }
+  constexpr iterator begin() noexcept { return nullptr; }
+  constexpr const_iterator begin() const noexcept { return nullptr; }
+  constexpr const_iterator cbegin() const noexcept { return nullptr; }
+  constexpr iterator end() noexcept { return nullptr; }
+  constexpr const_iterator end() const noexcept { return nullptr; }
+  constexpr const_iterator cend() const noexcept { return nullptr; }
+  constexpr reverse_iterator rbegin() noexcept {
+    return reverse_iterator(end());
+  }
+  constexpr const_reverse_iterator rbegin() const noexcept {
+    return const_reverse_iterator(end());
+  }
+  constexpr const_reverse_iterator crbegin() const noexcept {
+    return const_reverse_iterator(end());
+  }
+  constexpr reverse_iterator rend() noexcept {
+    return reverse_iterator(begin());
+  }
+  constexpr const_reverse_iterator rend() const noexcept {
+    return const_reverse_iterator(begin());
+  }
+  constexpr const_reverse_iterator crend() const noexcept {
+    return const_reverse_iterator(begin());
+  }
+  [[nodiscard]] constexpr bool empty() const noexcept { return true; }
+  constexpr size_type size() const noexcept { return 0; }
+  constexpr size_type max_size() const noexcept { return 0; }
+  constexpr void fill(const T &) noexcept {}
+  constexpr void swap(array &) noexcept {}
 };
 
-template<class T, class... U>
-    requires (is_same_v<T, U> && ...)
+template <class T, class... U>
+  requires(is_same_v<T, U> && ...)
 array(T, U...) -> array<T, 1 + sizeof...(U)>;
 
-template<class T, size_t N>
-constexpr bool operator==(const array<T, N>& left,
-                          const array<T, N>& right) {
-    for (size_t index = 0; index < N; ++index)
-        if (!(left[index] == right[index]))
-            return false;
-    return true;
+template <class T, size_t N>
+constexpr bool operator==(const array<T, N> &left, const array<T, N> &right) {
+  for (size_t index = 0; index < N; ++index)
+    if (!(left[index] == right[index]))
+      return false;
+  return true;
 }
 
-template<class T, size_t N>
-constexpr auto operator<=>(const array<T, N>& left, const array<T, N>& right) {
-    using category = decltype(detail::array_compare(left[0], right[0]));
-    for (size_t index = 0; index < N; ++index)
-        if (category result = detail::array_compare(left[index], right[index]); result != 0)
-            return result;
-    return category::equivalent;
+template <class T, size_t N>
+constexpr auto operator<=>(const array<T, N> &left, const array<T, N> &right) {
+  using category = decltype(detail::array_compare(left[0], right[0]));
+  for (size_t index = 0; index < N; ++index)
+    if (category result = detail::array_compare(left[index], right[index]);
+        result != 0)
+      return result;
+  return category::equivalent;
 }
 
-template<class T, size_t N>
-constexpr void swap(array<T, N>& left, array<T, N>& right)
-    noexcept(noexcept(left.swap(right)))
-    requires (N == 0 || is_swappable_v<T>) { left.swap(right); }
+template <class T, size_t N>
+constexpr void swap(array<T, N> &left,
+                    array<T, N> &right) noexcept(noexcept(left.swap(right)))
+  requires(N == 0 || is_swappable_v<T>)
+{
+  left.swap(right);
+}
 
-template<class T, size_t N>
+template <class T, size_t N>
 struct tuple_size<array<T, N>> : integral_constant<size_t, N> {};
 
-template<size_t Index, class T, size_t N>
-struct tuple_element<Index, array<T, N>> { static_assert(Index < N); using type = T; };
+template <size_t Index, class T, size_t N>
+struct tuple_element<Index, array<T, N>> {
+  static_assert(Index < N);
+  using type = T;
+};
 
-template<size_t Index, class T, size_t N>
-constexpr T& get(array<T, N>& value) noexcept { static_assert(Index < N); return value[Index]; }
-template<size_t Index, class T, size_t N>
-constexpr const T& get(const array<T, N>& value) noexcept { static_assert(Index < N); return value[Index]; }
-template<size_t Index, class T, size_t N>
-constexpr T&& get(array<T, N>&& value) noexcept { return move(get<Index>(value)); }
-template<size_t Index, class T, size_t N>
-constexpr const T&& get(const array<T, N>&& value) noexcept { return move(get<Index>(value)); }
-
-template<class T, size_t N>
-constexpr array<remove_cv_t<T>, N> to_array(T (&value)[N]) {
-    static_assert(!is_array_v<T> && is_constructible_v<T, T&>);
-    return [&]<size_t... I>(index_sequence<I...>) {
-        return array<remove_cv_t<T>, N>{value[I]...};
-    }(make_index_sequence<N>{});
+template <size_t Index, class T, size_t N>
+constexpr T &get(array<T, N> &value) noexcept {
+  static_assert(Index < N);
+  return value[Index];
+}
+template <size_t Index, class T, size_t N>
+constexpr const T &get(const array<T, N> &value) noexcept {
+  static_assert(Index < N);
+  return value[Index];
+}
+template <size_t Index, class T, size_t N>
+constexpr T &&get(array<T, N> &&value) noexcept {
+  return move(get<Index>(value));
+}
+template <size_t Index, class T, size_t N>
+constexpr const T &&get(const array<T, N> &&value) noexcept {
+  return move(get<Index>(value));
 }
 
-template<class T, size_t N>
+template <class T, size_t N>
+constexpr array<remove_cv_t<T>, N> to_array(T (&value)[N]) {
+  static_assert(!is_array_v<T> && is_constructible_v<T, T &>);
+  return [&]<size_t... I>(index_sequence<I...>) {
+    return array<remove_cv_t<T>, N>{value[I]...};
+  }(make_index_sequence<N>{});
+}
+
+template <class T, size_t N>
 constexpr array<remove_cv_t<T>, N> to_array(T (&&value)[N]) {
-    static_assert(!is_array_v<T> && is_move_constructible_v<T>);
-    return [&]<size_t... I>(index_sequence<I...>) {
-        return array<remove_cv_t<T>, N>{move(value[I])...};
-    }(make_index_sequence<N>{});
+  static_assert(!is_array_v<T> && is_move_constructible_v<T>);
+  return [&]<size_t... I>(index_sequence<I...>) {
+    return array<remove_cv_t<T>, N>{move(value[I])...};
+  }(make_index_sequence<N>{});
 }
 
 FTL_END_NAMESPACE

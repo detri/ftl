@@ -1,0 +1,187 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_STDEXCEPT_HEADER
+#define FTL_STDEXCEPT_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <atomic>
+#include <cstddef>
+#include <exception>
+#include <new>
+#else
+#include <ftl/atomic>
+#include <ftl/cstddef>
+#include <ftl/exception>
+#include <ftl/new>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+namespace detail {
+
+struct stdexcept_message_block {
+  atomic<size_t> references;
+  size_t length;
+
+  explicit stdexcept_message_block(size_t message_length) noexcept
+      : references(1), length(message_length) {}
+};
+
+class stdexcept_message {
+public:
+  explicit stdexcept_message(const char *message) : block_(allocate(message)) {}
+
+  stdexcept_message(const stdexcept_message &other) noexcept
+      : block_(other.block_) {
+    retain(block_);
+  }
+
+  stdexcept_message &operator=(const stdexcept_message &other) noexcept {
+    if (this != &other) {
+      stdexcept_message_block *replacement = other.block_;
+
+      retain(replacement);
+      release(block_);
+
+      block_ = replacement;
+    }
+
+    return *this;
+  }
+
+  ~stdexcept_message() { release(block_); }
+
+  [[nodiscard]]
+  const char *c_str() const noexcept {
+    return characters(block_);
+  }
+
+private:
+  [[nodiscard]]
+  static stdexcept_message_block *allocate(const char *message) {
+    if (message == nullptr) {
+      message = "";
+    }
+
+    size_t length = 0;
+
+    while (message[length] != '\0') {
+      ++length;
+    }
+
+    const size_t allocation_size = sizeof(stdexcept_message_block) + length + 1;
+
+    void *storage = ::operator new(allocation_size);
+
+    auto *block = ::new (storage) stdexcept_message_block(length);
+
+    char *destination = characters(block);
+
+    for (size_t index = 0; index < length; ++index) {
+      destination[index] = message[index];
+    }
+
+    destination[length] = '\0';
+
+    return block;
+  }
+
+  [[nodiscard]]
+  static char *characters(stdexcept_message_block *block) noexcept {
+    return reinterpret_cast<char *>(block + 1);
+  }
+
+  [[nodiscard]]
+  static const char *characters(const stdexcept_message_block *block) noexcept {
+    return reinterpret_cast<const char *>(block + 1);
+  }
+
+  static void retain(stdexcept_message_block *block) noexcept {
+    block->references.fetch_add(1, memory_order_relaxed);
+  }
+
+  static void release(stdexcept_message_block *block) noexcept {
+    if (block->references.fetch_sub(1, memory_order_acq_rel) == 1) {
+      block->~stdexcept_message_block();
+
+      ::operator delete(static_cast<void *>(block));
+    }
+  }
+
+  stdexcept_message_block *block_;
+};
+
+} // namespace detail
+
+class logic_error : public exception {
+public:
+  explicit logic_error(const char *what_arg) : message_(what_arg) {}
+
+  logic_error(const logic_error &) noexcept = default;
+
+  logic_error &operator=(const logic_error &) noexcept = default;
+
+  [[nodiscard]]
+  const char *what() const noexcept override {
+    return message_.c_str();
+  }
+
+private:
+  detail::stdexcept_message message_;
+};
+
+class domain_error : public logic_error {
+public:
+  explicit domain_error(const char *what_arg) : logic_error(what_arg) {}
+};
+
+class invalid_argument : public logic_error {
+public:
+  explicit invalid_argument(const char *what_arg) : logic_error(what_arg) {}
+};
+
+class length_error : public logic_error {
+public:
+  explicit length_error(const char *what_arg) : logic_error(what_arg) {}
+};
+
+class out_of_range : public logic_error {
+public:
+  explicit out_of_range(const char *what_arg) : logic_error(what_arg) {}
+};
+
+class runtime_error : public exception {
+public:
+  explicit runtime_error(const char *what_arg) : message_(what_arg) {}
+
+  runtime_error(const runtime_error &) noexcept = default;
+
+  runtime_error &operator=(const runtime_error &) noexcept = default;
+
+  [[nodiscard]]
+  const char *what() const noexcept override {
+    return message_.c_str();
+  }
+
+private:
+  detail::stdexcept_message message_;
+};
+
+class range_error : public runtime_error {
+public:
+  explicit range_error(const char *what_arg) : runtime_error(what_arg) {}
+};
+
+class overflow_error : public runtime_error {
+public:
+  explicit overflow_error(const char *what_arg) : runtime_error(what_arg) {}
+};
+
+class underflow_error : public runtime_error {
+public:
+  explicit underflow_error(const char *what_arg) : runtime_error(what_arg) {}
+};
+
+FTL_END_NAMESPACE
+
+#endif // FTL_STDEXCEPT_HEADER

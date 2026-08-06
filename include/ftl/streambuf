@@ -1,0 +1,157 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_STREAMBUF_HEADER
+#define FTL_STREAMBUF_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <iosfwd>
+#else
+#include <ftl/iosfwd>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+template <class Character, class Traits> class basic_streambuf {
+public:
+  using char_type = Character;
+  using traits_type = Traits;
+  using int_type = typename traits_type::int_type;
+  using pos_type = typename traits_type::pos_type;
+  using off_type = typename traits_type::off_type;
+
+  virtual ~basic_streambuf() = default;
+
+  [[nodiscard]]
+  streamsize in_avail() {
+    if (get_position_available())
+      return static_cast<streamsize>(egptr_ - gptr_);
+
+    return showmanyc();
+  }
+
+  int_type snextc() {
+    const int_type consumed = sbumpc();
+
+    if (traits_type::eq_int_type(consumed, traits_type::eof())) {
+      return traits_type::eof();
+    }
+
+    return sgetc();
+  }
+
+  int_type sbumpc() {
+    if (!get_position_available())
+      return uflow();
+
+    const int_type result = traits_type::to_int_type(*gptr_);
+
+    ++gptr_;
+
+    return result;
+  }
+
+  int_type sgetc() {
+    if (!get_position_available())
+      return underflow();
+
+    return traits_type::to_int_type(*gptr_);
+  }
+
+  streamsize sgetn(char_type *destination, streamsize count) {
+    return xsgetn(destination, count);
+  }
+
+protected:
+  basic_streambuf() = default;
+
+  basic_streambuf(const basic_streambuf &) = default;
+
+  basic_streambuf &operator=(const basic_streambuf &) = default;
+
+  void swap(basic_streambuf &other) noexcept {
+    char_type *temporary = eback_;
+    eback_ = other.eback_;
+    other.eback_ = temporary;
+
+    temporary = gptr_;
+    gptr_ = other.gptr_;
+    other.gptr_ = temporary;
+
+    temporary = egptr_;
+    egptr_ = other.egptr_;
+    other.egptr_ = temporary;
+  }
+
+  [[nodiscard]]
+  char_type *eback() const noexcept {
+    return eback_;
+  }
+
+  [[nodiscard]]
+  char_type *gptr() const noexcept {
+    return gptr_;
+  }
+
+  [[nodiscard]]
+  char_type *egptr() const noexcept {
+    return egptr_;
+  }
+
+  void gbump(int offset) { gptr_ += offset; }
+
+  void setg(char_type *beginning, char_type *current, char_type *end) noexcept {
+    eback_ = beginning;
+    gptr_ = current;
+    egptr_ = end;
+  }
+
+  virtual streamsize showmanyc() { return 0; }
+
+  virtual streamsize xsgetn(char_type *destination, streamsize count) {
+    streamsize extracted = 0;
+
+    while (extracted < count) {
+      const int_type value = sbumpc();
+
+      if (traits_type::eq_int_type(value, traits_type::eof())) {
+        break;
+      }
+
+      destination[extracted] = traits_type::to_char_type(value);
+
+      ++extracted;
+    }
+
+    return extracted;
+  }
+
+  virtual int_type underflow() { return traits_type::eof(); }
+
+  virtual int_type uflow() {
+    const int_type value = underflow();
+
+    if (traits_type::eq_int_type(value, traits_type::eof())) {
+      return traits_type::eof();
+    }
+
+    const int_type result = traits_type::to_int_type(*gptr_);
+
+    ++gptr_;
+
+    return result;
+  }
+
+private:
+  [[nodiscard]]
+  bool get_position_available() const noexcept {
+    return gptr_ != nullptr && gptr_ != egptr_;
+  }
+
+  char_type *eback_ = nullptr;
+  char_type *gptr_ = nullptr;
+  char_type *egptr_ = nullptr;
+};
+
+FTL_END_NAMESPACE
+
+#endif // FTL_STREAMBUF_HEADER
