@@ -221,6 +221,7 @@ foreach(header IN ITEMS
         streambuf
         ios
         istream
+        istream_view
 )
     add_ftl_test(${header})
 endforeach()

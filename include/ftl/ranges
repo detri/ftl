@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <functional>
 #include <initializer_list>
+#include <istream>
 #include <iterator>
 #include <memory>
 #include <span>
@@ -37,6 +38,7 @@
 #include <ftl/cstddef>
 #include <ftl/functional>
 #include <ftl/initializer_list>
+#include <ftl/istream>
 #include <ftl/iterator>
 #include <ftl/memory>
 #include <ftl/span>
@@ -522,13 +524,140 @@ inline constexpr bool is_tuple_like_v<subrange<Iterator, Sentinel, Kind>> =
 namespace detail {
 
 template <class Iterator, class Sentinel, ranges::subrange_kind Kind>
-struct is_library_pair_like<
-    ranges::subrange<Iterator, Sentinel, Kind>
-> : true_type {};
+struct is_library_pair_like<ranges::subrange<Iterator, Sentinel, Kind>>
+    : true_type {};
 
 } // namespace detail
 
 namespace ranges {
+
+// [range.istream]
+
+namespace detail {
+
+template <class Value, class Character, class Traits>
+concept stream_extractable = requires(basic_istream<Character, Traits> &stream,
+                                      Value &value) { stream >> value; };
+
+} // namespace detail
+
+template <movable Value, class Character, class Traits = char_traits<Character>>
+  requires(default_initializable<Value> &&
+           detail::stream_extractable<Value, Character, Traits>)
+class basic_istream_view
+    : public view_interface<basic_istream_view<Value, Character, Traits>> {
+private:
+  class iterator {
+  public:
+    using iterator_concept = input_iterator_tag;
+
+    using difference_type = ptrdiff_t;
+
+    using value_type = Value;
+
+    iterator(const iterator &) = delete;
+
+    iterator(iterator &&) = default;
+
+    iterator &operator=(const iterator &) = delete;
+
+    iterator &operator=(iterator &&) = default;
+
+    iterator &operator++() {
+      *parent_->stream_ >> parent_->value_;
+
+      return *this;
+    }
+
+    void operator++(int) { ++*this; }
+
+    [[nodiscard]]
+    Value &operator*() const {
+      return parent_->value_;
+    }
+
+    friend bool operator==(const iterator &current, default_sentinel_t) {
+      return current.at_end();
+    }
+
+  private:
+    friend class basic_istream_view;
+
+    constexpr explicit iterator(basic_istream_view &parent) noexcept
+        : parent_(FTL_RANGES_NAMESPACE::addressof(parent)) {}
+
+    [[nodiscard]]
+    bool at_end() const {
+      return !*parent_->stream_;
+    }
+
+    basic_istream_view *parent_;
+  };
+
+public:
+  constexpr explicit basic_istream_view(
+      basic_istream<Character, Traits> &stream)
+      : stream_(FTL_RANGES_NAMESPACE::addressof(stream)) {}
+
+  [[nodiscard]]
+  constexpr auto begin() {
+    *stream_ >> value_;
+
+    return iterator{*this};
+  }
+
+  [[nodiscard]]
+  constexpr default_sentinel_t end() const noexcept {
+    return default_sentinel;
+  }
+
+private:
+  basic_istream<Character, Traits> *stream_;
+
+  Value value_ = Value();
+};
+
+template <class Value> using istream_view = basic_istream_view<Value, char>;
+
+template <class Value> using wistream_view = basic_istream_view<Value, wchar_t>;
+
+namespace views {
+namespace detail {
+
+template <class Stream>
+concept istream_source =
+    requires {
+      typename remove_cvref_t<Stream>::char_type;
+
+      typename remove_cvref_t<Stream>::traits_type;
+    } &&
+    derived_from<remove_cvref_t<Stream>,
+                 basic_istream<typename remove_cvref_t<Stream>::char_type,
+                               typename remove_cvref_t<Stream>::traits_type>>;
+
+template <class Value> struct istream_fn {
+  template <class Stream>
+    requires(
+        istream_source<Stream> && !is_const_v<remove_reference_t<Stream>> &&
+        requires(Stream &stream) {
+          basic_istream_view<Value, typename remove_cvref_t<Stream>::char_type,
+                             typename remove_cvref_t<Stream>::traits_type>(
+              stream);
+        })
+  [[nodiscard]]
+  constexpr auto operator()(Stream &stream) const {
+    using stream_type = remove_cvref_t<Stream>;
+
+    return basic_istream_view<Value, typename stream_type::char_type,
+                              typename stream_type::traits_type>(stream);
+  }
+};
+
+} // namespace detail
+
+template <class Value> inline constexpr detail::istream_fn<Value> istream{};
+
+} // namespace views
 
 // [range.adaptor.object]
 

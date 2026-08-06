@@ -21,7 +21,9 @@ public:
   using off_type = typename traits_type::off_type;
 
   explicit basic_istream(basic_streambuf<char_type, traits_type> *buffer)
-      : basic_ios<char_type, traits_type>(buffer) {}
+      : basic_ios<char_type, traits_type>(buffer) {
+    this->init(buffer);
+  }
 
   virtual ~basic_istream() = default;
 
