@@ -9,9 +9,17 @@
 #if defined(_MSC_VER) && !defined(__clang__)
 extern "C" void __cdecl __fastfail(unsigned int);
 #pragma intrinsic(__fastfail)
-#define FTL_ARRAY_TRAP() __fastfail(7)
+#define FTL_ARRAY_TRAP()        \
+    do {                        \
+        __fastfail(7);          \
+        __assume(0);            \
+    } while (false)
 #else
-#define FTL_ARRAY_TRAP() __builtin_trap()
+#define FTL_ARRAY_TRAP()        \
+    do {                        \
+        __builtin_trap();       \
+        __builtin_unreachable(); \
+    } while (false)
 #endif
 
 #ifdef FTL_REPLACE_STL

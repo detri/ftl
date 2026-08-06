@@ -375,7 +375,302 @@ constexpr bool mdspan_layout_right_works() {
 
 static_assert(mdspan_layout_right_works());
 
+using left_scalar_mapping =
+    tested::layout_left::mapping<scalar_extents>;
+
+using left_static_mapping =
+    tested::layout_left::mapping<static_extents>;
+
+using left_partial_mapping =
+    tested::layout_left::mapping<partially_dynamic_extents>;
+
+using stride_scalar_mapping =
+    tested::layout_stride::mapping<scalar_extents>;
+
+using stride_static_mapping =
+    tested::layout_stride::mapping<static_extents>;
+
+using rank_one_extents =
+    tested::extents<int, tested::dynamic_extent>;
+
+using left_rank_one_mapping =
+    tested::layout_left::mapping<rank_one_extents>;
+
+using right_rank_one_mapping =
+    tested::layout_right::mapping<rank_one_extents>;
+
+static_assert(tested::is_trivial_v<tested::layout_left>);
+static_assert(tested::is_trivial_v<tested::layout_stride>);
+
+static_assert(tested::is_trivially_copyable_v<left_scalar_mapping>);
+static_assert(tested::is_trivially_copyable_v<left_static_mapping>);
+static_assert(tested::is_trivially_copyable_v<stride_scalar_mapping>);
+static_assert(tested::is_trivially_copyable_v<stride_static_mapping>);
+
+static_assert(tested::is_same_v<
+              left_static_mapping::layout_type,
+              tested::layout_left>);
+
+static_assert(tested::is_same_v<
+              stride_static_mapping::layout_type,
+              tested::layout_stride>);
+
+static_assert(left_static_mapping::is_always_unique());
+static_assert(left_static_mapping::is_always_exhaustive());
+static_assert(left_static_mapping::is_always_strided());
+
+static_assert(stride_static_mapping::is_always_unique());
+static_assert(!stride_static_mapping::is_always_exhaustive());
+static_assert(stride_static_mapping::is_always_strided());
+
+static_assert(!noexcept(left_static_mapping{}.stride(0)));
+static_assert(noexcept(static_mapping{}.stride(0)));
+static_assert(noexcept(stride_static_mapping{}.stride(0)));
+
+static_assert(tested::is_convertible_v<
+              left_rank_one_mapping,
+              right_rank_one_mapping>);
+
+static_assert(tested::is_convertible_v<
+              right_rank_one_mapping,
+              left_rank_one_mapping>);
+
+static_assert(!tested::is_constructible_v<
+              left_static_mapping,
+              static_mapping>);
+
+static_assert(!tested::is_constructible_v<
+              static_mapping,
+              left_static_mapping>);
+
+static_assert(tested::is_convertible_v<
+              left_static_mapping,
+              stride_static_mapping>);
+
+static_assert(tested::is_convertible_v<
+              static_mapping,
+              stride_static_mapping>);
+
+static_assert(tested::is_constructible_v<
+              left_static_mapping,
+              stride_static_mapping>);
+
+static_assert(tested::is_constructible_v<
+              static_mapping,
+              stride_static_mapping>);
+
+static_assert(!tested::is_convertible_v<
+              stride_static_mapping,
+              left_static_mapping>);
+
+static_assert(!tested::is_convertible_v<
+              stride_static_mapping,
+              static_mapping>);
+
+static_assert(!tested::is_nothrow_constructible_v<
+              left_static_mapping,
+              stride_static_mapping>);
+
+static_assert(tested::is_nothrow_constructible_v<
+              static_mapping,
+              stride_static_mapping>);
+
+static_assert(tested::is_convertible_v<
+              stride_scalar_mapping,
+              left_scalar_mapping>);
+
+static_assert(tested::is_convertible_v<
+              stride_scalar_mapping,
+              scalar_mapping>);
+
+static_assert(tested::is_same_v<
+              decltype(stride_static_mapping{}.strides()),
+              tested::array<int, 3>>);
+
+constexpr bool mdspan_remaining_layouts_work() {
+    left_scalar_mapping left_scalar;
+
+    if (left_scalar.required_span_size() != 1)
+        return false;
+
+    if (left_scalar() != 0)
+        return false;
+
+    left_static_mapping left;
+
+    if (left.required_span_size() != 24)
+        return false;
+
+    if (left.stride(0) != 1 ||
+        left.stride(1) != 2 ||
+        left.stride(2) != 6) {
+        return false;
+    }
+
+    if (left(0, 0, 0) != 0)
+        return false;
+
+    if (left(1, 2, 3) != 23)
+        return false;
+
+    left_partial_mapping partial{
+        partially_dynamic_extents{3}};
+
+    if (partial.required_span_size() != 24)
+        return false;
+
+    if (partial.stride(0) != 1 ||
+        partial.stride(1) != 2 ||
+        partial.stride(2) != 6) {
+        return false;
+    }
+
+    if (partial(1, 2, 3) != 23)
+        return false;
+
+    rank_one_extents rank_one{7};
+    left_rank_one_mapping left_one{rank_one};
+    right_rank_one_mapping right_one = left_one;
+    left_rank_one_mapping restored_one = right_one;
+
+    if (right_one.required_span_size() != 7 ||
+        restored_one.required_span_size() != 7) {
+        return false;
+    }
+
+    stride_scalar_mapping stride_scalar;
+
+    if (stride_scalar.required_span_size() != 1)
+        return false;
+
+    if (!stride_scalar.is_exhaustive())
+        return false;
+
+    if (stride_scalar() != 0)
+        return false;
+
+    if (stride_scalar.strides().size() != 0)
+        return false;
+
+    stride_static_mapping row_major;
+
+    if (row_major.required_span_size() != 24)
+        return false;
+
+    if (row_major.stride(0) != 12 ||
+        row_major.stride(1) != 4 ||
+        row_major.stride(2) != 1) {
+        return false;
+    }
+
+    if (row_major(1, 2, 3) != 23)
+        return false;
+
+    if (!row_major.is_exhaustive())
+        return false;
+
+    auto row_major_strides = row_major.strides();
+
+    if (row_major_strides[0] != 12 ||
+        row_major_strides[1] != 4 ||
+        row_major_strides[2] != 1) {
+        return false;
+    }
+
+    tested::array<int, 3> left_strides{1, 2, 6};
+    stride_static_mapping column_major{
+        static_extents{}, left_strides};
+
+    if (column_major.required_span_size() != 24)
+        return false;
+
+    if (column_major(1, 2, 3) != 23)
+        return false;
+
+    if (!column_major.is_exhaustive())
+        return false;
+
+    if (!(column_major == left))
+        return false;
+
+    if (!(left == column_major))
+        return false;
+
+    tested::array<int, 3> padded_strides{20, 5, 1};
+    stride_static_mapping padded{
+        static_extents{}, padded_strides};
+
+    if (padded.required_span_size() != 34)
+        return false;
+
+    if (padded(1, 2, 3) != 33)
+        return false;
+
+    if (padded.is_exhaustive())
+        return false;
+
+    if (padded == row_major)
+        return false;
+
+    int permuted_values[] = {4, 8, 1};
+    tested::span permuted_strides{permuted_values};
+
+    stride_static_mapping permuted{
+        static_extents{}, permuted_strides};
+
+    if (permuted.required_span_size() != 24)
+        return false;
+
+    if (!permuted.is_exhaustive())
+        return false;
+
+    if (permuted(1, 2, 3) != 23)
+        return false;
+
+    stride_static_mapping from_left = left;
+    stride_static_mapping from_right = static_mapping{};
+
+    if (!(from_left == left))
+        return false;
+
+    if (!(from_right == static_mapping{}))
+        return false;
+
+    left_static_mapping left_restored{from_left};
+    static_mapping right_restored{from_right};
+
+    if (!(left_restored == left))
+        return false;
+
+    if (!(right_restored == static_mapping{}))
+        return false;
+
+    using empty_extents =
+        tested::extents<int, 2, tested::dynamic_extent, 4>;
+
+    using empty_stride_mapping =
+        tested::layout_stride::mapping<empty_extents>;
+
+    empty_stride_mapping empty;
+
+    if (empty.required_span_size() != 0)
+        return false;
+
+    if (!empty.is_exhaustive())
+        return false;
+
+    if (empty.stride(0) != 0 ||
+        empty.stride(1) != 4 ||
+        empty.stride(2) != 1) {
+        return false;
+    }
+
+    return true;
+}
+
+static_assert(mdspan_remaining_layouts_work());
+
 bool ftl_test() {
   return mdspan_extents_works() && mdspan_extents_conversions_work() &&
-         mdspan_layout_right_works();
+         mdspan_layout_right_works() && mdspan_remaining_layouts_work();
 }

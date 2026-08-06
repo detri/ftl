@@ -5,6 +5,7 @@
 
 #ifdef FTL_REPLACE_STL
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <limits>
 #include <span>
@@ -12,6 +13,7 @@
 #include <utility>
 #else
 #include <ftl/array>
+#include <ftl/concepts>
 #include <ftl/cstddef>
 #include <ftl/limits>
 #include <ftl/span>
@@ -280,7 +282,7 @@ public:
     }
 
 private:
-  [[no_unique_address]]
+  FTL_NO_UNIQUE_ADDRESS
   detail::extents_storage<index_type, rank_dynamic()> dynamic_extents_{};
 };
 
@@ -292,44 +294,148 @@ explicit extents(Integrals...)
 
 namespace detail {
 
-template <class T, class = void>
+template<class T, class = void>
 struct valid_default_accessor_element : false_type {};
 
-template <class T>
+template<class T>
 struct valid_default_accessor_element<T, void_t<decltype(sizeof(T))>>
     : bool_constant<is_object_v<T> && !is_array_v<T> && !is_abstract_v<T>> {};
 
-template <class T>
+template<class T>
 inline constexpr bool valid_default_accessor_element_v =
     valid_default_accessor_element<T>::value;
 
-template <class T>
+template<class T>
 struct is_extents : false_type {};
 
-template <class IndexType, size_t... Extents>
+template<class IndexType, size_t... Extents>
 struct is_extents<extents<IndexType, Extents...>> : true_type {};
 
-template <class T>
+template<class T>
 inline constexpr bool is_extents_v = is_extents<T>::value;
+
+template<class Extents>
+consteval bool mapping_static_size_is_representable() {
+    if constexpr (Extents::rank_dynamic() != 0) {
+        return true;
+    } else {
+        using index_type = typename Extents::index_type;
+        using size_type = typename Extents::size_type;
+
+        const size_type limit =
+            static_cast<size_type>(numeric_limits<index_type>::max());
+
+        size_type product = 1;
+
+        for (size_t rank = 0; rank < Extents::rank(); ++rank) {
+            const size_type extent =
+                static_cast<size_type>(Extents::static_extent(rank));
+
+            if (extent != 0 && product > limit / extent)
+                return false;
+
+            product *= extent;
+        }
+
+        return true;
+    }
+}
+
+template<class ToExtents, class FromExtents>
+inline constexpr bool mapping_extents_constructible_v =
+    is_constructible_v<ToExtents, FromExtents>;
+
+template<class ToExtents, class FromExtents>
+inline constexpr bool left_right_mapping_constructible_v =
+    ToExtents::rank() <= 1 &&
+    is_constructible_v<ToExtents, FromExtents>;
 
 } // namespace detail
 
 struct layout_left {
-    template <class Extents>
+    template<class Extents>
     class mapping;
 };
 
 struct layout_right {
-    template <class Extents>
+    template<class Extents>
     class mapping;
 };
 
 struct layout_stride {
-    template <class Extents>
+    template<class Extents>
     class mapping;
 };
 
-template <class ElementType>
+namespace detail {
+
+template<class Layout, class Mapping>
+inline constexpr bool is_mapping_of_v = false;
+
+template<class Extents>
+inline constexpr bool
+    is_mapping_of_v<layout_left, layout_left::mapping<Extents>> = true;
+
+template<class Extents>
+inline constexpr bool
+    is_mapping_of_v<layout_right, layout_right::mapping<Extents>> = true;
+
+template<class Extents>
+inline constexpr bool
+    is_mapping_of_v<layout_stride, layout_stride::mapping<Extents>> = true;
+
+template<class Mapping>
+using mapping_extents_t = typename Mapping::extents_type;
+
+template<class Mapping>
+inline constexpr size_t mapping_rank_v = mapping_extents_t<Mapping>::rank();
+
+template<class Mapping>
+concept layout_mapping_alike = requires {
+    typename Mapping::extents_type;
+
+    requires is_extents_v<typename Mapping::extents_type>;
+
+    { Mapping::is_always_strided() } -> same_as<bool>;
+    { Mapping::is_always_exhaustive() } -> same_as<bool>;
+    { Mapping::is_always_unique() } -> same_as<bool>;
+
+    bool_constant<Mapping::is_always_strided()>::value;
+    bool_constant<Mapping::is_always_exhaustive()>::value;
+    bool_constant<Mapping::is_always_unique()>::value;
+};
+
+template<class Mapping, size_t... Indices>
+constexpr typename Mapping::index_type
+mapping_offset_impl(const Mapping& mapping,
+                    index_sequence<Indices...>) noexcept {
+    using index_type = typename Mapping::index_type;
+
+    return mapping((static_cast<void>(Indices), index_type{})...);
+}
+
+template<class Mapping>
+constexpr typename Mapping::index_type
+mapping_offset(const Mapping& mapping) noexcept {
+    using extents_type = typename Mapping::extents_type;
+    using index_type = typename Mapping::index_type;
+
+    if constexpr (extents_type::rank() == 0) {
+        return mapping();
+    } else {
+        for (size_t rank = 0; rank < extents_type::rank(); ++rank) {
+            if (mapping.extents().extent(rank) == 0)
+                return index_type{};
+        }
+
+        return mapping_offset_impl(
+            mapping, make_index_sequence<extents_type::rank()>{});
+    }
+}
+
+} // namespace detail
+
+template<class ElementType>
 struct default_accessor {
     static_assert(detail::valid_default_accessor_element_v<ElementType>,
                   "default_accessor requires a complete, non-array, "
@@ -342,13 +448,12 @@ struct default_accessor {
 
     constexpr default_accessor() noexcept = default;
 
-    template <class OtherElementType>
+    template<class OtherElementType>
         requires is_convertible_v<OtherElementType (*)[], element_type (*)[]>
-    constexpr default_accessor(
-        default_accessor<OtherElementType>) noexcept {}
+    constexpr default_accessor(default_accessor<OtherElementType>) noexcept {}
 
-    [[nodiscard]] constexpr reference access(data_handle_type pointer,
-                                             size_t index) const noexcept {
+    [[nodiscard]] constexpr reference
+    access(data_handle_type pointer, size_t index) const noexcept {
         return pointer[index];
     }
 
@@ -358,7 +463,125 @@ struct default_accessor {
     }
 };
 
-template <class Extents>
+template<class Extents>
+class layout_left::mapping {
+    static_assert(detail::is_extents_v<Extents>,
+                  "layout_left::mapping requires an extents specialization");
+
+public:
+    using extents_type = Extents;
+    using index_type = typename extents_type::index_type;
+    using size_type = typename extents_type::size_type;
+    using rank_type = typename extents_type::rank_type;
+    using layout_type = layout_left;
+
+private:
+    static_assert(
+        detail::mapping_static_size_is_representable<extents_type>(),
+        "layout_left index space is not representable by its index type");
+
+public:
+    constexpr mapping() noexcept = default;
+    constexpr mapping(const mapping&) noexcept = default;
+
+    constexpr mapping(const extents_type& extents) noexcept
+        : extents_(extents) {}
+
+    template<class OtherExtents>
+        requires detail::left_right_mapping_constructible_v<Extents, OtherExtents>
+    constexpr explicit(!is_convertible_v<OtherExtents, Extents>)
+    mapping(const layout_right::mapping<OtherExtents>& other) noexcept;
+
+    template<class OtherExtents>
+        requires detail::mapping_extents_constructible_v<Extents, OtherExtents>
+    constexpr explicit(Extents::rank() > 0)
+    mapping(const layout_stride::mapping<OtherExtents>& other);
+
+    constexpr mapping& operator=(const mapping&) noexcept = default;
+
+    [[nodiscard]] constexpr const extents_type& extents() const noexcept {
+        return extents_;
+    }
+
+    template<class OtherExtents>
+        requires is_constructible_v<extents_type, OtherExtents>
+    constexpr explicit(!is_convertible_v<OtherExtents, extents_type>)
+    mapping(const layout_left::mapping<OtherExtents>& other) noexcept
+        : extents_(other.extents()) {}
+
+    [[nodiscard]] constexpr index_type required_span_size() const noexcept {
+        index_type result = 1;
+
+        for (rank_type rank = 0; rank < extents_type::rank(); ++rank)
+            result *= extents_.extent(rank);
+
+        return result;
+    }
+
+    template<class... Indices>
+        requires(sizeof...(Indices) == extents_type::rank() &&
+                 (is_convertible_v<Indices, index_type> && ...) &&
+                 (is_nothrow_constructible_v<index_type, Indices> && ...))
+    [[nodiscard]] constexpr index_type
+    operator()(Indices... indices) const noexcept {
+        index_type result = 0;
+        rank_type rank = 0;
+
+        ((result +=
+              static_cast<index_type>(indices) * stride(rank++)),
+         ...);
+
+        return result;
+    }
+
+    [[nodiscard]] static constexpr bool is_always_unique() noexcept {
+        return true;
+    }
+
+    [[nodiscard]] static constexpr bool is_always_exhaustive() noexcept {
+        return true;
+    }
+
+    [[nodiscard]] static constexpr bool is_always_strided() noexcept {
+        return true;
+    }
+
+    [[nodiscard]] static constexpr bool is_unique() noexcept {
+        return true;
+    }
+
+    [[nodiscard]] static constexpr bool is_exhaustive() noexcept {
+        return true;
+    }
+
+    [[nodiscard]] static constexpr bool is_strided() noexcept {
+        return true;
+    }
+
+    [[nodiscard]] constexpr index_type stride(rank_type rank) const
+        requires(extents_type::rank() > 0)
+    {
+        index_type result = 1;
+
+        for (rank_type current = 0; current < rank; ++current)
+            result *= extents_.extent(current);
+
+        return result;
+    }
+
+    template<class OtherExtents>
+        requires(extents_type::rank() == OtherExtents::rank())
+    friend constexpr bool
+    operator==(const mapping& left,
+               const layout_left::mapping<OtherExtents>& right) noexcept {
+        return left.extents() == right.extents();
+    }
+
+private:
+    FTL_NO_UNIQUE_ADDRESS extents_type extents_{};
+};
+
+template<class Extents>
 class layout_right::mapping {
     static_assert(detail::is_extents_v<Extents>,
                   "layout_right::mapping requires an extents specialization");
@@ -371,31 +594,9 @@ public:
     using layout_type = layout_right;
 
 private:
-    static consteval bool static_size_is_representable() {
-        if constexpr (extents_type::rank_dynamic() != 0) {
-            return true;
-        } else {
-            const size_type limit =
-                static_cast<size_type>(numeric_limits<index_type>::max());
-            size_type product = 1;
-
-            for (rank_type rank = 0; rank < extents_type::rank(); ++rank) {
-                const size_type extent =
-                    static_cast<size_type>(extents_type::static_extent(rank));
-
-                if (extent != 0 && product > limit / extent)
-                    return false;
-
-                product *= extent;
-            }
-
-            return true;
-        }
-    }
-
-    static_assert(static_size_is_representable(),
-                  "layout_right index space is not representable by "
-                  "its index type");
+    static_assert(
+        detail::mapping_static_size_is_representable<extents_type>(),
+        "layout_right index space is not representable by its index type");
 
 public:
     constexpr mapping() noexcept = default;
@@ -404,17 +605,27 @@ public:
     constexpr mapping(const extents_type& extents) noexcept
         : extents_(extents) {}
 
-    template <class OtherExtents>
-        requires is_constructible_v<extents_type, OtherExtents>
-    constexpr explicit(!is_convertible_v<OtherExtents, extents_type>)
-        mapping(const layout_right::mapping<OtherExtents>& other) noexcept
-        : extents_(other.extents()) {}
+    template<class OtherExtents>
+        requires detail::left_right_mapping_constructible_v<Extents, OtherExtents>
+    constexpr explicit(!is_convertible_v<OtherExtents, Extents>)
+    mapping(const layout_left::mapping<OtherExtents>& other) noexcept;
+
+    template<class OtherExtents>
+        requires detail::mapping_extents_constructible_v<Extents, OtherExtents>
+    constexpr explicit(Extents::rank() > 0)
+    mapping(const layout_stride::mapping<OtherExtents>& other) noexcept;
 
     constexpr mapping& operator=(const mapping&) noexcept = default;
 
     [[nodiscard]] constexpr const extents_type& extents() const noexcept {
         return extents_;
     }
+
+    template<class OtherExtents>
+        requires is_constructible_v<extents_type, OtherExtents>
+    constexpr explicit(!is_convertible_v<OtherExtents, extents_type>)
+    mapping(const layout_right::mapping<OtherExtents>& other) noexcept
+        : extents_(other.extents()) {}
 
     [[nodiscard]] constexpr index_type required_span_size() const noexcept {
         index_type result = 1;
@@ -425,7 +636,7 @@ public:
         return result;
     }
 
-    template <class... Indices>
+    template<class... Indices>
         requires(sizeof...(Indices) == extents_type::rank() &&
                  (is_convertible_v<Indices, index_type> && ...) &&
                  (is_nothrow_constructible_v<index_type, Indices> && ...))
@@ -434,8 +645,8 @@ public:
         index_type result = 0;
         rank_type rank = 0;
 
-        ((result = result * extents_.extent(rank++) +
-                   static_cast<index_type>(indices)),
+        ((result +=
+              static_cast<index_type>(indices) * stride(rank++)),
          ...);
 
         return result;
@@ -470,15 +681,15 @@ public:
     {
         index_type result = 1;
 
-        for (rank_type current = rank + 1; current < extents_type::rank();
-             ++current) {
+        for (rank_type current = rank + 1;
+             current < extents_type::rank(); ++current) {
             result *= extents_.extent(current);
         }
 
         return result;
     }
 
-    template <class OtherExtents>
+    template<class OtherExtents>
         requires(extents_type::rank() == OtherExtents::rank())
     friend constexpr bool
     operator==(const mapping& left,
@@ -487,8 +698,249 @@ public:
     }
 
 private:
-    [[no_unique_address]] extents_type extents_{};
+    FTL_NO_UNIQUE_ADDRESS extents_type extents_{};
 };
+
+template<class Extents>
+class layout_stride::mapping {
+    static_assert(detail::is_extents_v<Extents>,
+                  "layout_stride::mapping requires an extents specialization");
+
+public:
+    using extents_type = Extents;
+    using index_type = typename extents_type::index_type;
+    using size_type = typename extents_type::size_type;
+    using rank_type = typename extents_type::rank_type;
+    using layout_type = layout_stride;
+
+private:
+    static constexpr rank_type rank_ = extents_type::rank();
+
+    static_assert(
+        detail::mapping_static_size_is_representable<extents_type>(),
+        "layout_stride index space is not representable by its index type");
+
+    constexpr bool exhaustive_from(
+        rank_type depth, index_type expected,
+        detail::extents_storage<bool, rank_>& used) const noexcept {
+        if (depth == rank_)
+            return true;
+
+        for (rank_type rank = 0; rank < rank_; ++rank) {
+            if (used.get(rank) || stride(rank) != expected)
+                continue;
+
+            used.set(rank, true);
+
+            if (exhaustive_from(
+                    depth + 1,
+                    expected * extents_.extent(rank),
+                    used)) {
+                return true;
+            }
+
+            used.set(rank, false);
+        }
+
+        return false;
+    }
+
+public:
+    constexpr mapping() noexcept {
+      if constexpr (rank_ > 0) {
+        layout_right::mapping<extents_type> right;
+
+        for (rank_type rank = 0; rank < rank_; ++rank)
+          strides_.set(rank, right.stride(rank));
+      }
+    }
+
+    constexpr mapping(const mapping&) noexcept = default;
+
+    template<class OtherIndexType>
+        requires(is_convertible_v<const OtherIndexType&, index_type> &&
+                 is_nothrow_constructible_v<index_type,
+                                            const OtherIndexType&>)
+    constexpr mapping(const extents_type& extents,
+                      span<OtherIndexType, rank_> strides) noexcept
+        : extents_(extents) {
+        for (rank_type rank = 0; rank < rank_; ++rank)
+            strides_.set(rank, static_cast<index_type>(strides[rank]));
+    }
+
+    template<class OtherIndexType>
+        requires(is_convertible_v<const OtherIndexType&, index_type> &&
+                 is_nothrow_constructible_v<index_type,
+                                            const OtherIndexType&>)
+    constexpr mapping(
+        const extents_type& extents,
+        const array<OtherIndexType, rank_>& strides) noexcept
+        : extents_(extents) {
+        for (rank_type rank = 0; rank < rank_; ++rank)
+            strides_.set(rank, static_cast<index_type>(strides[rank]));
+    }
+
+    template<detail::layout_mapping_alike StridedLayoutMapping>
+        requires(
+            is_constructible_v<
+                extents_type,
+                detail::mapping_extents_t<StridedLayoutMapping>> &&
+            StridedLayoutMapping::is_always_unique() &&
+            StridedLayoutMapping::is_always_strided())
+    constexpr explicit(
+        !(is_convertible_v<
+              detail::mapping_extents_t<StridedLayoutMapping>,
+              extents_type> &&
+          (detail::is_mapping_of_v<layout_left, StridedLayoutMapping> ||
+           detail::is_mapping_of_v<layout_right, StridedLayoutMapping> ||
+           detail::is_mapping_of_v<layout_stride, StridedLayoutMapping>)))
+        mapping(const StridedLayoutMapping& other) noexcept
+        : extents_(other.extents()) {
+        for (rank_type rank = 0; rank < rank_; ++rank)
+            strides_.set(rank, static_cast<index_type>(other.stride(rank)));
+    }
+
+    constexpr mapping& operator=(const mapping&) noexcept = default;
+
+    [[nodiscard]] constexpr const extents_type& extents() const noexcept {
+        return extents_;
+    }
+
+    [[nodiscard]] constexpr array<index_type, rank_> strides() const noexcept {
+        array<index_type, rank_> result{};
+
+        for (rank_type rank = 0; rank < rank_; ++rank)
+            result[rank] = strides_.get(rank);
+
+        return result;
+    }
+
+    [[nodiscard]] constexpr index_type required_span_size() const noexcept {
+        if constexpr (rank_ == 0) {
+            return 1;
+        } else {
+            for (rank_type rank = 0; rank < rank_; ++rank) {
+                if (extents_.extent(rank) == 0)
+                    return 0;
+            }
+
+            index_type result = 1;
+
+            for (rank_type rank = 0; rank < rank_; ++rank) {
+                result +=
+                    (extents_.extent(rank) - 1) * stride(rank);
+            }
+
+            return result;
+        }
+    }
+
+    template<class... Indices>
+        requires(sizeof...(Indices) == rank_ &&
+                 (is_convertible_v<Indices, index_type> && ...) &&
+                 (is_nothrow_constructible_v<index_type, Indices> && ...))
+    [[nodiscard]] constexpr index_type
+    operator()(Indices... indices) const noexcept {
+        index_type result = 0;
+        rank_type rank = 0;
+
+        ((result +=
+              static_cast<index_type>(indices) * stride(rank++)),
+         ...);
+
+        return result;
+    }
+
+    [[nodiscard]] static constexpr bool is_always_unique() noexcept {
+        return true;
+    }
+
+    [[nodiscard]] static constexpr bool is_always_exhaustive() noexcept {
+        return false;
+    }
+
+    [[nodiscard]] static constexpr bool is_always_strided() noexcept {
+        return true;
+    }
+
+    [[nodiscard]] static constexpr bool is_unique() noexcept {
+        return true;
+    }
+
+    [[nodiscard]] constexpr bool is_exhaustive() const noexcept {
+        if constexpr (rank_ == 0) {
+            return true;
+        } else {
+            detail::extents_storage<bool, rank_> used;
+            return exhaustive_from(0, index_type{1}, used);
+        }
+    }
+
+    [[nodiscard]] static constexpr bool is_strided() noexcept {
+        return true;
+    }
+
+    [[nodiscard]] constexpr index_type
+    stride(rank_type rank) const noexcept {
+        return strides_.get(rank);
+    }
+
+    template<class OtherMapping>
+        requires(detail::layout_mapping_alike<OtherMapping> &&
+                 rank_ == detail::mapping_rank_v<OtherMapping> &&
+                 OtherMapping::is_always_strided())
+    friend constexpr bool
+    operator==(const mapping& left, const OtherMapping& right) noexcept {
+        if (!(left.extents() == right.extents()))
+            return false;
+
+        if (detail::mapping_offset(right) !=
+            typename OtherMapping::index_type{}) {
+            return false;
+        }
+
+        for (rank_type rank = 0; rank < rank_; ++rank) {
+            if (left.stride(rank) != right.stride(rank))
+                return false;
+        }
+
+        return true;
+    }
+
+private:
+    FTL_NO_UNIQUE_ADDRESS extents_type extents_{};
+
+    FTL_NO_UNIQUE_ADDRESS
+    detail::extents_storage<index_type, rank_> strides_{};
+};
+
+template<class Extents>
+template<class OtherExtents>
+    requires detail::left_right_mapping_constructible_v<Extents, OtherExtents>
+constexpr layout_left::mapping<Extents>::mapping(
+    const layout_right::mapping<OtherExtents>& other) noexcept
+    : extents_(other.extents()) {}
+
+template<class Extents>
+template<class OtherExtents>
+    requires detail::mapping_extents_constructible_v<Extents, OtherExtents>
+constexpr layout_left::mapping<Extents>::mapping(
+    const layout_stride::mapping<OtherExtents>& other)
+    : extents_(other.extents()) {}
+
+template<class Extents>
+template<class OtherExtents>
+    requires detail::left_right_mapping_constructible_v<Extents, OtherExtents>
+constexpr layout_right::mapping<Extents>::mapping(
+    const layout_left::mapping<OtherExtents>& other) noexcept
+    : extents_(other.extents()) {}
+
+template<class Extents>
+template<class OtherExtents>
+    requires detail::mapping_extents_constructible_v<Extents, OtherExtents>
+constexpr layout_right::mapping<Extents>::mapping(
+    const layout_stride::mapping<OtherExtents>& other) noexcept
+    : extents_(other.extents()) {}
 
 FTL_END_NAMESPACE
 
