@@ -219,6 +219,7 @@ foreach(header IN ITEMS
         stdexcept
         iosfwd
         streambuf
+        ios
 )
     add_ftl_test(${header})
 endforeach()
