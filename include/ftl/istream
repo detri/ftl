@@ -1,0 +1,106 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_ISTREAM_HEADER
+#define FTL_ISTREAM_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <ios>
+#else
+#include <ftl/ios>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+template <class Character, class Traits>
+class basic_istream : virtual public basic_ios<Character, Traits> {
+public:
+  using char_type = Character;
+  using traits_type = Traits;
+  using int_type = typename traits_type::int_type;
+  using pos_type = typename traits_type::pos_type;
+  using off_type = typename traits_type::off_type;
+
+  explicit basic_istream(basic_streambuf<char_type, traits_type> *buffer)
+      : basic_ios<char_type, traits_type>(buffer) {}
+
+  virtual ~basic_istream() = default;
+
+  [[nodiscard]]
+  streamsize gcount() const {
+    return extracted_;
+  }
+
+  int_type get() {
+    extracted_ = 0;
+
+    if (!this->good())
+      return traits_type::eof();
+
+    auto *buffer = this->rdbuf();
+
+    if (buffer == nullptr) {
+      this->setstate(ios_base::badbit | ios_base::failbit);
+
+      return traits_type::eof();
+    }
+
+    const int_type value = buffer->sbumpc();
+
+    if (traits_type::eq_int_type(value, traits_type::eof())) {
+      this->setstate(ios_base::eofbit | ios_base::failbit);
+
+      return traits_type::eof();
+    }
+
+    extracted_ = 1;
+
+    return value;
+  }
+
+  basic_istream &get(char_type &character) {
+    const int_type value = get();
+
+    if (!traits_type::eq_int_type(value, traits_type::eof())) {
+      character = traits_type::to_char_type(value);
+    }
+
+    return *this;
+  }
+
+  basic_istream &read(char_type *destination, streamsize count) {
+    extracted_ = 0;
+
+    if (!this->good())
+      return *this;
+
+    if (count <= 0)
+      return *this;
+
+    auto *buffer = this->rdbuf();
+
+    if (buffer == nullptr) {
+      this->setstate(ios_base::badbit | ios_base::failbit);
+
+      return *this;
+    }
+
+    extracted_ = buffer->sgetn(destination, count);
+
+    if (extracted_ != count) {
+      this->setstate(ios_base::eofbit | ios_base::failbit);
+    }
+
+    return *this;
+  }
+
+  basic_istream(const basic_istream &) = delete;
+
+  basic_istream &operator=(const basic_istream &) = delete;
+
+private:
+  streamsize extracted_ = 0;
+};
+
+FTL_END_NAMESPACE
+
+#endif // FTL_ISTREAM_HEADER
