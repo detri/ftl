@@ -13,8 +13,10 @@ extern "C" void __cdecl __fastfail(unsigned int);
 
 #ifdef FTL_REPLACE_STL
 #include <iosfwd>
+#include <stdexcept>
 #else
 #include <ftl/iosfwd>
+#include <ftl/stdexcept>
 #endif
 
 #ifdef FTL_REPLACE_STL
@@ -22,6 +24,25 @@ namespace std {
 #else
 namespace ftl {
 #endif
+
+namespace detail {
+[[noreturn]]
+inline void string_view_at_failure() {
+#if FTL_HAS_EXCEPTIONS
+  throw out_of_range("string_view::at");
+#else
+  FTL_STRING_VIEW_TRAP();
+#endif
+}
+
+[[noreturn]] inline void string_view_substr_failure() {
+#if FTL_HAS_EXCEPTIONS
+    throw out_of_range("string_view::substr");
+#else
+    FTL_STRING_VIEW_TRAP();
+#endif
+}
+}
 
 template<class Character, class Traits = char_traits<Character>>
 class basic_string_view {
@@ -52,10 +73,9 @@ public:
     constexpr const_reference operator[](size_type index) const noexcept {
         return first[index];
     }
-    // ponytail: bounds errors fast-fail until <stdexcept> provides out_of_range.
     constexpr const_reference at(size_type index) const {
         if (index >= count)
-            FTL_STRING_VIEW_TRAP();
+            detail::string_view_at_failure();
         return first[index];
     }
     constexpr const_reference front() const noexcept { return first[0]; }
@@ -84,7 +104,7 @@ public:
     constexpr basic_string_view substr(
         size_type position = 0, size_type length = npos) const {
         if (position > count)
-            FTL_STRING_VIEW_TRAP();
+            detail::string_view_substr_failure();
         const size_type remaining = count - position;
         return {first + position,
                 length < remaining ? length : remaining};

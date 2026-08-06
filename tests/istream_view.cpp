@@ -1,11 +1,9 @@
 #ifdef FTL_REPLACE_STL
 #include <ranges>
-#include <stdexcept>
 #include <type_traits>
 namespace tested = std;
 #else
 #include <ftl/ranges>
-#include <ftl/stdexcept>
 #include <ftl/type_traits>
 namespace tested = ftl;
 #endif
@@ -172,38 +170,7 @@ bool derived_stream_works() {
   return iterator == view.end();
 }
 
-#if FTL_HAS_EXCEPTIONS
-
-[[noreturn]]
-void diagnostic_failure(const char *message) {
-  throw tested::runtime_error(message);
-}
-
-bool ftl_test() {
-  if (!direct_view_works()) {
-    diagnostic_failure("direct_view_works failed");
-  }
-
-  if (!empty_stream_works()) {
-    diagnostic_failure("empty_stream_works failed");
-  }
-
-  if (!customization_point_works()) {
-    diagnostic_failure("customization_point_works failed");
-  }
-
-  if (!derived_stream_works()) {
-    diagnostic_failure("derived_stream_works failed");
-  }
-
-  return true;
-}
-
-#else
-
 bool ftl_test() {
   return direct_view_works() && empty_stream_works() &&
          customization_point_works() && derived_stream_works();
 }
-
-#endif
