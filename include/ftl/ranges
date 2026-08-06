@@ -3390,9 +3390,9 @@ public:
                                        range_reference_t<Base>>>;
     using difference_type = range_difference_t<Base>;
 
-    constexpr iterator()
-        requires default_initializable<iterator_t<Base>>
-        : current_() {}
+    iterator()
+      requires default_initializable<iterator_t<Base>>
+    = default;
 
     constexpr iterator(Parent &parent, iterator_t<Base> current)
         : current_(FTL_RANGES_NAMESPACE::move(current)),
@@ -3882,22 +3882,27 @@ public:
     using InnerType = Inner<Const>;
     static constexpr bool ref = inner_is_reference<Const>;
 
-    OuterType outer_value_{};
+    detail::maybe_present<
+        OuterType,
+        forward_range<BaseType>
+    > outer_value_{};
     detail::join_inner_storage<InnerType> inner_;
     Parent *parent_ = nullptr;
 
-    constexpr OuterType &outer() {
-      if constexpr (forward_range<BaseType>)
-        return outer_value_;
-      else
+    constexpr OuterType& outer() {
+      if constexpr (forward_range<BaseType>) {
+        return outer_value_.value;
+      } else {
         return *parent_->outer_;
+      }
     }
 
-    constexpr const OuterType &outer() const {
-      if constexpr (forward_range<BaseType>)
-        return outer_value_;
-      else
+    constexpr const OuterType& outer() const {
+      if constexpr (forward_range<BaseType>) {
+        return outer_value_.value;
+      } else {
         return *parent_->outer_;
+      }
     }
 
     constexpr decltype(auto) current_inner_range() const {
@@ -3946,10 +3951,21 @@ public:
 
     iterator() = default;
 
-    constexpr iterator(Parent &parent, OuterType outer)
+    constexpr iterator(
+        Parent& parent,
+        OuterType outer
+    )
       requires forward_range<BaseType>
-        : outer_value_(FTL_RANGES_NAMESPACE::move(outer)),
-          parent_(FTL_RANGES_NAMESPACE::addressof(parent)) {
+        : outer_value_{
+            FTL_RANGES_NAMESPACE::move(
+                outer
+            )
+          },
+          parent_(
+            FTL_RANGES_NAMESPACE::addressof(
+                parent
+            )
+          ) {
       satisfy();
     }
 
@@ -3960,12 +3976,31 @@ public:
     }
 
     constexpr iterator(iterator<!Const> other)
-      requires Const && convertible_to<iterator_t<V>, OuterType> &&
-                   convertible_to<iterator_t<InnerRange>, InnerType>
-        : outer_value_(FTL_RANGES_NAMESPACE::move(other.outer_value_)),
+      requires Const &&
+               convertible_to<
+                   iterator_t<V>,
+                   OuterType
+               > &&
+               convertible_to<
+                   iterator_t<InnerRange>,
+                   InnerType
+               >
+        : outer_value_{
+            FTL_RANGES_NAMESPACE::move(
+                other.outer_value_.value
+            )
+          },
           parent_(other.parent_) {
-      if (outer_value_ != ranges::end(parent_->base_))
-        inner_.set(InnerType(other.inner_.get()));
+      if (
+          outer_value_.value !=
+          ranges::end(parent_->base_)
+      ) {
+        inner_.set(
+            InnerType(
+                other.inner_.get()
+            )
+        );
+      }
     }
 
     [[nodiscard]]
@@ -5057,7 +5092,7 @@ class stride_view : public view_interface<stride_view<V>> {
                        detail::maybe_const_t<Const, V>> {
     using Base = detail::maybe_const_t<Const, V>;
 
-    iterator_t<Base> current_{};
+    iterator_t<Base> current_;
     sentinel_t<Base> end_{};
     range_difference_t<Base> stride_ = 1;
     range_difference_t<Base> missing_ = 0;
@@ -5949,7 +5984,7 @@ class enumerate_view : public view_interface<enumerate_view<V>> {
     using difference_type = range_difference_t<Base>;
 
   private:
-    iterator_t<Base> current_{};
+    iterator_t<Base> current_;
     difference_type position_ = 0;
 
     friend class enumerate_view;
@@ -6395,7 +6430,7 @@ private:
   private:
     Parent *parent_ = nullptr;
 
-    zip_iterator<Const> inner_{};
+    zip_iterator<Const> inner_;
 
     template <size_t... Index>
     constexpr decltype(auto) dereference(index_sequence<Index...>) const
@@ -7789,7 +7824,9 @@ template <view V>
 class chunk_view<V, false> : public view_interface<chunk_view<V, false>> {
   V base_ = V();
   range_difference_t<V> count_ = 1;
-  iterator_t<V> current_{};
+
+  detail::non_propagating_cache<iterator_t<V>> current_;
+
   range_difference_t<V> remaining_ = 0;
   bool initialized_ = false;
 
@@ -7812,11 +7849,17 @@ public:
       constexpr explicit iterator(chunk_view &parent)
           : parent_(FTL_RANGES_NAMESPACE::addressof(parent)) {}
 
-      constexpr decltype(auto) operator*() const { return *parent_->current_; }
+      constexpr decltype(auto) operator*() const { return **parent_->current_; }
 
       constexpr iterator &operator++() {
-        ++parent_->current_;
-        --parent_->remaining_;
+        ++*parent_->current_;
+
+        if (*parent_->current_ == ranges::end(parent_->base_)) {
+          parent_->remaining_ = 0;
+        } else {
+          --parent_->remaining_;
+        }
+
         return *this;
       }
 
@@ -7855,11 +7898,11 @@ public:
     constexpr inner_view operator*() const { return inner_view(*parent_); }
 
     constexpr outer_iterator &operator++() {
-      while (!parent_->inner_done()) {
-        ++parent_->current_;
-        --parent_->remaining_;
-      }
+      ranges::advance(*parent_->current_, parent_->remaining_,
+                      ranges::end(parent_->base_));
+
       parent_->remaining_ = parent_->count_;
+
       return *this;
     }
 
@@ -7886,18 +7929,18 @@ public:
 
   constexpr V base() && { return FTL_RANGES_NAMESPACE::move(base_); }
 
-  constexpr bool inner_done() {
-    return remaining_ == 0 || current_ == ranges::end(base_);
-  }
+  constexpr bool inner_done() { return remaining_ == 0; }
 
   constexpr bool done() {
-    return initialized_ && current_ == ranges::end(base_);
+    return (current_.has_value() && *current_ == ranges::end(base_) &&
+            remaining_ != 0);
   }
 
   constexpr outer_iterator begin() {
-    current_ = ranges::begin(base_);
+    current_.emplace(ranges::begin(base_));
+
     remaining_ = count_;
-    initialized_ = true;
+
     return outer_iterator(*this);
   }
 
