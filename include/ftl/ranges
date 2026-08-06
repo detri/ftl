@@ -3882,14 +3882,11 @@ public:
     using InnerType = Inner<Const>;
     static constexpr bool ref = inner_is_reference<Const>;
 
-    detail::maybe_present<
-        OuterType,
-        forward_range<BaseType>
-    > outer_value_{};
+    detail::maybe_present<OuterType, forward_range<BaseType>> outer_value_{};
     detail::join_inner_storage<InnerType> inner_;
     Parent *parent_ = nullptr;
 
-    constexpr OuterType& outer() {
+    constexpr OuterType &outer() {
       if constexpr (forward_range<BaseType>) {
         return outer_value_.value;
       } else {
@@ -3897,7 +3894,7 @@ public:
       }
     }
 
-    constexpr const OuterType& outer() const {
+    constexpr const OuterType &outer() const {
       if constexpr (forward_range<BaseType>) {
         return outer_value_.value;
       } else {
@@ -3951,21 +3948,10 @@ public:
 
     iterator() = default;
 
-    constexpr iterator(
-        Parent& parent,
-        OuterType outer
-    )
+    constexpr iterator(Parent &parent, OuterType outer)
       requires forward_range<BaseType>
-        : outer_value_{
-            FTL_RANGES_NAMESPACE::move(
-                outer
-            )
-          },
-          parent_(
-            FTL_RANGES_NAMESPACE::addressof(
-                parent
-            )
-          ) {
+        : outer_value_{FTL_RANGES_NAMESPACE::move(outer)},
+          parent_(FTL_RANGES_NAMESPACE::addressof(parent)) {
       satisfy();
     }
 
@@ -3976,30 +3962,12 @@ public:
     }
 
     constexpr iterator(iterator<!Const> other)
-      requires Const &&
-               convertible_to<
-                   iterator_t<V>,
-                   OuterType
-               > &&
-               convertible_to<
-                   iterator_t<InnerRange>,
-                   InnerType
-               >
-        : outer_value_{
-            FTL_RANGES_NAMESPACE::move(
-                other.outer_value_.value
-            )
-          },
+      requires Const && convertible_to<iterator_t<V>, OuterType> &&
+                   convertible_to<iterator_t<InnerRange>, InnerType>
+        : outer_value_{FTL_RANGES_NAMESPACE::move(other.outer_value_.value)},
           parent_(other.parent_) {
-      if (
-          outer_value_.value !=
-          ranges::end(parent_->base_)
-      ) {
-        inner_.set(
-            InnerType(
-                other.inner_.get()
-            )
-        );
+      if (outer_value_.value != ranges::end(parent_->base_)) {
+        inner_.set(InnerType(other.inner_.get()));
       }
     }
 
@@ -8006,7 +7974,7 @@ public:
                                       cartesian_product_view>;
     parent_type *parent_ = nullptr;
     tuple<iterator_t<base_t<Const, First>>, iterator_t<base_t<Const, Views>>...>
-        current_{};
+        current_;
     common_type_t<range_difference_t<base_t<Const, First>>,
                   range_difference_t<base_t<Const, Views>>...>
         position_ = 0;
@@ -8247,9 +8215,10 @@ public:
     return [&]<size_t... I>(index_sequence<I...>) {
       auto current = tuple<iterator_t<First>, iterator_t<Views>...>(
           ranges::begin(get<I>(views_))...);
-      bool done =
-          ((ranges::begin(get<I>(views_)) == ranges::end(get<I>(views_))) ||
-           ...);
+
+      const bool done =
+          ((get<I>(current) == ranges::end(get<I>(views_))) || ...);
+
       return iterator<false>(*this, FTL_RANGES_NAMESPACE::move(current), done);
     }(make_index_sequence<count>{});
   }
@@ -8260,9 +8229,10 @@ public:
     return [&]<size_t... I>(index_sequence<I...>) {
       auto current = tuple<iterator_t<const First>, iterator_t<const Views>...>(
           ranges::begin(get<I>(views_))...);
-      bool done =
-          ((ranges::begin(get<I>(views_)) == ranges::end(get<I>(views_))) ||
-           ...);
+
+      const bool done =
+          ((get<I>(current) == ranges::end(get<I>(views_))) || ...);
+
       return iterator<true>(*this, FTL_RANGES_NAMESPACE::move(current), done);
     }(make_index_sequence<count>{});
   }

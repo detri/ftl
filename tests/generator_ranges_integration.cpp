@@ -221,6 +221,25 @@ static_assert(tested::is_same_v<
 static_assert(tested::is_same_v<
               tested::ranges::range_reference_t<zip_transform_pipeline>, int>);
 
+using two_int_array = int (&)[2];
+
+using cartesian_pipeline = decltype(tested::ranges::views::cartesian_product(
+    tested::declval<value_generator>(), tested::declval<two_int_array>()));
+
+using cartesian_iterator = tested::ranges::iterator_t<cartesian_pipeline>;
+
+static_assert(tested::ranges::view<cartesian_pipeline>);
+
+static_assert(tested::ranges::input_range<cartesian_pipeline>);
+
+static_assert(!tested::ranges::forward_range<cartesian_pipeline>);
+
+static_assert(!tested::ranges::common_range<cartesian_pipeline>);
+
+static_assert(!tested::ranges::borrowed_range<cartesian_pipeline>);
+
+static_assert(!tested::default_initializable<cartesian_iterator>);
+
 #ifdef FTL_REPLACE_STL
 
 tested::generator<int> integration_values() {
@@ -428,6 +447,35 @@ bool ftl_test() {
     }
 
     if (index != 5) {
+      return false;
+    }
+  }
+
+  {
+    int second_values[] = {10, 20};
+
+    auto pipeline = tested::ranges::views::cartesian_product(
+        integration_values(), second_values);
+
+    tested::size_t index = 0;
+
+    for (auto entry : pipeline) {
+      const int first = tested::get<0>(entry);
+
+      const int second = tested::get<1>(entry);
+
+      const int expected_first = static_cast<int>(index / 2) + 1;
+
+      const int expected_second = index % 2 == 0 ? 10 : 20;
+
+      if (first != expected_first || second != expected_second) {
+        return false;
+      }
+
+      ++index;
+    }
+
+    if (index != 12) {
       return false;
     }
   }
