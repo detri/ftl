@@ -213,6 +213,7 @@ foreach(header IN ITEMS
         mdspan
         span_mdspan_integration
         generator_ranges_integration
+        span_mdspan_generator_ranges_integration
 )
     add_ftl_test(${header})
 endforeach()
