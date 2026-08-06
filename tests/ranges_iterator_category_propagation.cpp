@@ -914,7 +914,7 @@ static_assert(range_member_category_is<adjacent_transform_random_value,
                                        tested::input_iterator_tag>());
 
 static_assert(range_member_category_is<adjacent_transform_random_reference,
-                                       tested::input_iterator_tag>());
+                                       tested::random_access_iterator_tag>());
 
 /*
  * slide_view preserves forward, bidirectional, or random-access

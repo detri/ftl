@@ -214,6 +214,8 @@ foreach(header IN ITEMS
         span_mdspan_integration
         generator_ranges_integration
         span_mdspan_generator_ranges_integration
+        adjacent_transform_views
+        join_with_view
 )
     add_ftl_test(${header})
 endforeach()

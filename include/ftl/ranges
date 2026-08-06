@@ -14,6 +14,8 @@
 #define __cpp_lib_ranges_enumerate 202302L
 #define __cpp_lib_ranges_repeat 202207L
 #define __cpp_lib_ranges_as_rvalue 202207L
+#define __cpp_lib_ranges_join_with 202202L
+#define __cpp_lib_ranges_to_container 202202L
 
 #ifdef FTL_REPLACE_STL
 #include <array>
@@ -1396,10 +1398,7 @@ inline constexpr detail::single_fn single{};
 
 template <view V>
   requires input_range<V>
-class as_rvalue_view
-    : public view_interface<
-          as_rvalue_view<V>
-      > {
+class as_rvalue_view : public view_interface<as_rvalue_view<V>> {
 private:
   V base_ = V();
 
@@ -1408,13 +1407,8 @@ public:
     requires default_initializable<V>
   = default;
 
-  constexpr explicit
-  as_rvalue_view(V base)
-      : base_(
-            FTL_RANGES_NAMESPACE::move(
-                base
-            )
-        ) {}
+  constexpr explicit as_rvalue_view(V base)
+      : base_(FTL_RANGES_NAMESPACE::move(base)) {}
 
   [[nodiscard]]
   constexpr V base() const &
@@ -1425,27 +1419,21 @@ public:
 
   [[nodiscard]]
   constexpr V base() && {
-    return FTL_RANGES_NAMESPACE::move(
-        base_
-    );
+    return FTL_RANGES_NAMESPACE::move(base_);
   }
 
   [[nodiscard]]
   constexpr auto begin()
     requires(!detail::simple_view<V>)
   {
-    return move_iterator(
-        ranges::begin(base_)
-    );
+    return move_iterator(ranges::begin(base_));
   }
 
   [[nodiscard]]
   constexpr auto begin() const
     requires range<const V>
   {
-    return move_iterator(
-        ranges::begin(base_)
-    );
+    return move_iterator(ranges::begin(base_));
   }
 
   [[nodiscard]]
@@ -1453,13 +1441,9 @@ public:
     requires(!detail::simple_view<V>)
   {
     if constexpr (common_range<V>) {
-      return move_iterator(
-          ranges::end(base_)
-      );
+      return move_iterator(ranges::end(base_));
     } else {
-      return move_sentinel(
-          ranges::end(base_)
-      );
+      return move_sentinel(ranges::end(base_));
     }
   }
 
@@ -1467,16 +1451,10 @@ public:
   constexpr auto end() const
     requires range<const V>
   {
-    if constexpr (
-        common_range<const V>
-    ) {
-      return move_iterator(
-          ranges::end(base_)
-      );
+    if constexpr (common_range<const V>) {
+      return move_iterator(ranges::end(base_));
     } else {
-      return move_sentinel(
-          ranges::end(base_)
-      );
+      return move_sentinel(ranges::end(base_));
     }
   }
 
@@ -1495,95 +1473,44 @@ public:
   }
 };
 
-template <class R>
-as_rvalue_view(R&&)
-    -> as_rvalue_view<
-        views::all_t<R>
-    >;
+template <class R> as_rvalue_view(R &&) -> as_rvalue_view<views::all_t<R>>;
 
 template <class V>
-inline constexpr bool
-    enable_borrowed_range<
-        as_rvalue_view<V>
-    > =
-        enable_borrowed_range<V>;
+inline constexpr bool enable_borrowed_range<as_rvalue_view<V>> =
+    enable_borrowed_range<V>;
 
 namespace views {
 namespace detail {
 
-template <class R>
-consteval bool
-as_rvalue_is_noexcept() {
-  if constexpr (
-      same_as<
-          range_rvalue_reference_t<R>,
-          range_reference_t<R>
-      >
-  ) {
-    return noexcept(
-        all(
-            declval<R>()
-        )
-    );
+template <class R> consteval bool as_rvalue_is_noexcept() {
+  if constexpr (same_as<range_rvalue_reference_t<R>, range_reference_t<R>>) {
+    return noexcept(all(declval<R>()));
   } else {
-    return noexcept(
-        as_rvalue_view<
-            all_t<R>
-        >(
-            all(
-                declval<R>()
-            )
-        )
-    );
+    return noexcept(as_rvalue_view<all_t<R>>(all(declval<R>())));
   }
 }
 
-struct as_rvalue_fn
-    : range_adaptor_closure<
-          as_rvalue_fn
-      > {
+struct as_rvalue_fn : range_adaptor_closure<as_rvalue_fn> {
   template <viewable_range R>
     requires input_range<all_t<R>>
   [[nodiscard]]
-  constexpr auto
-  operator()(R&& range) const
-      noexcept(
-          as_rvalue_is_noexcept<R>()
-      ) {
+  constexpr auto operator()(R &&range) const
+      noexcept(as_rvalue_is_noexcept<R>()) {
     /*
      * A range already returning prvalues or xvalues
      * does not need another view layer.
      */
-    if constexpr (
-        same_as<
-            range_rvalue_reference_t<R>,
-            range_reference_t<R>
-        >
-    ) {
-      return all(
-          static_cast<R&&>(
-              range
-          )
-      );
+    if constexpr (same_as<range_rvalue_reference_t<R>, range_reference_t<R>>) {
+      return all(static_cast<R &&>(range));
     } else {
-      return as_rvalue_view<
-          all_t<R>
-      >(
-          all(
-              static_cast<R&&>(
-                  range
-              )
-          )
-      );
+      return as_rvalue_view<all_t<R>>(all(static_cast<R &&>(range)));
     }
   }
 };
 
 } // namespace detail
 
-inline constexpr
-    detail::as_rvalue_fn
-        as_rvalue{};
+inline constexpr detail::as_rvalue_fn as_rvalue{};
 
 } // namespace views
 
@@ -3923,13 +3850,9 @@ template <class V, size_t N>
 inline constexpr bool enable_borrowed_range<elements_view<V, N>> =
     enable_borrowed_range<V>;
 
-template <class R>
-using keys_view =
-    elements_view<R, 0>;
+template <class R> using keys_view = elements_view<R, 0>;
 
-template <class R>
-using values_view =
-    elements_view<R, 1>;
+template <class R> using values_view = elements_view<R, 1>;
 
 namespace views {
 template <size_t N> struct elements_fn : range_adaptor_closure<elements_fn<N>> {
@@ -4278,6 +4201,823 @@ struct join_fn : range_adaptor_closure<join_fn> {
 };
 
 inline constexpr join_fn join{};
+} // namespace views
+
+namespace detail {
+
+template <class... R>
+using join_with_reference_t = common_reference_t<range_reference_t<R>...>;
+
+template <class... R>
+using join_with_value_t = common_type_t<range_value_t<R>...>;
+
+template <class... R>
+using join_with_rvalue_reference_t =
+    common_reference_t<range_rvalue_reference_t<R>...>;
+
+template <class Reference, class RvalueReference, class Iterator>
+concept join_with_indirectly_readable = requires(const Iterator iterator) {
+  { *iterator } -> convertible_to<Reference>;
+
+  { ranges::iter_move(iterator) } -> convertible_to<RvalueReference>;
+};
+
+template <class First, class Second>
+concept join_with_concatable =
+    requires {
+      typename join_with_reference_t<First, Second>;
+
+      typename join_with_value_t<First, Second>;
+
+      typename join_with_rvalue_reference_t<First, Second>;
+    } &&
+    common_reference_with<join_with_reference_t<First, Second> &&,
+                          join_with_value_t<First, Second> &> &&
+    common_reference_with<join_with_reference_t<First, Second> &&,
+                          join_with_rvalue_reference_t<First, Second> &&> &&
+    common_reference_with<join_with_rvalue_reference_t<First, Second> &&,
+                          const join_with_value_t<First, Second> &> &&
+    join_with_indirectly_readable<join_with_reference_t<First, Second>,
+                                  join_with_rvalue_reference_t<First, Second>,
+                                  iterator_t<First>> &&
+    join_with_indirectly_readable<join_with_reference_t<First, Second>,
+                                  join_with_rvalue_reference_t<First, Second>,
+                                  iterator_t<Second>>;
+
+template <class R>
+concept join_with_bidirectional_common =
+    bidirectional_range<R> && common_range<R>;
+
+template <class T>
+[[nodiscard]]
+constexpr remove_reference_t<T> &join_with_as_lvalue(T &&value) noexcept {
+  return value;
+}
+
+/*
+ * The outer iterator is stored in the iterator only
+ * when the outer range is forward.
+ *
+ * Input-only outer ranges store it in the parent view.
+ */
+template <class Iterator, bool = forward_iterator<Iterator>>
+struct join_with_outer_storage {};
+
+template <class Iterator> struct join_with_outer_storage<Iterator, true> {
+  FTL_NO_UNIQUE_ADDRESS
+  Iterator value = Iterator();
+
+  constexpr join_with_outer_storage() = default;
+
+  constexpr explicit join_with_outer_storage(Iterator iterator)
+      : value(FTL_RANGES_NAMESPACE::move(iterator)) {}
+};
+
+/*
+ * Freestanding two-alternative iterator storage.
+ *
+ * This substitutes for variant<PatternIter, InnerIter>
+ * without making <ranges> depend on <variant>.
+ */
+template <class PatternIterator, class InnerIterator>
+class join_with_iterator_state {
+private:
+  enum class active_state : unsigned char { none, pattern, inner };
+
+  optional_storage<PatternIterator> pattern_;
+
+  optional_storage<InnerIterator> inner_;
+
+  active_state active_ = active_state::none;
+
+  constexpr void destroy_pattern() noexcept {
+    if (pattern_.engaged_) {
+      FTL_RANGES_NAMESPACE::destroy_at(
+          FTL_RANGES_NAMESPACE::addressof(pattern_.value_));
+
+      pattern_.engaged_ = false;
+    }
+  }
+
+  constexpr void destroy_inner() noexcept {
+    if (inner_.engaged_) {
+      FTL_RANGES_NAMESPACE::destroy_at(
+          FTL_RANGES_NAMESPACE::addressof(inner_.value_));
+
+      inner_.engaged_ = false;
+    }
+  }
+
+public:
+  constexpr join_with_iterator_state() noexcept = default;
+
+  constexpr join_with_iterator_state(const join_with_iterator_state &other)
+    requires(copy_constructible<PatternIterator> &&
+             copy_constructible<InnerIterator>)
+  {
+    if (other.holds_pattern()) {
+      emplace_pattern(other.pattern());
+    } else if (other.holds_inner()) {
+      emplace_inner(other.inner());
+    }
+  }
+
+  constexpr join_with_iterator_state(join_with_iterator_state &&other) noexcept(
+      is_nothrow_move_constructible_v<PatternIterator> &&
+      is_nothrow_move_constructible_v<InnerIterator>)
+    requires(move_constructible<PatternIterator> &&
+             move_constructible<InnerIterator>)
+  {
+    if (other.holds_pattern()) {
+      emplace_pattern(FTL_RANGES_NAMESPACE::move(other.pattern()));
+    } else if (other.holds_inner()) {
+      emplace_inner(FTL_RANGES_NAMESPACE::move(other.inner()));
+    }
+  }
+
+  constexpr join_with_iterator_state &
+  operator=(const join_with_iterator_state &other)
+    requires(copy_constructible<PatternIterator> &&
+             copy_constructible<InnerIterator>)
+  {
+    if (this != FTL_RANGES_NAMESPACE::addressof(other)) {
+      reset();
+
+      if (other.holds_pattern()) {
+        emplace_pattern(other.pattern());
+      } else if (other.holds_inner()) {
+        emplace_inner(other.inner());
+      }
+    }
+
+    return *this;
+  }
+
+  constexpr join_with_iterator_state &
+  operator=(join_with_iterator_state &&other) noexcept(
+      is_nothrow_move_constructible_v<PatternIterator> &&
+      is_nothrow_move_constructible_v<InnerIterator>)
+    requires(move_constructible<PatternIterator> &&
+             move_constructible<InnerIterator>)
+  {
+    if (this != FTL_RANGES_NAMESPACE::addressof(other)) {
+      reset();
+
+      if (other.holds_pattern()) {
+        emplace_pattern(FTL_RANGES_NAMESPACE::move(other.pattern()));
+      } else if (other.holds_inner()) {
+        emplace_inner(FTL_RANGES_NAMESPACE::move(other.inner()));
+      }
+    }
+
+    return *this;
+  }
+
+  constexpr ~join_with_iterator_state() { reset(); }
+
+  [[nodiscard]]
+  constexpr bool empty() const noexcept {
+    return active_ == active_state::none;
+  }
+
+  [[nodiscard]]
+  constexpr bool holds_pattern() const noexcept {
+    return active_ == active_state::pattern;
+  }
+
+  [[nodiscard]]
+  constexpr bool holds_inner() const noexcept {
+    return active_ == active_state::inner;
+  }
+
+  constexpr void reset() noexcept {
+    if (holds_pattern()) {
+      destroy_pattern();
+    } else if (holds_inner()) {
+      destroy_inner();
+    }
+
+    active_ = active_state::none;
+  }
+
+  template <class Value>
+    requires constructible_from<PatternIterator, Value>
+  constexpr void emplace_pattern(Value &&value) {
+    reset();
+
+    FTL_RANGES_NAMESPACE::construct_at(
+        FTL_RANGES_NAMESPACE::addressof(pattern_.value_),
+        static_cast<Value &&>(value));
+
+    pattern_.engaged_ = true;
+
+    active_ = active_state::pattern;
+  }
+
+  template <class Value>
+    requires constructible_from<InnerIterator, Value>
+  constexpr void emplace_inner(Value &&value) {
+    reset();
+
+    FTL_RANGES_NAMESPACE::construct_at(
+        FTL_RANGES_NAMESPACE::addressof(inner_.value_),
+        static_cast<Value &&>(value));
+
+    inner_.engaged_ = true;
+
+    active_ = active_state::inner;
+  }
+
+  [[nodiscard]]
+  constexpr PatternIterator &pattern() noexcept {
+    return pattern_.value_;
+  }
+
+  [[nodiscard]]
+  constexpr const PatternIterator &pattern() const noexcept {
+    return pattern_.value_;
+  }
+
+  [[nodiscard]]
+  constexpr InnerIterator &inner() noexcept {
+    return inner_.value_;
+  }
+
+  [[nodiscard]]
+  constexpr const InnerIterator &inner() const noexcept {
+    return inner_.value_;
+  }
+
+  [[nodiscard]]
+  constexpr bool equal(const join_with_iterator_state &other) const
+    requires(equality_comparable<PatternIterator> &&
+             equality_comparable<InnerIterator>)
+  {
+    if (active_ != other.active_) {
+      return false;
+    }
+
+    if (holds_pattern()) {
+      return pattern() == other.pattern();
+    }
+
+    if (holds_inner()) {
+      return inner() == other.inner();
+    }
+
+    return true;
+  }
+};
+
+template <class Base, class PatternBase,
+          class InnerBase = range_reference_t<Base>,
+          bool = is_reference_v<InnerBase> && forward_range<Base> &&
+                 forward_range<InnerBase>>
+struct join_with_iterator_category {};
+
+template <class Base, class PatternBase, class InnerBase>
+struct join_with_iterator_category<Base, PatternBase, InnerBase, true> {
+private:
+  using outer_category =
+      typename iterator_traits<iterator_t<Base>>::iterator_category;
+
+  using inner_category =
+      typename iterator_traits<iterator_t<InnerBase>>::iterator_category;
+
+  using pattern_category =
+      typename iterator_traits<iterator_t<PatternBase>>::iterator_category;
+
+  using reference_type =
+      common_reference_t<iter_reference_t<iterator_t<InnerBase>>,
+                         iter_reference_t<iterator_t<PatternBase>>>;
+
+public:
+  using iterator_category = conditional_t<
+      !is_reference_v<reference_type>, input_iterator_tag,
+      conditional_t<
+          derived_from<outer_category, bidirectional_iterator_tag> &&
+              derived_from<inner_category, bidirectional_iterator_tag> &&
+              derived_from<pattern_category, bidirectional_iterator_tag> &&
+              common_range<InnerBase> && common_range<PatternBase>,
+          bidirectional_iterator_tag,
+          conditional_t<
+              derived_from<outer_category, forward_iterator_tag> &&
+                  derived_from<inner_category, forward_iterator_tag> &&
+                  derived_from<pattern_category, forward_iterator_tag>,
+              forward_iterator_tag, input_iterator_tag>>>;
+};
+
+} // namespace detail
+
+template <input_range V, forward_range Pattern>
+  requires(view<V> && input_range<range_reference_t<V>> && view<Pattern> &&
+           detail::join_with_concatable<range_reference_t<V>, Pattern>)
+class join_with_view : public view_interface<join_with_view<V, Pattern>> {
+private:
+  using InnerRange = range_reference_t<V>;
+
+  FTL_NO_UNIQUE_ADDRESS
+  V base_ = V();
+
+  FTL_NO_UNIQUE_ADDRESS
+  detail::maybe_present<detail::non_propagating_cache<iterator_t<V>>,
+                        !forward_range<V>>
+      outer_cache_;
+
+  FTL_NO_UNIQUE_ADDRESS
+  detail::maybe_present<
+      detail::non_propagating_cache<remove_cvref_t<InnerRange>>,
+      !is_reference_v<InnerRange>>
+      inner_cache_;
+
+  FTL_NO_UNIQUE_ADDRESS
+  Pattern pattern_ = Pattern();
+
+  template <bool Const>
+  using Parent = detail::maybe_const_t<Const, join_with_view>;
+
+  template <bool Const> using Base = detail::maybe_const_t<Const, V>;
+
+  template <bool Const>
+  using PatternBase = detail::maybe_const_t<Const, Pattern>;
+
+  template <bool Const> using InnerBase = range_reference_t<Base<Const>>;
+
+  template <bool Const> using OuterIterator = iterator_t<Base<Const>>;
+
+  template <bool Const> using InnerIterator = iterator_t<InnerBase<Const>>;
+
+  template <bool Const> using PatternIterator = iterator_t<PatternBase<Const>>;
+
+  template <bool Const> class iterator;
+
+  template <bool Const> class sentinel;
+
+  template <bool Const>
+  class iterator
+      : public detail::join_with_iterator_category<Base<Const>,
+                                                   PatternBase<Const>> {
+  private:
+    using ParentType = Parent<Const>;
+
+    using BaseType = Base<Const>;
+
+    using InnerBaseType = InnerBase<Const>;
+
+    using PatternBaseType = PatternBase<Const>;
+
+    using OuterIter = OuterIterator<Const>;
+
+    using InnerIter = InnerIterator<Const>;
+
+    using PatternIter = PatternIterator<Const>;
+
+    static constexpr bool ref_is_glvalue = is_reference_v<InnerBaseType>;
+
+    ParentType *parent_ = nullptr;
+
+    FTL_NO_UNIQUE_ADDRESS
+    detail::join_with_outer_storage<OuterIter> outer_;
+
+    FTL_NO_UNIQUE_ADDRESS
+    detail::join_with_iterator_state<PatternIter, InnerIter> current_;
+
+    template <bool> friend class iterator;
+
+    template <bool> friend class sentinel;
+
+    friend class join_with_view;
+
+    [[nodiscard]]
+    constexpr OuterIter &outer() {
+      if constexpr (forward_range<BaseType>) {
+        return outer_.value;
+      } else {
+        return *parent_->outer_cache_.value;
+      }
+    }
+
+    [[nodiscard]]
+    constexpr const OuterIter &outer() const {
+      if constexpr (forward_range<BaseType>) {
+        return outer_.value;
+      } else {
+        return *parent_->outer_cache_.value;
+      }
+    }
+
+    [[nodiscard]]
+    constexpr auto &update_inner() {
+      if constexpr (ref_is_glvalue) {
+        return detail::join_with_as_lvalue(*outer());
+      } else {
+        return parent_->inner_cache_.value.emplace_deref(outer());
+      }
+    }
+
+    [[nodiscard]]
+    constexpr auto &get_inner() {
+      if constexpr (ref_is_glvalue) {
+        return detail::join_with_as_lvalue(*outer());
+      } else {
+        return *parent_->inner_cache_.value;
+      }
+    }
+
+    constexpr void satisfy() {
+      while (true) {
+        if (current_.holds_pattern()) {
+          if (current_.pattern() != ranges::end(parent_->pattern_)) {
+            break;
+          }
+
+          auto &inner = update_inner();
+
+          current_.emplace_inner(ranges::begin(inner));
+        } else if (current_.holds_inner()) {
+          if (current_.inner() != ranges::end(get_inner())) {
+            break;
+          }
+
+          ++outer();
+
+          if (outer() == ranges::end(parent_->base_)) {
+            current_.reset();
+            break;
+          }
+
+          current_.emplace_pattern(ranges::begin(parent_->pattern_));
+        } else {
+          break;
+        }
+      }
+    }
+
+    constexpr iterator(ParentType &parent, OuterIter outer)
+      requires forward_range<BaseType>
+        : parent_(FTL_RANGES_NAMESPACE::addressof(parent)),
+          outer_(FTL_RANGES_NAMESPACE::move(outer)) {
+      if (this->outer() != ranges::end(parent_->base_)) {
+        auto &inner = update_inner();
+
+        current_.emplace_inner(ranges::begin(inner));
+
+        satisfy();
+      }
+    }
+
+    constexpr explicit iterator(ParentType &parent)
+      requires(!forward_range<BaseType>)
+        : parent_(FTL_RANGES_NAMESPACE::addressof(parent)) {
+      if (outer() != ranges::end(parent_->base_)) {
+        auto &inner = update_inner();
+
+        current_.emplace_inner(ranges::begin(inner));
+
+        satisfy();
+      }
+    }
+
+  public:
+    using iterator_concept = conditional_t<
+        ref_is_glvalue && bidirectional_range<BaseType> &&
+            detail::join_with_bidirectional_common<InnerBaseType> &&
+            detail::join_with_bidirectional_common<PatternBaseType>,
+        bidirectional_iterator_tag,
+        conditional_t<ref_is_glvalue && forward_range<BaseType> &&
+                          forward_range<InnerBaseType>,
+                      forward_iterator_tag, input_iterator_tag>>;
+
+    using value_type =
+        common_type_t<iter_value_t<InnerIter>, iter_value_t<PatternIter>>;
+
+    using difference_type = common_type_t<iter_difference_t<OuterIter>,
+                                          iter_difference_t<InnerIter>,
+                                          iter_difference_t<PatternIter>>;
+
+    iterator() = default;
+
+    constexpr iterator(iterator<!Const> other)
+      requires(Const && convertible_to<iterator_t<V>, OuterIter> &&
+               convertible_to<iterator_t<InnerRange>, InnerIter> &&
+               convertible_to<iterator_t<Pattern>, PatternIter>)
+        : parent_(other.parent_),
+          outer_(OuterIter(FTL_RANGES_NAMESPACE::move(other.outer_.value))) {
+      if (other.current_.holds_pattern()) {
+        current_.emplace_pattern(
+            PatternIter(FTL_RANGES_NAMESPACE::move(other.current_.pattern())));
+      } else if (other.current_.holds_inner()) {
+        current_.emplace_inner(
+            InnerIter(FTL_RANGES_NAMESPACE::move(other.current_.inner())));
+      }
+    }
+
+    [[nodiscard]]
+    constexpr const OuterIter &outer_base() const {
+      return outer();
+    }
+
+    [[nodiscard]]
+    constexpr decltype(auto) operator*() const {
+      using reference = common_reference_t<iter_reference_t<InnerIter>,
+                                           iter_reference_t<PatternIter>>;
+
+      if (current_.holds_pattern()) {
+        return static_cast<reference>(*current_.pattern());
+      }
+
+      return static_cast<reference>(*current_.inner());
+    }
+
+    constexpr iterator &operator++() {
+      if (current_.holds_pattern()) {
+        ++current_.pattern();
+      } else {
+        ++current_.inner();
+      }
+
+      satisfy();
+
+      return *this;
+    }
+
+    constexpr void operator++(int) { ++*this; }
+
+    constexpr iterator operator++(int)
+      requires(ref_is_glvalue && forward_iterator<OuterIter> &&
+               forward_iterator<InnerIter>)
+    {
+      auto previous = *this;
+
+      ++*this;
+
+      return previous;
+    }
+
+    constexpr iterator &operator--()
+      requires(ref_is_glvalue && bidirectional_range<BaseType> &&
+               detail::join_with_bidirectional_common<InnerBaseType> &&
+               detail::join_with_bidirectional_common<PatternBaseType>)
+    {
+      if (outer() == ranges::end(parent_->base_)) {
+        --outer();
+
+        auto &inner = detail::join_with_as_lvalue(*outer());
+
+        current_.emplace_inner(ranges::end(inner));
+      }
+
+      while (true) {
+        if (current_.holds_pattern()) {
+          if (current_.pattern() == ranges::begin(parent_->pattern_)) {
+            --outer();
+
+            auto &inner = detail::join_with_as_lvalue(*outer());
+
+            current_.emplace_inner(ranges::end(inner));
+          } else {
+            break;
+          }
+        } else {
+          auto &inner = detail::join_with_as_lvalue(*outer());
+
+          if (current_.inner() == ranges::begin(inner)) {
+            current_.emplace_pattern(ranges::end(parent_->pattern_));
+          } else {
+            break;
+          }
+        }
+      }
+
+      if (current_.holds_pattern()) {
+        --current_.pattern();
+      } else {
+        --current_.inner();
+      }
+
+      return *this;
+    }
+
+    constexpr iterator operator--(int)
+      requires requires(iterator value) { --value; }
+    {
+      auto previous = *this;
+
+      --*this;
+
+      return previous;
+    }
+
+    friend constexpr bool operator==(const iterator &left,
+                                     const iterator &right)
+      requires(ref_is_glvalue && forward_range<BaseType> &&
+               equality_comparable<InnerIter>)
+    {
+      return left.outer() == right.outer() &&
+             left.current_.equal(right.current_);
+    }
+
+    friend constexpr decltype(auto) iter_move(const iterator &value) {
+      using rvalue_reference =
+          common_reference_t<iter_rvalue_reference_t<InnerIter>,
+                             iter_rvalue_reference_t<PatternIter>>;
+
+      if (value.current_.holds_pattern()) {
+        return static_cast<rvalue_reference>(
+            ranges::iter_move(value.current_.pattern()));
+      }
+
+      return static_cast<rvalue_reference>(
+          ranges::iter_move(value.current_.inner()));
+    }
+
+    friend constexpr void iter_swap(const iterator &left, const iterator &right)
+      requires indirectly_swappable<InnerIter, PatternIter>
+    {
+      if (left.current_.holds_pattern()) {
+        if (right.current_.holds_pattern()) {
+          ranges::iter_swap(left.current_.pattern(), right.current_.pattern());
+        } else {
+          ranges::iter_swap(left.current_.pattern(), right.current_.inner());
+        }
+      } else {
+        if (right.current_.holds_pattern()) {
+          ranges::iter_swap(left.current_.inner(), right.current_.pattern());
+        } else {
+          ranges::iter_swap(left.current_.inner(), right.current_.inner());
+        }
+      }
+    }
+  };
+
+  template <bool Const> class sentinel {
+  private:
+    using ParentType = Parent<Const>;
+
+    using BaseType = Base<Const>;
+
+    FTL_NO_UNIQUE_ADDRESS
+    sentinel_t<BaseType> end_ = sentinel_t<BaseType>();
+
+    template <bool> friend class sentinel;
+
+    constexpr explicit sentinel(ParentType &parent)
+        : end_(ranges::end(parent.base_)) {}
+
+    friend class join_with_view;
+
+  public:
+    sentinel() = default;
+
+    constexpr sentinel(sentinel<!Const> other)
+      requires(Const && convertible_to<sentinel_t<V>, sentinel_t<BaseType>>)
+        : end_(FTL_RANGES_NAMESPACE::move(other.end_)) {}
+
+    template <bool OtherConst>
+      requires sentinel_for<sentinel_t<BaseType>, iterator_t<Base<OtherConst>>>
+    friend constexpr bool operator==(const iterator<OtherConst> &current,
+                                     const sentinel &bound) {
+      return current.outer_base() == bound.end_;
+    }
+  };
+
+public:
+  join_with_view()
+    requires(default_initializable<V> && default_initializable<Pattern>)
+  = default;
+
+  constexpr explicit join_with_view(V base, Pattern pattern)
+      : base_(FTL_RANGES_NAMESPACE::move(base)),
+        pattern_(FTL_RANGES_NAMESPACE::move(pattern)) {}
+
+  template <input_range R>
+    requires(constructible_from<V, views::all_t<R>> &&
+             constructible_from<Pattern,
+                                single_view<range_value_t<InnerRange>>>)
+  constexpr explicit join_with_view(R &&range,
+                                    range_value_t<InnerRange> element)
+      : base_(views::all(static_cast<R &&>(range))),
+        pattern_(single_view<range_value_t<InnerRange>>(
+            FTL_RANGES_NAMESPACE::move(element))) {}
+
+  [[nodiscard]]
+  constexpr V base() const &
+    requires copy_constructible<V>
+  {
+    return base_;
+  }
+
+  [[nodiscard]]
+  constexpr V base() && {
+    return FTL_RANGES_NAMESPACE::move(base_);
+  }
+
+  [[nodiscard]]
+  constexpr auto begin() {
+    if constexpr (forward_range<V>) {
+      constexpr bool use_const = detail::simple_view<V> &&
+                                 is_reference_v<InnerRange> &&
+                                 detail::simple_view<Pattern>;
+
+      return iterator<use_const>(*this, ranges::begin(base_));
+    } else {
+      outer_cache_.value.emplace(ranges::begin(base_));
+
+      return iterator<false>(*this);
+    }
+  }
+
+  [[nodiscard]]
+  constexpr auto begin() const
+    requires(
+        forward_range<const V> && forward_range<const Pattern> &&
+        is_reference_v<range_reference_t<const V>> &&
+        input_range<range_reference_t<const V>> &&
+        detail::join_with_concatable<range_reference_t<const V>, const Pattern>)
+  {
+    return iterator<true>(*this, ranges::begin(base_));
+  }
+
+  [[nodiscard]]
+  constexpr auto end() {
+    constexpr bool use_const =
+        detail::simple_view<V> && detail::simple_view<Pattern>;
+
+    if constexpr (forward_range<V> && is_reference_v<InnerRange> &&
+                  forward_range<InnerRange> && common_range<V> &&
+                  common_range<InnerRange>) {
+      return iterator<use_const>(*this, ranges::end(base_));
+    } else {
+      return sentinel<use_const>(*this);
+    }
+  }
+
+  [[nodiscard]]
+  constexpr auto end() const
+    requires(
+        forward_range<const V> && forward_range<const Pattern> &&
+        is_reference_v<range_reference_t<const V>> &&
+        input_range<range_reference_t<const V>> &&
+        detail::join_with_concatable<range_reference_t<const V>, const Pattern>)
+  {
+    using ConstInnerRange = range_reference_t<const V>;
+
+    if constexpr (forward_range<ConstInnerRange> && common_range<const V> &&
+                  common_range<ConstInnerRange>) {
+      return iterator<true>(*this, ranges::end(base_));
+    } else {
+      return sentinel<true>(*this);
+    }
+  }
+};
+
+template <class R, class P>
+join_with_view(R &&, P &&) -> join_with_view<views::all_t<R>, views::all_t<P>>;
+
+template <input_range R>
+join_with_view(R &&, range_value_t<range_reference_t<R>>)
+    -> join_with_view<views::all_t<R>,
+                      single_view<range_value_t<range_reference_t<R>>>>;
+
+namespace views {
+namespace detail {
+
+struct join_with_fn {
+  template <viewable_range R, viewable_range P>
+    requires requires(R &&range, P &&pattern) {
+      join_with_view<all_t<R>, all_t<P>>(all(static_cast<R &&>(range)),
+                                         all(static_cast<P &&>(pattern)));
+    }
+  constexpr auto operator()(R &&range, P &&pattern) const {
+    return join_with_view<all_t<R>, all_t<P>>(all(static_cast<R &&>(range)),
+                                              all(static_cast<P &&>(pattern)));
+  }
+
+  template <viewable_range R, class T>
+    requires(!viewable_range<T> && input_range<range_reference_t<all_t<R>>> &&
+             constructible_from<range_value_t<range_reference_t<all_t<R>>>, T>)
+  constexpr auto operator()(R &&range, T &&element) const {
+    using value_type = range_value_t<range_reference_t<all_t<R>>>;
+
+    using pattern_type = single_view<value_type>;
+
+    return join_with_view<all_t<R>, pattern_type>(
+        all(static_cast<R &&>(range)),
+        pattern_type(value_type(static_cast<T &&>(element))));
+  }
+
+  template <class P>
+    requires constructible_from<decay_t<P>, P>
+  constexpr auto operator()(P &&pattern) const {
+    return FTL_RANGES_NAMESPACE::ranges::detail::partial_adaptor<join_with_fn>(
+        static_cast<P &&>(pattern));
+  }
+};
+
+} // namespace detail
+
+inline constexpr detail::join_with_fn join_with{};
+
 } // namespace views
 
 // split_view
@@ -6471,19 +7211,22 @@ template <class F> struct tuple_invoke {
   }
 };
 
+template <class T> using adjacent_transform_with_reference = T &;
+
+template <class T>
+concept adjacent_transform_can_reference =
+    requires { typename adjacent_transform_with_reference<T>; };
+
 template <class F, class V, size_t... Index>
 consteval bool adjacent_transformable_impl(index_sequence<Index...>) {
-  using function_type = decay_t<F>;
-
   if constexpr (!regular_invocable<
-                    function_type &,
-                    conditional_t<true, range_reference_t<V>,
-                                  integral_constant<size_t, Index>>...>) {
+                    F &, conditional_t<true, range_reference_t<V>,
+                                       integral_constant<size_t, Index>>...>) {
     return false;
   } else {
-    return !is_void_v<invoke_result_t<
-        function_type &, conditional_t<true, range_reference_t<V>,
-                                       integral_constant<size_t, Index>>...>>;
+    return adjacent_transform_can_reference<invoke_result_t<
+        F &, conditional_t<true, range_reference_t<V>,
+                           integral_constant<size_t, Index>>...>>;
   }
 }
 
@@ -7255,10 +7998,374 @@ template <class V, size_t N>
 inline constexpr bool enable_borrowed_range<adjacent_view<V, N>> =
     enable_borrowed_range<V>;
 
-template <class F, forward_range V, size_t N>
-  requires view<V> && (N > 0) && is_object_v<F>
-using adjacent_transform_view =
-    transform_view<adjacent_view<V, N>, detail::tuple_invoke<F>>;
+namespace detail {
+
+template <class F, class V, class Sequence> struct adjacent_transform_result;
+
+template <class F, class V, size_t... Index>
+struct adjacent_transform_result<F, V, index_sequence<Index...>> {
+  using type =
+      invoke_result_t<F &, conditional_t<true, range_reference_t<V>,
+                                         integral_constant<size_t, Index>>...>;
+};
+
+template <class F, class V, size_t N>
+using adjacent_transform_result_t =
+    typename adjacent_transform_result<F, V, make_index_sequence<N>>::type;
+
+template <bool Const, class F, class V, size_t N>
+struct adjacent_transform_iterator_category {
+private:
+  using Base = maybe_const_t<Const, V>;
+
+  using function_type = maybe_const_t<Const, F>;
+
+  using result_type = adjacent_transform_result_t<function_type, Base, N>;
+
+  using underlying_category =
+      typename iterator_traits<iterator_t<Base>>::iterator_category;
+
+public:
+  using iterator_category = conditional_t<
+      !is_reference_v<result_type>, input_iterator_tag,
+      conditional_t<
+          derived_from<underlying_category, random_access_iterator_tag>,
+          random_access_iterator_tag,
+          conditional_t<
+              derived_from<underlying_category, bidirectional_iterator_tag>,
+              bidirectional_iterator_tag,
+              conditional_t<
+                  derived_from<underlying_category, forward_iterator_tag>,
+                  forward_iterator_tag, input_iterator_tag>>>>;
+};
+
+} // namespace detail
+
+template <forward_range V, move_constructible F, size_t N>
+  requires(view<V> && N > 0 && is_object_v<F> &&
+           detail::adjacent_transformable<F, V, N>)
+class adjacent_transform_view
+    : public view_interface<adjacent_transform_view<V, F, N>> {
+private:
+  FTL_NO_UNIQUE_ADDRESS
+  detail::movable_box<F> fun_;
+
+  adjacent_view<V, N> inner_;
+
+  using inner_view = adjacent_view<V, N>;
+
+  template <bool Const>
+  using parent_type = detail::maybe_const_t<Const, adjacent_transform_view>;
+
+  template <bool Const> using base_type = detail::maybe_const_t<Const, V>;
+
+  template <bool Const>
+  using inner_base_type = detail::maybe_const_t<Const, inner_view>;
+
+  template <bool Const>
+  using inner_iterator = iterator_t<inner_base_type<Const>>;
+
+  template <bool Const>
+  using inner_sentinel = sentinel_t<inner_base_type<Const>>;
+
+  template <bool Const> class iterator;
+
+  template <bool Const> class sentinel;
+
+  template <bool Const>
+  class iterator
+      : public detail::adjacent_transform_iterator_category<Const, F, V, N> {
+  private:
+    using Parent = parent_type<Const>;
+
+    using Base = base_type<Const>;
+
+    Parent *parent_ = nullptr;
+
+    inner_iterator<Const> inner_;
+
+    constexpr iterator(Parent &parent, inner_iterator<Const> inner)
+        : parent_(FTL_RANGES_NAMESPACE::addressof(parent)),
+          inner_(FTL_RANGES_NAMESPACE::move(inner)) {}
+
+    friend class adjacent_transform_view;
+
+    template <bool> friend class iterator;
+
+    template <bool> friend class sentinel;
+
+  public:
+    using iterator_concept = typename inner_iterator<Const>::iterator_concept;
+
+    using value_type = remove_cvref_t<detail::adjacent_transform_result_t<
+        detail::maybe_const_t<Const, F>, Base, N>>;
+
+    using difference_type = range_difference_t<Base>;
+
+    iterator() = default;
+
+    constexpr iterator(iterator<!Const> other)
+      requires(Const &&
+               convertible_to<inner_iterator<false>, inner_iterator<Const>>)
+        : parent_(other.parent_),
+          inner_(FTL_RANGES_NAMESPACE::move(other.inner_)) {}
+
+    [[nodiscard]]
+    constexpr decltype(auto) operator*() const
+        noexcept(noexcept(detail::invoke_tuple(*parent_->fun_, *inner_,
+                                               make_index_sequence<N>{}))) {
+      return detail::invoke_tuple(*parent_->fun_, *inner_,
+                                  make_index_sequence<N>{});
+    }
+
+    constexpr iterator &operator++() {
+      ++inner_;
+      return *this;
+    }
+
+    constexpr iterator operator++(int) {
+      auto previous = *this;
+      ++*this;
+      return previous;
+    }
+
+    constexpr iterator &operator--()
+      requires bidirectional_range<Base>
+    {
+      --inner_;
+      return *this;
+    }
+
+    constexpr iterator operator--(int)
+      requires bidirectional_range<Base>
+    {
+      auto previous = *this;
+      --*this;
+      return previous;
+    }
+
+    constexpr iterator &operator+=(difference_type offset)
+      requires random_access_range<Base>
+    {
+      inner_ += offset;
+      return *this;
+    }
+
+    constexpr iterator &operator-=(difference_type offset)
+      requires random_access_range<Base>
+    {
+      inner_ -= offset;
+      return *this;
+    }
+
+    [[nodiscard]]
+    constexpr decltype(auto) operator[](difference_type offset) const
+      requires random_access_range<Base>
+    {
+      return detail::invoke_tuple(*parent_->fun_, inner_[offset],
+                                  make_index_sequence<N>{});
+    }
+
+    friend constexpr bool operator==(const iterator &left,
+                                     const iterator &right) {
+      return left.inner_ == right.inner_;
+    }
+
+    friend constexpr bool operator<(const iterator &left, const iterator &right)
+      requires random_access_range<Base>
+    {
+      return left.inner_ < right.inner_;
+    }
+
+    friend constexpr bool operator>(const iterator &left, const iterator &right)
+      requires random_access_range<Base>
+    {
+      return right < left;
+    }
+
+    friend constexpr bool operator<=(const iterator &left,
+                                     const iterator &right)
+      requires random_access_range<Base>
+    {
+      return !(right < left);
+    }
+
+    friend constexpr bool operator>=(const iterator &left,
+                                     const iterator &right)
+      requires random_access_range<Base>
+    {
+      return !(left < right);
+    }
+
+    friend constexpr auto operator<=>(const iterator &left,
+                                      const iterator &right)
+      requires(random_access_range<Base> &&
+               three_way_comparable<inner_iterator<Const>>)
+    {
+#ifdef FTL_REPLACE_STL
+      return left.inner_ <=> right.inner_;
+#else
+      return compare_three_way{}(left.inner_, right.inner_);
+#endif
+    }
+
+    friend constexpr iterator operator+(const iterator &value,
+                                        difference_type offset)
+      requires random_access_range<Base>
+    {
+      return iterator(*value.parent_, value.inner_ + offset);
+    }
+
+    friend constexpr iterator operator+(difference_type offset,
+                                        const iterator &value)
+      requires random_access_range<Base>
+    {
+      return value + offset;
+    }
+
+    friend constexpr iterator operator-(const iterator &value,
+                                        difference_type offset)
+      requires random_access_range<Base>
+    {
+      return iterator(*value.parent_, value.inner_ - offset);
+    }
+
+    friend constexpr difference_type operator-(const iterator &left,
+                                               const iterator &right)
+      requires sized_sentinel_for<inner_iterator<Const>, inner_iterator<Const>>
+    {
+      return left.inner_ - right.inner_;
+    }
+  };
+
+  template <bool Const> class sentinel {
+  private:
+    inner_sentinel<Const> inner_;
+
+    constexpr explicit sentinel(inner_sentinel<Const> inner)
+        : inner_(FTL_RANGES_NAMESPACE::move(inner)) {}
+
+    template <bool OtherConst>
+    constexpr bool equal(const iterator<OtherConst> &value) const
+      requires sentinel_for<inner_sentinel<Const>, inner_iterator<OtherConst>>
+    {
+      return value.inner_ == inner_;
+    }
+
+    template <bool OtherConst>
+    constexpr auto distance_from(const iterator<OtherConst> &value) const
+        -> range_difference_t<inner_base_type<OtherConst>>
+      requires sized_sentinel_for<inner_sentinel<Const>,
+                                  inner_iterator<OtherConst>>
+    {
+      return value.inner_ - inner_;
+    }
+
+    friend class adjacent_transform_view;
+
+    template <bool> friend class sentinel;
+
+  public:
+    sentinel() = default;
+
+    constexpr sentinel(sentinel<!Const> other)
+      requires(Const &&
+               convertible_to<inner_sentinel<false>, inner_sentinel<Const>>)
+        : inner_(FTL_RANGES_NAMESPACE::move(other.inner_)) {}
+
+    template <bool OtherConst>
+      requires sentinel_for<inner_sentinel<Const>, inner_iterator<OtherConst>>
+    friend constexpr bool operator==(const iterator<OtherConst> &value,
+                                     const sentinel &bound) {
+      return bound.equal(value);
+    }
+
+    template <bool OtherConst>
+      requires sized_sentinel_for<inner_sentinel<Const>,
+                                  inner_iterator<OtherConst>>
+    friend constexpr auto operator-(const iterator<OtherConst> &value,
+                                    const sentinel &bound)
+        -> range_difference_t<inner_base_type<OtherConst>> {
+      return bound.distance_from(value);
+    }
+
+    template <bool OtherConst>
+      requires sized_sentinel_for<inner_sentinel<Const>,
+                                  inner_iterator<OtherConst>>
+    friend constexpr auto operator-(const sentinel &bound,
+                                    const iterator<OtherConst> &value)
+        -> range_difference_t<inner_base_type<OtherConst>> {
+      return -bound.distance_from(value);
+    }
+  };
+
+public:
+  adjacent_transform_view() = default;
+
+  constexpr explicit adjacent_transform_view(V base, F function)
+      : fun_(FTL_RANGES_NAMESPACE::move(function)),
+        inner_(FTL_RANGES_NAMESPACE::move(base)) {}
+
+  [[nodiscard]]
+  constexpr V base() const &
+    requires copy_constructible<V>
+  {
+    return inner_.base();
+  }
+
+  [[nodiscard]]
+  constexpr V base() && {
+    return FTL_RANGES_NAMESPACE::move(inner_).base();
+  }
+
+  [[nodiscard]]
+  constexpr auto begin() {
+    return iterator<false>(*this, inner_.begin());
+  }
+
+  [[nodiscard]]
+  constexpr auto begin() const
+    requires(range<const inner_view> &&
+             detail::adjacent_transformable<const F, const V, N>)
+  {
+    return iterator<true>(*this, inner_.begin());
+  }
+
+  [[nodiscard]]
+  constexpr auto end() {
+    if constexpr (common_range<inner_view>) {
+      return iterator<false>(*this, inner_.end());
+    } else {
+      return sentinel<false>(inner_.end());
+    }
+  }
+
+  [[nodiscard]]
+  constexpr auto end() const
+    requires(range<const inner_view> &&
+             detail::adjacent_transformable<const F, const V, N>)
+  {
+    if constexpr (common_range<const inner_view>) {
+      return iterator<true>(*this, inner_.end());
+    } else {
+      return sentinel<true>(inner_.end());
+    }
+  }
+
+  [[nodiscard]]
+  constexpr auto size()
+    requires sized_range<inner_view>
+  {
+    return inner_.size();
+  }
+
+  [[nodiscard]]
+  constexpr auto size() const
+    requires sized_range<const inner_view>
+  {
+    return inner_.size();
+  }
+};
 
 template <forward_range V>
   requires view<V>
@@ -8768,15 +9875,10 @@ struct zip_transform_fn {
 inline constexpr detail::zip_transform_fn zip_transform{};
 
 namespace detail {
-template <size_t N>
-struct adjacent_fn
-    : range_adaptor_closure<
-          adjacent_fn<N>
-      > {
+template <size_t N> struct adjacent_fn : range_adaptor_closure<adjacent_fn<N>> {
   template <viewable_range R>
     requires forward_range<R>
-  constexpr auto
-  operator()(R&& range) const {
+  constexpr auto operator()(R &&range) const {
     if constexpr (N == 0) {
       /*
        * The argument expression was evaluated before
@@ -8785,118 +9887,49 @@ struct adjacent_fn
        */
       static_cast<void>(range);
 
-      return empty_view<
-          tuple<>
-      >{};
+      return empty_view<tuple<>>{};
     } else {
-      return adjacent_view<
-          all_t<R>,
-          N
-      >(
-          all(
-              static_cast<R&&>(
-                  range
-              )
-          )
-      );
+      return adjacent_view<all_t<R>, N>(all(static_cast<R &&>(range)));
     }
   }
 };
 
 template <class F, class R, size_t N>
-consteval bool
-adjacent_transform_adaptor_constraints() {
+consteval bool adjacent_transform_adaptor_constraints() {
   if constexpr (N == 0) {
-    return requires(F&& function) {
-      views::zip_transform(
-          static_cast<F&&>(
-              function
-          )
-      );
+    return requires(F &&function) {
+      views::zip_transform(static_cast<F &&>(function));
     };
   } else {
-    using function_type =
-        decay_t<F>;
+    using function_type = decay_t<F>;
 
-    using base_type =
-        all_t<R>;
+    using base_type = all_t<R>;
 
-    return
-        forward_range<base_type> &&
-        move_constructible<
-            function_type
-        > &&
-        is_object_v<
-            function_type
-        > &&
-        constructible_from<
-            function_type,
-            F
-        > &&
-        adjacent_transformable<
-            function_type,
-            base_type,
-            N
-        >;
+    return forward_range<base_type> && move_constructible<function_type> &&
+           is_object_v<function_type> && constructible_from<function_type, F> &&
+           FTL_RANGES_NAMESPACE::ranges::detail::adjacent_transformable<
+               function_type, base_type, N>;
   }
 }
 
 template <size_t N> struct adjacent_transform_fn {
   template <class F, viewable_range R>
     requires(adjacent_transform_adaptor_constraints<F, R, N>())
-constexpr auto
-operator()(
-    R&& range,
-    F&& function
-) const {
-  if constexpr (N == 0) {
-    /*
-     * The original range expression has already been
-     * evaluated. zip_transform performs the required
-     * evaluation and constraint handling for the
-     * nullary function expression.
-     */
-    static_cast<void>(range);
+  constexpr auto operator()(R &&range, F &&function) const {
+    if constexpr (N == 0) {
+      static_cast<void>(range);
 
-    return views::zip_transform(
-        static_cast<F&&>(
-            function
-        )
-    );
-  } else {
-    using function_type =
-        decay_t<F>;
+      return views::zip_transform(static_cast<F &&>(function));
+    } else {
+      using function_type = decay_t<F>;
 
-    using base_type =
-        all_t<R>;
+      using base_type = all_t<R>;
 
-    return adjacent_transform_view<
-        function_type,
-        base_type,
-        N
-    >(
-        adjacent_view<
-            base_type,
-            N
-        >(
-            all(
-                static_cast<R&&>(
-                    range
-                )
-            )
-        ),
-        tuple_invoke<
-            function_type
-        >{
-            function_type(
-                static_cast<F&&>(
-                    function
-                )
-            )
-        }
-    );
+      return adjacent_transform_view<base_type, function_type, N>(
+          all(static_cast<R &&>(range)),
+          function_type(static_cast<F &&>(function)));
+    }
   }
-}
 
   template <class F>
     requires constructible_from<decay_t<F>, F>
@@ -8910,13 +9943,9 @@ template <size_t N> inline constexpr detail::adjacent_fn<N> adjacent{};
 template <size_t N>
 inline constexpr detail::adjacent_transform_fn<N> adjacent_transform{};
 
-inline constexpr auto
-    pairwise =
-        adjacent<2>;
+inline constexpr auto pairwise = adjacent<2>;
 
-inline constexpr auto
-    pairwise_transform =
-        adjacent_transform<2>;
+inline constexpr auto pairwise_transform = adjacent_transform<2>;
 
 namespace detail {
 struct slide_fn {
@@ -8995,18 +10024,239 @@ struct cartesian_product_fn {
 } // namespace detail
 inline constexpr detail::cartesian_product_fn cartesian_product{};
 } // namespace views
+
+template <class C, input_range R, class... Args>
+  requires(!view<C>)
+constexpr C to(R &&range, Args &&...args);
+
+template <template <class...> class C, input_range R, class... Args>
+constexpr auto to(R &&range, Args &&...args);
+
+namespace detail {
+
+template <class...> inline constexpr bool to_dependent_false = false;
+
+template <class Container>
+concept to_reservable_container =
+    sized_range<Container> &&
+    requires(Container &container, range_size_t<Container> count) {
+      container.reserve(count);
+
+      { container.capacity() } -> same_as<decltype(count)>;
+
+      { container.max_size() } -> same_as<decltype(count)>;
+    };
+
+template <class Container, class Reference>
+concept to_container_appendable = requires(Container &container,
+                                           Reference &&reference) {
+  requires(
+      requires {
+        container.emplace_back(static_cast<Reference &&>(reference));
+      } ||
+      requires { container.push_back(static_cast<Reference &&>(reference)); } ||
+      requires {
+        container.emplace_hint(container.end(),
+                               static_cast<Reference &&>(reference));
+      } ||
+      requires {
+        container.insert(container.end(), static_cast<Reference &&>(reference));
+      });
+};
+
+template <class Container, class Reference>
+constexpr void to_container_append(Container &container,
+                                   Reference &&reference) {
+  if constexpr (requires {
+                  container.emplace_back(static_cast<Reference &&>(reference));
+                }) {
+    container.emplace_back(static_cast<Reference &&>(reference));
+  } else if constexpr (requires {
+                         container.push_back(
+                             static_cast<Reference &&>(reference));
+                       }) {
+    container.push_back(static_cast<Reference &&>(reference));
+  } else if constexpr (requires {
+                         container.emplace_hint(
+                             container.end(),
+                             static_cast<Reference &&>(reference));
+                       }) {
+    container.emplace_hint(container.end(),
+                           static_cast<Reference &&>(reference));
+  } else {
+    container.insert(container.end(), static_cast<Reference &&>(reference));
+  }
+}
+
+template <class R, class = void>
+struct to_cpp17_input_common_range_impl : false_type {};
+
+template <class R>
+struct to_cpp17_input_common_range_impl<
+    R, void_t<typename iterator_traits<iterator_t<R>>::iterator_category>>
+    : bool_constant<common_range<R> &&
+                    derived_from<typename iterator_traits<
+                                     iterator_t<R>>::iterator_category,
+                                 input_iterator_tag>> {};
+
+template <class R>
+concept to_cpp17_input_common_range =
+    to_cpp17_input_common_range_impl<R>::value;
+
+template <class C, input_range R, class... Args>
+constexpr C to_nonrecursive(R &&range, Args &&...args) {
+  if constexpr (constructible_from<C, R, Args...>) {
+    return C(static_cast<R &&>(range), static_cast<Args &&>(args)...);
+  } else if constexpr (constructible_from<C, from_range_t, R, Args...>) {
+    return C(from_range, static_cast<R &&>(range),
+             static_cast<Args &&>(args)...);
+  } else if constexpr (to_cpp17_input_common_range<R> &&
+                       constructible_from<C, iterator_t<R>, sentinel_t<R>,
+                                          Args...>) {
+    return C(ranges::begin(range), ranges::end(range),
+             static_cast<Args &&>(args)...);
+  } else if constexpr (constructible_from<C, Args...> &&
+                       to_container_appendable<C, range_reference_t<R>>) {
+    C result = C(static_cast<Args &&>(args)...);
+
+    if constexpr (sized_range<R> && to_reservable_container<C>) {
+      result.reserve(static_cast<range_size_t<C>>(ranges::size(range)));
+    }
+
+    auto current = ranges::begin(range);
+
+    const auto bound = ranges::end(range);
+
+    for (; current != bound; ++current) {
+      to_container_append(result, *current);
+    }
+
+    return result;
+  } else {
+    static_assert(to_dependent_false<C, R, Args...>,
+                  "ranges::to cannot construct or insert into "
+                  "the requested target type");
+  }
+}
+
+/*
+ * Exposition-only iterator used solely for class
+ * template argument deduction.
+ */
+template <input_range R> struct to_input_iterator {
+  using iterator_category = input_iterator_tag;
+
+  using value_type = range_value_t<R>;
+
+  using difference_type = ptrdiff_t;
+
+  using pointer = add_pointer_t<range_reference_t<R>>;
+
+  using reference = range_reference_t<R>;
+
+  reference operator*() const;
+
+  pointer operator->() const;
+
+  to_input_iterator &operator++();
+
+  to_input_iterator operator++(int);
+
+  bool operator==(const to_input_iterator &) const;
+};
+
+template <template <class...> class C, class R, class... Args>
+auto to_deduce_container(int) -> decltype(C(declval<R>(), declval<Args>()...));
+
+template <template <class...> class C, class R, class... Args>
+auto to_deduce_container(long)
+    -> decltype(C(from_range, declval<R>(), declval<Args>()...));
+
+template <template <class...> class C, class R, class... Args>
+auto to_deduce_container(...)
+    -> decltype(C(declval<to_input_iterator<R>>(),
+                  declval<to_input_iterator<R>>(), declval<Args>()...));
+
+template <template <class...> class C, class R, class... Args>
+using to_deduced_container_t = decltype(to_deduce_container<C, R, Args...>(0));
+
+} // namespace detail
+
+template <class C, input_range R, class... Args>
+  requires(!view<C>)
+constexpr C to(R &&range, Args &&...args) {
+  static_assert(is_class_v<C> && same_as<C, remove_cv_t<C>>,
+                "ranges::to requires a cv-unqualified class type");
+
+  if constexpr (!input_range<C>) {
+    return detail::to_nonrecursive<C>(static_cast<R &&>(range),
+                                      static_cast<Args &&>(args)...);
+  } else if constexpr (convertible_to<range_reference_t<R>, range_value_t<C>>) {
+    return detail::to_nonrecursive<C>(static_cast<R &&>(range),
+                                      static_cast<Args &&>(args)...);
+  } else if constexpr (input_range<range_reference_t<R>>) {
+    auto converted = views::transform(
+        ref_view(range), []<class Element>(Element &&element) constexpr {
+          return FTL_RANGES_NAMESPACE::ranges::to<range_value_t<C>>(
+              static_cast<Element &&>(element));
+        });
+
+    return FTL_RANGES_NAMESPACE::ranges::to<C>(
+        FTL_RANGES_NAMESPACE::move(converted), static_cast<Args &&>(args)...);
+  } else {
+    static_assert(detail::to_dependent_false<C, R, Args...>,
+                  "ranges::to cannot recursively convert "
+                  "the source range");
+  }
+}
+
+template <template <class...> class C, input_range R, class... Args>
+constexpr auto to(R &&range, Args &&...args) {
+  using result_type = detail::to_deduced_container_t<C, R, Args...>;
+
+  return FTL_RANGES_NAMESPACE::ranges::to<result_type>(
+      static_cast<R &&>(range), static_cast<Args &&>(args)...);
+}
+
+namespace detail {
+
+template <class C> struct to_type_fn {
+  template <input_range R, class... Args>
+  constexpr C operator()(R &&range, Args &&...args) const {
+    return FTL_RANGES_NAMESPACE::ranges::to<C>(static_cast<R &&>(range),
+                                               static_cast<Args &&>(args)...);
+  }
+};
+
+template <template <class...> class C> struct to_template_fn {
+  template <input_range R, class... Args>
+  constexpr auto operator()(R &&range, Args &&...args) const {
+    return FTL_RANGES_NAMESPACE::ranges::to<C>(static_cast<R &&>(range),
+                                               static_cast<Args &&>(args)...);
+  }
+};
+
+} // namespace detail
+
+template <class C, class... Args>
+  requires(!view<C>)
+constexpr auto to(Args &&...args) {
+  static_assert(is_class_v<C> && same_as<C, remove_cv_t<C>>,
+                "ranges::to requires a cv-unqualified class type");
+
+  return detail::partial_adaptor<detail::to_type_fn<C>>(
+      static_cast<Args &&>(args)...);
+}
+
+template <template <class...> class C, class... Args>
+constexpr auto to(Args &&...args) {
+  return detail::partial_adaptor<detail::to_template_fn<C>>(
+      static_cast<Args &&>(args)...);
+}
+
 } // namespace ranges
 
 using ranges::get;
-
-struct from_range_t {
-  explicit from_range_t() =
-      default;
-};
-
-inline constexpr
-    from_range_t
-        from_range{};
 
 namespace views = ranges::views;
 
