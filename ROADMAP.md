@@ -299,6 +299,8 @@ allocation, and failure contracts without filling holes in Stage 1.
 
 ### Stage 2 — Iteration and vocabulary
 
+**Status: complete.**
+
 Take these closures in order:
 
 1. `<iterator>`

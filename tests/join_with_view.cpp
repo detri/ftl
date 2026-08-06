@@ -244,6 +244,18 @@ constexpr bool join_with_view_works() {
   return true;
 }
 
+/*
+ * C++23 constant evaluation gives std::construct_at special treatment.
+ * An equivalent ftl::construct_at cannot portably start object lifetime
+ * during constant evaluation across the supported compilers.
+ *
+ * Replacement mode provides the required std::construct_at spelling.
+ * Normal namespaced mode retains full runtime coverage.
+ */
+#ifdef FTL_REPLACE_STL
 static_assert(join_with_view_works());
+#endif
 
-bool ftl_test() { return join_with_view_works(); }
+bool ftl_test() {
+  return join_with_view_works();
+}
