@@ -1,17 +1,17 @@
 #ifdef FTL_REPLACE_STL
+#include <mdspan>
 #include <array>
 #include <cstddef>
 #include <limits>
-#include <mdspan>
 #include <ranges>
 #include <span>
 #include <type_traits>
 namespace tested = std;
 #else
+#include <ftl/mdspan>
 #include <ftl/array>
 #include <ftl/cstddef>
 #include <ftl/limits>
-#include <ftl/mdspan>
 #include <ftl/ranges>
 #include <ftl/span>
 #include <ftl/type_traits>
@@ -424,7 +424,7 @@ static_assert(stride_static_mapping::is_always_unique());
 static_assert(!stride_static_mapping::is_always_exhaustive());
 static_assert(stride_static_mapping::is_always_strided());
 
-static_assert(!noexcept(left_static_mapping{}.stride(0)));
+static_assert(noexcept(left_static_mapping{}.stride(0)));
 static_assert(noexcept(static_mapping{}.stride(0)));
 static_assert(noexcept(stride_static_mapping{}.stride(0)));
 

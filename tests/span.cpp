@@ -1,15 +1,15 @@
 #ifdef FTL_REPLACE_STL
+#include <span>
 #include <array>
 #include <cstddef>
 #include <limits>
-#include <span>
 #include <type_traits>
 namespace tested = std;
 #else
+#include <ftl/span>
 #include <ftl/array>
 #include <ftl/cstddef>
 #include <ftl/limits>
-#include <ftl/span>
 #include <ftl/type_traits>
 namespace tested = ftl;
 #endif

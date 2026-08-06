@@ -578,7 +578,7 @@ public:
         return true;
     }
 
-    [[nodiscard]] constexpr index_type stride(rank_type rank) const
+    [[nodiscard]] constexpr index_type stride(rank_type rank) const noexcept
         requires(extents_type::rank() > 0)
     {
         size_type result = 1;

@@ -186,13 +186,13 @@ struct end_fn {
 
 inline constexpr detail::end_fn end{};
 
-template <class T> using sentinel_t = decltype(ranges::end(declval<T &>()));
-
 template <class T>
 concept range = requires(T &value) {
   ranges::begin(value);
   ranges::end(value);
 };
+
+template <range T> using sentinel_t = decltype(ranges::end(declval<T &>()));
 
 template <class T>
 concept input_range = range<T> && input_iterator<iterator_t<T>>;
@@ -265,11 +265,9 @@ struct cend_fn {
 inline constexpr detail::cbegin_fn cbegin{};
 inline constexpr detail::cend_fn cend{};
 
-template <class T>
-using const_iterator_t = decltype(ranges::cbegin(declval<T &>()));
+template <range T> using const_iterator_t = const_iterator<iterator_t<T>>;
 
-template <class T>
-using const_sentinel_t = decltype(ranges::cend(declval<T &>()));
+template <range T> using const_sentinel_t = const_sentinel<sentinel_t<T>>;
 
 namespace detail {
 
@@ -501,7 +499,8 @@ inline constexpr detail::size_fn size{};
 template <class T>
 concept sized_range = range<T> && requires(T &value) { ranges::size(value); };
 
-template <class T> using range_size_t = decltype(ranges::size(declval<T &>()));
+template <sized_range T>
+using range_size_t = decltype(ranges::size(declval<T &>()));
 
 namespace detail {
 
@@ -605,17 +604,26 @@ inline constexpr detail::data_fn data{};
 
 namespace detail {
 
+template <class T>
+[[nodiscard]]
+constexpr const T *as_const_pointer(const T *pointer) noexcept {
+  return pointer;
+}
+
 struct cdata_fn {
   template <class T>
     requires(borrowable_range_argument<T &&> &&
              requires(remove_reference_t<T> &value) {
-               ranges::data(detail::possibly_const_range(value));
+               detail::as_const_pointer(
+                   ranges::data(detail::possibly_const_range(value)));
              })
   [[nodiscard]]
   constexpr auto operator()(T &&value) const
-      noexcept(noexcept(ranges::data(detail::possibly_const_range(value)))) {
+      noexcept(noexcept(detail::as_const_pointer(
+          ranges::data(detail::possibly_const_range(value))))) {
     auto &selected = detail::possibly_const_range(value);
-    return ranges::data(selected);
+
+    return detail::as_const_pointer(ranges::data(selected));
   }
 };
 
@@ -623,19 +631,19 @@ struct cdata_fn {
 
 inline constexpr detail::cdata_fn cdata{};
 
-template <class T> using range_difference_t = iter_difference_t<iterator_t<T>>;
+template <range T> using range_difference_t = iter_difference_t<iterator_t<T>>;
 
-template <class T> using range_value_t = iter_value_t<iterator_t<T>>;
+template <range T> using range_value_t = iter_value_t<iterator_t<T>>;
 
-template <class T> using range_reference_t = iter_reference_t<iterator_t<T>>;
+template <range T> using range_reference_t = iter_reference_t<iterator_t<T>>;
 
-template <class T>
+template <range T>
 using range_const_reference_t = iter_const_reference_t<iterator_t<T>>;
 
-template <class T>
+template <range T>
 using range_rvalue_reference_t = iter_rvalue_reference_t<iterator_t<T>>;
 
-template <class T>
+template <range T>
 using range_common_reference_t = iter_common_reference_t<iterator_t<T>>;
 
 template <class T>

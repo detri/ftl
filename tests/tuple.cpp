@@ -68,6 +68,39 @@ static_assert(tested::is_same_v<tested::common_type_t<tested::tuple<int, short>,
 static_assert(noexcept(tested::apply(tested::declval<no_throw_call>(),
                                      tested::declval<tested::tuple<int> &>())));
 
+struct test_allocator {};
+
+using three_ints = tested::tuple<int, int, int>;
+
+using three_longs = tested::array<long, 3>;
+
+using nested_int_tuple = tested::tuple<tested::tuple<int>>;
+
+static_assert(tested::is_constructible_v<three_ints, tested::array<int, 3> &>);
+
+static_assert(
+    tested::is_constructible_v<three_ints, const tested::array<int, 3> &>);
+
+static_assert(tested::is_same_v<tested::common_type_t<three_ints, three_longs>,
+                                tested::tuple<long, long, long>>);
+
+static_assert(tested::is_constructible_v<nested_int_tuple, tested::tuple<int>>);
+
+static_assert(
+    tested::is_same_v<decltype(tested::tuple(tested::allocator_arg,
+                                             test_allocator{}, 1, 2L)),
+                      tested::tuple<int, long>>);
+
+static_assert(tested::is_same_v<
+              decltype(tested::tuple(tested::allocator_arg, test_allocator{},
+                                     tested::pair<int, long>{})),
+              tested::tuple<int, long>>);
+
+static_assert(tested::is_same_v<
+              decltype(tested::tuple(tested::allocator_arg, test_allocator{},
+                                     tested::tuple<int, long>{})),
+              tested::tuple<int, long>>);
+
 constexpr bool subrange_tuple_interop_works() {
   int values[] = {1, 2, 3, 4};
 
@@ -174,4 +207,45 @@ constexpr bool tuple_works() {
 }
 
 static_assert(tuple_works());
-bool ftl_test() { return tuple_works() && subrange_tuple_interop_works(); }
+
+constexpr bool tuple_completion_works() {
+  tested::array<int, 3> source{1, 2, 3};
+
+  three_ints from_array{source};
+
+  if (tested::get<0>(from_array) != 1 || tested::get<1>(from_array) != 2 ||
+      tested::get<2>(from_array) != 3) {
+    return false;
+  }
+
+  if (!(from_array == source)) {
+    return false;
+  }
+
+  nested_int_tuple nested{tested::tuple<int>{7}};
+
+  if (tested::get<0>(tested::get<0>(nested)) != 7) {
+    return false;
+  }
+
+  tested::tuple<tested::allocator_arg_t, int> allocator_arg_elements{
+      tested::allocator_arg, 42};
+
+  if (tested::get<1>(allocator_arg_elements) != 42) {
+    return false;
+  }
+
+  tested::tuple<long, long, long> allocated_array{tested::allocator_arg,
+                                                  test_allocator{}, source};
+
+  return tested::get<0>(allocated_array) == 1 &&
+         tested::get<1>(allocated_array) == 2 &&
+         tested::get<2>(allocated_array) == 3;
+}
+
+static_assert(tuple_completion_works());
+
+bool ftl_test() {
+  return tuple_works() && subrange_tuple_interop_works() &&
+         tuple_completion_works();
+}

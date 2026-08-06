@@ -153,7 +153,7 @@ public:
              detail::span_array_convertible_v<
                  remove_reference_t<iter_reference_t<Iterator>>, element_type>)
   constexpr explicit(Extent != dynamic_extent)
-      span(Iterator first, size_type count) noexcept
+      span(Iterator first, size_type count)
       : storage_(FTL_SPAN_NAMESPACE::to_address(first), count) {}
 
   template <class Iterator, class End>
@@ -163,7 +163,7 @@ public:
              detail::span_array_convertible_v<
                  remove_reference_t<iter_reference_t<Iterator>>, element_type>)
   constexpr explicit(Extent != dynamic_extent)
-      span(Iterator first, End last) noexcept(noexcept(last - first))
+      span(Iterator first, End last)
       : span(first, static_cast<size_type>(last - first)) {}
 
   template <size_t Size>
@@ -205,11 +205,13 @@ public:
       span(const span<OtherElement, OtherExtent> &other) noexcept
       : storage_(other.data(), other.size()) {}
 
+  ~span() noexcept = default;
+
   constexpr span &operator=(const span &) noexcept = default;
 
   template <size_t Count>
   [[nodiscard]]
-  constexpr span<element_type, Count> first() const noexcept {
+  constexpr span<element_type, Count> first() const {
     static_assert(Extent == dynamic_extent || Count <= Extent);
 
     return span<element_type, Count>(data(), Count);
@@ -217,7 +219,7 @@ public:
 
   template <size_t Count>
   [[nodiscard]]
-  constexpr span<element_type, Count> last() const noexcept {
+  constexpr span<element_type, Count> last() const {
     static_assert(Extent == dynamic_extent || Count <= Extent);
 
     return span<element_type, Count>(data() + (size() - Count), Count);
@@ -227,7 +229,7 @@ public:
   [[nodiscard]]
   constexpr span<element_type,
                  detail::span_subspan_extent_v<Extent, Offset, Count>>
-  subspan() const noexcept {
+  subspan() const {
     static_assert(Extent == dynamic_extent || Offset <= Extent);
 
     static_assert(Count == dynamic_extent || Extent == dynamic_extent ||
@@ -244,19 +246,19 @@ public:
 
   [[nodiscard]]
   constexpr span<element_type, dynamic_extent>
-  first(size_type count) const noexcept {
+  first(size_type count) const {
     return span<element_type, dynamic_extent>(data(), count);
   }
 
   [[nodiscard]]
   constexpr span<element_type, dynamic_extent>
-  last(size_type count) const noexcept {
+  last(size_type count) const {
     return span<element_type, dynamic_extent>(data() + (size() - count), count);
   }
 
   [[nodiscard]]
   constexpr span<element_type, dynamic_extent>
-  subspan(size_type offset, size_type count = dynamic_extent) const noexcept {
+  subspan(size_type offset, size_type count = dynamic_extent) const {
     const size_type result_size =
         count == dynamic_extent ? size() - offset : count;
 
@@ -279,17 +281,17 @@ public:
   }
 
   [[nodiscard]]
-  constexpr reference operator[](size_type index) const noexcept {
+  constexpr reference operator[](size_type index) const {
     return data()[index];
   }
 
   [[nodiscard]]
-  constexpr reference front() const noexcept {
+  constexpr reference front() const {
     return data()[0];
   }
 
   [[nodiscard]]
-  constexpr reference back() const noexcept {
+  constexpr reference back() const {
     return data()[size() - 1];
   }
 

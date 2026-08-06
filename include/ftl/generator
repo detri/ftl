@@ -75,6 +75,14 @@ template <class Yielded> struct generator_access {
 #endif
   }
 };
+
+template <class Allocator, bool = is_void_v<Allocator>>
+struct generator_allocator_pointer_is_raw : true_type {};
+
+template <class Allocator>
+struct generator_allocator_pointer_is_raw<Allocator, false>
+    : bool_constant<
+          is_pointer_v<typename allocator_traits<Allocator>::pointer>> {};
 } // namespace detail
 
 template <class Ref, class V = void, class Allocator = void>
@@ -105,16 +113,22 @@ class generator : public ranges::view_interface<generator<Ref, V, Allocator>> {
 
   static_assert(common_reference_with<rvalue_reference &&, const value &>);
 
+  static_assert(detail::generator_allocator_pointer_is_raw<Allocator>::value,
+                "generator allocator_traits<Allocator>::pointer "
+                "must be a pointer type");
+
   class iterator;
 
 public:
   using yielded =
       conditional_t<is_reference_v<reference>, reference, const reference &>;
 
+private:
   using active_node_type = detail::generator_active_node<yielded>;
 
   using active_state_type = detail::generator_active_state<yielded>;
 
+public:
   class promise_type {
   private:
     friend struct detail::generator_access<yielded>;
@@ -354,7 +368,7 @@ public:
     }
 
     [[nodiscard]]
-    constexpr suspend_always initial_suspend() const noexcept {
+    suspend_always initial_suspend() const noexcept {
       return {};
     }
 
@@ -392,30 +406,16 @@ public:
           FTL_GENERATOR_NAMESPACE::move(elements.range)};
     }
 
-    template <class R2, class V2, class Alloc2, class Unused>
-      requires same_as<typename generator<R2, V2, Alloc2>::yielded, yielded>
-    [[nodiscard]]
-    auto yield_value(ranges::elements_of<generator<R2, V2, Alloc2> &, Unused>
-                         elements) noexcept {
-      using nested_generator = generator<R2, V2, Alloc2>;
-
-      /*
-       * elements_of(generator-lvalue) consumes the referenced
-       * generator by moving it into the awaiter.
-       */
-      return recursive_yield_awaiter<nested_generator>{
-          FTL_GENERATOR_NAMESPACE::move(elements.range)};
-    }
-
     template <ranges::input_range R, class Alloc>
       requires convertible_to<ranges::range_reference_t<R>, yielded>
     [[nodiscard]]
     auto yield_value(ranges::elements_of<R, Alloc> elements) noexcept
 #ifdef FTL_REPLACE_STL
     {
-      auto nested =
-          [](allocator_arg_t, Alloc allocator, ranges::iterator_t<R> current,
-             ranges::sentinel_t<R> last) -> generator<yielded, void, Alloc> {
+      auto nested = [](allocator_arg_t, Alloc allocator,
+                       ranges::iterator_t<R> current,
+                       ranges::sentinel_t<R> last)
+          -> generator<yielded, ranges::range_value_t<R>, Alloc> {
         /*
          * The allocator participates in coroutine-frame
          * allocation through promise_type::operator new.
@@ -437,10 +437,16 @@ public:
 
     void await_transform() = delete;
 
-    constexpr void return_void() const noexcept {}
+    void return_void() const noexcept {}
 
     void unhandled_exception() {
 #if FTL_HAS_EXCEPTIONS
+      if (active_ != nullptr &&
+          active_->top == FTL_GENERATOR_NAMESPACE::addressof(node_) &&
+          node_.previous == nullptr) {
+        throw;
+      }
+
       exception_ = FTL_GENERATOR_NAMESPACE::current_exception();
 #else
       FTL_GENERATOR_NAMESPACE::terminate();

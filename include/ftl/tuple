@@ -17,10 +17,17 @@ FTL_BEGIN_NAMESPACE
 
 namespace detail {
 template <class> struct is_tuple : false_type {};
+
 template <class... T> struct is_tuple<tuple<T...>> : true_type {};
+
+template <class> struct is_array : false_type {};
+
+template <class T, size_t Size> struct is_array<array<T, Size>> : true_type {};
+
 template <class T>
 struct is_tuple_source
-    : bool_constant<is_pair<T>::value || is_library_pair_like<T>::value> {};
+    : bool_constant<is_tuple<T>::value || is_pair<T>::value ||
+                    is_array<T>::value || is_library_pair_like<T>::value> {};
 #if defined(_MSC_VER)
 #define FTL_TUPLE_NO_UNIQUE_ADDRESS [[msvc::no_unique_address]]
 #else
@@ -99,6 +106,43 @@ class tuple
     : public detail::tuple_base<index_sequence_for<Types...>, Types...> {
   using base = detail::tuple_base<index_sequence_for<Types...>, Types...>;
 
+  template <class... U>
+  static consteval bool elementwise_constructor_is_disambiguated() {
+    if constexpr (sizeof...(Types) != sizeof...(U) || sizeof...(Types) == 0) {
+      return false;
+    } else if constexpr (sizeof...(Types) == 1) {
+      using source_type = typename detail::nth_type<0, U...>::type;
+
+      return !is_same_v<remove_cvref_t<source_type>, tuple>;
+    } else if constexpr (sizeof...(Types) < 4) {
+      using source_first = typename detail::nth_type<0, U...>::type;
+
+      if constexpr (!is_same_v<remove_cvref_t<source_first>, allocator_arg_t>) {
+        return true;
+      } else {
+        using destination_first = typename detail::nth_type<0, Types...>::type;
+
+        return is_same_v<remove_cvref_t<destination_first>, allocator_arg_t>;
+      }
+    } else {
+      return true;
+    }
+  }
+
+  template <class TupleLike>
+  static consteval bool tuple_like_uses_other_constructor() {
+    if constexpr (sizeof...(Types) != 1) {
+      return false;
+    } else if constexpr (is_same_v<remove_cvref_t<TupleLike>, tuple>) {
+      return true;
+    } else {
+      using element_type = typename detail::nth_type<0, Types...>::type;
+
+      return is_convertible_v<TupleLike, element_type> ||
+             is_constructible_v<element_type, TupleLike>;
+    }
+  }
+
   template <class TupleLike, size_t... I>
   static consteval bool tuple_like_convertible(index_sequence<I...>) {
     return (is_convertible_v<decltype(get<I>(declval<TupleLike>())), Types> &&
@@ -143,56 +187,24 @@ public:
 
   constexpr explicit(!(is_convertible_v<const Types &, Types> && ...))
       tuple(const Types &...values)
-    requires(sizeof...(Types) != 0)
+    requires(sizeof...(Types) != 0 &&
+             (is_constructible_v<Types, const Types &> && ...))
       : base(values...) {}
 
   template <class... U>
   constexpr explicit(!(is_convertible_v<U, Types> && ...)) tuple(U &&...values)
-    requires(sizeof...(U) == sizeof...(Types) && sizeof...(Types) != 0 &&
+    requires(elementwise_constructor_is_disambiguated<U...>() &&
              (is_constructible_v<Types, U> && ...) &&
              !(detail::pair_dangles_v<Types, U &&> || ...))
       : base(forward<U>(values)...) {}
 
-  tuple(const tuple &) = default;
-  tuple(tuple &&) = default;
-  tuple &operator=(const tuple &) = default;
-  tuple &operator=(tuple &&) = default;
+  constexpr tuple(const tuple &) = default;
 
-  template <class Alloc>
-  constexpr tuple(allocator_arg_t, const Alloc &alloc)
-    requires(is_default_constructible_v<Types> && ...)
-      : base(allocator_arg, alloc) {}
+  constexpr tuple(tuple &&) = default;
 
-  template <class Alloc>
-  constexpr tuple(allocator_arg_t, const Alloc &alloc, const Types &...values)
-    requires(sizeof...(Types) != 0)
-      : base(allocator_arg, alloc, values...) {}
+  constexpr tuple &operator=(const tuple &) = default;
 
-  template <class Alloc, class... U>
-  constexpr tuple(allocator_arg_t, const Alloc &alloc, U &&...values)
-    requires(sizeof...(U) == sizeof...(Types) && sizeof...(Types) != 0)
-      : base(allocator_arg, alloc, forward<U>(values)...) {}
-
-  template <class Alloc, class Other>
-  constexpr tuple(allocator_arg_t, const Alloc &alloc, Other &&other)
-    requires((detail::is_tuple<remove_cvref_t<Other>>::value ||
-              detail::is_tuple_source<remove_cvref_t<Other>>::value) &&
-             tuple_size_v<remove_cvref_t<Other>> == sizeof...(Types))
-      : tuple(allocator_arg, alloc, forward<Other>(other),
-              index_sequence_for<Types...>{}) {}
-
-  constexpr const tuple &operator=(const tuple &other) const
-    requires(is_assignable_v<const Types &, const Types &> && ...)
-  {
-    assign(other, index_sequence_for<Types...>{});
-    return *this;
-  }
-  constexpr const tuple &operator=(tuple &&other) const
-    requires(is_assignable_v<const Types &, Types> && ...)
-  {
-    assign(move(other), index_sequence_for<Types...>{});
-    return *this;
-  }
+  constexpr tuple &operator=(tuple &&) = default;
 
   template <class... U>
   constexpr explicit(!tuple_like_convertible<tuple<U...> &>(
@@ -200,6 +212,7 @@ public:
     requires(sizeof...(U) == sizeof...(Types) &&
              tuple_like_constructible<tuple<U...> &>(
                  index_sequence_for<Types...>{}) &&
+             !tuple_like_uses_other_constructor<tuple<U...> &>() &&
              !tuple_like_dangles<tuple<U...> &>(index_sequence_for<Types...>{}))
       : tuple(other, index_sequence_for<Types...>{}) {}
 
@@ -209,6 +222,7 @@ public:
     requires(sizeof...(U) == sizeof...(Types) &&
              tuple_like_constructible<const tuple<U...> &>(
                  index_sequence_for<Types...>{}) &&
+             !tuple_like_uses_other_constructor<const tuple<U...> &>() &&
              !tuple_like_dangles<const tuple<U...> &>(
                  index_sequence_for<Types...>{}))
       : tuple(other, index_sequence_for<Types...>{}) {}
@@ -220,6 +234,7 @@ public:
         sizeof...(U) == sizeof...(Types) &&
         tuple_like_constructible<tuple<U...> &&>(
             index_sequence_for<Types...>{}) &&
+        !tuple_like_uses_other_constructor<tuple<U...> &&>() &&
         !tuple_like_dangles<tuple<U...> &&>(index_sequence_for<Types...>{}))
       : tuple(move(other), index_sequence_for<Types...>{}) {}
 
@@ -229,7 +244,48 @@ public:
     requires(sizeof...(U) == sizeof...(Types) &&
              tuple_like_constructible<const tuple<U...> &&>(
                  index_sequence_for<Types...>{}) &&
+             !tuple_like_uses_other_constructor<const tuple<U...> &&>() &&
              !tuple_like_dangles<const tuple<U...> &&>(
+                 index_sequence_for<Types...>{}))
+      : tuple(move(other), index_sequence_for<Types...>{}) {}
+
+  template <class First, class Second>
+  constexpr explicit(!tuple_like_convertible<pair<First, Second> &>(
+      index_sequence_for<Types...>{})) tuple(pair<First, Second> &other)
+    requires(sizeof...(Types) == 2 &&
+             tuple_like_constructible<pair<First, Second> &>(
+                 index_sequence_for<Types...>{}) &&
+             !tuple_like_dangles<pair<First, Second> &>(
+                 index_sequence_for<Types...>{}))
+      : tuple(other, index_sequence_for<Types...>{}) {}
+
+  template <class First, class Second>
+  constexpr explicit(!tuple_like_convertible<const pair<First, Second> &>(
+      index_sequence_for<Types...>{})) tuple(const pair<First, Second> &other)
+    requires(sizeof...(Types) == 2 &&
+             tuple_like_constructible<const pair<First, Second> &>(
+                 index_sequence_for<Types...>{}) &&
+             !tuple_like_dangles<const pair<First, Second> &>(
+                 index_sequence_for<Types...>{}))
+      : tuple(other, index_sequence_for<Types...>{}) {}
+
+  template <class First, class Second>
+  constexpr explicit(!tuple_like_convertible<pair<First, Second> &&>(
+      index_sequence_for<Types...>{})) tuple(pair<First, Second> &&other)
+    requires(sizeof...(Types) == 2 &&
+             tuple_like_constructible<pair<First, Second> &&>(
+                 index_sequence_for<Types...>{}) &&
+             !tuple_like_dangles<pair<First, Second> &&>(
+                 index_sequence_for<Types...>{}))
+      : tuple(move(other), index_sequence_for<Types...>{}) {}
+
+  template <class First, class Second>
+  constexpr explicit(!tuple_like_convertible<const pair<First, Second> &&>(
+      index_sequence_for<Types...>{})) tuple(const pair<First, Second> &&other)
+    requires(sizeof...(Types) == 2 &&
+             tuple_like_constructible<const pair<First, Second> &&>(
+                 index_sequence_for<Types...>{}) &&
+             !tuple_like_dangles<const pair<First, Second> &&>(
                  index_sequence_for<Types...>{}))
       : tuple(move(other), index_sequence_for<Types...>{}) {}
 
@@ -238,11 +294,161 @@ public:
       index_sequence_for<Types...>{})) tuple(TupleLike &&other)
     requires(
         !detail::is_tuple<remove_cvref_t<TupleLike>>::value &&
+        !detail::is_pair<remove_cvref_t<TupleLike>>::value &&
         detail::is_tuple_source<remove_cvref_t<TupleLike>>::value &&
         tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(Types) &&
         tuple_like_constructible<TupleLike>(index_sequence_for<Types...>{}) &&
+        !tuple_like_uses_other_constructor<TupleLike>() &&
         !tuple_like_dangles<TupleLike>(index_sequence_for<Types...>{}))
       : tuple(forward<TupleLike>(other), index_sequence_for<Types...>{}) {}
+
+  template <class Alloc>
+  constexpr explicit(!(detail::implicitly_default_constructible<Types> && ...))
+      tuple(allocator_arg_t, const Alloc &allocator)
+    requires(is_default_constructible_v<Types> && ...)
+      : base(allocator_arg, allocator) {}
+
+  template <class Alloc>
+  constexpr explicit(!(is_convertible_v<const Types &, Types> && ...))
+      tuple(allocator_arg_t, const Alloc &allocator, const Types &...values)
+    requires(sizeof...(Types) != 0 &&
+             (is_constructible_v<Types, const Types &> && ...))
+      : base(allocator_arg, allocator, values...) {}
+
+  template <class Alloc, class... U>
+  constexpr explicit(!(is_convertible_v<U, Types> && ...))
+      tuple(allocator_arg_t, const Alloc &allocator, U &&...values)
+    requires(elementwise_constructor_is_disambiguated<U...>() &&
+             (is_constructible_v<Types, U> && ...) &&
+             !(detail::pair_dangles_v<Types, U &&> || ...))
+      : base(allocator_arg, allocator, forward<U>(values)...) {}
+
+  template <class Alloc>
+  constexpr tuple(allocator_arg_t, const Alloc &allocator, const tuple &other)
+      : tuple(allocator_arg, allocator, other, index_sequence_for<Types...>{}) {
+  }
+
+  template <class Alloc>
+  constexpr tuple(allocator_arg_t, const Alloc &allocator, tuple &&other)
+      : tuple(allocator_arg, allocator, move(other),
+              index_sequence_for<Types...>{}) {}
+
+  template <class Alloc, class... U>
+  constexpr explicit(
+      !tuple_like_convertible<tuple<U...> &>(index_sequence_for<Types...>{}))
+      tuple(allocator_arg_t, const Alloc &allocator, tuple<U...> &other)
+    requires(sizeof...(U) == sizeof...(Types) &&
+             tuple_like_constructible<tuple<U...> &>(
+                 index_sequence_for<Types...>{}) &&
+             !tuple_like_uses_other_constructor<tuple<U...> &>() &&
+             !tuple_like_dangles<tuple<U...> &>(index_sequence_for<Types...>{}))
+      : tuple(allocator_arg, allocator, other, index_sequence_for<Types...>{}) {
+  }
+
+  template <class Alloc, class... U>
+  constexpr explicit(!tuple_like_convertible<const tuple<U...> &>(
+      index_sequence_for<Types...>{}))
+      tuple(allocator_arg_t, const Alloc &allocator, const tuple<U...> &other)
+    requires(sizeof...(U) == sizeof...(Types) &&
+             tuple_like_constructible<const tuple<U...> &>(
+                 index_sequence_for<Types...>{}) &&
+             !tuple_like_uses_other_constructor<const tuple<U...> &>() &&
+             !tuple_like_dangles<const tuple<U...> &>(
+                 index_sequence_for<Types...>{}))
+      : tuple(allocator_arg, allocator, other, index_sequence_for<Types...>{}) {
+  }
+
+  template <class Alloc, class... U>
+  constexpr explicit(
+      !tuple_like_convertible<tuple<U...> &&>(index_sequence_for<Types...>{}))
+      tuple(allocator_arg_t, const Alloc &allocator, tuple<U...> &&other)
+    requires(
+        sizeof...(U) == sizeof...(Types) &&
+        tuple_like_constructible<tuple<U...> &&>(
+            index_sequence_for<Types...>{}) &&
+        !tuple_like_uses_other_constructor<tuple<U...> &&>() &&
+        !tuple_like_dangles<tuple<U...> &&>(index_sequence_for<Types...>{}))
+      : tuple(allocator_arg, allocator, move(other),
+              index_sequence_for<Types...>{}) {}
+
+  template <class Alloc, class... U>
+  constexpr explicit(!tuple_like_convertible<const tuple<U...> &&>(
+      index_sequence_for<Types...>{}))
+      tuple(allocator_arg_t, const Alloc &allocator, const tuple<U...> &&other)
+    requires(sizeof...(U) == sizeof...(Types) &&
+             tuple_like_constructible<const tuple<U...> &&>(
+                 index_sequence_for<Types...>{}) &&
+             !tuple_like_uses_other_constructor<const tuple<U...> &&>() &&
+             !tuple_like_dangles<const tuple<U...> &&>(
+                 index_sequence_for<Types...>{}))
+      : tuple(allocator_arg, allocator, move(other),
+              index_sequence_for<Types...>{}) {}
+
+  template <class Alloc, class First, class Second>
+  constexpr explicit(!tuple_like_convertible<pair<First, Second> &>(
+      index_sequence_for<Types...>{}))
+      tuple(allocator_arg_t, const Alloc &allocator, pair<First, Second> &other)
+    requires(sizeof...(Types) == 2 &&
+             tuple_like_constructible<pair<First, Second> &>(
+                 index_sequence_for<Types...>{}) &&
+             !tuple_like_dangles<pair<First, Second> &>(
+                 index_sequence_for<Types...>{}))
+      : tuple(allocator_arg, allocator, other, index_sequence_for<Types...>{}) {
+  }
+
+  template <class Alloc, class First, class Second>
+  constexpr explicit(!tuple_like_convertible<const pair<First, Second> &>(
+      index_sequence_for<Types...>{}))
+      tuple(allocator_arg_t, const Alloc &allocator,
+            const pair<First, Second> &other)
+    requires(sizeof...(Types) == 2 &&
+             tuple_like_constructible<const pair<First, Second> &>(
+                 index_sequence_for<Types...>{}) &&
+             !tuple_like_dangles<const pair<First, Second> &>(
+                 index_sequence_for<Types...>{}))
+      : tuple(allocator_arg, allocator, other, index_sequence_for<Types...>{}) {
+  }
+
+  template <class Alloc, class First, class Second>
+  constexpr explicit(!tuple_like_convertible<pair<First, Second> &&>(
+      index_sequence_for<Types...>{}))
+      tuple(allocator_arg_t, const Alloc &allocator,
+            pair<First, Second> &&other)
+    requires(sizeof...(Types) == 2 &&
+             tuple_like_constructible<pair<First, Second> &&>(
+                 index_sequence_for<Types...>{}) &&
+             !tuple_like_dangles<pair<First, Second> &&>(
+                 index_sequence_for<Types...>{}))
+      : tuple(allocator_arg, allocator, move(other),
+              index_sequence_for<Types...>{}) {}
+
+  template <class Alloc, class First, class Second>
+  constexpr explicit(!tuple_like_convertible<const pair<First, Second> &&>(
+      index_sequence_for<Types...>{}))
+      tuple(allocator_arg_t, const Alloc &allocator,
+            const pair<First, Second> &&other)
+    requires(sizeof...(Types) == 2 &&
+             tuple_like_constructible<const pair<First, Second> &&>(
+                 index_sequence_for<Types...>{}) &&
+             !tuple_like_dangles<const pair<First, Second> &&>(
+                 index_sequence_for<Types...>{}))
+      : tuple(allocator_arg, allocator, move(other),
+              index_sequence_for<Types...>{}) {}
+
+  template <class Alloc, class TupleLike>
+  constexpr explicit(
+      !tuple_like_convertible<TupleLike>(index_sequence_for<Types...>{}))
+      tuple(allocator_arg_t, const Alloc &allocator, TupleLike &&other)
+    requires(
+        !detail::is_tuple<remove_cvref_t<TupleLike>>::value &&
+        !detail::is_pair<remove_cvref_t<TupleLike>>::value &&
+        detail::is_tuple_source<remove_cvref_t<TupleLike>>::value &&
+        tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(Types) &&
+        tuple_like_constructible<TupleLike>(index_sequence_for<Types...>{}) &&
+        !tuple_like_uses_other_constructor<TupleLike>() &&
+        !tuple_like_dangles<TupleLike>(index_sequence_for<Types...>{}))
+      : tuple(allocator_arg, allocator, forward<TupleLike>(other),
+              index_sequence_for<Types...>{}) {}
 
   template <class... U>
   constexpr tuple &operator=(const tuple<U...> &other)
@@ -348,6 +554,15 @@ struct uses_allocator<tuple<Types...>, Alloc> : true_type {};
 
 template <class... T> tuple(T...) -> tuple<T...>;
 template <class T1, class T2> tuple(pair<T1, T2>) -> tuple<T1, T2>;
+
+template <class Alloc, class... U>
+tuple(allocator_arg_t, Alloc, U...) -> tuple<U...>;
+
+template <class Alloc, class First, class Second>
+tuple(allocator_arg_t, Alloc, pair<First, Second>) -> tuple<First, Second>;
+
+template <class Alloc, class... U>
+tuple(allocator_arg_t, Alloc, tuple<U...>) -> tuple<U...>;
 
 template <class... Types>
 struct tuple_size<tuple<Types...>>

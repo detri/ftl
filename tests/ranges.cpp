@@ -476,10 +476,18 @@ static_assert(
     tested::is_same_v<tested::ranges::sentinel_t<member_range>, int *>);
 
 static_assert(tested::is_same_v<tested::ranges::const_iterator_t<member_range>,
-                                const int *>);
+                                tested::const_iterator<int *>>);
 
 static_assert(tested::is_same_v<tested::ranges::const_sentinel_t<member_range>,
+                                tested::const_sentinel<int *>>);
+
+static_assert(tested::is_same_v<decltype(tested::ranges::cbegin(
+                                    tested::declval<member_range &>())),
                                 const int *>);
+
+static_assert(tested::is_same_v<
+              decltype(tested::ranges::cend(tested::declval<member_range &>())),
+              const int *>);
 
 static_assert(
     tested::is_same_v<tested::ranges::range_value_t<member_range>, int>);
@@ -1459,6 +1467,26 @@ constexpr bool ranges_to_works() {
 }
 
 static_assert(ranges_to_works());
+
+struct mutable_only_contiguous_range {
+  int *first = nullptr;
+  int *last = nullptr;
+
+  int *begin() noexcept { return first; }
+
+  int *end() noexcept { return last; }
+
+  int *data() noexcept { return first; }
+};
+
+static_assert(tested::ranges::contiguous_range<mutable_only_contiguous_range>);
+
+static_assert(!tested::ranges::range<const mutable_only_contiguous_range>);
+
+static_assert(
+    tested::is_same_v<decltype(tested::ranges::cdata(
+                          tested::declval<mutable_only_contiguous_range &>())),
+                      const int *>);
 
 bool ftl_test() {
   int values[] = {1, 2, 3, 4};
