@@ -86,4 +86,8 @@
 #error <ranges> must advertise its completed C++23 facilities
 #endif
 
+#if __cpp_lib_mdspan != 202207L
+#error <mdspan> must advertise the C++23 mdspan facility
+#endif
+
 int main() {}

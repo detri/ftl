@@ -67,7 +67,9 @@ is complete only when:
    allocation/runtime-dependency checks exist where applicable.
 4. Both modes pass on MSVC, Clang, and GCC in the supported configuration
    matrix.
-5. Its public transitive dependencies are themselves complete.
+5. Every facility it uses from public transitive dependencies is implemented
+   and covered; unrelated missing surface in those dependency headers does not
+   block completion.
 
 Status terms used below:
 
@@ -122,6 +124,7 @@ dependency order, not hundreds of individual overloads.
 | `<any>`              | Stage 2.5         |
 | `<coroutine>`        | Stage 2.6.1       |
 | `<generator>`        | Stage 2.6.4       |
+| `<mdspan>`           | Stage 2.6.5       |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -157,7 +160,6 @@ remain required when C++23 still specifies them; they are not silently dropped.
 | Area                      | Absent headers                                                                                                                                                                                                      |
 |---------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Concepts/types/vocabulary | `<bitset>`, `<ratio>`                                                                                                                                                                                               |
-| Iteration/ranges          | `<mdspan>`                                                                                                                                                                                                          |
 | Algorithms/numerics       | `<algorithm>`, `<numeric>`, `<numbers>`, `<random>`, `<valarray>`, `<execution>`                                                                                                                                    |
 | Containers                | `<deque>`, `<flat_map>`, `<flat_set>`, `<forward_list>`, `<list>`, `<map>`, `<queue>`, `<set>`, `<stack>`, `<unordered_map>`, `<unordered_set>`, `<vector>`                                                         |
 | Text/encoding             | `<charconv>`, `<codecvt>`, `<string>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                                                      |
@@ -321,15 +323,19 @@ Take these closures in order:
     - `<generator>` passes normal and `FTL_REPLACE_STL` tests on MSVC, Clang,
       AppleClang, and GCC, including optimized-build allocator and destruction
       regression coverage.
-    - Complete `<mdspan>` as Stage 2.6.5.
-    - Finish Stage 2.6 as Stage 2.6.6 with one integration and
-      synopsis-cleanup pass across `<ranges>`, `<span>`, `<mdspan>`, and
-      `<generator>`. No remaining seeded header moves to the complete inventory
-      until its individual completion gates are met.
+   - `<mdspan>` completed as Stage 2.6.5, including `extents`,
+     `dextents`, `layout_left`, `layout_right`, `layout_stride`,
+     `default_accessor`, `mdspan`, all C++23 deduction guides, custom-policy
+     interoperability, rank-zero and empty index spaces, and focused
+     cross-compiler conformance coverage.
+   - Finish Stage 2.6 as Stage 2.6.6 with one integration and
+     synopsis-cleanup pass across `<ranges>`, `<span>`, `<mdspan>`, and
+     `<generator>`. No remaining seeded header moves to the complete inventory
+     until its individual completion gates are met.
 
-**Current Stage 2.6 status:** `<coroutine>` and `<generator>` are complete.
-`<span>` and `<ranges>` remain seeded pending their deferred integration and
-synopsis work. `<mdspan>` is the next active closure.
+**Current Stage 2.6 status:** `<coroutine>`, `<generator>`, and `<mdspan>` are
+complete. `<span>` and `<ranges>` remain seeded pending their deferred
+integration and synopsis work. Stage 2.6.6 is the active integration closure.
 
 `optional<T&>` remains tested as an extension and must not distort the C++23
 `optional<T>` ABI or constraints.
