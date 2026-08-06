@@ -13,6 +13,7 @@
 #define __cpp_lib_ranges_as_const 202207L
 #define __cpp_lib_ranges_enumerate 202302L
 #define __cpp_lib_ranges_repeat 202207L
+#define __cpp_lib_ranges_as_rvalue 202207L
 
 #ifdef FTL_REPLACE_STL
 #include <array>
@@ -1391,6 +1392,199 @@ template <viewable_range R> using all_t = decltype(all(declval<R>()));
 template <class T> inline constexpr empty_view<T> empty{};
 
 inline constexpr detail::single_fn single{};
+} // namespace views
+
+template <view V>
+  requires input_range<V>
+class as_rvalue_view
+    : public view_interface<
+          as_rvalue_view<V>
+      > {
+private:
+  V base_ = V();
+
+public:
+  as_rvalue_view()
+    requires default_initializable<V>
+  = default;
+
+  constexpr explicit
+  as_rvalue_view(V base)
+      : base_(
+            FTL_RANGES_NAMESPACE::move(
+                base
+            )
+        ) {}
+
+  [[nodiscard]]
+  constexpr V base() const &
+    requires copy_constructible<V>
+  {
+    return base_;
+  }
+
+  [[nodiscard]]
+  constexpr V base() && {
+    return FTL_RANGES_NAMESPACE::move(
+        base_
+    );
+  }
+
+  [[nodiscard]]
+  constexpr auto begin()
+    requires(!detail::simple_view<V>)
+  {
+    return move_iterator(
+        ranges::begin(base_)
+    );
+  }
+
+  [[nodiscard]]
+  constexpr auto begin() const
+    requires range<const V>
+  {
+    return move_iterator(
+        ranges::begin(base_)
+    );
+  }
+
+  [[nodiscard]]
+  constexpr auto end()
+    requires(!detail::simple_view<V>)
+  {
+    if constexpr (common_range<V>) {
+      return move_iterator(
+          ranges::end(base_)
+      );
+    } else {
+      return move_sentinel(
+          ranges::end(base_)
+      );
+    }
+  }
+
+  [[nodiscard]]
+  constexpr auto end() const
+    requires range<const V>
+  {
+    if constexpr (
+        common_range<const V>
+    ) {
+      return move_iterator(
+          ranges::end(base_)
+      );
+    } else {
+      return move_sentinel(
+          ranges::end(base_)
+      );
+    }
+  }
+
+  [[nodiscard]]
+  constexpr auto size()
+    requires sized_range<V>
+  {
+    return ranges::size(base_);
+  }
+
+  [[nodiscard]]
+  constexpr auto size() const
+    requires sized_range<const V>
+  {
+    return ranges::size(base_);
+  }
+};
+
+template <class R>
+as_rvalue_view(R&&)
+    -> as_rvalue_view<
+        views::all_t<R>
+    >;
+
+template <class V>
+inline constexpr bool
+    enable_borrowed_range<
+        as_rvalue_view<V>
+    > =
+        enable_borrowed_range<V>;
+
+namespace views {
+namespace detail {
+
+template <class R>
+consteval bool
+as_rvalue_is_noexcept() {
+  if constexpr (
+      same_as<
+          range_rvalue_reference_t<R>,
+          range_reference_t<R>
+      >
+  ) {
+    return noexcept(
+        all(
+            declval<R>()
+        )
+    );
+  } else {
+    return noexcept(
+        as_rvalue_view<
+            all_t<R>
+        >(
+            all(
+                declval<R>()
+            )
+        )
+    );
+  }
+}
+
+struct as_rvalue_fn
+    : range_adaptor_closure<
+          as_rvalue_fn
+      > {
+  template <viewable_range R>
+    requires input_range<all_t<R>>
+  [[nodiscard]]
+  constexpr auto
+  operator()(R&& range) const
+      noexcept(
+          as_rvalue_is_noexcept<R>()
+      ) {
+    /*
+     * A range already returning prvalues or xvalues
+     * does not need another view layer.
+     */
+    if constexpr (
+        same_as<
+            range_rvalue_reference_t<R>,
+            range_reference_t<R>
+        >
+    ) {
+      return all(
+          static_cast<R&&>(
+              range
+          )
+      );
+    } else {
+      return as_rvalue_view<
+          all_t<R>
+      >(
+          all(
+              static_cast<R&&>(
+                  range
+              )
+          )
+      );
+    }
+  }
+};
+
+} // namespace detail
+
+inline constexpr
+    detail::as_rvalue_fn
+        as_rvalue{};
+
 } // namespace views
 
 namespace detail {
@@ -3728,6 +3922,14 @@ public:
 template <class V, size_t N>
 inline constexpr bool enable_borrowed_range<elements_view<V, N>> =
     enable_borrowed_range<V>;
+
+template <class R>
+using keys_view =
+    elements_view<R, 0>;
+
+template <class R>
+using values_view =
+    elements_view<R, 1>;
 
 namespace views {
 template <size_t N> struct elements_fn : range_adaptor_closure<elements_fn<N>> {
@@ -8566,40 +8768,135 @@ struct zip_transform_fn {
 inline constexpr detail::zip_transform_fn zip_transform{};
 
 namespace detail {
-template <size_t N> struct adjacent_fn : range_adaptor_closure<adjacent_fn<N>> {
+template <size_t N>
+struct adjacent_fn
+    : range_adaptor_closure<
+          adjacent_fn<N>
+      > {
   template <viewable_range R>
-    requires forward_range<R> && (N > 0)
-  constexpr auto operator()(R &&range) const {
-    return adjacent_view<all_t<R>, N>(all(static_cast<R &&>(range)));
+    requires forward_range<R>
+  constexpr auto
+  operator()(R&& range) const {
+    if constexpr (N == 0) {
+      /*
+       * The argument expression was evaluated before
+       * entering this function. Do not adapt or inspect
+       * it further.
+       */
+      static_cast<void>(range);
+
+      return empty_view<
+          tuple<>
+      >{};
+    } else {
+      return adjacent_view<
+          all_t<R>,
+          N
+      >(
+          all(
+              static_cast<R&&>(
+                  range
+              )
+          )
+      );
+    }
   }
 };
 
 template <class F, class R, size_t N>
-consteval bool adjacent_transform_adaptor_constraints() {
+consteval bool
+adjacent_transform_adaptor_constraints() {
   if constexpr (N == 0) {
-    return false;
+    return requires(F&& function) {
+      views::zip_transform(
+          static_cast<F&&>(
+              function
+          )
+      );
+    };
   } else {
-    using function_type = decay_t<F>;
-    using base_type = all_t<R>;
+    using function_type =
+        decay_t<F>;
 
-    return forward_range<base_type> && move_constructible<function_type> &&
-           is_object_v<function_type> && constructible_from<function_type, F> &&
-           adjacent_transformable<function_type, base_type, N>;
+    using base_type =
+        all_t<R>;
+
+    return
+        forward_range<base_type> &&
+        move_constructible<
+            function_type
+        > &&
+        is_object_v<
+            function_type
+        > &&
+        constructible_from<
+            function_type,
+            F
+        > &&
+        adjacent_transformable<
+            function_type,
+            base_type,
+            N
+        >;
   }
 }
 
 template <size_t N> struct adjacent_transform_fn {
   template <class F, viewable_range R>
     requires(adjacent_transform_adaptor_constraints<F, R, N>())
-  constexpr auto operator()(R &&range, F &&function) const {
-    using function_type = decay_t<F>;
-    using base_type = all_t<R>;
+constexpr auto
+operator()(
+    R&& range,
+    F&& function
+) const {
+  if constexpr (N == 0) {
+    /*
+     * The original range expression has already been
+     * evaluated. zip_transform performs the required
+     * evaluation and constraint handling for the
+     * nullary function expression.
+     */
+    static_cast<void>(range);
 
-    return adjacent_transform_view<function_type, base_type, N>(
-        adjacent_view<base_type, N>(all(static_cast<R &&>(range))),
-        tuple_invoke<function_type>{
-            function_type(static_cast<F &&>(function))});
+    return views::zip_transform(
+        static_cast<F&&>(
+            function
+        )
+    );
+  } else {
+    using function_type =
+        decay_t<F>;
+
+    using base_type =
+        all_t<R>;
+
+    return adjacent_transform_view<
+        function_type,
+        base_type,
+        N
+    >(
+        adjacent_view<
+            base_type,
+            N
+        >(
+            all(
+                static_cast<R&&>(
+                    range
+                )
+            )
+        ),
+        tuple_invoke<
+            function_type
+        >{
+            function_type(
+                static_cast<F&&>(
+                    function
+                )
+            )
+        }
+    );
   }
+}
 
   template <class F>
     requires constructible_from<decay_t<F>, F>
@@ -8612,6 +8909,14 @@ template <size_t N> struct adjacent_transform_fn {
 template <size_t N> inline constexpr detail::adjacent_fn<N> adjacent{};
 template <size_t N>
 inline constexpr detail::adjacent_transform_fn<N> adjacent_transform{};
+
+inline constexpr auto
+    pairwise =
+        adjacent<2>;
+
+inline constexpr auto
+    pairwise_transform =
+        adjacent_transform<2>;
 
 namespace detail {
 struct slide_fn {
@@ -8691,6 +8996,17 @@ struct cartesian_product_fn {
 inline constexpr detail::cartesian_product_fn cartesian_product{};
 } // namespace views
 } // namespace ranges
+
+using ranges::get;
+
+struct from_range_t {
+  explicit from_range_t() =
+      default;
+};
+
+inline constexpr
+    from_range_t
+        from_range{};
 
 namespace views = ranges::views;
 

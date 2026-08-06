@@ -16,6 +16,15 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+#ifndef __cpp_lib_ranges_as_rvalue
+#error "__cpp_lib_ranges_as_rvalue is missing"
+#endif
+
+static_assert(
+    __cpp_lib_ranges_as_rvalue ==
+    202207L
+);
+
 struct member_range {
   int *first = nullptr;
   int *last = nullptr;
@@ -150,6 +159,52 @@ struct opted_view {
 
   constexpr int *end() noexcept { return last; }
 };
+
+struct nullary_value {
+  [[nodiscard]]
+  constexpr int operator()() const noexcept {
+    return 42;
+  }
+};
+
+constexpr member_range evaluated_range(int *first, int *last,
+                                       int &evaluations) {
+  ++evaluations;
+
+  return {first, last};
+}
+
+constexpr nullary_value evaluated_function(int &evaluations) {
+  ++evaluations;
+
+  return {};
+}
+
+using tuple_array = tested::tuple<int, long>[2];
+
+using tuple_array_view = tested::ranges::ref_view<tuple_array>;
+
+static_assert(
+    tested::is_same_v<tested::ranges::keys_view<tuple_array_view>,
+                      tested::ranges::elements_view<tuple_array_view, 0>>);
+
+static_assert(
+    tested::is_same_v<tested::ranges::values_view<tuple_array_view>,
+                      tested::ranges::elements_view<tuple_array_view, 1>>);
+
+static_assert(
+    tested::is_same_v<
+        tested::remove_cv_t<decltype(tested::ranges::views::pairwise)>,
+        tested::remove_cv_t<decltype(tested::ranges::views::adjacent<2>)>>);
+
+static_assert(tested::is_same_v<
+              tested::remove_cv_t<
+                  decltype(tested::ranges::views::pairwise_transform)>,
+              tested::remove_cv_t<
+                  decltype(tested::ranges::views::adjacent_transform<2>)>>);
+
+static_assert(tested::is_same_v<decltype(tested::from_range),
+                                const tested::from_range_t>);
 
 namespace adl_test {
 struct range {
@@ -944,6 +999,154 @@ constexpr bool movable_box_move_only_path_works() {
 
 static_assert(movable_box_move_only_path_works());
 
+constexpr bool ranges_small_surface_works() {
+  int values[] = {1, 2, 3};
+
+  int range_evaluations = 0;
+
+  auto adjacent_zero = tested::ranges::views::adjacent<0>(
+      evaluated_range(values, values + 3, range_evaluations));
+
+  static_assert(tested::is_same_v<decltype(adjacent_zero),
+                                  tested::ranges::empty_view<tested::tuple<>>>);
+
+  if (range_evaluations != 1 || adjacent_zero.size() != 0) {
+    return false;
+  }
+
+  int function_evaluations = 0;
+
+  auto transform_zero = tested::ranges::views::adjacent_transform<0>(
+      evaluated_range(values, values + 3, range_evaluations),
+      evaluated_function(function_evaluations));
+
+  static_assert(tested::is_same_v<decltype(transform_zero),
+                                  tested::ranges::empty_view<int>>);
+
+  if (range_evaluations != 2 || function_evaluations != 1 ||
+      transform_zero.size() != 0) {
+    return false;
+  }
+
+  /*
+   * Verify the closure forms too.
+   */
+  auto piped_adjacent = evaluated_range(values, values + 3, range_evaluations) |
+                        tested::ranges::views::adjacent<0>;
+
+  auto piped_transform =
+      evaluated_range(values, values + 3, range_evaluations) |
+      tested::ranges::views::adjacent_transform<0>(
+          evaluated_function(function_evaluations));
+
+  if (piped_adjacent.size() != 0 || piped_transform.size() != 0 ||
+      range_evaluations != 4 || function_evaluations != 2) {
+    return false;
+  }
+
+  tested::ranges::subrange range{values, values + 3};
+
+  if (tested::get<0>(range) != values || tested::get<1>(range) != values + 3) {
+    return false;
+  }
+
+  return true;
+}
+
+static_assert(ranges_small_surface_works());
+
+struct movable_value {
+  int value = 0;
+
+  constexpr movable_value() = default;
+
+  constexpr explicit movable_value(int initial) : value(initial) {}
+
+  movable_value(const movable_value &) = delete;
+
+  movable_value &operator=(const movable_value &) = delete;
+
+  constexpr movable_value(movable_value &&other) noexcept : value(other.value) {
+    other.value = -1;
+  }
+
+  constexpr movable_value &operator=(movable_value &&other) noexcept {
+    value = other.value;
+    other.value = -1;
+    return *this;
+  }
+};
+
+using movable_array = movable_value (&)[3];
+
+using movable_as_rvalue = decltype(tested::ranges::views::as_rvalue(
+    tested::declval<movable_array>()));
+
+static_assert(tested::ranges::view<movable_as_rvalue>);
+
+static_assert(tested::ranges::random_access_range<movable_as_rvalue>);
+
+static_assert(tested::ranges::common_range<movable_as_rvalue>);
+
+static_assert(tested::ranges::sized_range<movable_as_rvalue>);
+
+static_assert(tested::ranges::borrowed_range<movable_as_rvalue>);
+
+static_assert(tested::is_same_v<
+              tested::ranges::range_value_t<movable_as_rvalue>, movable_value>);
+
+static_assert(
+    tested::is_same_v<tested::ranges::range_reference_t<movable_as_rvalue>,
+                      movable_value &&>);
+
+static_assert(tested::is_same_v<tested::ranges::iterator_t<movable_as_rvalue>,
+                                tested::move_iterator<movable_value *>>);
+
+constexpr bool as_rvalue_view_works() {
+  movable_value values[] = {movable_value{1}, movable_value{2},
+                            movable_value{3}};
+
+  auto view = values | tested::ranges::views::as_rvalue;
+
+  if (view.size() != 3 || view.base().begin() != values) {
+    return false;
+  }
+
+  auto iterator = view.begin();
+
+  movable_value first{*iterator};
+
+  if (first.value != 1 || values[0].value != -1) {
+    return false;
+  }
+
+  ++iterator;
+
+  movable_value second{*iterator};
+
+  if (second.value != 2 || values[1].value != -1) {
+    return false;
+  }
+
+  ++iterator;
+
+  movable_value third{*iterator};
+
+  if (third.value != 3 || values[2].value != -1) {
+    return false;
+  }
+
+  ++iterator;
+
+  if (iterator != view.end()) {
+    return false;
+  }
+
+  return true;
+}
+
+static_assert(as_rvalue_view_works());
+
 bool ftl_test() {
   int values[] = {1, 2, 3, 4};
 
@@ -1006,6 +1209,14 @@ bool ftl_test() {
 
   tested::ranges::dangling ignored{values, values + 4};
   (void)ignored;
+
+  if (!ranges_small_surface_works()) {
+    return false;
+  }
+
+  if (!as_rvalue_view_works()) {
+    return false;
+  }
 
   return ranges_constexpr_works() && range_iterator_operations_work();
 }

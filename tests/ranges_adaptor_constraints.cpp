@@ -281,6 +281,44 @@ static_assert(can_pipe<int_range, reverse_adaptor>);
 static_assert(!can_pipe<input_view, reverse_adaptor>);
 
 /*
+ * as_rvalue.
+ */
+
+using as_rvalue_adaptor = decltype(tested::ranges::views::as_rvalue);
+
+static_assert(can_invoke_adaptor<as_rvalue_adaptor, int_range>);
+
+static_assert(can_invoke_adaptor<as_rvalue_adaptor, input_view>);
+
+static_assert(!can_invoke_adaptor<as_rvalue_adaptor, output_view>);
+
+static_assert(!can_invoke_adaptor<as_rvalue_adaptor, non_range>);
+
+static_assert(!can_invoke_adaptor<as_rvalue_adaptor>);
+
+static_assert(can_pipe<int_range, as_rvalue_adaptor>);
+
+static_assert(can_pipe<input_view, as_rvalue_adaptor>);
+
+using input_as_rvalue =
+    decltype(tested::ranges::views::as_rvalue(tested::declval<input_view>()));
+
+static_assert(tested::is_same_v<tested::ranges::iterator_t<input_as_rvalue>,
+                                tested::move_iterator<input_iterator>>);
+
+static_assert(tested::is_same_v<tested::ranges::sentinel_t<input_as_rvalue>,
+                                tested::move_sentinel<input_sentinel>>);
+
+using prvalue_transform_view = decltype(tested::ranges::views::transform(
+    tested::declval<int_range>(), unary_transform{}));
+
+using prvalue_as_rvalue_result = decltype(tested::ranges::views::as_rvalue(
+    tested::declval<prvalue_transform_view>()));
+
+static_assert(
+    tested::is_same_v<prvalue_as_rvalue_result, prvalue_transform_view>);
+
+/*
  * take and drop.
  */
 
@@ -677,7 +715,7 @@ using adjacent_two_adaptor = decltype(tested::ranges::views::adjacent<2>);
 
 static_assert(can_invoke_adaptor<adjacent_two_adaptor, int_range>);
 
-static_assert(!can_invoke_adaptor<adjacent_zero_adaptor, int_range>);
+static_assert(can_invoke_adaptor<adjacent_zero_adaptor, int_range>);
 
 static_assert(!can_invoke_adaptor<adjacent_two_adaptor, input_view>);
 
@@ -700,8 +738,8 @@ using adjacent_transform_two_adaptor =
 static_assert(can_invoke_adaptor<adjacent_transform_two_adaptor, int_range,
                                  binary_transform>);
 
-static_assert(!can_invoke_adaptor<adjacent_transform_zero_adaptor, int_range,
-                                  nullary_transform>);
+static_assert(can_invoke_adaptor<adjacent_transform_zero_adaptor, int_range,
+                                 nullary_transform>);
 
 static_assert(!can_invoke_adaptor<adjacent_transform_two_adaptor, int_range,
                                   unary_transform>);
@@ -724,6 +762,19 @@ using adjacent_transform_wrong =
 static_assert(can_pipe<int_range, adjacent_transform_sum>);
 
 static_assert(!can_pipe<int_range, adjacent_transform_wrong>);
+
+using adjacent_zero_result =
+    decltype(tested::ranges::views::adjacent<0>(tested::declval<int_range>()));
+
+static_assert(tested::is_same_v<adjacent_zero_result,
+                                tested::ranges::empty_view<tested::tuple<>>>);
+
+using adjacent_transform_zero_result =
+    decltype(tested::ranges::views::adjacent_transform<0>(
+        tested::declval<int_range>(), nullary_transform{}));
+
+static_assert(tested::is_same_v<adjacent_transform_zero_result,
+                                tested::ranges::empty_view<int>>);
 
 /*
  * slide.

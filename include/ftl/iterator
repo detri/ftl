@@ -1814,13 +1814,66 @@ constexpr insert_iterator<C> inserter(C &c, typename C::iterator i) {
   return insert_iterator<C>(c, i);
 }
 
-template <class I> class move_iterator {
+namespace detail {
+
+template <class Iterator, class = void>
+struct move_iterator_category_base {};
+
+template <class Iterator>
+struct move_iterator_category_base<
+    Iterator,
+    void_t<
+        typename iterator_traits<
+            Iterator
+        >::iterator_category
+    >
+> {
+private:
+  using underlying_category =
+      typename iterator_traits<
+          Iterator
+      >::iterator_category;
+
+public:
+  using iterator_category =
+      conditional_t<
+          derived_from<
+              underlying_category,
+              random_access_iterator_tag
+          >,
+          random_access_iterator_tag,
+          underlying_category
+      >;
+};
+
+template <class Iterator>
+using move_iterator_concept_t =
+    conditional_t<
+        random_access_iterator<Iterator>,
+        random_access_iterator_tag,
+        conditional_t<
+            bidirectional_iterator<Iterator>,
+            bidirectional_iterator_tag,
+            conditional_t<
+                forward_iterator<Iterator>,
+                forward_iterator_tag,
+                input_iterator_tag
+            >
+        >
+    >;
+
+} // namespace detail
+
+template <class I>
+class move_iterator
+    : public detail::
+          move_iterator_category_base<I> {
   I current{};
 
 public:
   using iterator_type = I;
-  using iterator_concept = detail::iter_concept_t<I>;
-  using iterator_category = typename iterator_traits<I>::iterator_category;
+    using iterator_concept =
+        detail::move_iterator_concept_t<I>;
   using value_type = iter_value_t<I>;
   using difference_type = iter_difference_t<I>;
   using pointer = I;
@@ -1908,11 +1961,25 @@ public:
     return a.current == b.base();
   }
 
-  template <class U>
-  friend constexpr auto operator<=>(const move_iterator &a,
-                                    const move_iterator<U> &b) {
-    return a.current <=> b.base();
-  }
+    template <class U>
+    friend constexpr auto
+    operator<=>(
+        const move_iterator& a,
+        const move_iterator<U>& b
+    )
+    #ifdef FTL_REPLACE_STL
+      requires three_way_comparable_with<I, U>
+    #endif
+    {
+    #ifdef FTL_REPLACE_STL
+      return a.current <=> b.base();
+    #else
+      return compare_three_way{}(
+          a.current,
+          b.base()
+      );
+    #endif
+    }
 
   friend constexpr move_iterator operator+(move_iterator x, difference_type n)
     requires random_access_iterator<I>
