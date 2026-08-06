@@ -125,6 +125,7 @@ dependency order, not hundreds of individual overloads.
 | `<coroutine>`        | Stage 2.6.1       |
 | `<generator>`        | Stage 2.6.4       |
 | `<mdspan>`           | Stage 2.6.5       |
+| `<span>`             | Stage 2.6.6       |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -142,7 +143,6 @@ synopses:
 | `<array>`       | C++23 surface except `at()` failure type                                                                                                                                   | replace trap with `out_of_range` after `<stdexcept>` completes                                                                                                                                        |
 | `<tuple>`       | C++23 tuple/array/pair surface including allocator-extended construction                                                                                                   | `subrange` tuple-like integration after Stage 2.6                                                                                                                                                     |
 | `<string_view>` | basic `string_view` operations                                                                                                                                             | full `basic_string_view`, traits integration, searches, iterators, literals, I/O/hash integration                                                                                                     |
-| `<span>`        | fixed- and dynamic-extent views, array/pointer/span construction, subviews, iterators, byte views, deduction guides                                                        | generic range constructor and deduction guide; `ranges::enable_view` and `ranges::enable_borrowed_range`                                                                                              |
 | `<ranges>`      | range access CPOs and concepts, associated types, view infrastructure, subrange, core views, major C++23 views, adaptor composition, and cross-compiler conformance audits | remaining N4950 synopsis groups, zero-width adjacent semantics, public adjacent_transform_view conformance, feature-test macro finalization, header self-sufficiency, and deferred <span> integration |
 
 `include/ftl/detail/rapidhash` is an implementation detail, not a standard

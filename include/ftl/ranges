@@ -511,10 +511,24 @@ using borrowed_subrange_t =
     conditional_t<borrowed_range<R>, subrange<iterator_t<R>>, dangling>;
 
 namespace detail {
+
 template <class Iterator, class Sentinel, subrange_kind Kind>
 inline constexpr bool is_tuple_like_v<subrange<Iterator, Sentinel, Kind>> =
     true;
 } // namespace detail
+
+} // namespace ranges
+
+namespace detail {
+
+template <class Iterator, class Sentinel, ranges::subrange_kind Kind>
+struct is_library_pair_like<
+    ranges::subrange<Iterator, Sentinel, Kind>
+> : true_type {};
+
+} // namespace detail
+
+namespace ranges {
 
 // [range.adaptor.object]
 
