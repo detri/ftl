@@ -1,15 +1,23 @@
 #ifdef FTL_REPLACE_STL
+#include <array>
 #include <cstddef>
+#include <limits>
 #include <mdspan>
 #include <span>
 #include <type_traits>
 namespace tested = std;
 #else
+#include <ftl/array>
 #include <ftl/cstddef>
+#include <ftl/limits>
 #include <ftl/mdspan>
 #include <ftl/span>
 #include <ftl/type_traits>
 namespace tested = ftl;
+#endif
+
+#if __cpp_lib_mdspan != 202207L
+#error <mdspan> must advertise the C++23 mdspan facility
 #endif
 
 using scalar_extents = tested::extents<int>;
@@ -375,29 +383,22 @@ constexpr bool mdspan_layout_right_works() {
 
 static_assert(mdspan_layout_right_works());
 
-using left_scalar_mapping =
-    tested::layout_left::mapping<scalar_extents>;
+using left_scalar_mapping = tested::layout_left::mapping<scalar_extents>;
 
-using left_static_mapping =
-    tested::layout_left::mapping<static_extents>;
+using left_static_mapping = tested::layout_left::mapping<static_extents>;
 
 using left_partial_mapping =
     tested::layout_left::mapping<partially_dynamic_extents>;
 
-using stride_scalar_mapping =
-    tested::layout_stride::mapping<scalar_extents>;
+using stride_scalar_mapping = tested::layout_stride::mapping<scalar_extents>;
 
-using stride_static_mapping =
-    tested::layout_stride::mapping<static_extents>;
+using stride_static_mapping = tested::layout_stride::mapping<static_extents>;
 
-using rank_one_extents =
-    tested::extents<int, tested::dynamic_extent>;
+using rank_one_extents = tested::extents<int, tested::dynamic_extent>;
 
-using left_rank_one_mapping =
-    tested::layout_left::mapping<rank_one_extents>;
+using left_rank_one_mapping = tested::layout_left::mapping<rank_one_extents>;
 
-using right_rank_one_mapping =
-    tested::layout_right::mapping<rank_one_extents>;
+using right_rank_one_mapping = tested::layout_right::mapping<rank_one_extents>;
 
 static_assert(tested::is_trivial_v<tested::layout_left>);
 static_assert(tested::is_trivial_v<tested::layout_stride>);
@@ -407,13 +408,11 @@ static_assert(tested::is_trivially_copyable_v<left_static_mapping>);
 static_assert(tested::is_trivially_copyable_v<stride_scalar_mapping>);
 static_assert(tested::is_trivially_copyable_v<stride_static_mapping>);
 
-static_assert(tested::is_same_v<
-              left_static_mapping::layout_type,
-              tested::layout_left>);
+static_assert(
+    tested::is_same_v<left_static_mapping::layout_type, tested::layout_left>);
 
-static_assert(tested::is_same_v<
-              stride_static_mapping::layout_type,
-              tested::layout_stride>);
+static_assert(tested::is_same_v<stride_static_mapping::layout_type,
+                                tested::layout_stride>);
 
 static_assert(left_static_mapping::is_always_unique());
 static_assert(left_static_mapping::is_always_exhaustive());
@@ -427,245 +426,369 @@ static_assert(!noexcept(left_static_mapping{}.stride(0)));
 static_assert(noexcept(static_mapping{}.stride(0)));
 static_assert(noexcept(stride_static_mapping{}.stride(0)));
 
-static_assert(tested::is_convertible_v<
-              left_rank_one_mapping,
-              right_rank_one_mapping>);
+static_assert(
+    tested::is_convertible_v<left_rank_one_mapping, right_rank_one_mapping>);
 
-static_assert(tested::is_convertible_v<
-              right_rank_one_mapping,
-              left_rank_one_mapping>);
+static_assert(
+    tested::is_convertible_v<right_rank_one_mapping, left_rank_one_mapping>);
 
-static_assert(!tested::is_constructible_v<
-              left_static_mapping,
-              static_mapping>);
+static_assert(!tested::is_constructible_v<left_static_mapping, static_mapping>);
 
-static_assert(!tested::is_constructible_v<
-              static_mapping,
-              left_static_mapping>);
+static_assert(!tested::is_constructible_v<static_mapping, left_static_mapping>);
 
-static_assert(tested::is_convertible_v<
-              left_static_mapping,
-              stride_static_mapping>);
+static_assert(
+    tested::is_convertible_v<left_static_mapping, stride_static_mapping>);
 
-static_assert(tested::is_convertible_v<
-              static_mapping,
-              stride_static_mapping>);
+static_assert(tested::is_convertible_v<static_mapping, stride_static_mapping>);
 
-static_assert(tested::is_constructible_v<
-              left_static_mapping,
-              stride_static_mapping>);
+static_assert(
+    tested::is_constructible_v<left_static_mapping, stride_static_mapping>);
 
-static_assert(tested::is_constructible_v<
-              static_mapping,
-              stride_static_mapping>);
+static_assert(
+    tested::is_constructible_v<static_mapping, stride_static_mapping>);
 
-static_assert(!tested::is_convertible_v<
-              stride_static_mapping,
-              left_static_mapping>);
+static_assert(
+    !tested::is_convertible_v<stride_static_mapping, left_static_mapping>);
 
-static_assert(!tested::is_convertible_v<
-              stride_static_mapping,
-              static_mapping>);
+static_assert(!tested::is_convertible_v<stride_static_mapping, static_mapping>);
 
-static_assert(!tested::is_nothrow_constructible_v<
-              left_static_mapping,
-              stride_static_mapping>);
+static_assert(!tested::is_nothrow_constructible_v<left_static_mapping,
+                                                  stride_static_mapping>);
 
-static_assert(tested::is_nothrow_constructible_v<
-              static_mapping,
-              stride_static_mapping>);
+static_assert(
+    tested::is_nothrow_constructible_v<static_mapping, stride_static_mapping>);
 
-static_assert(tested::is_convertible_v<
-              stride_scalar_mapping,
-              left_scalar_mapping>);
+static_assert(
+    tested::is_convertible_v<stride_scalar_mapping, left_scalar_mapping>);
 
-static_assert(tested::is_convertible_v<
-              stride_scalar_mapping,
-              scalar_mapping>);
+static_assert(tested::is_convertible_v<stride_scalar_mapping, scalar_mapping>);
 
-static_assert(tested::is_same_v<
-              decltype(stride_static_mapping{}.strides()),
-              tested::array<int, 3>>);
+static_assert(tested::is_same_v<decltype(stride_static_mapping{}.strides()),
+                                tested::array<int, 3>>);
+
+struct offset_layout {
+  template <class Extents> class mapping {
+  public:
+    using extents_type = Extents;
+    using index_type = typename extents_type::index_type;
+    using size_type = typename extents_type::size_type;
+    using rank_type = typename extents_type::rank_type;
+    using layout_type = offset_layout;
+
+    constexpr mapping() noexcept = default;
+
+    constexpr mapping(const extents_type &extents,
+                      index_type offset = 0) noexcept
+        : extents_(extents), offset_(offset) {}
+
+    [[nodiscard]] constexpr const extents_type &extents() const noexcept {
+      return extents_;
+    }
+
+    [[nodiscard]] constexpr index_type required_span_size() const noexcept {
+      for (rank_type rank = 0; rank < extents_type::rank(); ++rank) {
+        if (extents_.extent(rank) == 0)
+          return 0;
+      }
+
+      index_type result = 1;
+
+      for (rank_type rank = 0; rank < extents_type::rank(); ++rank)
+        result *= extents_.extent(rank);
+
+      return offset_ + result;
+    }
+
+    template <class... Indices>
+      requires(sizeof...(Indices) == extents_type::rank() &&
+               (tested::is_convertible_v<Indices, index_type> && ...) &&
+               (tested::is_nothrow_constructible_v<index_type, Indices> && ...))
+    [[nodiscard]] constexpr index_type
+    operator()(Indices... indices) const noexcept {
+      index_type result = offset_;
+      rank_type rank = 0;
+
+      ((result += static_cast<index_type>(indices) * stride(rank++)), ...);
+
+      return result;
+    }
+
+    [[nodiscard]] static constexpr bool is_always_unique() noexcept {
+      return true;
+    }
+
+    [[nodiscard]] static constexpr bool is_always_exhaustive() noexcept {
+      return false;
+    }
+
+    [[nodiscard]] static constexpr bool is_always_strided() noexcept {
+      return true;
+    }
+
+    [[nodiscard]] static constexpr bool is_unique() noexcept { return true; }
+
+    [[nodiscard]] constexpr bool is_exhaustive() const noexcept {
+      return offset_ == 0;
+    }
+
+    [[nodiscard]] static constexpr bool is_strided() noexcept { return true; }
+
+    [[nodiscard]] constexpr index_type stride(rank_type rank) const noexcept {
+      index_type result = 1;
+
+      for (rank_type current = rank + 1; current < extents_type::rank();
+           ++current) {
+        result *= extents_.extent(current);
+      }
+
+      return result;
+    }
+
+    friend constexpr bool operator==(const mapping &left,
+                                     const mapping &right) noexcept {
+      return left.extents_ == right.extents_ && left.offset_ == right.offset_;
+    }
+
+  private:
+    FTL_NO_UNIQUE_ADDRESS extents_type extents_{};
+    index_type offset_ = 0;
+  };
+};
+
+using custom_mapping = offset_layout::mapping<static_extents>;
+
+static_assert(
+    tested::is_constructible_v<stride_static_mapping, custom_mapping>);
+
+static_assert(!tested::is_convertible_v<custom_mapping, stride_static_mapping>);
+
+static_assert(custom_mapping::is_always_unique());
+static_assert(!custom_mapping::is_always_exhaustive());
+static_assert(custom_mapping::is_always_strided());
 
 constexpr bool mdspan_remaining_layouts_work() {
-    left_scalar_mapping left_scalar;
+  left_scalar_mapping left_scalar;
 
-    if (left_scalar.required_span_size() != 1)
-        return false;
+  if (left_scalar.required_span_size() != 1)
+    return false;
 
-    if (left_scalar() != 0)
-        return false;
+  if (left_scalar() != 0)
+    return false;
 
-    left_static_mapping left;
+  left_static_mapping left;
 
-    if (left.required_span_size() != 24)
-        return false;
+  if (left.required_span_size() != 24)
+    return false;
 
-    if (left.stride(0) != 1 ||
-        left.stride(1) != 2 ||
-        left.stride(2) != 6) {
-        return false;
-    }
+  if (left.stride(0) != 1 || left.stride(1) != 2 || left.stride(2) != 6) {
+    return false;
+  }
 
-    if (left(0, 0, 0) != 0)
-        return false;
+  if (left(0, 0, 0) != 0)
+    return false;
 
-    if (left(1, 2, 3) != 23)
-        return false;
+  if (left(1, 2, 3) != 23)
+    return false;
 
-    left_partial_mapping partial{
-        partially_dynamic_extents{3}};
+  left_partial_mapping partial{partially_dynamic_extents{3}};
 
-    if (partial.required_span_size() != 24)
-        return false;
+  if (partial.required_span_size() != 24)
+    return false;
 
-    if (partial.stride(0) != 1 ||
-        partial.stride(1) != 2 ||
-        partial.stride(2) != 6) {
-        return false;
-    }
+  if (partial.stride(0) != 1 || partial.stride(1) != 2 ||
+      partial.stride(2) != 6) {
+    return false;
+  }
 
-    if (partial(1, 2, 3) != 23)
-        return false;
+  if (partial(1, 2, 3) != 23)
+    return false;
 
-    rank_one_extents rank_one{7};
-    left_rank_one_mapping left_one{rank_one};
-    right_rank_one_mapping right_one = left_one;
-    left_rank_one_mapping restored_one = right_one;
+  rank_one_extents rank_one{7};
+  left_rank_one_mapping left_one{rank_one};
+  right_rank_one_mapping right_one = left_one;
+  left_rank_one_mapping restored_one = right_one;
 
-    if (right_one.required_span_size() != 7 ||
-        restored_one.required_span_size() != 7) {
-        return false;
-    }
+  if (right_one.required_span_size() != 7 ||
+      restored_one.required_span_size() != 7) {
+    return false;
+  }
 
-    stride_scalar_mapping stride_scalar;
+  stride_scalar_mapping stride_scalar;
 
-    if (stride_scalar.required_span_size() != 1)
-        return false;
+  if (stride_scalar.required_span_size() != 1)
+    return false;
 
-    if (!stride_scalar.is_exhaustive())
-        return false;
+  if (!stride_scalar.is_exhaustive())
+    return false;
 
-    if (stride_scalar() != 0)
-        return false;
+  if (stride_scalar() != 0)
+    return false;
 
-    if (stride_scalar.strides().size() != 0)
-        return false;
+  if (stride_scalar.strides().size() != 0)
+    return false;
 
-    stride_static_mapping row_major;
+  stride_static_mapping row_major;
 
-    if (row_major.required_span_size() != 24)
-        return false;
+  if (row_major.required_span_size() != 24)
+    return false;
 
-    if (row_major.stride(0) != 12 ||
-        row_major.stride(1) != 4 ||
-        row_major.stride(2) != 1) {
-        return false;
-    }
+  if (row_major.stride(0) != 12 || row_major.stride(1) != 4 ||
+      row_major.stride(2) != 1) {
+    return false;
+  }
 
-    if (row_major(1, 2, 3) != 23)
-        return false;
+  if (row_major(1, 2, 3) != 23)
+    return false;
 
-    if (!row_major.is_exhaustive())
-        return false;
+  if (!row_major.is_exhaustive())
+    return false;
 
-    auto row_major_strides = row_major.strides();
+  auto row_major_strides = row_major.strides();
 
-    if (row_major_strides[0] != 12 ||
-        row_major_strides[1] != 4 ||
-        row_major_strides[2] != 1) {
-        return false;
-    }
+  if (row_major_strides[0] != 12 || row_major_strides[1] != 4 ||
+      row_major_strides[2] != 1) {
+    return false;
+  }
 
-    tested::array<int, 3> left_strides{1, 2, 6};
-    stride_static_mapping column_major{
-        static_extents{}, left_strides};
+  tested::array<int, 3> left_strides{1, 2, 6};
+  stride_static_mapping column_major{static_extents{}, left_strides};
 
-    if (column_major.required_span_size() != 24)
-        return false;
+  if (column_major.required_span_size() != 24)
+    return false;
 
-    if (column_major(1, 2, 3) != 23)
-        return false;
+  if (column_major(1, 2, 3) != 23)
+    return false;
 
-    if (!column_major.is_exhaustive())
-        return false;
+  if (!column_major.is_exhaustive())
+    return false;
 
-    if (!(column_major == left))
-        return false;
+  if (!(column_major == left))
+    return false;
 
-    if (!(left == column_major))
-        return false;
+  if (!(left == column_major))
+    return false;
 
-    tested::array<int, 3> padded_strides{20, 5, 1};
-    stride_static_mapping padded{
-        static_extents{}, padded_strides};
+  tested::array<int, 3> padded_strides{20, 5, 1};
+  stride_static_mapping padded{static_extents{}, padded_strides};
 
-    if (padded.required_span_size() != 34)
-        return false;
+  if (padded.required_span_size() != 34)
+    return false;
 
-    if (padded(1, 2, 3) != 33)
-        return false;
+  if (padded(1, 2, 3) != 33)
+    return false;
 
-    if (padded.is_exhaustive())
-        return false;
+  if (padded.is_exhaustive())
+    return false;
 
-    if (padded == row_major)
-        return false;
+  if (padded == row_major)
+    return false;
 
-    int permuted_values[] = {4, 8, 1};
-    tested::span permuted_strides{permuted_values};
+  int permuted_values[] = {4, 8, 1};
+  tested::span permuted_strides{permuted_values};
 
-    stride_static_mapping permuted{
-        static_extents{}, permuted_strides};
+  stride_static_mapping permuted{static_extents{}, permuted_strides};
 
-    if (permuted.required_span_size() != 24)
-        return false;
+  if (permuted.required_span_size() != 24)
+    return false;
 
-    if (!permuted.is_exhaustive())
-        return false;
+  if (!permuted.is_exhaustive())
+    return false;
 
-    if (permuted(1, 2, 3) != 23)
-        return false;
+  if (permuted(1, 2, 3) != 23)
+    return false;
 
-    stride_static_mapping from_left = left;
-    stride_static_mapping from_right = static_mapping{};
+  stride_static_mapping from_left = left;
+  stride_static_mapping from_right = static_mapping{};
 
-    if (!(from_left == left))
-        return false;
+  if (!(from_left == left))
+    return false;
 
-    if (!(from_right == static_mapping{}))
-        return false;
+  if (!(from_right == static_mapping{}))
+    return false;
 
-    left_static_mapping left_restored{from_left};
-    static_mapping right_restored{from_right};
+  left_static_mapping left_restored{from_left};
+  static_mapping right_restored{from_right};
 
-    if (!(left_restored == left))
-        return false;
+  if (!(left_restored == left))
+    return false;
 
-    if (!(right_restored == static_mapping{}))
-        return false;
+  if (!(right_restored == static_mapping{}))
+    return false;
 
-    using empty_extents =
-        tested::extents<int, 2, tested::dynamic_extent, 4>;
+  using empty_extents = tested::extents<int, 2, tested::dynamic_extent, 4>;
 
-    using empty_stride_mapping =
-        tested::layout_stride::mapping<empty_extents>;
+  using empty_stride_mapping = tested::layout_stride::mapping<empty_extents>;
 
-    empty_stride_mapping empty;
+  empty_stride_mapping empty;
 
-    if (empty.required_span_size() != 0)
-        return false;
+  if (empty.required_span_size() != 0)
+    return false;
 
-    if (!empty.is_exhaustive())
-        return false;
+  if (!empty.is_exhaustive())
+    return false;
 
-    if (empty.stride(0) != 0 ||
-        empty.stride(1) != 4 ||
-        empty.stride(2) != 1) {
-        return false;
-    }
+  if (empty.stride(0) != 0 || empty.stride(1) != 4 || empty.stride(2) != 1) {
+    return false;
+  }
 
-    return true;
+  custom_mapping custom_zero{static_extents{}, 0};
+
+  if (custom_zero.required_span_size() != 24)
+    return false;
+
+  if (custom_zero.stride(0) != 12 || custom_zero.stride(1) != 4 ||
+      custom_zero.stride(2) != 1) {
+    return false;
+  }
+
+  if (custom_zero(1, 2, 3) != 23)
+    return false;
+
+  if (!custom_zero.is_unique() || !custom_zero.is_exhaustive() ||
+      !custom_zero.is_strided()) {
+    return false;
+  }
+
+  /*
+   * Conversion from a nonstandard qualifying mapping is explicit.
+   * OFFSET(custom_zero) is zero, satisfying the converting
+   * constructor's precondition.
+   */
+  stride_static_mapping from_custom{custom_zero};
+
+  if (from_custom.extents() != custom_zero.extents())
+    return false;
+
+  if (from_custom.stride(0) != 12 || from_custom.stride(1) != 4 ||
+      from_custom.stride(2) != 1) {
+    return false;
+  }
+
+  if (!(from_custom == custom_zero))
+    return false;
+
+  if (!(custom_zero == from_custom))
+    return false;
+
+  custom_mapping custom_shifted{static_extents{}, 1};
+
+  if (custom_shifted.required_span_size() != 25)
+    return false;
+
+  if (custom_shifted.is_exhaustive())
+    return false;
+
+  if (custom_shifted(0, 0, 0) != 1 || custom_shifted(1, 2, 3) != 24) {
+    return false;
+  }
+
+  if (from_custom == custom_shifted)
+    return false;
+
+  if (custom_shifted == from_custom)
+    return false;
+
+  return true;
 }
 
 static_assert(mdspan_remaining_layouts_work());
@@ -673,20 +796,16 @@ static_assert(mdspan_remaining_layouts_work());
 using mdspan_fixed_extents = tested::extents<tested::size_t, 2, 3>;
 using mdspan_dynamic_extents = tested::dextents<tested::size_t, 2>;
 
-using fixed_mdspan =
-    tested::mdspan<int, mdspan_fixed_extents>;
+using fixed_mdspan = tested::mdspan<int, mdspan_fixed_extents>;
 
-using const_fixed_mdspan =
-    tested::mdspan<const int, mdspan_fixed_extents>;
+using const_fixed_mdspan = tested::mdspan<const int, mdspan_fixed_extents>;
 
-using dynamic_mdspan =
-    tested::mdspan<int, mdspan_dynamic_extents>;
+using dynamic_mdspan = tested::mdspan<int, mdspan_dynamic_extents>;
 
 using stride_mdspan =
     tested::mdspan<int, mdspan_fixed_extents, tested::layout_stride>;
 
-using scalar_mdspan =
-    tested::mdspan<int, tested::extents<tested::size_t>>;
+using scalar_mdspan = tested::mdspan<int, tested::extents<tested::size_t>>;
 
 using zero_mdspan =
     tested::mdspan<int, tested::extents<tested::size_t, 2, 0, 3>>;
@@ -704,33 +823,29 @@ struct shifted_accessor {
     return pointer[index + shift];
   }
 
-  constexpr data_handle_type
-  offset(data_handle_type pointer, tested::size_t index) const noexcept {
+  constexpr data_handle_type offset(data_handle_type pointer,
+                                    tested::size_t index) const noexcept {
     return pointer + index + shift;
   }
 };
 
-using shifted_mdspan =
-    tested::mdspan<int, mdspan_fixed_extents, tested::layout_right,
-                   shifted_accessor>;
+using shifted_mdspan = tested::mdspan<int, mdspan_fixed_extents,
+                                      tested::layout_right, shifted_accessor>;
 
-static_assert(tested::is_same_v<fixed_mdspan::extents_type,
-                                mdspan_fixed_extents>);
-static_assert(tested::is_same_v<fixed_mdspan::layout_type,
-                                tested::layout_right>);
+static_assert(
+    tested::is_same_v<fixed_mdspan::extents_type, mdspan_fixed_extents>);
+static_assert(
+    tested::is_same_v<fixed_mdspan::layout_type, tested::layout_right>);
 static_assert(tested::is_same_v<fixed_mdspan::accessor_type,
                                 tested::default_accessor<int>>);
-static_assert(tested::is_same_v<fixed_mdspan::mapping_type,
-                                tested::layout_right::mapping<
-                                    mdspan_fixed_extents>>);
+static_assert(
+    tested::is_same_v<fixed_mdspan::mapping_type,
+                      tested::layout_right::mapping<mdspan_fixed_extents>>);
 static_assert(tested::is_same_v<fixed_mdspan::element_type, int>);
 static_assert(tested::is_same_v<fixed_mdspan::value_type, int>);
-static_assert(tested::is_same_v<fixed_mdspan::index_type,
-                                tested::size_t>);
-static_assert(tested::is_same_v<fixed_mdspan::size_type,
-                                tested::size_t>);
-static_assert(tested::is_same_v<fixed_mdspan::rank_type,
-                                tested::size_t>);
+static_assert(tested::is_same_v<fixed_mdspan::index_type, tested::size_t>);
+static_assert(tested::is_same_v<fixed_mdspan::size_type, tested::size_t>);
+static_assert(tested::is_same_v<fixed_mdspan::rank_type, tested::size_t>);
 static_assert(tested::is_same_v<fixed_mdspan::data_handle_type, int *>);
 static_assert(tested::is_same_v<fixed_mdspan::reference, int &>);
 
@@ -747,30 +862,22 @@ static_assert(!tested::is_default_constructible_v<fixed_mdspan>);
 static_assert(!tested::is_default_constructible_v<scalar_mdspan>);
 
 static_assert(tested::is_constructible_v<fixed_mdspan, int *>);
+static_assert(tested::is_constructible_v<dynamic_mdspan, int *, tested::size_t,
+                                         tested::size_t>);
+
 static_assert(tested::is_constructible_v<dynamic_mdspan, int *,
-                                          tested::size_t,
-                                          tested::size_t>);
+                                         tested::array<tested::size_t, 2>>);
 
-static_assert(tested::is_constructible_v<
-              dynamic_mdspan, int *,
-              tested::array<tested::size_t, 2>>);
+static_assert(tested::is_constructible_v<dynamic_mdspan, int *,
+                                         tested::span<tested::size_t, 2>>);
 
-static_assert(tested::is_constructible_v<
-              dynamic_mdspan, int *,
-              tested::span<tested::size_t, 2>>);
+static_assert(tested::is_convertible_v<fixed_mdspan, const_fixed_mdspan>);
+static_assert(!tested::is_convertible_v<const_fixed_mdspan, fixed_mdspan>);
 
-static_assert(tested::is_convertible_v<fixed_mdspan,
-                                       const_fixed_mdspan>);
-static_assert(!tested::is_convertible_v<const_fixed_mdspan,
-                                        fixed_mdspan>);
+static_assert(tested::is_constructible_v<fixed_mdspan, dynamic_mdspan>);
+static_assert(!tested::is_convertible_v<dynamic_mdspan, fixed_mdspan>);
 
-static_assert(tested::is_constructible_v<fixed_mdspan,
-                                         dynamic_mdspan>);
-static_assert(!tested::is_convertible_v<dynamic_mdspan,
-                                        fixed_mdspan>);
-
-static_assert(tested::is_convertible_v<fixed_mdspan,
-                                       stride_mdspan>);
+static_assert(tested::is_convertible_v<fixed_mdspan, stride_mdspan>);
 
 static_assert(tested::is_trivially_copyable_v<fixed_mdspan>);
 static_assert(tested::is_nothrow_move_constructible_v<fixed_mdspan>);
@@ -789,22 +896,16 @@ concept accepts_mdspan_array_index =
     };
 
 template <class Mdspan>
-concept accepts_mdspan_span_index =
-    requires(const Mdspan &value,
-             tested::span<tested::size_t, Mdspan::rank()> indices) {
-      value[indices];
-    };
+concept accepts_mdspan_span_index = requires(
+    const Mdspan &value, tested::span<tested::size_t, Mdspan::rank()> indices) {
+  value[indices];
+};
 
 static_assert(accepts_mdspan_array_index<fixed_mdspan>);
 static_assert(accepts_mdspan_span_index<fixed_mdspan>);
 
 constexpr bool mdspan_class_works() {
-  int values[] = {
-      0, 1, 2,
-      3, 4, 5,
-      6, 7, 8,
-      9, 10, 11
-  };
+  int values[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
 
   fixed_mdspan fixed{values};
 
@@ -820,8 +921,8 @@ constexpr bool mdspan_class_works() {
   if (fixed.data_handle() != values)
     return false;
 
-  if (fixed[0, 0] != 0 || fixed[0, 2] != 2 ||
-      fixed[1, 0] != 3 || fixed[1, 2] != 5) {
+  if (fixed[0, 0] != 0 || fixed[0, 2] != 2 || fixed[1, 0] != 3 ||
+      fixed[1, 2] != 5) {
     return false;
   }
 
@@ -844,8 +945,7 @@ constexpr bool mdspan_class_works() {
   mdspan_dynamic_extents dynamic_extents{2, 3};
   dynamic_mdspan from_extents{values, dynamic_extents};
 
-  if (from_extents.extent(0) != 2 ||
-      from_extents.extent(1) != 3 ||
+  if (from_extents.extent(0) != 2 || from_extents.extent(1) != 3 ||
       from_extents[1, 1] != 40) {
     return false;
   }
@@ -887,38 +987,30 @@ constexpr bool mdspan_class_works() {
 
   const_fixed_mdspan const_view = fixed;
 
-  if (const_view.data_handle() != values ||
-      const_view[1, 1] != 40) {
+  if (const_view.data_handle() != values || const_view[1, 1] != 40) {
     return false;
   }
 
   fixed_mdspan restored{from_values};
 
-  if (restored.extent(0) != 2 ||
-      restored.extent(1) != 3 ||
+  if (restored.extent(0) != 2 || restored.extent(1) != 3 ||
       restored[1, 2] != 5) {
     return false;
   }
 
   stride_mdspan strided = fixed;
 
-  if (strided.stride(0) != 3 ||
-      strided.stride(1) != 1 ||
-      strided[1, 2] != 5) {
+  if (strided.stride(0) != 3 || strided.stride(1) != 1 || strided[1, 2] != 5) {
     return false;
   }
 
-  if (!fixed.is_unique() ||
-      !fixed.is_exhaustive() ||
-      !fixed.is_strided()) {
+  if (!fixed.is_unique() || !fixed.is_exhaustive() || !fixed.is_strided()) {
     return false;
   }
 
   scalar_mdspan scalar{values};
 
-  if (scalar.rank() != 0 ||
-      scalar.size() != 1 ||
-      scalar.empty() ||
+  if (scalar.rank() != 0 || scalar.size() != 1 || scalar.empty() ||
       scalar.operator[]() != 0) {
     return false;
   }
@@ -930,9 +1022,7 @@ constexpr bool mdspan_class_works() {
 
   dynamic_mdspan empty;
 
-  if (empty.size() != 0 ||
-      !empty.empty() ||
-      empty.data_handle() != nullptr) {
+  if (empty.size() != 0 || !empty.empty() || empty.data_handle() != nullptr) {
     return false;
   }
 
@@ -944,10 +1034,8 @@ constexpr bool mdspan_class_works() {
   using tested::swap;
   swap(left, right);
 
-  if (left.data_handle() != other_values ||
-      right.data_handle() != values ||
-      left[1, 2] != 25 ||
-      right[1, 2] != 5) {
+  if (left.data_handle() != other_values || right.data_handle() != values ||
+      left[1, 2] != 25 || right[1, 2] != 5) {
     return false;
   }
 
@@ -964,25 +1052,19 @@ constexpr bool mdspan_deduction_guides_work() {
 
   static_assert(tested::is_same_v<
                 decltype(from_c_array),
-                tested::mdspan<
-                    int,
-                    tested::extents<tested::size_t, 6>>>);
+                tested::mdspan<int, tested::extents<tested::size_t, 6>>>);
 
-  if (from_c_array.extent(0) != 6 ||
-      from_c_array[5] != 5) {
+  if (from_c_array.extent(0) != 6 || from_c_array[5] != 5) {
     return false;
   }
 
   tested::mdspan from_pointer{pointer};
 
-  static_assert(tested::is_same_v<
-                decltype(from_pointer),
-                tested::mdspan<
-                    int,
-                    tested::extents<tested::size_t>>>);
+  static_assert(
+      tested::is_same_v<decltype(from_pointer),
+                        tested::mdspan<int, tested::extents<tested::size_t>>>);
 
-  if (from_pointer.size() != 1 ||
-      from_pointer.operator[]() != 0) {
+  if (from_pointer.size() != 1 || from_pointer.operator[]() != 0) {
     return false;
   }
 
@@ -990,9 +1072,7 @@ constexpr bool mdspan_deduction_guides_work() {
 
   static_assert(tested::is_same_v<
                 decltype(from_integrals),
-                tested::mdspan<
-                    int,
-                    tested::dextents<tested::size_t, 2>>>);
+                tested::mdspan<int, tested::dextents<tested::size_t, 2>>>);
 
   if (from_integrals[1, 2] != 5)
     return false;
@@ -1003,9 +1083,7 @@ constexpr bool mdspan_deduction_guides_work() {
 
   static_assert(tested::is_same_v<
                 decltype(from_span),
-                tested::mdspan<
-                    int,
-                    tested::dextents<tested::size_t, 2>>>);
+                tested::mdspan<int, tested::dextents<tested::size_t, 2>>>);
 
   if (from_span[1, 1] != 4)
     return false;
@@ -1015,9 +1093,7 @@ constexpr bool mdspan_deduction_guides_work() {
 
   static_assert(tested::is_same_v<
                 decltype(from_array),
-                tested::mdspan<
-                    int,
-                    tested::dextents<tested::size_t, 2>>>);
+                tested::mdspan<int, tested::dextents<tested::size_t, 2>>>);
 
   if (from_array[0, 2] != 2)
     return false;
@@ -1025,43 +1101,33 @@ constexpr bool mdspan_deduction_guides_work() {
   tested::extents<int, 2, 3> fixed_extents_value;
   tested::mdspan from_extents{pointer, fixed_extents_value};
 
-  static_assert(tested::is_same_v<
-                decltype(from_extents),
-                tested::mdspan<
-                    int,
-                    tested::extents<int, 2, 3>>>);
+  static_assert(
+      tested::is_same_v<decltype(from_extents),
+                        tested::mdspan<int, tested::extents<int, 2, 3>>>);
 
   if (from_extents[1, 2] != 5)
     return false;
 
-  tested::layout_left::mapping<tested::extents<int, 2, 3>>
-      left_mapping;
+  tested::layout_left::mapping<tested::extents<int, 2, 3>> left_mapping;
 
   tested::mdspan from_mapping{pointer, left_mapping};
 
-  static_assert(tested::is_same_v<
-                decltype(from_mapping),
-                tested::mdspan<
-                    int,
-                    tested::extents<int, 2, 3>,
-                    tested::layout_left>>);
+  static_assert(
+      tested::is_same_v<decltype(from_mapping),
+                        tested::mdspan<int, tested::extents<int, 2, 3>,
+                                       tested::layout_left>>);
 
   if (from_mapping[1, 2] != 5)
     return false;
 
   shifted_accessor accessor{1};
-  tested::layout_right::mapping<mdspan_fixed_extents>
-      right_mapping;
+  tested::layout_right::mapping<mdspan_fixed_extents> right_mapping;
 
-  tested::mdspan from_accessor{
-      pointer, right_mapping, accessor};
+  tested::mdspan from_accessor{pointer, right_mapping, accessor};
 
-  static_assert(tested::is_same_v<
-                decltype(from_accessor),
-                shifted_mdspan>);
+  static_assert(tested::is_same_v<decltype(from_accessor), shifted_mdspan>);
 
-  if (from_accessor[0, 0] != 1 ||
-      from_accessor.accessor().shift != 1) {
+  if (from_accessor[0, 0] != 1 || from_accessor.accessor().shift != 1) {
     return false;
   }
 
@@ -1070,11 +1136,32 @@ constexpr bool mdspan_deduction_guides_work() {
 
 static_assert(mdspan_deduction_guides_work());
 
+using static_zero_tail_extents =
+    tested::extents<int, tested::numeric_limits<int>::max(), 2, 0>;
+
+using static_zero_tail_left =
+    tested::layout_left::mapping<static_zero_tail_extents>;
+
+using static_zero_tail_right =
+    tested::layout_right::mapping<static_zero_tail_extents>;
+
+static_assert(static_zero_tail_left{}.required_span_size() == 0);
+static_assert(static_zero_tail_right{}.required_span_size() == 0);
+
+constexpr bool mdspan_zero_tail_works() {
+  tested::dextents<int, 3> extents{tested::numeric_limits<int>::max(), 2, 0};
+
+  tested::layout_left::mapping<decltype(extents)> left{extents};
+  tested::layout_right::mapping<decltype(extents)> right{extents};
+
+  return left.required_span_size() == 0 && right.required_span_size() == 0;
+}
+
+static_assert(mdspan_zero_tail_works());
+
 bool ftl_test() {
-  return mdspan_extents_works() &&
-         mdspan_extents_conversions_work() &&
-         mdspan_layout_right_works() &&
-         mdspan_remaining_layouts_work() &&
-         mdspan_class_works() &&
-         mdspan_deduction_guides_work();
+  return mdspan_extents_works() && mdspan_extents_conversions_work() &&
+         mdspan_layout_right_works() && mdspan_remaining_layouts_work() &&
+         mdspan_class_works() && mdspan_deduction_guides_work() &&
+         mdspan_zero_tail_works();
 }
