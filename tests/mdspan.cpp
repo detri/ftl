@@ -670,7 +670,411 @@ constexpr bool mdspan_remaining_layouts_work() {
 
 static_assert(mdspan_remaining_layouts_work());
 
+using mdspan_fixed_extents = tested::extents<tested::size_t, 2, 3>;
+using mdspan_dynamic_extents = tested::dextents<tested::size_t, 2>;
+
+using fixed_mdspan =
+    tested::mdspan<int, mdspan_fixed_extents>;
+
+using const_fixed_mdspan =
+    tested::mdspan<const int, mdspan_fixed_extents>;
+
+using dynamic_mdspan =
+    tested::mdspan<int, mdspan_dynamic_extents>;
+
+using stride_mdspan =
+    tested::mdspan<int, mdspan_fixed_extents, tested::layout_stride>;
+
+using scalar_mdspan =
+    tested::mdspan<int, tested::extents<tested::size_t>>;
+
+using zero_mdspan =
+    tested::mdspan<int, tested::extents<tested::size_t, 2, 0, 3>>;
+
+struct shifted_accessor {
+  using offset_policy = shifted_accessor;
+  using element_type = int;
+  using reference = int &;
+  using data_handle_type = int *;
+
+  tested::size_t shift = 0;
+
+  constexpr reference access(data_handle_type pointer,
+                             tested::size_t index) const noexcept {
+    return pointer[index + shift];
+  }
+
+  constexpr data_handle_type
+  offset(data_handle_type pointer, tested::size_t index) const noexcept {
+    return pointer + index + shift;
+  }
+};
+
+using shifted_mdspan =
+    tested::mdspan<int, mdspan_fixed_extents, tested::layout_right,
+                   shifted_accessor>;
+
+static_assert(tested::is_same_v<fixed_mdspan::extents_type,
+                                mdspan_fixed_extents>);
+static_assert(tested::is_same_v<fixed_mdspan::layout_type,
+                                tested::layout_right>);
+static_assert(tested::is_same_v<fixed_mdspan::accessor_type,
+                                tested::default_accessor<int>>);
+static_assert(tested::is_same_v<fixed_mdspan::mapping_type,
+                                tested::layout_right::mapping<
+                                    mdspan_fixed_extents>>);
+static_assert(tested::is_same_v<fixed_mdspan::element_type, int>);
+static_assert(tested::is_same_v<fixed_mdspan::value_type, int>);
+static_assert(tested::is_same_v<fixed_mdspan::index_type,
+                                tested::size_t>);
+static_assert(tested::is_same_v<fixed_mdspan::size_type,
+                                tested::size_t>);
+static_assert(tested::is_same_v<fixed_mdspan::rank_type,
+                                tested::size_t>);
+static_assert(tested::is_same_v<fixed_mdspan::data_handle_type, int *>);
+static_assert(tested::is_same_v<fixed_mdspan::reference, int &>);
+
+static_assert(fixed_mdspan::rank() == 2);
+static_assert(fixed_mdspan::rank_dynamic() == 0);
+static_assert(fixed_mdspan::static_extent(0) == 2);
+static_assert(fixed_mdspan::static_extent(1) == 3);
+
+static_assert(dynamic_mdspan::rank() == 2);
+static_assert(dynamic_mdspan::rank_dynamic() == 2);
+
+static_assert(tested::is_default_constructible_v<dynamic_mdspan>);
+static_assert(!tested::is_default_constructible_v<fixed_mdspan>);
+static_assert(!tested::is_default_constructible_v<scalar_mdspan>);
+
+static_assert(tested::is_constructible_v<fixed_mdspan, int *>);
+static_assert(tested::is_constructible_v<dynamic_mdspan, int *,
+                                          tested::size_t,
+                                          tested::size_t>);
+
+static_assert(tested::is_constructible_v<
+              dynamic_mdspan, int *,
+              tested::array<tested::size_t, 2>>);
+
+static_assert(tested::is_constructible_v<
+              dynamic_mdspan, int *,
+              tested::span<tested::size_t, 2>>);
+
+static_assert(tested::is_convertible_v<fixed_mdspan,
+                                       const_fixed_mdspan>);
+static_assert(!tested::is_convertible_v<const_fixed_mdspan,
+                                        fixed_mdspan>);
+
+static_assert(tested::is_constructible_v<fixed_mdspan,
+                                         dynamic_mdspan>);
+static_assert(!tested::is_convertible_v<dynamic_mdspan,
+                                        fixed_mdspan>);
+
+static_assert(tested::is_convertible_v<fixed_mdspan,
+                                       stride_mdspan>);
+
+static_assert(tested::is_trivially_copyable_v<fixed_mdspan>);
+static_assert(tested::is_nothrow_move_constructible_v<fixed_mdspan>);
+static_assert(tested::is_nothrow_move_assignable_v<fixed_mdspan>);
+static_assert(tested::is_nothrow_swappable_v<fixed_mdspan>);
+
+static_assert(fixed_mdspan::is_always_unique());
+static_assert(fixed_mdspan::is_always_exhaustive());
+static_assert(fixed_mdspan::is_always_strided());
+
+template <class Mdspan>
+concept accepts_mdspan_array_index =
+    requires(const Mdspan &value,
+             const tested::array<tested::size_t, Mdspan::rank()> &indices) {
+      value[indices];
+    };
+
+template <class Mdspan>
+concept accepts_mdspan_span_index =
+    requires(const Mdspan &value,
+             tested::span<tested::size_t, Mdspan::rank()> indices) {
+      value[indices];
+    };
+
+static_assert(accepts_mdspan_array_index<fixed_mdspan>);
+static_assert(accepts_mdspan_span_index<fixed_mdspan>);
+
+constexpr bool mdspan_class_works() {
+  int values[] = {
+      0, 1, 2,
+      3, 4, 5,
+      6, 7, 8,
+      9, 10, 11
+  };
+
+  fixed_mdspan fixed{values};
+
+  if (fixed.rank() != 2 || fixed.rank_dynamic() != 0)
+    return false;
+
+  if (fixed.extent(0) != 2 || fixed.extent(1) != 3)
+    return false;
+
+  if (fixed.size() != 6 || fixed.empty())
+    return false;
+
+  if (fixed.data_handle() != values)
+    return false;
+
+  if (fixed[0, 0] != 0 || fixed[0, 2] != 2 ||
+      fixed[1, 0] != 3 || fixed[1, 2] != 5) {
+    return false;
+  }
+
+  fixed[1, 1] = 40;
+
+  if (values[4] != 40)
+    return false;
+
+  tested::array<tested::size_t, 2> array_index{1, 2};
+
+  if (fixed[array_index] != 5)
+    return false;
+
+  tested::size_t span_index_values[] = {1, 0};
+  tested::span span_index{span_index_values};
+
+  if (fixed[span_index] != 3)
+    return false;
+
+  mdspan_dynamic_extents dynamic_extents{2, 3};
+  dynamic_mdspan from_extents{values, dynamic_extents};
+
+  if (from_extents.extent(0) != 2 ||
+      from_extents.extent(1) != 3 ||
+      from_extents[1, 1] != 40) {
+    return false;
+  }
+
+  dynamic_mdspan from_values{values, 2, 3};
+
+  if (from_values.size() != 6 || from_values[1, 2] != 5)
+    return false;
+
+  tested::array<tested::size_t, 2> extent_array{2, 3};
+  dynamic_mdspan from_array{values, extent_array};
+
+  if (from_array.size() != 6 || from_array[0, 1] != 1)
+    return false;
+
+  tested::size_t extent_values[] = {2, 3};
+  tested::span extent_span{extent_values};
+  dynamic_mdspan from_span{values, extent_span};
+
+  if (from_span.size() != 6 || from_span[1, 0] != 3)
+    return false;
+
+  fixed_mdspan::mapping_type right_mapping{mdspan_fixed_extents{}};
+  fixed_mdspan from_mapping{values, right_mapping};
+
+  if (from_mapping.mapping().required_span_size() != 6 ||
+      from_mapping[1, 2] != 5) {
+    return false;
+  }
+
+  shifted_accessor shifted_access{1};
+  shifted_mdspan shifted{values, right_mapping, shifted_access};
+
+  if (shifted.accessor().shift != 1)
+    return false;
+
+  if (shifted[0, 0] != 1 || shifted[1, 2] != 6)
+    return false;
+
+  const_fixed_mdspan const_view = fixed;
+
+  if (const_view.data_handle() != values ||
+      const_view[1, 1] != 40) {
+    return false;
+  }
+
+  fixed_mdspan restored{from_values};
+
+  if (restored.extent(0) != 2 ||
+      restored.extent(1) != 3 ||
+      restored[1, 2] != 5) {
+    return false;
+  }
+
+  stride_mdspan strided = fixed;
+
+  if (strided.stride(0) != 3 ||
+      strided.stride(1) != 1 ||
+      strided[1, 2] != 5) {
+    return false;
+  }
+
+  if (!fixed.is_unique() ||
+      !fixed.is_exhaustive() ||
+      !fixed.is_strided()) {
+    return false;
+  }
+
+  scalar_mdspan scalar{values};
+
+  if (scalar.rank() != 0 ||
+      scalar.size() != 1 ||
+      scalar.empty() ||
+      scalar.operator[]() != 0) {
+    return false;
+  }
+
+  zero_mdspan zero{values};
+
+  if (zero.size() != 0 || !zero.empty())
+    return false;
+
+  dynamic_mdspan empty;
+
+  if (empty.size() != 0 ||
+      !empty.empty() ||
+      empty.data_handle() != nullptr) {
+    return false;
+  }
+
+  int other_values[] = {20, 21, 22, 23, 24, 25};
+
+  fixed_mdspan left{values};
+  fixed_mdspan right{other_values};
+
+  using tested::swap;
+  swap(left, right);
+
+  if (left.data_handle() != other_values ||
+      right.data_handle() != values ||
+      left[1, 2] != 25 ||
+      right[1, 2] != 5) {
+    return false;
+  }
+
+  return true;
+}
+
+static_assert(mdspan_class_works());
+
+constexpr bool mdspan_deduction_guides_work() {
+  int values[] = {0, 1, 2, 3, 4, 5};
+  int *pointer = values;
+
+  tested::mdspan from_c_array{values};
+
+  static_assert(tested::is_same_v<
+                decltype(from_c_array),
+                tested::mdspan<
+                    int,
+                    tested::extents<tested::size_t, 6>>>);
+
+  if (from_c_array.extent(0) != 6 ||
+      from_c_array[5] != 5) {
+    return false;
+  }
+
+  tested::mdspan from_pointer{pointer};
+
+  static_assert(tested::is_same_v<
+                decltype(from_pointer),
+                tested::mdspan<
+                    int,
+                    tested::extents<tested::size_t>>>);
+
+  if (from_pointer.size() != 1 ||
+      from_pointer.operator[]() != 0) {
+    return false;
+  }
+
+  tested::mdspan from_integrals{pointer, 2, 3};
+
+  static_assert(tested::is_same_v<
+                decltype(from_integrals),
+                tested::mdspan<
+                    int,
+                    tested::dextents<tested::size_t, 2>>>);
+
+  if (from_integrals[1, 2] != 5)
+    return false;
+
+  tested::size_t span_values[] = {2, 3};
+  tested::span dimensions_span{span_values};
+  tested::mdspan from_span{pointer, dimensions_span};
+
+  static_assert(tested::is_same_v<
+                decltype(from_span),
+                tested::mdspan<
+                    int,
+                    tested::dextents<tested::size_t, 2>>>);
+
+  if (from_span[1, 1] != 4)
+    return false;
+
+  tested::array<tested::size_t, 2> dimensions_array{2, 3};
+  tested::mdspan from_array{pointer, dimensions_array};
+
+  static_assert(tested::is_same_v<
+                decltype(from_array),
+                tested::mdspan<
+                    int,
+                    tested::dextents<tested::size_t, 2>>>);
+
+  if (from_array[0, 2] != 2)
+    return false;
+
+  tested::extents<int, 2, 3> fixed_extents_value;
+  tested::mdspan from_extents{pointer, fixed_extents_value};
+
+  static_assert(tested::is_same_v<
+                decltype(from_extents),
+                tested::mdspan<
+                    int,
+                    tested::extents<int, 2, 3>>>);
+
+  if (from_extents[1, 2] != 5)
+    return false;
+
+  tested::layout_left::mapping<tested::extents<int, 2, 3>>
+      left_mapping;
+
+  tested::mdspan from_mapping{pointer, left_mapping};
+
+  static_assert(tested::is_same_v<
+                decltype(from_mapping),
+                tested::mdspan<
+                    int,
+                    tested::extents<int, 2, 3>,
+                    tested::layout_left>>);
+
+  if (from_mapping[1, 2] != 5)
+    return false;
+
+  shifted_accessor accessor{1};
+  tested::layout_right::mapping<mdspan_fixed_extents>
+      right_mapping;
+
+  tested::mdspan from_accessor{
+      pointer, right_mapping, accessor};
+
+  static_assert(tested::is_same_v<
+                decltype(from_accessor),
+                shifted_mdspan>);
+
+  if (from_accessor[0, 0] != 1 ||
+      from_accessor.accessor().shift != 1) {
+    return false;
+  }
+
+  return true;
+}
+
+static_assert(mdspan_deduction_guides_work());
+
 bool ftl_test() {
-  return mdspan_extents_works() && mdspan_extents_conversions_work() &&
-         mdspan_layout_right_works() && mdspan_remaining_layouts_work();
+  return mdspan_extents_works() &&
+         mdspan_extents_conversions_work() &&
+         mdspan_layout_right_works() &&
+         mdspan_remaining_layouts_work() &&
+         mdspan_class_works() &&
+         mdspan_deduction_guides_work();
 }
