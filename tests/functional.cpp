@@ -75,8 +75,6 @@ static_assert(tested::is_constructible_v<
               decltype([](int value) noexcept { return value; })>);
 static_assert(tested::hash<unsigned>{}(42) ==
               ftl_rapidhash::rapidhash_t<unsigned>{}(42));
-static_assert(tested::hash<tested::string_view>{}("rapidhash") ==
-              ftl_rapidhash::rapidhash("rapidhash"));
 
 static_assert(tested::is_same_v<decltype(tested::less<int>{}(1, 2)), bool>);
 

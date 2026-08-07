@@ -1070,14 +1070,6 @@ FTL_DETAIL_FLOAT_HASH(double);
 FTL_DETAIL_FLOAT_HASH(long double);
 #undef FTL_DETAIL_FLOAT_HASH
 
-template <class Character, class Traits>
-struct hash<basic_string_view<Character, Traits>> {
-  constexpr size_t
-  operator()(basic_string_view<Character, Traits> value) const noexcept {
-    return static_cast<size_t>(ftl_rapidhash::rapidhash(value));
-  }
-};
-
 FTL_END_NAMESPACE
 
 #if !defined(__cpp_lib_invoke) || __cpp_lib_invoke < 201411L

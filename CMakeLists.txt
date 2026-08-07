@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
-project(ftl LANGUAGES CXX)
+set(FTL_VERSION 0.3.3)
+project(ftl VERSION ${FTL_VERSION} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)

@@ -1,0 +1,313 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CHARCONV_HEADER
+#define FTL_CHARCONV_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <__system_error/errc.hpp>
+#include <limits>
+#include <type_traits>
+#else
+#include <ftl/__system_error/errc.hpp>
+#include <ftl/limits>
+#include <ftl/type_traits>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+enum class chars_format {
+  scientific = 1,
+  fixed = 2,
+  hex = 4,
+  general = fixed | scientific
+};
+
+constexpr chars_format operator&(chars_format left,
+                                 chars_format right) noexcept {
+  return static_cast<chars_format>(static_cast<unsigned>(left) &
+                                   static_cast<unsigned>(right));
+}
+
+constexpr chars_format operator|(chars_format left,
+                                 chars_format right) noexcept {
+  return static_cast<chars_format>(static_cast<unsigned>(left) |
+                                   static_cast<unsigned>(right));
+}
+
+constexpr chars_format operator^(chars_format left,
+                                 chars_format right) noexcept {
+  return static_cast<chars_format>(static_cast<unsigned>(left) ^
+                                   static_cast<unsigned>(right));
+}
+
+constexpr chars_format operator~(chars_format value) noexcept {
+  return static_cast<chars_format>(~static_cast<unsigned>(value));
+}
+
+constexpr chars_format &operator&=(chars_format &left,
+                                   chars_format right) noexcept {
+  return left = left & right;
+}
+
+constexpr chars_format &operator|=(chars_format &left,
+                                   chars_format right) noexcept {
+  return left = left | right;
+}
+
+constexpr chars_format &operator^=(chars_format &left,
+                                   chars_format right) noexcept {
+  return left = left ^ right;
+}
+
+struct to_chars_result {
+  char *ptr;
+  errc ec;
+
+  friend constexpr bool operator==(const to_chars_result &,
+                                   const to_chars_result &) = default;
+};
+
+struct from_chars_result {
+  const char *ptr;
+  errc ec;
+
+  friend constexpr bool operator==(const from_chars_result &,
+                                   const from_chars_result &) = default;
+};
+
+namespace charconv_detail {
+
+[[nodiscard]]
+constexpr unsigned digit_value(char value) noexcept {
+  if (value >= '0' && value <= '9')
+    return static_cast<unsigned>(value - '0');
+
+  if (value >= 'a' && value <= 'z')
+    return static_cast<unsigned>(value - 'a') + 10u;
+
+  if (value >= 'A' && value <= 'Z')
+    return static_cast<unsigned>(value - 'A') + 10u;
+
+  return 255u;
+}
+
+[[nodiscard]]
+constexpr char digit_character(unsigned value) noexcept {
+  return value < 10u ? static_cast<char>('0' + value)
+                     : static_cast<char>('a' + value - 10u);
+}
+
+template <class T>
+concept charconv_integer =
+    is_integral_v<T> &&
+    is_same_v<T, remove_cv_t<T>> &&
+    !is_same_v<T, bool> &&
+    !is_same_v<T, wchar_t> &&
+    !is_same_v<T, char8_t> &&
+    !is_same_v<T, char16_t> &&
+    !is_same_v<T, char32_t>;
+
+template <class Integer>
+using unsigned_integer_t = make_unsigned_t<remove_cv_t<Integer>>;
+
+template <class Integer>
+[[nodiscard]]
+constexpr unsigned_integer_t<Integer>
+unsigned_magnitude(Integer value) noexcept {
+  using integer_type = remove_cv_t<Integer>;
+  using unsigned_type = unsigned_integer_t<Integer>;
+
+  if constexpr (is_signed_v<integer_type>) {
+    if (value < 0) {
+      /*
+       * Converting first and subtracting in the unsigned
+       * domain handles the minimum signed value without
+       * signed overflow.
+       */
+      return unsigned_type{} - static_cast<unsigned_type>(value);
+    }
+  }
+
+  return static_cast<unsigned_type>(value);
+}
+
+template <class Integer>
+constexpr to_chars_result integer_to_chars(char *first, char *last,
+                                           Integer value, int base) noexcept {
+  using integer_type = remove_cv_t<Integer>;
+  using unsigned_type = unsigned_integer_t<Integer>;
+
+  const bool negative = is_signed_v<integer_type> && value < 0;
+
+  unsigned_type magnitude = unsigned_magnitude(value);
+
+  /*
+   * 128 bits in base 2 plus a sign is enough even when
+   * extension integer types eventually participate.
+   */
+  char reversed[numeric_limits<unsigned_type>::digits + 1];
+
+  size_t count = 0;
+
+  do {
+    const unsigned digit =
+        static_cast<unsigned>(magnitude % static_cast<unsigned_type>(base));
+
+    reversed[count++] = digit_character(digit);
+
+    magnitude /= static_cast<unsigned_type>(base);
+  } while (magnitude != 0);
+
+  const size_t required = count + static_cast<size_t>(negative);
+
+  if (static_cast<size_t>(last - first) < required)
+    return {last, errc::value_too_large};
+
+  char *output = first;
+
+  if (negative)
+    *output++ = '-';
+
+  while (count != 0)
+    *output++ = reversed[--count];
+
+  return {output, errc{}};
+}
+
+template <class Integer>
+constexpr from_chars_result
+integer_from_chars(const char *first, const char *last, Integer &destination,
+                   int base) noexcept {
+  using integer_type = remove_cv_t<Integer>;
+  using unsigned_type = unsigned_integer_t<Integer>;
+
+  const char *current = first;
+
+  bool negative = false;
+
+  if constexpr (is_signed_v<integer_type>) {
+    if (current != last && *current == '-') {
+      negative = true;
+      ++current;
+    }
+  }
+
+  const char *digits_begin = current;
+
+  constexpr unsigned_type positive_limit =
+      static_cast<unsigned_type>(numeric_limits<integer_type>::max());
+
+  const unsigned_type limit = [&] {
+    if constexpr (is_signed_v<integer_type>) {
+      if (negative)
+        return positive_limit + unsigned_type{1};
+    }
+
+    return numeric_limits<unsigned_type>::max();
+  }();
+
+  unsigned_type value = 0;
+  bool overflow = false;
+
+  while (current != last) {
+    const unsigned digit = digit_value(*current);
+
+    if (digit >= static_cast<unsigned>(base))
+      break;
+
+    const auto converted_digit = static_cast<unsigned_type>(digit);
+
+    if (!overflow) {
+      if (value >
+          (limit - converted_digit) / static_cast<unsigned_type>(base)) {
+        overflow = true;
+      } else {
+        value = value * static_cast<unsigned_type>(base) + converted_digit;
+      }
+    }
+
+    ++current;
+  }
+
+  if (current == digits_begin)
+    return {first, errc::invalid_argument};
+
+  if (overflow)
+    return {current, errc::result_out_of_range};
+
+  if constexpr (is_signed_v<integer_type>) {
+    if (negative) {
+      if (value == positive_limit + unsigned_type{1}) {
+        destination = numeric_limits<integer_type>::min();
+      } else {
+        destination =
+            static_cast<integer_type>(-static_cast<integer_type>(value));
+      }
+
+      return {current, errc{}};
+    }
+  }
+
+  destination = static_cast<integer_type>(value);
+
+  return {current, errc{}};
+}
+
+} // namespace charconv_detail
+
+template <charconv_detail::charconv_integer Integer>
+constexpr to_chars_result to_chars(char *first, char *last, Integer value,
+                                   int base = 10) {
+  return charconv_detail::integer_to_chars(first, last, value, base);
+}
+
+to_chars_result to_chars(char *, char *, bool, int = 10) = delete;
+
+/*
+ * Floating overloads belong here, but are intentionally
+ * not being lied about. Their implementation is the
+ * remaining Stage 3.3 conversion-engine slice.
+ */
+to_chars_result to_chars(char *first, char *last, float value);
+
+to_chars_result to_chars(char *first, char *last, double value);
+
+to_chars_result to_chars(char *first, char *last, long double value);
+
+to_chars_result to_chars(char *first, char *last, float value,
+                         chars_format format);
+
+to_chars_result to_chars(char *first, char *last, double value,
+                         chars_format format);
+
+to_chars_result to_chars(char *first, char *last, long double value,
+                         chars_format format);
+
+to_chars_result to_chars(char *first, char *last, float value,
+                         chars_format format, int precision);
+
+to_chars_result to_chars(char *first, char *last, double value,
+                         chars_format format, int precision);
+
+to_chars_result to_chars(char *first, char *last, long double value,
+                         chars_format format, int precision);
+
+template <charconv_detail::charconv_integer Integer>
+constexpr from_chars_result from_chars(const char *first, const char *last,
+                                       Integer &value, int base = 10) {
+  return charconv_detail::integer_from_chars(first, last, value, base);
+}
+
+from_chars_result from_chars(const char *first, const char *last, float &value,
+                             chars_format format = chars_format::general);
+
+from_chars_result from_chars(const char *first, const char *last, double &value,
+                             chars_format format = chars_format::general);
+
+from_chars_result from_chars(const char *first, const char *last,
+                             long double &value,
+                             chars_format format = chars_format::general);
+
+FTL_END_NAMESPACE
+
+#endif // FTL_CHARCONV_HEADER

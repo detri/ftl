@@ -13,7 +13,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <string_view>
 #include <type_traits>
 #define FTL_RAPIDHASH_STD std
 #else
@@ -23,7 +22,6 @@
 #include <ftl/cstddef>
 #include <ftl/cstdint>
 #include <ftl/cstring>
-#include <ftl/string_view>
 #include <ftl/type_traits>
 #define FTL_RAPIDHASH_STD ftl
 #endif
@@ -85,50 +83,69 @@ template<byte_like Byte>
     }
 }
 
-struct wchar_byte_ptr {
-    const wchar_t *data{};
+template <class T>
+concept code_unit =
+    FTL_RAPIDHASH_STD::same_as<
+        FTL_RAPIDHASH_STD::remove_cv_t<T>,
+        wchar_t> ||
+    FTL_RAPIDHASH_STD::same_as<
+        FTL_RAPIDHASH_STD::remove_cv_t<T>,
+        char8_t> ||
+    FTL_RAPIDHASH_STD::same_as<
+        FTL_RAPIDHASH_STD::remove_cv_t<T>,
+        char16_t> ||
+    FTL_RAPIDHASH_STD::same_as<
+        FTL_RAPIDHASH_STD::remove_cv_t<T>,
+        char32_t>;
+
+template <code_unit CodeUnit>
+struct code_unit_byte_ptr {
+    const CodeUnit *data{};
     FTL_RAPIDHASH_STD::size_t offset{};
 
     [[nodiscard]]
     constexpr FTL_RAPIDHASH_STD::uint8_t operator[](
         const FTL_RAPIDHASH_STD::size_t index) const noexcept {
-        using unsigned_wchar = FTL_RAPIDHASH_STD::make_unsigned_t<wchar_t>;
+        using unsigned_code_unit =
+            FTL_RAPIDHASH_STD::make_unsigned_t<CodeUnit>;
 
-        const FTL_RAPIDHASH_STD::size_t byte_index = offset + index;
-        const FTL_RAPIDHASH_STD::size_t char_index =
-            byte_index / sizeof(wchar_t);
-        const FTL_RAPIDHASH_STD::size_t char_byte =
-            byte_index % sizeof(wchar_t);
+        const FTL_RAPIDHASH_STD::size_t byte_index =
+            offset + index;
+
+        const FTL_RAPIDHASH_STD::size_t code_unit_index =
+            byte_index / sizeof(CodeUnit);
+
+        const FTL_RAPIDHASH_STD::size_t code_unit_byte =
+            byte_index % sizeof(CodeUnit);
 
         const auto value =
-            static_cast<unsigned_wchar>(data[char_index]);
+            static_cast<unsigned_code_unit>(
+                data[code_unit_index]);
 
         return static_cast<FTL_RAPIDHASH_STD::uint8_t>(
-            value >> (char_byte * 8u));
+            value >> (code_unit_byte * 8u));
     }
 
     [[nodiscard]]
-    constexpr wchar_byte_ptr operator+(
-        const FTL_RAPIDHASH_STD::size_t amount) const noexcept {
+    constexpr code_unit_byte_ptr operator+(
+        FTL_RAPIDHASH_STD::size_t amount) const noexcept {
         return {data, offset + amount};
     }
 
-    constexpr wchar_byte_ptr &operator+=(
-        const FTL_RAPIDHASH_STD::size_t amount) noexcept {
+    constexpr code_unit_byte_ptr &operator+=(
+        FTL_RAPIDHASH_STD::size_t amount) noexcept {
         offset += amount;
         return *this;
     }
 
     [[nodiscard]]
-    constexpr wchar_byte_ptr operator-(
-    const FTL_RAPIDHASH_STD::size_t amount) const noexcept
-    {
+    constexpr code_unit_byte_ptr operator-(
+        FTL_RAPIDHASH_STD::size_t amount) const noexcept {
         return {data, offset - amount};
     }
 
-    constexpr wchar_byte_ptr& operator-=(
-        const FTL_RAPIDHASH_STD::size_t amount) noexcept
-    {
+    constexpr code_unit_byte_ptr &operator-=(
+        FTL_RAPIDHASH_STD::size_t amount) noexcept {
         offset -= amount;
         return *this;
     }
@@ -178,16 +195,30 @@ template<byte_like Byte>
     }
 }
 
+template <code_unit CodeUnit>
 [[nodiscard]]
-RAPIDHASH_ALWAYS_INLINE constexpr FTL_RAPIDHASH_STD::uint64_t read32(
-    const wchar_byte_ptr p) noexcept {
-    return FTL_RAPIDHASH_STD::uint64_t{p[0]} | (FTL_RAPIDHASH_STD::uint64_t{p[1]} << 8u) | (FTL_RAPIDHASH_STD::uint64_t{p[2]} << 16u) | (FTL_RAPIDHASH_STD::uint64_t{p[3]} << 24u);
+RAPIDHASH_ALWAYS_INLINE
+constexpr FTL_RAPIDHASH_STD::uint64_t read32(
+    const code_unit_byte_ptr<CodeUnit> p) noexcept {
+    return FTL_RAPIDHASH_STD::uint64_t{p[0]}
+         | (FTL_RAPIDHASH_STD::uint64_t{p[1]} << 8u)
+         | (FTL_RAPIDHASH_STD::uint64_t{p[2]} << 16u)
+         | (FTL_RAPIDHASH_STD::uint64_t{p[3]} << 24u);
 }
 
+template <code_unit CodeUnit>
 [[nodiscard]]
-RAPIDHASH_ALWAYS_INLINE constexpr FTL_RAPIDHASH_STD::uint64_t read64(
-    const wchar_byte_ptr p) noexcept {
-    return FTL_RAPIDHASH_STD::uint64_t{p[0]} | (FTL_RAPIDHASH_STD::uint64_t{p[1]} << 8u) | (FTL_RAPIDHASH_STD::uint64_t{p[2]} << 16u) | (FTL_RAPIDHASH_STD::uint64_t{p[3]} << 24u) | (FTL_RAPIDHASH_STD::uint64_t{p[4]} << 32u) | (FTL_RAPIDHASH_STD::uint64_t{p[5]} << 40u) | (FTL_RAPIDHASH_STD::uint64_t{p[6]} << 48u) | (FTL_RAPIDHASH_STD::uint64_t{p[7]} << 56u);
+RAPIDHASH_ALWAYS_INLINE
+constexpr FTL_RAPIDHASH_STD::uint64_t read64(
+    const code_unit_byte_ptr<CodeUnit> p) noexcept {
+    return FTL_RAPIDHASH_STD::uint64_t{p[0]}
+         | (FTL_RAPIDHASH_STD::uint64_t{p[1]} << 8u)
+         | (FTL_RAPIDHASH_STD::uint64_t{p[2]} << 16u)
+         | (FTL_RAPIDHASH_STD::uint64_t{p[3]} << 24u)
+         | (FTL_RAPIDHASH_STD::uint64_t{p[4]} << 32u)
+         | (FTL_RAPIDHASH_STD::uint64_t{p[5]} << 40u)
+         | (FTL_RAPIDHASH_STD::uint64_t{p[6]} << 48u)
+         | (FTL_RAPIDHASH_STD::uint64_t{p[7]} << 56u);
 }
 
 struct uint128_parts {
@@ -678,38 +709,41 @@ template<detail::byte_like Byte>
     return rapidhash_nano_with_seed(key, len, 0);
 }
 
+template <detail::code_unit CodeUnit>
 [[nodiscard]]
 constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash_with_seed(
-    const wchar_t *key,
-    const FTL_RAPIDHASH_STD::size_t len,
+    const CodeUnit *key,
+    const FTL_RAPIDHASH_STD::size_t length,
     const FTL_RAPIDHASH_STD::uint64_t seed_value) noexcept {
     return detail::hash_internal<detail::variant::full>(
-        detail::wchar_byte_ptr{key, 0u},
-        len * sizeof(wchar_t),
+        detail::code_unit_byte_ptr<CodeUnit>{key, 0u},
+        length * sizeof(CodeUnit),
         seed_value,
         secret);
 }
 
+template <detail::code_unit CodeUnit>
 [[nodiscard]]
 constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash_micro_with_seed(
-    const wchar_t *key,
-    const FTL_RAPIDHASH_STD::size_t len,
+    const CodeUnit *key,
+    const FTL_RAPIDHASH_STD::size_t length,
     const FTL_RAPIDHASH_STD::uint64_t seed_value) noexcept {
     return detail::hash_internal<detail::variant::micro>(
-        detail::wchar_byte_ptr{key, 0u},
-        len * sizeof(wchar_t),
+        detail::code_unit_byte_ptr<CodeUnit>{key, 0u},
+        length * sizeof(CodeUnit),
         seed_value,
         secret);
 }
 
+template <detail::code_unit CodeUnit>
 [[nodiscard]]
 constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash_nano_with_seed(
-    const wchar_t *key,
-    const FTL_RAPIDHASH_STD::size_t len,
+    const CodeUnit *key,
+    const FTL_RAPIDHASH_STD::size_t length,
     const FTL_RAPIDHASH_STD::uint64_t seed_value) noexcept {
     return detail::hash_internal<detail::variant::nano>(
-        detail::wchar_byte_ptr{key, 0u},
-        len * sizeof(wchar_t),
+        detail::code_unit_byte_ptr<CodeUnit>{key, 0u},
+        length * sizeof(CodeUnit),
         seed_value,
         secret);
 }
@@ -732,52 +766,28 @@ constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash_nano_with_seed(
     return rapidhash_nano_with_seed(key, len, 0);
 }
 
+template <detail::code_unit CodeUnit>
 [[nodiscard]]
 constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash(
-    const wchar_t *key,
-    const FTL_RAPIDHASH_STD::size_t len) noexcept {
-    return rapidhash_with_seed(key, len, 0u);
+    const CodeUnit *key,
+    FTL_RAPIDHASH_STD::size_t length) noexcept {
+    return rapidhash_with_seed(key, length, 0u);
 }
 
+template <detail::code_unit CodeUnit>
 [[nodiscard]]
 constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash_micro(
-    const wchar_t *key,
-    const FTL_RAPIDHASH_STD::size_t len) noexcept {
-    return rapidhash_micro_with_seed(key, len, 0u);
+    const CodeUnit *key,
+    FTL_RAPIDHASH_STD::size_t length) noexcept {
+    return rapidhash_micro_with_seed(key, length, 0u);
 }
 
+template <detail::code_unit CodeUnit>
 [[nodiscard]]
 constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash_nano(
-    const wchar_t *key,
-    const FTL_RAPIDHASH_STD::size_t len) noexcept {
-    return rapidhash_nano_with_seed(key, len, 0u);
-}
-
-[[nodiscard]] constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash(
-    const FTL_RAPIDHASH_STD::string_view value) noexcept {
-    return rapidhash(value.data(), value.size());
-}
-
-[[nodiscard]] constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash_micro(
-    const FTL_RAPIDHASH_STD::string_view value) noexcept {
-    return rapidhash_micro(value.data(), value.size());
-}
-
-[[nodiscard]] constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash_nano(
-    const FTL_RAPIDHASH_STD::string_view value) noexcept {
-    return rapidhash_nano(value.data(), value.size());
-}
-
-[[nodiscard]] constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash(const FTL_RAPIDHASH_STD::wstring_view value) noexcept {
-    return rapidhash(value.data(), value.size());
-}
-
-[[nodiscard]] constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash_micro(const FTL_RAPIDHASH_STD::wstring_view value) noexcept {
-    return rapidhash_micro(value.data(), value.size());
-}
-
-[[nodiscard]] constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash_nano(const FTL_RAPIDHASH_STD::wstring_view value) noexcept {
-    return rapidhash_nano(value.data(), value.size());
+    const CodeUnit *key,
+    FTL_RAPIDHASH_STD::size_t length) noexcept {
+    return rapidhash_nano_with_seed(key, length, 0u);
 }
 
 template<FTL_RAPIDHASH_STD::size_t N>
@@ -801,20 +811,26 @@ template<FTL_RAPIDHASH_STD::size_t N>
     return rapidhash_nano(value, N - 1);
 }
 
-template<FTL_RAPIDHASH_STD::size_t N>
-[[nodiscard]] constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash(const wchar_t (&value)[N]) noexcept {
+template <detail::code_unit CodeUnit, FTL_RAPIDHASH_STD::size_t N>
+[[nodiscard]]
+constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash(
+    const CodeUnit (&value)[N]) noexcept {
     static_assert(N > 0);
     return rapidhash(value, N - 1);
 }
 
-template<FTL_RAPIDHASH_STD::size_t N>
-[[nodiscard]] constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash_micro(const wchar_t (&value)[N]) noexcept {
+template <detail::code_unit CodeUnit, FTL_RAPIDHASH_STD::size_t N>
+[[nodiscard]]
+constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash_micro(
+    const CodeUnit (&value)[N]) noexcept {
     static_assert(N > 0);
     return rapidhash_micro(value, N - 1);
 }
 
-template<FTL_RAPIDHASH_STD::size_t N>
-[[nodiscard]] constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash_nano(const wchar_t (&value)[N]) noexcept {
+template <detail::code_unit CodeUnit, FTL_RAPIDHASH_STD::size_t N>
+[[nodiscard]]
+constexpr FTL_RAPIDHASH_STD::uint64_t rapidhash_nano(
+    const CodeUnit (&value)[N]) noexcept {
     static_assert(N > 0);
     return rapidhash_nano(value, N - 1);
 }
@@ -834,16 +850,6 @@ struct rapidhash_t {
         }
 
         return rapidhash(static_cast<const void *>(__builtin_addressof(value)), sizeof(value));
-    }
-};
-
-struct string_hash {
-    using is_avalanching = void;
-    using is_transparent = void;
-
-    [[nodiscard]] constexpr FTL_RAPIDHASH_STD::size_t operator()(
-        const FTL_RAPIDHASH_STD::string_view value) const noexcept {
-        return rapidhash(value);
     }
 };
 } // namespace ftl_rapidhash
