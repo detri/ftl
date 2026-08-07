@@ -567,4 +567,10 @@
 #define __cpp_lib_shift 202202L
 #endif
 
+#if !defined(__cpp_lib_ranges_fold) || \
+    __cpp_lib_ranges_fold < 202207L
+#undef __cpp_lib_ranges_fold
+#define __cpp_lib_ranges_fold 202207L
+#endif
+
 #endif

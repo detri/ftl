@@ -244,6 +244,11 @@ foreach(header IN ITEMS
         algorithm_set
         algorithm_heap
         algorithm_partial_sort
+        algorithm_min_max
+        algorithm_fold
+        algorithm_permutation
+        algorithm_lexicographical
+        algorithm_random
 )
     add_ftl_test(${header})
 endforeach()

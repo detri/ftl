@@ -23,6 +23,11 @@
 #include <__algorithms/set.hpp>
 #include <__algorithms/heap.hpp>
 #include <__algorithms/partial_sort.hpp>
+#include <__algorithms/min_max.hpp>
+#include <__algorithms/fold.hpp>
+#include <__algorithms/permutation.hpp>
+#include <__algorithms/lexicographical.hpp>
+#include <__algorithms/random.hpp>
 #else
 #include <ftl/__algorithms/result.hpp>
 #include <ftl/__algorithms/all_any_none.hpp>
@@ -45,6 +50,11 @@
 #include <ftl/__algorithms/set.hpp>
 #include <ftl/__algorithms/heap.hpp>
 #include <ftl/__algorithms/partial_sort.hpp>
+#include <ftl/__algorithms/min_max.hpp>
+#include <ftl/__algorithms/fold.hpp>
+#include <ftl/__algorithms/permutation.hpp>
+#include <ftl/__algorithms/lexicographical.hpp>
+#include <ftl/__algorithms/random.hpp>
 #endif
 
 #if !defined(__cpp_lib_ranges_starts_ends_with) || \
@@ -68,6 +78,12 @@
 #if !defined(__cpp_lib_shift) || __cpp_lib_shift < 202202L
 #undef __cpp_lib_shift
 #define __cpp_lib_shift 202202L
+#endif
+
+#if !defined(__cpp_lib_ranges_fold) || \
+    __cpp_lib_ranges_fold < 202207L
+#undef __cpp_lib_ranges_fold
+#define __cpp_lib_ranges_fold 202207L
 #endif
 
 #endif // FTL_ALGORITHMS_HEADER
