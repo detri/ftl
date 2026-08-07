@@ -3,23 +3,6 @@
 #ifndef FTL_RANGES_HEADER
 #define FTL_RANGES_HEADER
 
-#if !defined(__cpp_lib_ranges) || __cpp_lib_ranges < 202110L
-#undef __cpp_lib_ranges
-#define __cpp_lib_ranges 202110L
-#endif
-#define __cpp_lib_ranges_zip 202110L
-#define __cpp_lib_ranges_chunk 202202L
-#define __cpp_lib_ranges_slide 202202L
-#define __cpp_lib_ranges_chunk_by 202202L
-#define __cpp_lib_ranges_stride 202207L
-#define __cpp_lib_ranges_cartesian_product 202207L
-#define __cpp_lib_ranges_as_const 202207L
-#define __cpp_lib_ranges_enumerate 202302L
-#define __cpp_lib_ranges_repeat 202207L
-#define __cpp_lib_ranges_as_rvalue 202207L
-#define __cpp_lib_ranges_join_with 202202L
-#define __cpp_lib_ranges_to_container 202202L
-
 #ifdef FTL_REPLACE_STL
 #include <array>
 #include <compare>
@@ -10433,5 +10416,22 @@ struct tuple_element<1, const ranges::subrange<Iterator, Sentinel, Kind>> {
 FTL_END_NAMESPACE
 
 #undef FTL_RANGES_NAMESPACE
+
+#if !defined(__cpp_lib_ranges) || __cpp_lib_ranges < 202110L
+#undef __cpp_lib_ranges
+#define __cpp_lib_ranges 202110L
+#endif
+#define __cpp_lib_ranges_zip 202110L
+#define __cpp_lib_ranges_chunk 202202L
+#define __cpp_lib_ranges_slide 202202L
+#define __cpp_lib_ranges_chunk_by 202202L
+#define __cpp_lib_ranges_stride 202207L
+#define __cpp_lib_ranges_cartesian_product 202207L
+#define __cpp_lib_ranges_as_const 202207L
+#define __cpp_lib_ranges_enumerate 202302L
+#define __cpp_lib_ranges_repeat 202207L
+#define __cpp_lib_ranges_as_rvalue 202207L
+#define __cpp_lib_ranges_join_with 202202L
+#define __cpp_lib_ranges_to_container 202202L
 
 #endif // FTL_RANGES_HEADER
