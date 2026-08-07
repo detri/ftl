@@ -129,6 +129,9 @@ dependency order, not hundreds of individual overloads.
 | `<ranges>`           | Stage 2.6.6       |
 | `<array>`            | Stage 2.6.6       |
 | `<tuple>`            | Stage 2.6.6       |
+| `<execution>`        | Stage 3.1         |
+| `<algorithm>`        | Stage 3.1         |
+| `<numeric>`          | Stage 3.1         |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -162,17 +165,17 @@ still needs synopsis-level and cross-toolchain coverage.
 The following public headers do not exist. Compatibility/deprecated headers
 remain required when C++23 still specifies them; they are not silently dropped.
 
-| Area                      | Absent headers                                                                                                                                                                                                      |
-|---------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Concepts/types/vocabulary | `<bitset>`, `<ratio>`                                                                                                                                                                                               |
-| Algorithms/numerics       | `<algorithm>`, `<numeric>`, `<numbers>`, `<random>`, `<valarray>`, `<execution>`                                                                                                                                    |
-| Containers                | `<deque>`, `<flat_map>`, `<flat_set>`, `<forward_list>`, `<list>`, `<map>`, `<queue>`, `<set>`, `<stack>`, `<unordered_map>`, `<unordered_set>`, `<vector>`                                                         |
-| Text/encoding             | `<charconv>`, `<codecvt>`, `<string>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                                                      |
-| Errors/time/localization  | `<chrono>`, `<system_error>`, `<stacktrace>`, `<locale>`, `<clocale>`, `<ctime>`                                                                                                                                    |
-| C numerics/text           | `<cfenv>`, `<cmath>`, `<complex>`, `<cuchar>`, `<cwchar>`, `<cwctype>`                                                                                                                                              |
-| I/O/formatting/files      | `<cstdio>`, `<fstream>`, `<iomanip>`, `<ios>`, `<iosfwd>`, `<iostream>`, `<istream>`, `<ostream>`, `<sstream>`, `<spanstream>`, `<streambuf>`, `<strstream>`, `<syncstream>`, `<filesystem>`, `<format>`, `<print>` |
-| Concurrency               | `<barrier>`, `<condition_variable>`, `<future>`, `<latch>`, `<mutex>`, `<semaphore>`, `<shared_mutex>`, `<stop_token>`, `<thread>`                                                                                  |
-| C compatibility           | `<stdatomic.h>`                                                                                                                                                                                                     |
+| Area                      | Absent headers                                                                                                                                                     |
+|---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Concepts/types/vocabulary | `<bitset>`, `<ratio>`                                                                                                                                              |
+| Algorithms/numerics       | `<numbers>`, `<random>`, `<valarray>`                                                                                                                              |
+| Containers                | `<deque>`, `<flat_map>`, `<flat_set>`, `<forward_list>`, `<list>`, `<map>`, `<queue>`, `<set>`, `<stack>`, `<unordered_map>`, `<unordered_set>`, `<vector>`        |
+| Text/encoding             | `<charconv>`, `<codecvt>`, `<string>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                     |
+| Errors/time/localization  | `<chrono>`, `<system_error>`, `<stacktrace>`, `<locale>`, `<clocale>`, `<ctime>`                                                                                   |
+| C numerics/text           | `<cfenv>`, `<cmath>`, `<complex>`, `<cuchar>`, `<cwchar>`, `<cwctype>`                                                                                             |
+| I/O/formatting/files      | `<cstdio>`, `<fstream>`, `<iomanip>`, `<iostream>`, `<ostream>`, `<sstream>`, `<spanstream>`, `<strstream>`, `<syncstream>`, `<filesystem>`, `<format>`, `<print>` |
+| Concurrency               | `<barrier>`, `<condition_variable>`, `<future>`, `<latch>`, `<mutex>`, `<semaphore>`, `<shared_mutex>`, `<stop_token>`, `<thread>`                                 |
+| C compatibility           | `<stdatomic.h>`                                                                                                                                                    |
 
 Freestanding C compatibility also requires deciding and documenting how the
 corresponding `.h` spellings are supplied. That is part of the relevant
@@ -191,7 +194,6 @@ cstddef + initializer_list + compiler/platform layer
         -> span
            -> mdspan
         -> ranges
-           -> algorithm
            -> complete span range integration
         -> coroutine
            -> generator
@@ -203,7 +205,10 @@ cstddef + initializer_list + compiler/platform layer
            -> string
         -> functional
            -> associative containers
-           -> algorithms
+     -> execution
+
+iterator + ranges + functional + execution
+  -> algorithm + numeric
 
 cstring + cwchar + type_traits
   -> string_view
@@ -224,8 +229,7 @@ atomic + memory + functional + tuple + chrono + system_error
   -> future
 
 cmath + limits + concepts
-  -> complex + numbers + numeric + random + valarray
-  -> execution
+  -> complex + numbers + random + valarray
 
 string + system_error + chrono
   -> filesystem
@@ -318,13 +322,21 @@ without depending on a container or I/O subsystem.
 
 ### Stage 3 — Algorithms and text core
 
+**Status: active. Closure 1 complete.**
+
 Take these closures in order:
 
-1. `<algorithm>` + `<numeric>`
+1. `<execution>` + `<algorithm>` + `<numeric>` — **complete**
 2. `<cstring>` + `<cwchar>` + `<cwctype>` + `<cuchar>`
 3. `<string_view>` + `<charconv>`
 4. `<string>`
 5. `<bitset>`
+
+Stage 3.1 completes the C++23 algorithm and numeric surfaces together with the
+execution-policy vocabulary required by their policy overloads. Standard
+execution policies may currently use a sequential implementation strategy;
+their specified overload participation and execution-policy semantics remain
+part of the completed interface.
 
 **Exit:** algorithms and owning/non-owning text are complete, allocation-aware,
 and usable as dependencies by containers and diagnostics.
@@ -370,7 +382,6 @@ Take these closures in order:
 3. `<mutex>` + `<shared_mutex>` + `<condition_variable>`
 4. `<semaphore>` + `<latch>` + `<barrier>`
 5. `<future>`
-6. `<execution>` after algorithms and the concurrency runtime are stable.
 
 **Exit:** the full memory model and synchronization API pass stress, sanitizer,
 and platform shutdown/lifetime tests on every supported toolchain.
