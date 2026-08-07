@@ -7,6 +7,9 @@
 #include <signal.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <string.h>
+#include <uchar.h>
+#include <wchar.h>
 #include <wctype.h>
 
 static_assert(sizeof(va_list) >= 1);
@@ -18,6 +21,16 @@ static_assert(CHAR_BIT >= 8 && FLT_RADIX >= 2);
 static_assert(EDOM > 0 && PRIdMAX[0] != '\0');
 static_assert(sizeof(wctrans_t) >= 1);
 static_assert(sizeof(wctype_t) >= 1);
+
+static_assert(sizeof(size_t) >= 1);
+static_assert(sizeof(mbstate_t) >= 1);
+static_assert(sizeof(wint_t) >= 1);
+static_assert(sizeof(tm) >= sizeof(int) * 9);
+static_assert(sizeof(wctrans_t) >= 1);
+static_assert(sizeof(wctype_t) >= 1);
+
+static_assert(WCHAR_MIN <= L'A');
+static_assert(WCHAR_MAX >= L'A');
 
 bool ftl_test() {
     assert(true);

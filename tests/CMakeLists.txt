@@ -292,6 +292,7 @@ foreach (header IN ITEMS
         cwchar
         cwchar_synopsis
         cwctype
+        cwctype_synopsis
         cuchar
         cuchar_synopsis
 )
