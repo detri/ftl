@@ -1,3 +1,5 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
 #ifndef FTL_ALGORITHMS_RESULT_HEADER
 #define FTL_ALGORITHMS_RESULT_HEADER
 
@@ -196,5 +198,7 @@ template <class Output, class T> struct out_value_result {
 } // namespace ranges
 
 FTL_END_NAMESPACE
+
+#undef FTL_ALGORITHMS_RESULT_NAMESPACE
 
 #endif // FTL_ALGORITHMS_RESULT_HEADER
