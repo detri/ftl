@@ -1,0 +1,712 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CWCHAR_HEADER
+#define FTL_CWCHAR_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <__c_wide_types.hpp>
+#include <cerrno>
+#include <cstring>
+#include <limits>
+#else
+#include <ftl/__c_wide_types.hpp>
+#include <ftl/cerrno>
+#include <ftl/cstring>
+#include <ftl/limits>
+#endif
+
+#if defined(__clang__)
+
+#define FTL_CWCHAR_NO_BUILTIN __attribute__((no_builtin))
+
+#elif defined(__GNUC__)
+
+#define FTL_CWCHAR_NO_BUILTIN                                                  \
+  __attribute__((optimize("no-tree-loop-distribute-patterns")))
+
+#else
+
+#define FTL_CWCHAR_NO_BUILTIN
+
+#endif
+
+#ifdef FTL_REPLACE_STL
+namespace std {
+#else
+namespace ftl {
+#endif
+
+using size_t = decltype(sizeof(0));
+
+namespace cwchar_detail {
+
+inline wchar_t load(const wchar_t *pointer) {
+#if defined(_MSC_VER) && !defined(__clang__)
+  return *static_cast<const volatile wchar_t *>(pointer);
+#else
+  return *pointer;
+#endif
+}
+
+inline void store(wchar_t *pointer, wchar_t value) {
+#if defined(_MSC_VER) && !defined(__clang__)
+  *static_cast<volatile wchar_t *>(pointer) = value;
+#else
+  *pointer = value;
+#endif
+}
+
+inline bool contains(const wchar_t *set, wchar_t value) {
+  while (load(set) != L'\0') {
+    if (load(set) == value) {
+      return true;
+    }
+
+    ++set;
+  }
+
+  return false;
+}
+
+inline bool is_space(wchar_t value) {
+  return value == L' ' || value == L'\t' || value == L'\n' || value == L'\v' ||
+         value == L'\f' || value == L'\r';
+}
+
+inline int digit_value(wchar_t value) {
+  if (value >= L'0' && value <= L'9') {
+    return static_cast<int>(value - L'0');
+  }
+
+  if (value >= L'a' && value <= L'z') {
+    return static_cast<int>(value - L'a') + 10;
+  }
+
+  if (value >= L'A' && value <= L'Z') {
+    return static_cast<int>(value - L'A') + 10;
+  }
+
+  return -1;
+}
+
+inline bool valid_digit(wchar_t value, int base) {
+  const int digit = digit_value(value);
+  return digit >= 0 && digit < base;
+}
+
+inline const wchar_t *prepare_integer(const wchar_t *string, int &base,
+                                      bool &negative) {
+  const wchar_t *current = string;
+
+  while (is_space(load(current))) {
+    ++current;
+  }
+
+  negative = false;
+
+  if (load(current) == L'+' || load(current) == L'-') {
+    negative = load(current) == L'-';
+    ++current;
+  }
+
+  if (base == 0) {
+    if (load(current) == L'0') {
+      if ((load(current + 1) == L'x' || load(current + 1) == L'X') &&
+          valid_digit(load(current + 2), 16)) {
+        base = 16;
+        current += 2;
+      } else {
+        base = 8;
+      }
+    } else {
+      base = 10;
+    }
+  } else if (base == 16 && load(current) == L'0' &&
+             (load(current + 1) == L'x' || load(current + 1) == L'X') &&
+             valid_digit(load(current + 2), 16)) {
+    current += 2;
+  }
+
+  return current;
+}
+
+template <class Signed, class Unsigned>
+Signed parse_signed_integer(const wchar_t *string, wchar_t **end, int base) {
+  if (base != 0 && (base < 2 || base > 36)) {
+    if (end != nullptr) {
+      *end = const_cast<wchar_t *>(string);
+    }
+
+    return Signed{};
+  }
+
+  bool negative = false;
+  const wchar_t *current = prepare_integer(string, base, negative);
+
+  const wchar_t *digits_begin = current;
+
+  const Unsigned positive_limit =
+      static_cast<Unsigned>(numeric_limits<Signed>::max());
+
+  const Unsigned limit =
+      negative ? positive_limit + Unsigned{1} : positive_limit;
+
+  Unsigned value = 0;
+  bool overflow = false;
+
+  for (;;) {
+    const int digit = digit_value(load(current));
+
+    if (digit < 0 || digit >= base) {
+      break;
+    }
+
+    const auto unsigned_digit = static_cast<Unsigned>(digit);
+
+    if (value > (limit - unsigned_digit) / static_cast<Unsigned>(base)) {
+      overflow = true;
+    } else if (!overflow) {
+      value = value * static_cast<Unsigned>(base) + unsigned_digit;
+    }
+
+    ++current;
+  }
+
+  if (current == digits_begin) {
+    if (end != nullptr) {
+      *end = const_cast<wchar_t *>(string);
+    }
+
+    return Signed{};
+  }
+
+  if (end != nullptr) {
+    *end = const_cast<wchar_t *>(current);
+  }
+
+  if (overflow) {
+    errno = ERANGE;
+
+    return negative ? numeric_limits<Signed>::min()
+                    : numeric_limits<Signed>::max();
+  }
+
+  if (!negative) {
+    return static_cast<Signed>(value);
+  }
+
+  if (value == positive_limit + Unsigned{1}) {
+    return numeric_limits<Signed>::min();
+  }
+
+  return -static_cast<Signed>(value);
+}
+
+template <class Unsigned>
+Unsigned parse_unsigned_integer(const wchar_t *string, wchar_t **end,
+                                int base) {
+  if (base != 0 && (base < 2 || base > 36)) {
+    if (end != nullptr) {
+      *end = const_cast<wchar_t *>(string);
+    }
+
+    return Unsigned{};
+  }
+
+  bool negative = false;
+  const wchar_t *current = prepare_integer(string, base, negative);
+
+  const wchar_t *digits_begin = current;
+
+  constexpr Unsigned limit = numeric_limits<Unsigned>::max();
+
+  Unsigned value = 0;
+  bool overflow = false;
+
+  for (;;) {
+    const int digit = digit_value(load(current));
+
+    if (digit < 0 || digit >= base) {
+      break;
+    }
+
+    const auto unsigned_digit = static_cast<Unsigned>(digit);
+
+    if (value > (limit - unsigned_digit) / static_cast<Unsigned>(base)) {
+      overflow = true;
+    } else if (!overflow) {
+      value = value * static_cast<Unsigned>(base) + unsigned_digit;
+    }
+
+    ++current;
+  }
+
+  if (current == digits_begin) {
+    if (end != nullptr) {
+      *end = const_cast<wchar_t *>(string);
+    }
+
+    return Unsigned{};
+  }
+
+  if (end != nullptr) {
+    *end = const_cast<wchar_t *>(current);
+  }
+
+  if (overflow) {
+    errno = ERANGE;
+    return limit;
+  }
+
+  return negative ? Unsigned{} - value : value;
+}
+
+} // namespace cwchar_detail
+
+FTL_CWCHAR_NO_BUILTIN
+inline long wcstol(const wchar_t *nptr, wchar_t **endptr, int base) {
+  return cwchar_detail::parse_signed_integer<long, unsigned long>(nptr, endptr,
+                                                                  base);
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline long long wcstoll(const wchar_t *nptr, wchar_t **endptr, int base) {
+  return cwchar_detail::parse_signed_integer<long long, unsigned long long>(
+      nptr, endptr, base);
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline unsigned long wcstoul(const wchar_t *nptr, wchar_t **endptr, int base) {
+  return cwchar_detail::parse_unsigned_integer<unsigned long>(nptr, endptr,
+                                                              base);
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline unsigned long long wcstoull(const wchar_t *nptr, wchar_t **endptr,
+                                   int base) {
+  return cwchar_detail::parse_unsigned_integer<unsigned long long>(nptr, endptr,
+                                                                   base);
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcscpy(wchar_t *s1, const wchar_t *s2) {
+  wchar_t *result = s1;
+
+  for (;;) {
+    const wchar_t value = cwchar_detail::load(s2++);
+    cwchar_detail::store(s1++, value);
+
+    if (value == L'\0') {
+      break;
+    }
+  }
+
+  return result;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcsncpy(wchar_t *s1, const wchar_t *s2, size_t n) {
+  wchar_t *result = s1;
+  size_t index = 0;
+
+  while (index < n) {
+    const wchar_t value = cwchar_detail::load(s2 + index);
+
+    if (value == L'\0') {
+      break;
+    }
+
+    cwchar_detail::store(s1 + index, value);
+    ++index;
+  }
+
+  while (index < n) {
+    cwchar_detail::store(s1 + index, L'\0');
+    ++index;
+  }
+
+  return result;
+}
+
+/*
+ * Reuse the already-hardened byte primitive. wchar_t object
+ * representations are trivially copyable through unsigned char storage.
+ */
+inline wchar_t *wmemcpy(wchar_t *s1, const wchar_t *s2, size_t n) {
+  memcpy(s1, s2, n * sizeof(wchar_t));
+  return s1;
+}
+
+inline wchar_t *wmemmove(wchar_t *s1, const wchar_t *s2, size_t n) {
+  memmove(s1, s2, n * sizeof(wchar_t));
+  return s1;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcscat(wchar_t *s1, const wchar_t *s2) {
+  wchar_t *result = s1;
+
+  while (cwchar_detail::load(s1) != L'\0') {
+    ++s1;
+  }
+
+  for (;;) {
+    const wchar_t value = cwchar_detail::load(s2++);
+    cwchar_detail::store(s1++, value);
+
+    if (value == L'\0') {
+      break;
+    }
+  }
+
+  return result;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcsncat(wchar_t *s1, const wchar_t *s2, size_t n) {
+  wchar_t *result = s1;
+
+  while (cwchar_detail::load(s1) != L'\0') {
+    ++s1;
+  }
+
+  size_t index = 0;
+
+  while (index < n) {
+    const wchar_t value = cwchar_detail::load(s2 + index);
+
+    if (value == L'\0') {
+      break;
+    }
+
+    cwchar_detail::store(s1 + index, value);
+    ++index;
+  }
+
+  cwchar_detail::store(s1 + index, L'\0');
+  return result;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline int wcscmp(const wchar_t *s1, const wchar_t *s2) {
+  for (;;) {
+    const wchar_t left = cwchar_detail::load(s1);
+    const wchar_t right = cwchar_detail::load(s2);
+
+    if (left < right) {
+      return -1;
+    }
+
+    if (left > right) {
+      return 1;
+    }
+
+    if (left == L'\0') {
+      return 0;
+    }
+
+    ++s1;
+    ++s2;
+  }
+}
+
+/*
+ * FTL currently implements only C-locale collation.
+ */
+inline int wcscoll(const wchar_t *s1, const wchar_t *s2) {
+  return wcscmp(s1, s2);
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline int wcsncmp(const wchar_t *s1, const wchar_t *s2, size_t n) {
+  for (size_t index = 0; index < n; ++index) {
+    const wchar_t left = cwchar_detail::load(s1 + index);
+    const wchar_t right = cwchar_detail::load(s2 + index);
+
+    if (left < right) {
+      return -1;
+    }
+
+    if (left > right) {
+      return 1;
+    }
+
+    if (left == L'\0') {
+      return 0;
+    }
+  }
+
+  return 0;
+}
+
+/*
+ * In the C locale, the identity transformation has the required
+ * relationship with wcscoll.
+ */
+FTL_CWCHAR_NO_BUILTIN
+inline size_t wcsxfrm(wchar_t *s1, const wchar_t *s2, size_t n) {
+  size_t length = 0;
+
+  while (cwchar_detail::load(s2 + length) != L'\0') {
+    ++length;
+  }
+
+  if (n == 0) {
+    return length;
+  }
+
+  if (length < n) {
+    for (size_t index = 0; index <= length; ++index) {
+      cwchar_detail::store(s1 + index, cwchar_detail::load(s2 + index));
+    }
+  } else {
+    for (size_t index = 0; index < n; ++index) {
+      cwchar_detail::store(s1 + index, cwchar_detail::load(s2 + index));
+    }
+  }
+
+  return length;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline int wmemcmp(const wchar_t *s1, const wchar_t *s2, size_t n) {
+  for (size_t index = 0; index < n; ++index) {
+    const wchar_t left = cwchar_detail::load(s1 + index);
+    const wchar_t right = cwchar_detail::load(s2 + index);
+
+    if (left < right) {
+      return -1;
+    }
+
+    if (left > right) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline const wchar_t *wcschr(const wchar_t *s, wchar_t c) {
+  for (;;) {
+    const wchar_t value = cwchar_detail::load(s);
+
+    if (value == c) {
+      return s;
+    }
+
+    if (value == L'\0') {
+      return nullptr;
+    }
+
+    ++s;
+  }
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcschr(wchar_t *s, wchar_t c) {
+  return const_cast<wchar_t *>(wcschr(static_cast<const wchar_t *>(s), c));
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline size_t wcscspn(const wchar_t *s1, const wchar_t *s2) {
+  size_t count = 0;
+
+  while (cwchar_detail::load(s1 + count) != L'\0') {
+    if (cwchar_detail::contains(s2, cwchar_detail::load(s1 + count))) {
+      break;
+    }
+
+    ++count;
+  }
+
+  return count;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline const wchar_t *wcspbrk(const wchar_t *s1, const wchar_t *s2) {
+  while (cwchar_detail::load(s1) != L'\0') {
+    if (cwchar_detail::contains(s2, cwchar_detail::load(s1))) {
+      return s1;
+    }
+
+    ++s1;
+  }
+
+  return nullptr;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcspbrk(wchar_t *s1, const wchar_t *s2) {
+  return const_cast<wchar_t *>(wcspbrk(static_cast<const wchar_t *>(s1), s2));
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline const wchar_t *wcsrchr(const wchar_t *s, wchar_t c) {
+  const wchar_t *result = nullptr;
+
+  for (;;) {
+    const wchar_t value = cwchar_detail::load(s);
+
+    if (value == c) {
+      result = s;
+    }
+
+    if (value == L'\0') {
+      return result;
+    }
+
+    ++s;
+  }
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcsrchr(wchar_t *s, wchar_t c) {
+  return const_cast<wchar_t *>(wcsrchr(static_cast<const wchar_t *>(s), c));
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline size_t wcsspn(const wchar_t *s1, const wchar_t *s2) {
+  size_t count = 0;
+
+  while (cwchar_detail::load(s1 + count) != L'\0') {
+    if (!cwchar_detail::contains(s2, cwchar_detail::load(s1 + count))) {
+      break;
+    }
+
+    ++count;
+  }
+
+  return count;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline const wchar_t *wcsstr(const wchar_t *s1, const wchar_t *s2) {
+  if (cwchar_detail::load(s2) == L'\0') {
+    return s1;
+  }
+
+  while (cwchar_detail::load(s1) != L'\0') {
+    const wchar_t *haystack = s1;
+    const wchar_t *needle = s2;
+
+    while (cwchar_detail::load(needle) != L'\0' &&
+           cwchar_detail::load(haystack) == cwchar_detail::load(needle)) {
+      ++haystack;
+      ++needle;
+    }
+
+    if (cwchar_detail::load(needle) == L'\0') {
+      return s1;
+    }
+
+    ++s1;
+  }
+
+  return nullptr;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcsstr(wchar_t *s1, const wchar_t *s2) {
+  return const_cast<wchar_t *>(wcsstr(static_cast<const wchar_t *>(s1), s2));
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcstok(wchar_t *s1, const wchar_t *s2, wchar_t **ptr) {
+  wchar_t *current = s1 != nullptr ? s1 : *ptr;
+
+  while (cwchar_detail::load(current) != L'\0' &&
+         cwchar_detail::contains(s2, cwchar_detail::load(current))) {
+    ++current;
+  }
+
+  if (cwchar_detail::load(current) == L'\0') {
+    *ptr = current;
+    return nullptr;
+  }
+
+  wchar_t *token = current;
+
+  while (cwchar_detail::load(current) != L'\0' &&
+         !cwchar_detail::contains(s2, cwchar_detail::load(current))) {
+    ++current;
+  }
+
+  if (cwchar_detail::load(current) != L'\0') {
+    cwchar_detail::store(current, L'\0');
+    ++current;
+  }
+
+  *ptr = current;
+  return token;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline const wchar_t *wmemchr(const wchar_t *s, wchar_t c, size_t n) {
+  for (size_t index = 0; index < n; ++index) {
+    if (cwchar_detail::load(s + index) == c) {
+      return s + index;
+    }
+  }
+
+  return nullptr;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wmemchr(wchar_t *s, wchar_t c, size_t n) {
+  return const_cast<wchar_t *>(wmemchr(static_cast<const wchar_t *>(s), c, n));
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline size_t wcslen(const wchar_t *s) {
+  size_t length = 0;
+
+  while (cwchar_detail::load(s + length) != L'\0') {
+    ++length;
+  }
+
+  return length;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wmemset(wchar_t *s, wchar_t c, size_t n) {
+  for (size_t index = 0; index < n; ++index) {
+    cwchar_detail::store(s + index, c);
+  }
+
+  return s;
+}
+
+} // namespace std or ftl
+
+#ifndef NULL
+#define NULL nullptr
+#endif
+
+#ifndef WCHAR_MIN
+#if defined(_MSC_VER)
+#define WCHAR_MIN 0
+#elif defined(__WCHAR_MAX__)
+#define WCHAR_MIN (-__WCHAR_MAX__ - 1)
+#else
+#error "FTL <cwchar> does not know this compiler's wchar_t minimum"
+#endif
+#endif
+
+#ifndef WCHAR_MAX
+#if defined(_MSC_VER)
+#define WCHAR_MAX 0xffff
+#elif defined(__WCHAR_MAX__)
+#define WCHAR_MAX __WCHAR_MAX__
+#else
+#error "FTL <cwchar> does not know this compiler's wchar_t maximum"
+#endif
+#endif
+
+#ifndef WEOF
+#define WEOF (~0u)
+#endif
+
+#undef FTL_CWCHAR_NO_BUILTIN
+
+#endif // FTL_CWCHAR_HEADER

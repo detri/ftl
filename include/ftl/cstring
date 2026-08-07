@@ -569,4 +569,5 @@ inline size_t strlen(const char* s) {
 #define NULL 0
 #endif
 
+#undef FTL_CSTRING_NO_BUILTIN
 #endif // FTL_CSTRING_HEADER

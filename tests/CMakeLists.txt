@@ -268,6 +268,7 @@ foreach(header IN ITEMS
         algorithm_random
         numeric
         cstring_synopsis
+        cwchar
 )
     add_ftl_test(${header})
 endforeach()
