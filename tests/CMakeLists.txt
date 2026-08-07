@@ -291,6 +291,9 @@ foreach (header IN ITEMS
         cstring_synopsis
         cwchar
         cwchar_synopsis
+        cwctype
+        cuchar
+        cuchar_synopsis
 )
     add_ftl_test(${header})
 endforeach ()
