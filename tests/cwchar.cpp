@@ -6,6 +6,18 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+int test_vswprintf(wchar_t *destination, tested::size_t capacity,
+                   const wchar_t *format, ...) {
+  tested::va_list arguments;
+  va_start(arguments, format);
+
+  const int result =
+      tested::vswprintf(destination, capacity, format, arguments);
+
+  va_end(arguments);
+  return result;
+}
+
 bool ftl_test() {
   // Foundational types/macros.
   {
@@ -1106,6 +1118,484 @@ bool ftl_test() {
     wchar_t output[5]{};
 
     if (tested::wcsftime(output, 5, L"%F", &value) != 0) {
+      return false;
+    }
+  }
+
+  // swprintf ordinary output and percent escape.
+  {
+    wchar_t output[64]{};
+
+    const int result = tested::swprintf(output, 64, L"hello %% %d", 42);
+
+    if (result != 10) {
+      return false;
+    }
+
+    if (tested::wcscmp(output, L"hello % 42") != 0) {
+      return false;
+    }
+  }
+
+  // Signed flags and field width.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"|%+6d|%-6d|% 6d|", 42, 42, 42);
+
+    if (tested::wcscmp(output, L"|   +42|42    |    42|") != 0) {
+      return false;
+    }
+  }
+
+  // Zero padding occurs after the sign.
+  {
+    wchar_t output[32]{};
+
+    tested::swprintf(output, 32, L"%+06d", 42);
+
+    if (tested::wcscmp(output, L"+00042") != 0) {
+      return false;
+    }
+  }
+
+  // Integer precision.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"|%.5d|%.0d|", 42, 0);
+
+    if (tested::wcscmp(output, L"|00042||") != 0) {
+      return false;
+    }
+  }
+
+  // Explicit integer precision disables zero field padding.
+  {
+    wchar_t output[32]{};
+
+    tested::swprintf(output, 32, L"%08.5d", 42);
+
+    if (tested::wcscmp(output, L"   00042") != 0) {
+      return false;
+    }
+  }
+
+  // Alternate octal and hexadecimal.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%#o %#x %#X", 9u, 42u, 42u);
+
+    if (tested::wcscmp(output, L"011 0x2a 0X2A") != 0) {
+      return false;
+    }
+  }
+
+  // %#.0o must still produce one zero.
+  {
+    wchar_t output[16]{};
+
+    tested::swprintf(output, 16, L"%#.0o", 0u);
+
+    if (tested::wcscmp(output, L"0") != 0) {
+      return false;
+    }
+  }
+
+  // Dynamic width and precision.
+  {
+    wchar_t output[32]{};
+
+    tested::swprintf(output, 32, L"%*.*d", -8, 4, 23);
+
+    if (tested::wcscmp(output, L"0023    ") != 0) {
+      return false;
+    }
+  }
+
+  // Integer length modifiers.
+  {
+    wchar_t output[128]{};
+
+    const signed char hh = -12;
+    const short h = -123;
+    const long l = -1234;
+    const long long ll = -12345;
+
+    tested::swprintf(output, 128, L"%hhd %hd %ld %lld", hh, h, l, ll);
+
+    if (tested::wcscmp(output, L"-12 -123 -1234 -12345") != 0) {
+      return false;
+    }
+  }
+
+  // Narrow and wide character conversion.
+  {
+    wchar_t output[32]{};
+
+    tested::swprintf(output, 32, L"%c %lc", 'A',
+                     static_cast<tested::wint_t>(L'Z'));
+
+    if (tested::wcscmp(output, L"A Z") != 0) {
+      return false;
+    }
+  }
+
+  // Narrow and wide strings.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"|%6s|%-6ls|", "ftl", L"wide");
+
+    if (tested::wcscmp(output, L"|   ftl|wide  |") != 0) {
+      return false;
+    }
+  }
+
+  // String precision counts output wide characters.
+  {
+    wchar_t output[32]{};
+
+    tested::swprintf(output, 32, L"%.2s %.3ls", "ftl", L"wide");
+
+    if (tested::wcscmp(output, L"ft wid") != 0) {
+      return false;
+    }
+  }
+
+  // %n stores output count without producing characters.
+  {
+    wchar_t output[32]{};
+    int count = -1;
+
+    tested::swprintf(output, 32, L"abc%nxyz", &count);
+
+    if (count != 3) {
+      return false;
+    }
+
+    if (tested::wcscmp(output, L"abcxyz") != 0) {
+      return false;
+    }
+  }
+
+  // Pointer representation is deliberately FTL-defined.
+  {
+    wchar_t output[64]{};
+    int value = 0;
+
+    if (tested::swprintf(output, 64, L"%p", static_cast<void *>(&value)) <= 2) {
+      return false;
+    }
+
+    if (output[0] != L'0' || output[1] != L'x') {
+      return false;
+    }
+  }
+
+  // vswprintf follows the same engine.
+  {
+    wchar_t output[64]{};
+
+    const int result = test_vswprintf(output, 64, L"%04x %ls", 42u, L"ftl");
+
+    if (result != 8) {
+      return false;
+    }
+
+    if (tested::wcscmp(output, L"002a ftl") != 0) {
+      return false;
+    }
+  }
+
+  // Insufficient destination space is a formatting failure,
+  // not snprintf-style length reporting.
+  {
+    wchar_t output[4]{};
+
+    if (tested::swprintf(output, 4, L"abcdef") >= 0) {
+      return false;
+    }
+  }
+
+  // %f default precision.
+  {
+    wchar_t output[64]{};
+
+    if (tested::swprintf(output, 64, L"%f", 1.5) != 8) {
+      return false;
+    }
+
+    if (tested::wcscmp(output, L"1.500000") != 0) {
+      return false;
+    }
+  }
+
+  // Explicit fixed precision.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%.2f", 12.345);
+
+    if (tested::wcscmp(output, L"12.35") != 0) {
+      return false;
+    }
+  }
+
+  // Exact halfway values use round-to-nearest-even.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%.0f %.0f", 2.5, 3.5);
+
+    if (tested::wcscmp(output, L"2 4") != 0) {
+      return false;
+    }
+  }
+
+  // Rounding can carry into a new integer digit.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%.2f", 9.999);
+
+    if (tested::wcscmp(output, L"10.00") != 0) {
+      return false;
+    }
+  }
+
+  // Fractional leading zeroes.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%.4f", 0.00125);
+
+    if (tested::wcscmp(output, L"0.0013") != 0) {
+      return false;
+    }
+  }
+
+  // Alternate form forces the radix point.
+  {
+    wchar_t output[32]{};
+
+    tested::swprintf(output, 32, L"%#.0f", 2.0);
+
+    if (tested::wcscmp(output, L"2.") != 0) {
+      return false;
+    }
+  }
+
+  // Sign and zero field padding.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%+010.2f", 12.5);
+
+    if (tested::wcscmp(output, L"+000012.50") != 0) {
+      return false;
+    }
+  }
+
+  // Left alignment disables zero padding.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%-010.2f", 12.5);
+
+    if (tested::wcscmp(output, L"12.50     ") != 0) {
+      return false;
+    }
+  }
+
+  // Negative zero retains its sign.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%.1f", -0.0);
+
+    if (tested::wcscmp(output, L"-0.0") != 0) {
+      return false;
+    }
+  }
+
+  // Infinity and NaN.
+  {
+    wchar_t output[64]{};
+
+    const double infinity = tested::numeric_limits<double>::infinity();
+
+    const double nan = tested::numeric_limits<double>::quiet_NaN();
+
+    tested::swprintf(output, 64, L"%f %F", infinity, nan);
+
+    if (tested::wcscmp(output, L"inf NAN") != 0) {
+      return false;
+    }
+  }
+
+  // Signs apply to non-finite signed conversions too.
+  {
+    wchar_t output[64]{};
+
+    const double infinity = tested::numeric_limits<double>::infinity();
+
+    tested::swprintf(output, 64, L"%+f", infinity);
+
+    if (tested::wcscmp(output, L"+inf") != 0) {
+      return false;
+    }
+  }
+
+  // Long double.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%.3Lf", static_cast<long double>(1.25L));
+
+    if (tested::wcscmp(output, L"1.250") != 0) {
+      return false;
+    }
+  }
+
+  // Small values round cleanly to zero.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%.3f", 0.0001);
+
+    if (tested::wcscmp(output, L"0.000") != 0) {
+      return false;
+    }
+  }
+
+  // Scientific notation.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%e", 1.25);
+
+    if (tested::wcscmp(output, L"1.250000e+00") != 0) {
+      return false;
+    }
+  }
+
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%.2E", 1234.0);
+
+    if (tested::wcscmp(output, L"1.23E+03") != 0) {
+      return false;
+    }
+  }
+
+  // Scientific rounding can advance the exponent.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%.2e", 9.999);
+
+    if (tested::wcscmp(output, L"1.00e+01") != 0) {
+      return false;
+    }
+  }
+
+  // %g removes insignificant trailing zeroes.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%g", 123.45);
+
+    if (tested::wcscmp(output, L"123.45") != 0) {
+      return false;
+    }
+  }
+
+  // %g switches to scientific notation.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%g", 1234567.0);
+
+    if (tested::wcscmp(output, L"1.23457e+06") != 0) {
+      return false;
+    }
+  }
+
+  // Exponent -4 remains fixed.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%.4g", 0.0001234);
+
+    if (tested::wcscmp(output, L"0.0001234") != 0) {
+      return false;
+    }
+  }
+
+  // Below -4 switches to scientific.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%.4g", 0.00001234);
+
+    if (tested::wcscmp(output, L"1.234e-05") != 0) {
+      return false;
+    }
+  }
+
+  // Alternate %g retains trailing zeroes.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%#.4g", 12.0);
+
+    if (tested::wcscmp(output, L"12.00") != 0) {
+      return false;
+    }
+  }
+
+  // Hexadecimal floating notation.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%.1a", 1.5);
+
+    if (tested::wcscmp(output, L"0x1.8p+0") != 0) {
+      return false;
+    }
+  }
+
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%.2A", 10.5);
+
+    if (tested::wcscmp(output, L"0X1.50P+3") != 0) {
+      return false;
+    }
+  }
+
+  // Alternate hexadecimal form forces the radix point.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%#.0a", 1.0);
+
+    if (tested::wcscmp(output, L"0x1.p+0") != 0) {
+      return false;
+    }
+  }
+
+  // Hexadecimal halfway rounding.
+  {
+    wchar_t output[64]{};
+
+    tested::swprintf(output, 64, L"%.0a", 1.5);
+
+    if (tested::wcscmp(output, L"0x2p+0") != 0) {
       return false;
     }
   }

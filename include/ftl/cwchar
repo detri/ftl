@@ -4,17 +4,25 @@
 #define FTL_CWCHAR_HEADER
 
 #ifdef FTL_REPLACE_STL
+#include <__c_file_types.hpp>
 #include <__c_time_types.hpp>
 #include <__c_wide_types.hpp>
 #include <cerrno>
+#include <cstdarg>
+#include <cstdint>
 #include <cstring>
 #include <limits>
+#include <type_traits>
 #else
+#include <ftl/__c_file_types.hpp>
 #include <ftl/__c_time_types.hpp>
 #include <ftl/__c_wide_types.hpp>
 #include <ftl/cerrno>
+#include <ftl/cstdarg>
+#include <ftl/cstdint>
 #include <ftl/cstring>
 #include <ftl/limits>
+#include <ftl/type_traits>
 #endif
 
 #if defined(__clang__)
@@ -36,6 +44,34 @@
 namespace std {
 #else
 namespace ftl {
+#endif
+
+#ifndef NULL
+#define NULL nullptr
+#endif
+
+#ifndef WCHAR_MIN
+#if defined(_MSC_VER)
+#define WCHAR_MIN 0
+#elif defined(__WCHAR_MAX__)
+#define WCHAR_MIN (-__WCHAR_MAX__ - 1)
+#else
+#error "FTL <cwchar> does not know this compiler's wchar_t minimum"
+#endif
+#endif
+
+#ifndef WCHAR_MAX
+#if defined(_MSC_VER)
+#define WCHAR_MAX 0xffff
+#elif defined(__WCHAR_MAX__)
+#define WCHAR_MAX __WCHAR_MAX__
+#else
+#error "FTL <cwchar> does not know this compiler's wchar_t maximum"
+#endif
+#endif
+
+#ifndef WEOF
+#define WEOF (~0u)
 #endif
 
 using size_t = decltype(sizeof(0));
@@ -1794,35 +1830,1911 @@ inline wchar_t *wmemset(wchar_t *s, wchar_t c, size_t n) {
   return s;
 }
 
+namespace cwchar_detail {
+enum class format_length { none, hh, h, l, ll, j, z, t, capital_l };
+
+struct format_options {
+  bool left = false;
+  bool plus = false;
+  bool space = false;
+  bool alternate = false;
+  bool zero = false;
+
+  int width = 0;
+  int precision = -1;
+
+  format_length length = format_length::none;
+};
+
+struct format_writer {
+  wchar_t *destination;
+  size_t capacity;
+  size_t size = 0;
+  bool overflow = false;
+  bool error = false;
+
+  void append(wchar_t value) {
+    if (capacity == 0 || size + 1 >= capacity) {
+      overflow = true;
+    } else if (destination != nullptr) {
+      destination[size] = value;
+    }
+
+    ++size;
+  }
+
+  void append(wchar_t value, size_t count) {
+    if (count == 0) {
+      return;
+    }
+
+    size_t writable = 0;
+
+    if (capacity != 0 && size < capacity - 1) {
+      const size_t available = capacity - 1 - size;
+
+      writable = count < available ? count : available;
+    }
+
+    if (destination != nullptr) {
+      for (size_t index = 0; index < writable; ++index) {
+        destination[size + index] = value;
+      }
+    }
+
+    if (writable != count) {
+      overflow = true;
+    }
+
+    size += count;
+  }
+
+  bool finish() {
+    if (error || overflow || capacity == 0 || size >= capacity) {
+      return false;
+    }
+
+    if (destination != nullptr) {
+      destination[size] = L'\0';
+    }
+
+    return true;
+  }
+};
+
+inline bool format_digit(wchar_t value) {
+  return value >= L'0' && value <= L'9';
+}
+
+inline int parse_format_number(const wchar_t *&current) {
+  int value = 0;
+
+  while (format_digit(*current)) {
+    const int digit = static_cast<int>(*current - L'0');
+
+    if (value > (numeric_limits<int>::max() - digit) / 10) {
+      value = numeric_limits<int>::max();
+
+      do {
+        ++current;
+      } while (format_digit(*current));
+
+      return value;
+    }
+
+    value = value * 10 + digit;
+    ++current;
+  }
+
+  return value;
+}
+
+inline format_length parse_format_length(const wchar_t *&current) {
+  if (*current == L'h') {
+    ++current;
+
+    if (*current == L'h') {
+      ++current;
+      return format_length::hh;
+    }
+
+    return format_length::h;
+  }
+
+  if (*current == L'l') {
+    ++current;
+
+    if (*current == L'l') {
+      ++current;
+      return format_length::ll;
+    }
+
+    return format_length::l;
+  }
+
+  if (*current == L'j') {
+    ++current;
+    return format_length::j;
+  }
+
+  if (*current == L'z') {
+    ++current;
+    return format_length::z;
+  }
+
+  if (*current == L't') {
+    ++current;
+    return format_length::t;
+  }
+
+  if (*current == L'L') {
+    ++current;
+    return format_length::capital_l;
+  }
+
+  return format_length::none;
+}
+
+inline intmax_t read_signed_argument(va_list &arguments, format_length length) {
+  switch (length) {
+  case format_length::hh:
+    return static_cast<signed char>(va_arg(arguments, int));
+
+  case format_length::h:
+    return static_cast<short>(va_arg(arguments, int));
+
+  case format_length::none:
+    return va_arg(arguments, int);
+
+  case format_length::l:
+    return va_arg(arguments, long);
+
+  case format_length::ll:
+    return va_arg(arguments, long long);
+
+  case format_length::j:
+    return va_arg(arguments, intmax_t);
+
+  case format_length::z:
+    return va_arg(arguments, make_signed_t<size_t>);
+
+  case format_length::t:
+    return va_arg(arguments, ptrdiff_t);
+
+  default:
+    return 0;
+  }
+}
+
+inline uintmax_t read_unsigned_argument(va_list &arguments,
+                                        format_length length) {
+  switch (length) {
+  case format_length::hh:
+    return static_cast<unsigned char>(va_arg(arguments, unsigned int));
+
+  case format_length::h:
+    return static_cast<unsigned short>(va_arg(arguments, unsigned int));
+
+  case format_length::none:
+    return va_arg(arguments, unsigned int);
+
+  case format_length::l:
+    return va_arg(arguments, unsigned long);
+
+  case format_length::ll:
+    return va_arg(arguments, unsigned long long);
+
+  case format_length::j:
+    return va_arg(arguments, uintmax_t);
+
+  case format_length::z:
+    return va_arg(arguments, size_t);
+
+  case format_length::t:
+    return va_arg(arguments, make_unsigned_t<ptrdiff_t>);
+
+  default:
+    return 0;
+  }
+}
+
+inline uintmax_t signed_magnitude(intmax_t value) {
+  const auto unsigned_value = static_cast<uintmax_t>(value);
+
+  if (value >= 0) {
+    return unsigned_value;
+  }
+
+  return uintmax_t{} - unsigned_value;
+}
+
+inline void append_integer(format_writer &writer, uintmax_t value,
+                           bool negative, unsigned base, bool uppercase,
+                           bool signed_conversion, format_options options) {
+  wchar_t digits[sizeof(uintmax_t) * 8 + 1]{};
+  size_t digit_count = 0;
+
+  const bool precision_specified = options.precision >= 0;
+
+  if (value != 0 || !precision_specified || options.precision != 0) {
+    do {
+      const unsigned digit = static_cast<unsigned>(value % base);
+
+      if (digit < 10) {
+        digits[digit_count++] = static_cast<wchar_t>(L'0' + digit);
+      } else {
+        digits[digit_count++] =
+            static_cast<wchar_t>((uppercase ? L'A' : L'a') + digit - 10);
+      }
+
+      value /= base;
+    } while (value != 0);
+  }
+
+  wchar_t sign = L'\0';
+
+  if (signed_conversion) {
+    if (negative) {
+      sign = L'-';
+    } else if (options.plus) {
+      sign = L'+';
+    } else if (options.space) {
+      sign = L' ';
+    }
+  }
+
+  wchar_t prefix[2]{};
+  size_t prefix_size = 0;
+
+  if (options.alternate && base == 8) {
+    /*
+     * %#o guarantees that the first digit is zero,
+     * including the %.0o zero case.
+     */
+    if (digit_count == 0) {
+      digits[digit_count++] = L'0';
+    } else if (digits[digit_count - 1] != L'0') {
+      const int required = static_cast<int>(digit_count + 1);
+
+      if (options.precision < required) {
+        options.precision = required;
+      }
+    }
+  } else if (options.alternate && base == 16 && digit_count != 0 &&
+             !(digit_count == 1 && digits[0] == L'0')) {
+    prefix[0] = L'0';
+    prefix[1] = uppercase ? L'X' : L'x';
+    prefix_size = 2;
+  }
+
+  int precision = options.precision;
+
+  if (precision < 0) {
+    precision = 1;
+  }
+
+  size_t precision_zeroes = 0;
+
+  if (precision > static_cast<int>(digit_count)) {
+    precision_zeroes =
+        static_cast<size_t>(precision - static_cast<int>(digit_count));
+  }
+
+  const size_t sign_size = sign == L'\0' ? 0u : 1u;
+
+  size_t total = sign_size + prefix_size + precision_zeroes + digit_count;
+
+  size_t width_padding = 0;
+
+  if (options.width > 0 && static_cast<size_t>(options.width) > total) {
+    width_padding = static_cast<size_t>(options.width) - total;
+  }
+
+  /*
+   * Integer precision disables zero field padding.
+   */
+  const bool width_zeroes =
+      options.zero && !options.left && !precision_specified;
+
+  if (!options.left && !width_zeroes) {
+    writer.append(L' ', width_padding);
+  }
+
+  if (sign != L'\0') {
+    writer.append(sign);
+  }
+
+  for (size_t index = 0; index < prefix_size; ++index) {
+    writer.append(prefix[index]);
+  }
+
+  if (width_zeroes) {
+    writer.append(L'0', width_padding);
+  }
+
+  writer.append(L'0', precision_zeroes);
+
+  while (digit_count != 0) {
+    writer.append(digits[--digit_count]);
+  }
+
+  if (options.left) {
+    writer.append(L' ', width_padding);
+  }
+}
+
+inline void append_pointer(format_writer &writer, const void *pointer,
+                           const format_options &options) {
+  wchar_t digits[sizeof(uintptr_t) * 2]{};
+  size_t digit_count = 0;
+
+  uintptr_t value = reinterpret_cast<uintptr_t>(pointer);
+
+  do {
+    const unsigned digit = static_cast<unsigned>(value & 0xfu);
+
+    digits[digit_count++] =
+        static_cast<wchar_t>(digit < 10 ? L'0' + digit : L'a' + digit - 10);
+
+    value >>= 4u;
+  } while (value != 0);
+
+  const size_t total = digit_count + 2;
+
+  size_t padding = 0;
+
+  if (options.width > 0 && static_cast<size_t>(options.width) > total) {
+    padding = static_cast<size_t>(options.width) - total;
+  }
+
+  if (!options.left && !options.zero) {
+    writer.append(L' ', padding);
+  }
+
+  writer.append(L'0');
+  writer.append(L'x');
+
+  if (!options.left && options.zero) {
+    writer.append(L'0', padding);
+  }
+
+  while (digit_count != 0) {
+    writer.append(digits[--digit_count]);
+  }
+
+  if (options.left) {
+    writer.append(L' ', padding);
+  }
+}
+
+inline void append_wide_character(format_writer &writer, wchar_t value,
+                                  const format_options &options) {
+  size_t padding = 0;
+
+  if (options.width > 1) {
+    padding = static_cast<size_t>(options.width - 1);
+  }
+
+  if (!options.left) {
+    writer.append(L' ', padding);
+  }
+
+  writer.append(value);
+
+  if (options.left) {
+    writer.append(L' ', padding);
+  }
+}
+
+inline void append_wide_string(format_writer &writer, const wchar_t *string,
+                               const format_options &options) {
+  size_t length = 0;
+
+  while (string[length] != L'\0' &&
+         (options.precision < 0 ||
+          length < static_cast<size_t>(options.precision))) {
+    ++length;
+  }
+
+  size_t padding = 0;
+
+  if (options.width > 0 && static_cast<size_t>(options.width) > length) {
+    padding = static_cast<size_t>(options.width) - length;
+  }
+
+  if (!options.left) {
+    writer.append(L' ', padding);
+  }
+
+  for (size_t index = 0; index < length; ++index) {
+    writer.append(string[index]);
+  }
+
+  if (options.left) {
+    writer.append(L' ', padding);
+  }
+}
+
+inline bool narrow_string_length(const char *string,
+                                 const format_options &options,
+                                 size_t &length) {
+  mbstate_t state{};
+  length = 0;
+
+  const char *current = string;
+
+  while (options.precision < 0 ||
+         length < static_cast<size_t>(options.precision)) {
+    wchar_t converted = L'\0';
+
+    const size_t result = mbrtowc(&converted, current, 1, &state);
+
+    if (result == static_cast<size_t>(-1)) {
+      return false;
+    }
+
+    if (result == static_cast<size_t>(-2)) {
+      return false;
+    }
+
+    if (result == 0) {
+      return true;
+    }
+
+    ++length;
+    current += result;
+  }
+
+  return true;
+}
+
+inline bool append_narrow_string(format_writer &writer, const char *string,
+                                 const format_options &options) {
+  size_t length = 0;
+
+  if (!narrow_string_length(string, options, length)) {
+    writer.error = true;
+    return false;
+  }
+
+  size_t padding = 0;
+
+  if (options.width > 0 && static_cast<size_t>(options.width) > length) {
+    padding = static_cast<size_t>(options.width) - length;
+  }
+
+  if (!options.left) {
+    writer.append(L' ', padding);
+  }
+
+  mbstate_t state{};
+  const char *current = string;
+
+  for (size_t index = 0; index < length; ++index) {
+    wchar_t converted = L'\0';
+
+    const size_t result = mbrtowc(&converted, current, 1, &state);
+
+    if (result == static_cast<size_t>(-1) ||
+        result == static_cast<size_t>(-2)) {
+      writer.error = true;
+      return false;
+    }
+
+    writer.append(converted);
+    current += result;
+  }
+
+  if (options.left) {
+    writer.append(L' ', padding);
+  }
+
+  return true;
+}
+
+inline void store_format_count(va_list &arguments, format_length length,
+                               size_t count) {
+  switch (length) {
+  case format_length::hh:
+    *va_arg(arguments, signed char *) = static_cast<signed char>(count);
+    break;
+
+  case format_length::h:
+    *va_arg(arguments, short *) = static_cast<short>(count);
+    break;
+
+  case format_length::none:
+    *va_arg(arguments, int *) = static_cast<int>(count);
+    break;
+
+  case format_length::l:
+    *va_arg(arguments, long *) = static_cast<long>(count);
+    break;
+
+  case format_length::ll:
+    *va_arg(arguments, long long *) = static_cast<long long>(count);
+    break;
+
+  case format_length::j:
+    *va_arg(arguments, intmax_t *) = static_cast<intmax_t>(count);
+    break;
+
+  case format_length::z:
+    *va_arg(arguments, make_signed_t<size_t> *) =
+        static_cast<make_signed_t<size_t>>(count);
+    break;
+
+  case format_length::t:
+    *va_arg(arguments, ptrdiff_t *) = static_cast<ptrdiff_t>(count);
+    break;
+
+  default:
+    break;
+  }
+}
+
+struct decimal_bigint {
+  static constexpr uint32_t base = 1000000000u;
+  static constexpr size_t max_words = 2048;
+
+  uint32_t words[max_words]{};
+  size_t size = 1;
+  bool overflow = false;
+
+  void multiply(unsigned value) {
+    uint64_t carry = 0;
+
+    for (size_t index = 0; index < size; ++index) {
+      const uint64_t product =
+          static_cast<uint64_t>(words[index]) * static_cast<uint64_t>(value) +
+          carry;
+
+      words[index] = static_cast<uint32_t>(product % base);
+
+      carry = product / base;
+    }
+
+    if (carry != 0) {
+      if (size == max_words) {
+        overflow = true;
+        return;
+      }
+
+      words[size++] = static_cast<uint32_t>(carry);
+    }
+  }
+
+  void add_one() {
+    size_t index = 0;
+
+    for (;;) {
+      if (index == size) {
+        if (size == max_words) {
+          overflow = true;
+          return;
+        }
+
+        words[size++] = 1;
+        return;
+      }
+
+      ++words[index];
+
+      if (words[index] != base) {
+        return;
+      }
+
+      words[index] = 0;
+      ++index;
+    }
+  }
+
+  size_t write_decimal(char *destination) const {
+    size_t result = 0;
+
+    {
+      uint32_t value = words[size - 1];
+      char reversed[10]{};
+      size_t count = 0;
+
+      do {
+        reversed[count++] = static_cast<char>('0' + value % 10);
+
+        value /= 10;
+      } while (value != 0);
+
+      while (count != 0) {
+        destination[result++] = reversed[--count];
+      }
+    }
+
+    for (size_t word_index = size - 1; word_index != 0; --word_index) {
+      uint32_t value = words[word_index - 1];
+
+      char chunk[9]{};
+
+      for (int digit = 8; digit >= 0; --digit) {
+        chunk[digit] = static_cast<char>('0' + value % 10);
+
+        value /= 10;
+      }
+
+      for (char digit : chunk) {
+        destination[result++] = digit;
+      }
+    }
+
+    return result;
+  }
+};
+
+struct exact_decimal {
+  static constexpr size_t max_digits = decimal_bigint::max_words * 9 + 1;
+
+  char digits[max_digits]{};
+  size_t length = 0;
+
+  /*
+   * Numeric value is:
+   *
+   *   digits-as-integer * 10^-scale
+   */
+  int scale = 0;
+};
+
+inline bool floating_is_nan(long double value) { return value != value; }
+
+inline bool floating_is_infinite(long double value) {
+  const long double infinity = numeric_limits<long double>::infinity();
+
+  return value == infinity || value == -infinity;
+}
+
+inline bool floating_is_negative(long double value) {
+#if defined(__clang__) || defined(__GNUC__)
+  return __builtin_signbit(value);
+#else
+  if (value < 0.0L) {
+    return true;
+  }
+
+  /*
+   * Preserve the sign of negative zero. FTL's supported
+   * floating targets use IEC 60559 semantics.
+   */
+  if (value == 0.0L) {
+    return (1.0L / value) < 0.0L;
+  }
+
+  return false;
+#endif
+}
+
+inline long double floating_magnitude(long double value) {
+  return floating_is_negative(value) ? -value : value;
+}
+
+inline bool make_exact_decimal(long double value, exact_decimal &result) {
+  if (value == 0.0L) {
+    result.digits[0] = '0';
+    result.length = 1;
+    result.scale = 0;
+    return true;
+  }
+
+  /*
+   * Normalize to [1, 2). Multiplication/division by two is
+   * exact for binary floating-point values.
+   */
+  long double normalized = value;
+  int exponent = 0;
+
+  while (normalized >= 2.0L) {
+    normalized *= 0.5L;
+    ++exponent;
+  }
+
+  while (normalized < 1.0L) {
+    normalized *= 2.0L;
+    --exponent;
+  }
+
+  decimal_bigint integer{};
+
+  /*
+   * Recover the exact binary significand without depending on
+   * the object representation of long double. This therefore
+   * works for:
+   *
+   *   MSVC long double == double
+   *   x87 extended precision
+   *   ordinary IEEE binary64
+   *   wider binary long doubles
+   */
+  for (int bit = 0; bit < numeric_limits<long double>::digits; ++bit) {
+    integer.multiply(2);
+
+    if (normalized >= 1.0L) {
+      integer.add_one();
+      normalized -= 1.0L;
+    }
+
+    normalized *= 2.0L;
+  }
+
+  if (integer.overflow) {
+    return false;
+  }
+
+  const int binary_exponent =
+      exponent - (numeric_limits<long double>::digits - 1);
+
+  if (binary_exponent >= 0) {
+    for (int index = 0; index < binary_exponent; ++index) {
+      integer.multiply(2);
+
+      if (integer.overflow) {
+        return false;
+      }
+    }
+
+    result.scale = 0;
+  } else {
+    /*
+     * m / 2^k == m * 5^k / 10^k.
+     *
+     * This gives us an exact terminating decimal integer plus
+     * a decimal scale, with no floating arithmetic involved in
+     * the eventual rounding.
+     */
+    const int denominator_exponent = -binary_exponent;
+
+    for (int index = 0; index < denominator_exponent; ++index) {
+      integer.multiply(5);
+
+      if (integer.overflow) {
+        return false;
+      }
+    }
+
+    result.scale = denominator_exponent;
+  }
+
+  result.length = integer.write_decimal(result.digits);
+
+  return true;
+}
+
+inline bool discarded_decimal_nonzero(const char *digits, size_t begin,
+                                      size_t end) {
+  for (size_t index = begin; index < end; ++index) {
+    if (digits[index] != '0') {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+inline bool should_round_decimal_up(const char *digits, size_t length,
+                                    size_t keep) {
+  if (keep >= length) {
+    return false;
+  }
+
+  const char first_discarded = digits[keep];
+
+  if (first_discarded > '5') {
+    return true;
+  }
+
+  if (first_discarded < '5') {
+    return false;
+  }
+
+  /*
+   * Greater than halfway.
+   */
+  if (discarded_decimal_nonzero(digits, keep + 1, length)) {
+    return true;
+  }
+
+  /*
+   * Exact halfway: round to even.
+   */
+  if (keep == 0) {
+    return false;
+  }
+
+  return ((digits[keep - 1] - '0') & 1) != 0;
+}
+
+struct rounded_fixed_decimal {
+  char digits[exact_decimal::max_digits + 1]{};
+  size_t length = 0;
+
+  /*
+   * Zeroes logically appended after digits.
+   *
+   * This lets "%.100000f" fail quickly against a small
+   * destination without constructing a 100k temporary.
+   */
+  size_t trailing_zeroes = 0;
+};
+
+inline bool round_fixed_decimal(const exact_decimal &source, int precision,
+                                rounded_fixed_decimal &result) {
+  for (size_t index = 0; index < source.length; ++index) {
+    result.digits[index] = source.digits[index];
+  }
+
+  result.length = source.length;
+
+  const long long cut =
+      static_cast<long long>(source.scale) - static_cast<long long>(precision);
+
+  /*
+   * Exact representation has fewer fractional places than the
+   * requested result, so no rounding is necessary.
+   */
+  if (cut <= 0) {
+    result.trailing_zeroes = static_cast<size_t>(-cut);
+
+    return true;
+  }
+
+  const size_t remove = static_cast<size_t>(cut);
+
+  if (remove > result.length) {
+    /*
+     * Value is strictly below half of the smallest requested
+     * unit because its first significant digit occurs even
+     * farther to the right.
+     */
+    result.digits[0] = '0';
+    result.length = 1;
+    result.trailing_zeroes = 0;
+    return true;
+  }
+
+  const size_t keep = result.length - remove;
+
+  const bool round_up =
+      should_round_decimal_up(result.digits, result.length, keep);
+
+  if (keep == 0) {
+    result.digits[0] = round_up ? '1' : '0';
+
+    result.length = 1;
+    result.trailing_zeroes = 0;
+    return true;
+  }
+
+  result.length = keep;
+
+  if (!round_up) {
+    result.trailing_zeroes = 0;
+    return true;
+  }
+
+  size_t index = keep;
+
+  while (index != 0) {
+    --index;
+
+    if (result.digits[index] != '9') {
+      ++result.digits[index];
+      result.trailing_zeroes = 0;
+      return true;
+    }
+
+    result.digits[index] = '0';
+  }
+
+  /*
+   * 99... rounds to 100...
+   */
+  if (keep + 1 > exact_decimal::max_digits + 1) {
+    return false;
+  }
+
+  result.digits[0] = '1';
+
+  for (size_t digit = 1; digit <= keep; ++digit) {
+    result.digits[digit] = '0';
+  }
+
+  result.length = keep + 1;
+  result.trailing_zeroes = 0;
+  return true;
+}
+
+inline char fixed_digit_at(const rounded_fixed_decimal &value, size_t index) {
+  if (index < value.length) {
+    return value.digits[index];
+  }
+
+  return '0';
+}
+
+inline wchar_t floating_sign(bool negative, const format_options &options) {
+  if (negative) {
+    return L'-';
+  }
+
+  if (options.plus) {
+    return L'+';
+  }
+
+  if (options.space) {
+    return L' ';
+  }
+
+  return L'\0';
+}
+
+inline void begin_floating_field(format_writer &writer,
+                                 const format_options &options, wchar_t sign,
+                                 size_t body_length, bool special,
+                                 size_t &trailing_spaces) {
+  const size_t sign_length = sign == L'\0' ? 0u : 1u;
+
+  const size_t total = sign_length + body_length;
+
+  size_t padding = 0;
+
+  if (options.width > 0 && static_cast<size_t>(options.width) > total) {
+    padding = static_cast<size_t>(options.width) - total;
+  }
+
+  /*
+   * '0' is ignored for infinities and NaNs and whenever '-'
+   * is active.
+   */
+  const bool zero_padding = options.zero && !options.left && !special;
+
+  if (!options.left && !zero_padding) {
+    writer.append(L' ', padding);
+  }
+
+  if (sign != L'\0') {
+    writer.append(sign);
+  }
+
+  if (zero_padding) {
+    writer.append(L'0', padding);
+  }
+
+  trailing_spaces = options.left ? padding : 0;
+}
+
+inline void append_fixed_floating(format_writer &writer, long double value,
+                                  format_options options, bool uppercase) {
+  const bool negative = floating_is_negative(value);
+
+  const wchar_t sign = floating_sign(negative, options);
+
+  if (floating_is_nan(value)) {
+    size_t trailing_spaces = 0;
+
+    begin_floating_field(writer, options, sign, 3, true, trailing_spaces);
+
+    if (uppercase) {
+      writer.append(L'N');
+      writer.append(L'A');
+      writer.append(L'N');
+    } else {
+      writer.append(L'n');
+      writer.append(L'a');
+      writer.append(L'n');
+    }
+
+    writer.append(L' ', trailing_spaces);
+    return;
+  }
+
+  if (floating_is_infinite(value)) {
+    size_t trailing_spaces = 0;
+
+    begin_floating_field(writer, options, sign, 3, true, trailing_spaces);
+
+    if (uppercase) {
+      writer.append(L'I');
+      writer.append(L'N');
+      writer.append(L'F');
+    } else {
+      writer.append(L'i');
+      writer.append(L'n');
+      writer.append(L'f');
+    }
+
+    writer.append(L' ', trailing_spaces);
+    return;
+  }
+
+  if (options.precision < 0) {
+    options.precision = 6;
+  }
+
+  exact_decimal exact{};
+
+  if (!make_exact_decimal(floating_magnitude(value), exact)) {
+    writer.error = true;
+    return;
+  }
+
+  rounded_fixed_decimal rounded{};
+
+  if (!round_fixed_decimal(exact, options.precision, rounded)) {
+    writer.error = true;
+    return;
+  }
+
+  const size_t total_digits = rounded.length + rounded.trailing_zeroes;
+
+  const size_t precision = static_cast<size_t>(options.precision);
+
+  const size_t integer_digits =
+      total_digits > precision ? total_digits - precision : 1;
+
+  const bool decimal_point = precision != 0 || options.alternate;
+
+  const size_t body_length =
+      integer_digits + (decimal_point ? 1u : 0u) + precision;
+
+  size_t trailing_spaces = 0;
+
+  begin_floating_field(writer, options, sign, body_length, false,
+                       trailing_spaces);
+
+  if (total_digits > precision) {
+    const size_t integer_count = total_digits - precision;
+
+    for (size_t index = 0; index < integer_count; ++index) {
+      writer.append(static_cast<wchar_t>(fixed_digit_at(rounded, index)));
+    }
+  } else {
+    writer.append(L'0');
+  }
+
+  if (decimal_point) {
+    writer.append(L'.');
+  }
+
+  if (precision != 0) {
+    if (total_digits < precision) {
+      writer.append(L'0', precision - total_digits);
+
+      for (size_t index = 0; index < total_digits; ++index) {
+        writer.append(static_cast<wchar_t>(fixed_digit_at(rounded, index)));
+      }
+    } else {
+      const size_t fractional_begin = total_digits - precision;
+
+      for (size_t index = fractional_begin; index < total_digits; ++index) {
+        writer.append(static_cast<wchar_t>(fixed_digit_at(rounded, index)));
+      }
+    }
+  }
+
+  writer.append(L' ', trailing_spaces);
+}
+
+struct rounded_significant_decimal {
+  char digits[exact_decimal::max_digits + 1]{};
+  size_t length = 0;
+  size_t trailing_zeroes = 0;
+  int exponent = 0;
+};
+
+inline bool round_significant_decimal(const exact_decimal &source,
+                                      size_t significant,
+                                      rounded_significant_decimal &result) {
+  if (significant == 0) {
+    return false;
+  }
+
+  result.exponent = static_cast<int>(source.length) - source.scale - 1;
+
+  if (source.length == 1 && source.digits[0] == '0') {
+    result.digits[0] = '0';
+    result.length = 1;
+    result.trailing_zeroes = significant - 1;
+    result.exponent = 0;
+    return true;
+  }
+
+  const size_t copied =
+      source.length < significant ? source.length : significant;
+
+  for (size_t index = 0; index < copied; ++index) {
+    result.digits[index] = source.digits[index];
+  }
+
+  result.length = copied;
+
+  if (significant >= source.length) {
+    result.trailing_zeroes = significant - source.length;
+
+    return true;
+  }
+
+  const bool round_up =
+      should_round_decimal_up(source.digits, source.length, significant);
+
+  if (!round_up) {
+    return true;
+  }
+
+  size_t index = significant;
+
+  while (index != 0) {
+    --index;
+
+    if (result.digits[index] != '9') {
+      ++result.digits[index];
+      return true;
+    }
+
+    result.digits[index] = '0';
+  }
+
+  /*
+   * 9.99... -> 1.00... with one larger decimal
+   * exponent.
+   */
+  result.digits[0] = '1';
+
+  for (size_t digit = 1; digit < significant; ++digit) {
+    result.digits[digit] = '0';
+  }
+
+  result.length = significant;
+  result.trailing_zeroes = 0;
+  ++result.exponent;
+  return true;
+}
+
+inline char significant_digit_at(const rounded_significant_decimal &value,
+                                 size_t index) {
+  if (index < value.length) {
+    return value.digits[index];
+  }
+
+  return '0';
+}
+
+inline size_t decimal_exponent_digit_count(int exponent) {
+  unsigned magnitude = exponent < 0
+                           ? static_cast<unsigned>(-(exponent + 1)) + 1u
+                           : static_cast<unsigned>(exponent);
+
+  size_t result = 1;
+
+  while (magnitude >= 10) {
+    magnitude /= 10;
+    ++result;
+  }
+
+  return result;
+}
+
+inline void append_decimal_exponent(format_writer &writer, int exponent,
+                                    bool uppercase) {
+  writer.append(uppercase ? L'E' : L'e');
+  writer.append(exponent < 0 ? L'-' : L'+');
+
+  unsigned magnitude = exponent < 0
+                           ? static_cast<unsigned>(-(exponent + 1)) + 1u
+                           : static_cast<unsigned>(exponent);
+
+  wchar_t digits[16]{};
+  size_t count = 0;
+
+  do {
+    digits[count++] = static_cast<wchar_t>(L'0' + magnitude % 10);
+
+    magnitude /= 10;
+  } while (magnitude != 0);
+
+  while (count < 2) {
+    digits[count++] = L'0';
+  }
+
+  while (count != 0) {
+    writer.append(digits[--count]);
+  }
+}
+
+inline bool append_nonfinite_floating(format_writer &writer, long double value,
+                                      const format_options &options,
+                                      bool uppercase) {
+  if (!floating_is_nan(value) && !floating_is_infinite(value)) {
+    return false;
+  }
+
+  const bool negative = floating_is_negative(value);
+
+  const wchar_t sign = floating_sign(negative, options);
+
+  size_t trailing_spaces = 0;
+
+  begin_floating_field(writer, options, sign, 3, true, trailing_spaces);
+
+  if (floating_is_nan(value)) {
+    if (uppercase) {
+      writer.append(L'N');
+      writer.append(L'A');
+      writer.append(L'N');
+    } else {
+      writer.append(L'n');
+      writer.append(L'a');
+      writer.append(L'n');
+    }
+  } else {
+    if (uppercase) {
+      writer.append(L'I');
+      writer.append(L'N');
+      writer.append(L'F');
+    } else {
+      writer.append(L'i');
+      writer.append(L'n');
+      writer.append(L'f');
+    }
+  }
+
+  writer.append(L' ', trailing_spaces);
+  return true;
+}
+
+inline void append_scientific_floating(format_writer &writer, long double value,
+                                       format_options options, bool uppercase) {
+  if (append_nonfinite_floating(writer, value, options, uppercase)) {
+    return;
+  }
+
+  const bool negative = floating_is_negative(value);
+
+  const wchar_t sign = floating_sign(negative, options);
+
+  if (options.precision < 0) {
+    options.precision = 6;
+  }
+
+  exact_decimal exact{};
+
+  if (!make_exact_decimal(floating_magnitude(value), exact)) {
+    writer.error = true;
+    return;
+  }
+
+  rounded_significant_decimal rounded{};
+
+  const size_t significant = static_cast<size_t>(options.precision) + 1;
+
+  if (!round_significant_decimal(exact, significant, rounded)) {
+    writer.error = true;
+    return;
+  }
+
+  const bool decimal_point = options.precision != 0 || options.alternate;
+
+  const size_t exponent_digits = decimal_exponent_digit_count(rounded.exponent);
+
+  const size_t body_length = 1 + (decimal_point ? 1u : 0u) +
+                             static_cast<size_t>(options.precision) + 1 + 1 +
+                             (exponent_digits < 2 ? 2 : exponent_digits);
+
+  size_t trailing_spaces = 0;
+
+  begin_floating_field(writer, options, sign, body_length, false,
+                       trailing_spaces);
+
+  writer.append(static_cast<wchar_t>(significant_digit_at(rounded, 0)));
+
+  if (decimal_point) {
+    writer.append(L'.');
+  }
+
+  for (size_t index = 1; index < significant; ++index) {
+    writer.append(static_cast<wchar_t>(significant_digit_at(rounded, index)));
+  }
+
+  append_decimal_exponent(writer, rounded.exponent, uppercase);
+
+  writer.append(L' ', trailing_spaces);
+}
+
+inline void append_general_floating(format_writer &writer, long double value,
+                                    format_options options, bool uppercase) {
+  if (append_nonfinite_floating(writer, value, options, uppercase)) {
+    return;
+  }
+
+  int precision = options.precision;
+
+  if (precision < 0) {
+    precision = 6;
+  } else if (precision == 0) {
+    precision = 1;
+  }
+
+  exact_decimal exact{};
+
+  if (!make_exact_decimal(floating_magnitude(value), exact)) {
+    writer.error = true;
+    return;
+  }
+
+  rounded_significant_decimal rounded{};
+
+  if (!round_significant_decimal(exact, static_cast<size_t>(precision),
+                                 rounded)) {
+    writer.error = true;
+    return;
+  }
+
+  size_t used = static_cast<size_t>(precision);
+
+  if (!options.alternate) {
+    while (used > 1 && significant_digit_at(rounded, used - 1) == '0') {
+      --used;
+    }
+  }
+
+  const bool scientific =
+      rounded.exponent < -4 || rounded.exponent >= precision;
+
+  const bool negative = floating_is_negative(value);
+
+  const wchar_t sign = floating_sign(negative, options);
+
+  if (scientific) {
+    const size_t fractional = used > 0 ? used - 1 : 0;
+
+    const bool decimal_point = fractional != 0 || options.alternate;
+
+    const size_t exponent_digits =
+        decimal_exponent_digit_count(rounded.exponent);
+
+    const size_t body_length = 1 + (decimal_point ? 1u : 0u) + fractional + 1 +
+                               1 + (exponent_digits < 2 ? 2 : exponent_digits);
+
+    size_t trailing_spaces = 0;
+
+    begin_floating_field(writer, options, sign, body_length, false,
+                         trailing_spaces);
+
+    writer.append(static_cast<wchar_t>(significant_digit_at(rounded, 0)));
+
+    if (decimal_point) {
+      writer.append(L'.');
+    }
+
+    for (size_t index = 1; index < used; ++index) {
+      writer.append(static_cast<wchar_t>(significant_digit_at(rounded, index)));
+    }
+
+    append_decimal_exponent(writer, rounded.exponent, uppercase);
+
+    writer.append(L' ', trailing_spaces);
+    return;
+  }
+
+  const long long point = static_cast<long long>(rounded.exponent) + 1;
+
+  size_t body_length = 0;
+
+  if (point <= 0) {
+    body_length = 2 + static_cast<size_t>(-point) + used;
+  } else if (static_cast<size_t>(point) >= used) {
+    body_length = static_cast<size_t>(point) + (options.alternate ? 1u : 0u);
+  } else {
+    body_length = used + 1;
+  }
+
+  size_t trailing_spaces = 0;
+
+  begin_floating_field(writer, options, sign, body_length, false,
+                       trailing_spaces);
+
+  if (point <= 0) {
+    writer.append(L'0');
+    writer.append(L'.');
+
+    writer.append(L'0', static_cast<size_t>(-point));
+
+    for (size_t index = 0; index < used; ++index) {
+      writer.append(static_cast<wchar_t>(significant_digit_at(rounded, index)));
+    }
+  } else {
+    const size_t integer_digits = static_cast<size_t>(point);
+
+    for (size_t index = 0; index < integer_digits; ++index) {
+      writer.append(index < used ? static_cast<wchar_t>(
+                                       significant_digit_at(rounded, index))
+                                 : L'0');
+    }
+
+    if (integer_digits < used || options.alternate) {
+      writer.append(L'.');
+    }
+
+    for (size_t index = integer_digits; index < used; ++index) {
+      writer.append(static_cast<wchar_t>(significant_digit_at(rounded, index)));
+    }
+  }
+
+  writer.append(L' ', trailing_spaces);
+}
+
+inline wchar_t hexadecimal_digit(unsigned value, bool uppercase) {
+  if (value < 10) {
+    return static_cast<wchar_t>(L'0' + value);
+  }
+
+  return static_cast<wchar_t>((uppercase ? L'A' : L'a') + value - 10);
+}
+
+inline size_t binary_exponent_digit_count(int exponent) {
+  unsigned magnitude = exponent < 0
+                           ? static_cast<unsigned>(-(exponent + 1)) + 1u
+                           : static_cast<unsigned>(exponent);
+
+  size_t result = 1;
+
+  while (magnitude >= 10) {
+    magnitude /= 10;
+    ++result;
+  }
+
+  return result;
+}
+
+inline void append_binary_exponent(format_writer &writer, int exponent,
+                                   bool uppercase) {
+  writer.append(uppercase ? L'P' : L'p');
+  writer.append(exponent < 0 ? L'-' : L'+');
+
+  unsigned magnitude = exponent < 0
+                           ? static_cast<unsigned>(-(exponent + 1)) + 1u
+                           : static_cast<unsigned>(exponent);
+
+  wchar_t digits[16]{};
+  size_t count = 0;
+
+  do {
+    digits[count++] = static_cast<wchar_t>(L'0' + magnitude % 10);
+
+    magnitude /= 10;
+  } while (magnitude != 0);
+
+  while (count != 0) {
+    writer.append(digits[--count]);
+  }
+}
+
+inline void append_hexadecimal_floating(format_writer &writer,
+                                        long double value,
+                                        format_options options, bool uppercase,
+                                        int binary_digits) {
+  if (append_nonfinite_floating(writer, value, options, uppercase)) {
+    return;
+  }
+
+  const bool negative = floating_is_negative(value);
+
+  const wchar_t sign = floating_sign(negative, options);
+
+  long double magnitude = floating_magnitude(value);
+
+  unsigned leading = 0;
+  int exponent = 0;
+
+  constexpr size_t maximum_hex_digits =
+      (numeric_limits<long double>::digits + 2) / 4 + 1;
+
+  unsigned exact_digits[maximum_hex_digits]{};
+
+  size_t exact_count = 0;
+
+  if (magnitude != 0.0L) {
+    long double normalized = magnitude;
+
+    while (normalized >= 2.0L) {
+      normalized *= 0.5L;
+      ++exponent;
+    }
+
+    while (normalized < 1.0L) {
+      normalized *= 2.0L;
+      --exponent;
+    }
+
+    leading = 1;
+
+    long double fraction = normalized - 1.0L;
+
+    exact_count = static_cast<size_t>((binary_digits - 1 + 3) / 4);
+
+    for (size_t index = 0; index < exact_count; ++index) {
+      fraction *= 16.0L;
+
+      unsigned digit = static_cast<unsigned>(fraction);
+
+      if (digit > 15) {
+        digit = 15;
+      }
+
+      exact_digits[index] = digit;
+
+      fraction -= static_cast<long double>(digit);
+    }
+  }
+
+  int requested_precision = options.precision;
+
+  if (requested_precision < 0) {
+    requested_precision = magnitude == 0.0L ? 0 : static_cast<int>(exact_count);
+  }
+
+  const size_t precision = static_cast<size_t>(requested_precision);
+
+  if (magnitude != 0.0L && precision < exact_count) {
+    const unsigned next = exact_digits[precision];
+
+    bool sticky = false;
+
+    for (size_t index = precision + 1; index < exact_count; ++index) {
+      if (exact_digits[index] != 0) {
+        sticky = true;
+        break;
+      }
+    }
+
+    bool round_up = false;
+
+    if (next > 8) {
+      round_up = true;
+    } else if (next == 8) {
+      if (sticky) {
+        round_up = true;
+      } else {
+        const unsigned previous =
+            precision == 0 ? leading : exact_digits[precision - 1];
+
+        round_up = (previous & 1u) != 0;
+      }
+    }
+
+    if (round_up) {
+      if (precision == 0) {
+        ++leading;
+      } else {
+        size_t index = precision;
+
+        while (index != 0) {
+          --index;
+
+          if (exact_digits[index] != 15) {
+            ++exact_digits[index];
+            break;
+          }
+
+          exact_digits[index] = 0;
+
+          if (index == 0) {
+            ++leading;
+          }
+        }
+      }
+    }
+  }
+
+  const bool decimal_point = precision != 0 || options.alternate;
+
+  const size_t exponent_digits = binary_exponent_digit_count(exponent);
+
+  const size_t body_length =
+      2 + 1 + (decimal_point ? 1u : 0u) + precision + 1 + 1 + exponent_digits;
+
+  size_t trailing_spaces = 0;
+
+  begin_floating_field(writer, options, sign, body_length, false,
+                       trailing_spaces);
+
+  writer.append(L'0');
+  writer.append(uppercase ? L'X' : L'x');
+
+  writer.append(hexadecimal_digit(leading, uppercase));
+
+  if (decimal_point) {
+    writer.append(L'.');
+  }
+
+  for (size_t index = 0; index < precision; ++index) {
+    const unsigned digit = index < exact_count ? exact_digits[index] : 0;
+
+    writer.append(hexadecimal_digit(digit, uppercase));
+  }
+
+  append_binary_exponent(writer, exponent, uppercase);
+
+  writer.append(L' ', trailing_spaces);
+}
+
+} // namespace cwchar_detail
+
+inline int vswprintf(wchar_t *s, size_t n, const wchar_t *format, va_list arg) {
+  cwchar_detail::format_writer writer{s, n};
+
+  va_list arguments;
+  va_copy(arguments, arg);
+
+  const wchar_t *current = format;
+
+  while (*current != L'\0' && !writer.error) {
+    if (*current != L'%') {
+      writer.append(*current++);
+      continue;
+    }
+
+    ++current;
+
+    if (*current == L'%') {
+      writer.append(L'%');
+      ++current;
+      continue;
+    }
+
+    cwchar_detail::format_options options{};
+
+    bool parsing_flags = true;
+
+    while (parsing_flags) {
+      switch (*current) {
+      case L'-':
+        options.left = true;
+        ++current;
+        break;
+
+      case L'+':
+        options.plus = true;
+        ++current;
+        break;
+
+      case L' ':
+        options.space = true;
+        ++current;
+        break;
+
+      case L'#':
+        options.alternate = true;
+        ++current;
+        break;
+
+      case L'0':
+        options.zero = true;
+        ++current;
+        break;
+
+      default:
+        parsing_flags = false;
+        break;
+      }
+    }
+
+    if (*current == L'*') {
+      int width = va_arg(arguments, int);
+      ++current;
+
+      if (width < 0) {
+        options.left = true;
+
+        if (width == numeric_limits<int>::min()) {
+          options.width = numeric_limits<int>::max();
+        } else {
+          options.width = -width;
+        }
+      } else {
+        options.width = width;
+      }
+    } else {
+      options.width = cwchar_detail::parse_format_number(current);
+    }
+
+    if (*current == L'.') {
+      ++current;
+
+      if (*current == L'*') {
+        const int precision = va_arg(arguments, int);
+
+        ++current;
+
+        if (precision >= 0) {
+          options.precision = precision;
+        }
+      } else {
+        options.precision = cwchar_detail::parse_format_number(current);
+      }
+    }
+
+    options.length = cwchar_detail::parse_format_length(current);
+
+    const wchar_t conversion = *current;
+
+    if (conversion == L'\0') {
+      writer.error = true;
+      break;
+    }
+
+    ++current;
+
+    switch (conversion) {
+    case L'd':
+    case L'i': {
+      const intmax_t value =
+          cwchar_detail::read_signed_argument(arguments, options.length);
+
+      cwchar_detail::append_integer(writer,
+                                    cwchar_detail::signed_magnitude(value),
+                                    value < 0, 10, false, true, options);
+
+      break;
+    }
+
+    case L'o':
+    case L'u':
+    case L'x':
+    case L'X': {
+      const uintmax_t value =
+          cwchar_detail::read_unsigned_argument(arguments, options.length);
+
+      const unsigned base = conversion == L'o'   ? 8u
+                            : conversion == L'u' ? 10u
+                                                 : 16u;
+
+      cwchar_detail::append_integer(writer, value, false, base,
+                                    conversion == L'X', false, options);
+
+      break;
+    }
+
+    case L'c': {
+      wchar_t value = L'\0';
+
+      if (options.length == cwchar_detail::format_length::l) {
+        value = static_cast<wchar_t>(va_arg(arguments, wint_t));
+      } else {
+        const int character = va_arg(arguments, int);
+
+        const wint_t converted = btowc(character);
+
+        if (converted == static_cast<wint_t>(WEOF)) {
+          writer.error = true;
+          break;
+        }
+
+        value = static_cast<wchar_t>(converted);
+      }
+
+      cwchar_detail::append_wide_character(writer, value, options);
+
+      break;
+    }
+
+    case L's': {
+      if (options.length == cwchar_detail::format_length::l) {
+        const wchar_t *string = va_arg(arguments, const wchar_t *);
+
+        cwchar_detail::append_wide_string(writer, string, options);
+      } else {
+        const char *string = va_arg(arguments, const char *);
+
+        cwchar_detail::append_narrow_string(writer, string, options);
+      }
+
+      break;
+    }
+
+    case L'p': {
+      const void *pointer = va_arg(arguments, void *);
+
+      cwchar_detail::append_pointer(writer, pointer, options);
+
+      break;
+    }
+
+    case L'n':
+      cwchar_detail::store_format_count(arguments, options.length, writer.size);
+      break;
+
+    case L'f':
+    case L'F': {
+      const long double value =
+          options.length == cwchar_detail::format_length::capital_l
+              ? va_arg(arguments, long double)
+              : static_cast<long double>(va_arg(arguments, double));
+
+      cwchar_detail::append_fixed_floating(writer, value, options,
+                                           conversion == L'F');
+
+      break;
+    }
+
+    case L'e':
+    case L'E': {
+      const long double value =
+          options.length == cwchar_detail::format_length::capital_l
+              ? va_arg(arguments, long double)
+              : static_cast<long double>(va_arg(arguments, double));
+
+      cwchar_detail::append_scientific_floating(writer, value, options,
+                                                conversion == L'E');
+
+      break;
+    }
+
+    case L'g':
+    case L'G': {
+      const long double value =
+          options.length == cwchar_detail::format_length::capital_l
+              ? va_arg(arguments, long double)
+              : static_cast<long double>(va_arg(arguments, double));
+
+      cwchar_detail::append_general_floating(writer, value, options,
+                                             conversion == L'G');
+
+      break;
+    }
+
+    case L'a':
+    case L'A': {
+      const bool is_long_double =
+          options.length == cwchar_detail::format_length::capital_l;
+
+      const long double value =
+          is_long_double ? va_arg(arguments, long double)
+                         : static_cast<long double>(va_arg(arguments, double));
+
+      cwchar_detail::append_hexadecimal_floating(
+          writer, value, options, conversion == L'A',
+          is_long_double ? numeric_limits<long double>::digits
+                         : numeric_limits<double>::digits);
+
+      break;
+    }
+
+    default:
+      writer.error = true;
+      break;
+    }
+  }
+
+  va_end(arguments);
+
+  if (!writer.finish()) {
+    return -1;
+  }
+
+  if (writer.size > static_cast<size_t>(numeric_limits<int>::max())) {
+    return -1;
+  }
+
+  return static_cast<int>(writer.size);
+}
+
+inline int swprintf(wchar_t *s, size_t n, const wchar_t *format, ...) {
+  va_list arguments;
+  va_start(arguments, format);
+
+  const int result = vswprintf(s, n, format, arguments);
+
+  va_end(arguments);
+  return result;
+}
+
 } // namespace std or ftl
-
-#ifndef NULL
-#define NULL nullptr
-#endif
-
-#ifndef WCHAR_MIN
-#if defined(_MSC_VER)
-#define WCHAR_MIN 0
-#elif defined(__WCHAR_MAX__)
-#define WCHAR_MIN (-__WCHAR_MAX__ - 1)
-#else
-#error "FTL <cwchar> does not know this compiler's wchar_t minimum"
-#endif
-#endif
-
-#ifndef WCHAR_MAX
-#if defined(_MSC_VER)
-#define WCHAR_MAX 0xffff
-#elif defined(__WCHAR_MAX__)
-#define WCHAR_MAX __WCHAR_MAX__
-#else
-#error "FTL <cwchar> does not know this compiler's wchar_t maximum"
-#endif
-#endif
-
-#ifndef WEOF
-#define WEOF (~0u)
-#endif
 
 #undef FTL_CWCHAR_NO_BUILTIN
 
