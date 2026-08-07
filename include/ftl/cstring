@@ -3,19 +3,30 @@
 #ifndef FTL_CSTRING_HEADER
 #define FTL_CSTRING_HEADER
 
+#if defined(_MSC_VER) && \
+    !defined(__clang__) && \
+    (defined(_M_IX86) || defined(_M_X64))
+
 extern "C" {
-void* memcpy(void* destination, const void* source, decltype(sizeof(0))) noexcept;
-void* memmove(void* destination, const void* source, decltype(sizeof(0))) noexcept;
-void* memset(void* destination, int value, decltype(sizeof(0))) noexcept;
-int memcmp(const void* left, const void* right, decltype(sizeof(0))) noexcept;
-const void* memchr(const void* data, int value, decltype(sizeof(0))) noexcept;
-decltype(sizeof(0)) strlen(const char* string) noexcept;
-int strcmp(const char* left, const char* right) noexcept;
-int strncmp(const char* left, const char* right, decltype(sizeof(0))) noexcept;
-char* strcpy(char* destination, const char* source) noexcept;
-char* strncpy(
-    char* destination, const char* source, decltype(sizeof(0))) noexcept;
+
+void __movsb(
+    unsigned char* destination,
+    const unsigned char* source,
+    decltype(sizeof(0)) count
+);
+
+void __stosb(
+    unsigned char* destination,
+    unsigned char value,
+    decltype(sizeof(0)) count
+);
+
 }
+
+#pragma intrinsic(__movsb)
+#pragma intrinsic(__stosb)
+
+#endif
 
 #ifdef FTL_REPLACE_STL
 namespace std {
@@ -23,17 +34,539 @@ namespace std {
 namespace ftl {
 #endif
 
-using ::memcpy;
-using ::memmove;
-using ::memset;
-using ::memcmp;
-using ::memchr;
-using ::strlen;
-using ::strcmp;
-using ::strncmp;
-using ::strcpy;
-using ::strncpy;
+#if defined(__clang__)
+
+#define FTL_CSTRING_NO_BUILTIN \
+    __attribute__((no_builtin))
+
+#elif defined(__GNUC__)
+
+#define FTL_CSTRING_NO_BUILTIN \
+    __attribute__((optimize("no-tree-loop-distribute-patterns")))
+
+#else
+
+#define FTL_CSTRING_NO_BUILTIN
+
+#endif
+
+using size_t = decltype(sizeof(0));
+
+namespace cstring_detail {
+
+inline unsigned char load_byte(const void* pointer) {
+#if defined(_MSC_VER) && !defined(__clang__)
+    return *static_cast<const volatile unsigned char*>(pointer);
+#else
+    return *static_cast<const unsigned char*>(pointer);
+#endif
+}
+
+inline void store_byte(void* pointer, unsigned char value) {
+#if defined(_MSC_VER) && !defined(__clang__)
+    *static_cast<volatile unsigned char*>(pointer) = value;
+#else
+    *static_cast<unsigned char*>(pointer) = value;
+#endif
+}
+
+inline bool contains(const char* set, unsigned char value) {
+    while (load_byte(set) != 0) {
+        if (load_byte(set) == value) {
+            return true;
+        }
+
+        ++set;
+    }
+
+    return false;
+}
+
+} // namespace cstring_detail
+
+FTL_CSTRING_NO_BUILTIN
+inline void* memcpy(void* s1, const void* s2, size_t n) {
+#if defined(_MSC_VER) && \
+    !defined(__clang__) && \
+    (defined(_M_IX86) || defined(_M_X64))
+
+    __movsb(
+        static_cast<unsigned char*>(s1),
+        static_cast<const unsigned char*>(s2),
+        n
+    );
+
+#else
+
+    auto* destination = static_cast<unsigned char*>(s1);
+    auto* source = static_cast<const unsigned char*>(s2);
+
+    for (size_t index = 0; index < n; ++index) {
+        cstring_detail::store_byte(
+            destination + index,
+            cstring_detail::load_byte(source + index)
+        );
+    }
+
+#endif
+
+    return s1;
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline void* memmove(void* s1, const void* s2, size_t n) {
+    auto* destination = static_cast<unsigned char*>(s1);
+    auto* source = static_cast<const unsigned char*>(s2);
+
+    if (destination == source || n == 0) {
+        return s1;
+    }
+
+    const auto destination_address =
+        reinterpret_cast<size_t>(destination);
+    const auto source_address =
+        reinterpret_cast<size_t>(source);
+
+    if (destination_address < source_address) {
+        for (size_t index = 0; index < n; ++index) {
+            cstring_detail::store_byte(
+                destination + index,
+                cstring_detail::load_byte(source + index)
+            );
+        }
+    } else {
+        for (size_t index = n; index != 0; --index) {
+            cstring_detail::store_byte(
+                destination + index - 1,
+                cstring_detail::load_byte(source + index - 1)
+            );
+        }
+    }
+
+    return s1;
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline char* strcpy(char* s1, const char* s2) {
+    char* result = s1;
+
+    while ((*s1++ = *s2++) != '\0') {
+    }
+
+    return result;
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline char* strncpy(char* s1, const char* s2, size_t n) {
+    char* result = s1;
+    size_t index = 0;
+
+    while (index < n && s2[index] != '\0') {
+        s1[index] = s2[index];
+        ++index;
+    }
+
+    while (index < n) {
+        s1[index] = '\0';
+        ++index;
+    }
+
+    return result;
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline char* strcat(char* s1, const char* s2) {
+    char* result = s1;
+
+    while (*s1 != '\0') {
+        ++s1;
+    }
+
+    while ((*s1++ = *s2++) != '\0') {
+    }
+
+    return result;
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline char* strncat(char* s1, const char* s2, size_t n) {
+    char* result = s1;
+
+    while (*s1 != '\0') {
+        ++s1;
+    }
+
+    size_t index = 0;
+
+    while (index < n && s2[index] != '\0') {
+        s1[index] = s2[index];
+        ++index;
+    }
+
+    s1[index] = '\0';
+    return result;
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline int memcmp(const void* s1, const void* s2, size_t n) {
+    auto* left = static_cast<const unsigned char*>(s1);
+    auto* right = static_cast<const unsigned char*>(s2);
+
+    for (size_t index = 0; index < n; ++index) {
+        if (left[index] < right[index]) {
+            return -1;
+        }
+
+        if (left[index] > right[index]) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline int strcmp(const char* s1, const char* s2) {
+    while (*s1 != '\0' &&
+           static_cast<unsigned char>(*s1) ==
+               static_cast<unsigned char>(*s2)) {
+        ++s1;
+        ++s2;
+    }
+
+    const auto left = static_cast<unsigned char>(*s1);
+    const auto right = static_cast<unsigned char>(*s2);
+
+    if (left < right) {
+        return -1;
+    }
+
+    if (left > right) {
+        return 1;
+    }
+
+    return 0;
+}
+
+/*
+ * FTL currently provides only the C locale semantics here.
+ *
+ * When <clocale>/<locale> acquires additional locale support, strcoll and
+ * strxfrm must be wired into the active collation locale.
+ */
+inline int strcoll(const char* s1, const char* s2) {
+    return strcmp(s1, s2);
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline int strncmp(const char* s1, const char* s2, size_t n) {
+    for (size_t index = 0; index < n; ++index) {
+        const auto left = static_cast<unsigned char>(s1[index]);
+        const auto right = static_cast<unsigned char>(s2[index]);
+
+        if (left < right) {
+            return -1;
+        }
+
+        if (left > right) {
+            return 1;
+        }
+
+        if (left == '\0') {
+            return 0;
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * In the C locale, the identity transformation satisfies the required
+ * relationship between strcoll and strcmp.
+ */
+FTL_CSTRING_NO_BUILTIN
+inline size_t strxfrm(char* s1, const char* s2, size_t n) {
+    size_t length = 0;
+
+    while (s2[length] != '\0') {
+        ++length;
+    }
+
+    if (n == 0) {
+        return length;
+    }
+
+    if (length < n) {
+        for (size_t index = 0; index <= length; ++index) {
+            s1[index] = s2[index];
+        }
+    } else {
+        for (size_t index = 0; index < n; ++index) {
+            s1[index] = s2[index];
+        }
+    }
+
+    return length;
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline const void* memchr(const void* s, int c, size_t n) {
+    auto* bytes = static_cast<const unsigned char*>(s);
+    const auto value = static_cast<unsigned char>(c);
+
+    for (size_t index = 0; index < n; ++index) {
+        if (bytes[index] == value) {
+            return bytes + index;
+        }
+    }
+
+    return nullptr;
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline void* memchr(void* s, int c, size_t n) {
+    return const_cast<void*>(
+        memchr(static_cast<const void*>(s), c, n)
+    );
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline const char* strchr(const char* s, int c) {
+    const auto value = static_cast<unsigned char>(c);
+
+    for (;;) {
+        if (static_cast<unsigned char>(*s) == value) {
+            return s;
+        }
+
+        if (*s == '\0') {
+            return nullptr;
+        }
+
+        ++s;
+    }
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline char* strchr(char* s, int c) {
+    return const_cast<char*>(
+        strchr(static_cast<const char*>(s), c)
+    );
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline size_t strcspn(const char* s1, const char* s2) {
+    size_t count = 0;
+
+    while (s1[count] != '\0') {
+        if (cstring_detail::contains(
+                s2,
+                static_cast<unsigned char>(s1[count])
+            )) {
+            break;
+        }
+
+        ++count;
+    }
+
+    return count;
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline const char* strpbrk(const char* s1, const char* s2) {
+    while (*s1 != '\0') {
+        if (cstring_detail::contains(
+                s2,
+                static_cast<unsigned char>(*s1)
+            )) {
+            return s1;
+        }
+
+        ++s1;
+    }
+
+    return nullptr;
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline char* strpbrk(char* s1, const char* s2) {
+    return const_cast<char*>(
+        strpbrk(static_cast<const char*>(s1), s2)
+    );
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline const char* strrchr(const char* s, int c) {
+    const auto value = static_cast<unsigned char>(c);
+    const char* result = nullptr;
+
+    for (;;) {
+        if (static_cast<unsigned char>(*s) == value) {
+            result = s;
+        }
+
+        if (*s == '\0') {
+            return result;
+        }
+
+        ++s;
+    }
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline char* strrchr(char* s, int c) {
+    return const_cast<char*>(
+        strrchr(static_cast<const char*>(s), c)
+    );
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline size_t strspn(const char* s1, const char* s2) {
+    size_t count = 0;
+
+    while (s1[count] != '\0') {
+        if (!cstring_detail::contains(
+                s2,
+                static_cast<unsigned char>(s1[count])
+            )) {
+            break;
+        }
+
+        ++count;
+    }
+
+    return count;
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline const char* strstr(const char* s1, const char* s2) {
+    if (*s2 == '\0') {
+        return s1;
+    }
+
+    for (; *s1 != '\0'; ++s1) {
+        const char* haystack = s1;
+        const char* needle = s2;
+
+        while (*needle != '\0' && *haystack == *needle) {
+            ++haystack;
+            ++needle;
+        }
+
+        if (*needle == '\0') {
+            return s1;
+        }
+    }
+
+    return nullptr;
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline char* strstr(char* s1, const char* s2) {
+    return const_cast<char*>(
+        strstr(static_cast<const char*>(s1), s2)
+    );
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline char* strtok(char* s1, const char* s2) {
+    static char* next = nullptr;
+
+    char* current = s1 != nullptr ? s1 : next;
+
+    if (current == nullptr) {
+        return nullptr;
+    }
+
+    while (*current != '\0' &&
+           cstring_detail::contains(
+               s2,
+               static_cast<unsigned char>(*current)
+           )) {
+        ++current;
+    }
+
+    if (*current == '\0') {
+        next = nullptr;
+        return nullptr;
+    }
+
+    char* token = current;
+
+    while (*current != '\0' &&
+           !cstring_detail::contains(
+               s2,
+               static_cast<unsigned char>(*current)
+           )) {
+        ++current;
+    }
+
+    if (*current == '\0') {
+        next = nullptr;
+    } else {
+        *current = '\0';
+        next = current + 1;
+    }
+
+    return token;
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline void* memset(void* s, int c, size_t n) {
+#if defined(_MSC_VER) && \
+    !defined(__clang__) && \
+    (defined(_M_IX86) || defined(_M_X64))
+
+    __stosb(
+        static_cast<unsigned char*>(s),
+        static_cast<unsigned char>(c),
+        n
+    );
+
+#else
+
+    auto* destination = static_cast<unsigned char*>(s);
+    const auto value = static_cast<unsigned char>(c);
+
+    for (size_t index = 0; index < n; ++index) {
+        cstring_detail::store_byte(destination + index, value);
+    }
+
+#endif
+
+    return s;
+}
+
+/*
+ * The text produced by strerror is implementation-defined.
+ *
+ * This is intentionally minimal until FTL owns the corresponding errno /
+ * platform-error mapping. It still supplies stable storage with the required
+ * char* interface.
+ */
+FTL_CSTRING_NO_BUILTIN
+inline char* strerror(int errnum) {
+    static char unknown_error[] = "Unknown error";
+
+    static_cast<void>(errnum);
+    return unknown_error;
+}
+
+FTL_CSTRING_NO_BUILTIN
+inline size_t strlen(const char* s) {
+    size_t length = 0;
+
+    while (cstring_detail::load_byte(s + length) != 0) {
+        ++length;
+    }
+
+    return length;
+}
 
 } // namespace std or ftl
+
+#ifndef NULL
+#define NULL 0
+#endif
 
 #endif // FTL_CSTRING_HEADER

@@ -132,6 +132,22 @@ add_ftl_compile_fail_check(numeric_reduce checks/numeric_reduce_compile_fail.cpp
 add_ftl_standalone_check(feature_macros checks/feature_macros.cpp)
 add_ftl_standalone_check(no_allocation checks/no_allocation.cpp)
 add_ftl_freestanding_link_check(freestanding_link checks/freestanding_link.cpp)
+add_ftl_freestanding_link_check(
+        cstring_freestanding_link
+        checks/cstring_freestanding_link.cpp
+)
+
+if(MSVC)
+    target_compile_options(
+            ftl_check_cstring_freestanding_link
+            PRIVATE /O2 /GS-
+    )
+else()
+    target_compile_options(
+            ftl_check_cstring_freestanding_link
+            PRIVATE -O3
+    )
+endif()
 add_ftl_disabled_features_check(disabled_features checks/disabled_features.cpp)
 
 foreach(header IN ITEMS
@@ -251,6 +267,7 @@ foreach(header IN ITEMS
         algorithm_lexicographical
         algorithm_random
         numeric
+        cstring_synopsis
 )
     add_ftl_test(${header})
 endforeach()
