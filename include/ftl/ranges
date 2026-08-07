@@ -3,7 +3,10 @@
 #ifndef FTL_RANGES_HEADER
 #define FTL_RANGES_HEADER
 
+#if !defined(__cpp_lib_ranges) || __cpp_lib_ranges < 202110L
+#undef __cpp_lib_ranges
 #define __cpp_lib_ranges 202110L
+#endif
 #define __cpp_lib_ranges_zip 202110L
 #define __cpp_lib_ranges_chunk 202202L
 #define __cpp_lib_ranges_slide 202202L

@@ -1,14 +1,6 @@
 #ifndef FTL_ALGORITHMS_HEADER
 #define FTL_ALGORITHMS_HEADER
 
-#define __cpp_lib_ranges_starts_ends_with 202106L
-#define __cpp_lib_ranges_contains 202207L
-#define __cpp_lib_ranges_find_last 202207L
-#if !defined(__cpp_lib_shift) || __cpp_lib_shift < 202202L
-#undef __cpp_lib_shift
-#define __cpp_lib_shift 202202L
-#endif
-
 #ifdef FTL_REPLACE_STL
 #include <__algorithms/result.hpp>
 #include <__algorithms/all_any_none.hpp>
@@ -53,6 +45,29 @@
 #include <ftl/__algorithms/set.hpp>
 #include <ftl/__algorithms/heap.hpp>
 #include <ftl/__algorithms/partial_sort.hpp>
+#endif
+
+#if !defined(__cpp_lib_ranges_starts_ends_with) || \
+    __cpp_lib_ranges_starts_ends_with < 202106L
+#undef __cpp_lib_ranges_starts_ends_with
+#define __cpp_lib_ranges_starts_ends_with 202106L
+#endif
+
+#if !defined(__cpp_lib_ranges_contains) || \
+    __cpp_lib_ranges_contains < 202207L
+#undef __cpp_lib_ranges_contains
+#define __cpp_lib_ranges_contains 202207L
+#endif
+
+#if !defined(__cpp_lib_ranges_find_last) || \
+    __cpp_lib_ranges_find_last < 202207L
+#undef __cpp_lib_ranges_find_last
+#define __cpp_lib_ranges_find_last 202207L
+#endif
+
+#if !defined(__cpp_lib_shift) || __cpp_lib_shift < 202202L
+#undef __cpp_lib_shift
+#define __cpp_lib_shift 202202L
 #endif
 
 #endif // FTL_ALGORITHMS_HEADER
