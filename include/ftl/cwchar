@@ -1,0 +1,4070 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CWCHAR_HEADER
+#define FTL_CWCHAR_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <__c_file_types.hpp>
+#include <__c_time_types.hpp>
+#include <__c_wide_types.hpp>
+#include <cerrno>
+#include <cstdarg>
+#include <cstdint>
+#include <cstring>
+#include <limits>
+#include <type_traits>
+#else
+#include <ftl/__c_file_types.hpp>
+#include <ftl/__c_time_types.hpp>
+#include <ftl/__c_wide_types.hpp>
+#include <ftl/cerrno>
+#include <ftl/cstdarg>
+#include <ftl/cstdint>
+#include <ftl/cstring>
+#include <ftl/limits>
+#include <ftl/type_traits>
+#endif
+
+#if defined(_MSC_VER)
+
+extern "C" {
+__declspec(selectany) int _fltused = 1;
+}
+
+#endif
+
+#if defined(_MSC_VER) && !defined(__clang__)
+using ftl_cwchar_native_va_list = char *;
+#else
+using ftl_cwchar_native_va_list = __builtin_va_list;
+#endif
+
+#if defined(_WIN32)
+using ftl_cwchar_native_wint_t = unsigned short;
+#elif defined(__APPLE__)
+using ftl_cwchar_native_wint_t = int;
+#else
+using ftl_cwchar_native_wint_t = unsigned int;
+#endif
+
+namespace ftl_cwchar_runtime {
+
+extern "C" {
+
+#if defined(_WIN32)
+
+FILE *__cdecl __acrt_iob_func(unsigned index);
+
+int __cdecl __stdio_common_vfwprintf(
+    unsigned long long options,
+    FILE *stream,
+    const wchar_t *format,
+    void *locale,
+    ftl_cwchar_native_va_list arguments);
+
+int __cdecl __stdio_common_vfwscanf(
+    unsigned long long options,
+    FILE *stream,
+    const wchar_t *format,
+    void *locale,
+    ftl_cwchar_native_va_list arguments);
+
+int __cdecl __stdio_common_vswscanf(
+    unsigned long long options,
+    const wchar_t *buffer,
+    decltype(sizeof(0)) buffer_count,
+    const wchar_t *format,
+    void *locale,
+    ftl_cwchar_native_va_list arguments);
+
+#else
+
+int vfwprintf(
+    FILE *,
+    const wchar_t *,
+    ftl_cwchar_native_va_list);
+
+int vfwscanf(
+    FILE *,
+    const wchar_t *,
+    ftl_cwchar_native_va_list);
+
+int vswscanf(
+    const wchar_t *,
+    const wchar_t *,
+    ftl_cwchar_native_va_list);
+
+int vwprintf(
+    const wchar_t *,
+    ftl_cwchar_native_va_list);
+
+int vwscanf(
+    const wchar_t *,
+    ftl_cwchar_native_va_list);
+
+#endif
+
+ftl_cwchar_native_wint_t fgetwc(FILE *);
+
+wchar_t *fgetws(
+    wchar_t *,
+    int,
+    FILE *);
+
+ftl_cwchar_native_wint_t fputwc(
+    wchar_t,
+    FILE *);
+
+int fputws(
+    const wchar_t *,
+    FILE *);
+
+int fwide(
+    FILE *,
+    int);
+
+ftl_cwchar_native_wint_t getwchar();
+
+ftl_cwchar_native_wint_t putwchar(
+    wchar_t);
+
+ftl_cwchar_native_wint_t ungetwc(
+    ftl_cwchar_native_wint_t,
+    FILE *);
+
+} // extern "C"
+
+} // namespace ftl_cwchar_runtime
+
+#if defined(__clang__)
+
+#define FTL_CWCHAR_NO_BUILTIN __attribute__((no_builtin))
+
+#elif defined(__GNUC__)
+
+#define FTL_CWCHAR_NO_BUILTIN                                                  \
+  __attribute__((optimize("no-tree-loop-distribute-patterns")))
+
+#else
+
+#define FTL_CWCHAR_NO_BUILTIN
+
+#endif
+
+#ifdef FTL_REPLACE_STL
+namespace std {
+#else
+namespace ftl {
+#endif
+
+#ifndef NULL
+#define NULL nullptr
+#endif
+
+#ifndef WCHAR_MIN
+#if defined(_MSC_VER)
+#define WCHAR_MIN 0
+#elif defined(__WCHAR_MAX__)
+#define WCHAR_MIN (-__WCHAR_MAX__ - 1)
+#else
+#error "FTL <cwchar> does not know this compiler's wchar_t minimum"
+#endif
+#endif
+
+#ifndef WCHAR_MAX
+#if defined(_MSC_VER)
+#define WCHAR_MAX 0xffff
+#elif defined(__WCHAR_MAX__)
+#define WCHAR_MAX __WCHAR_MAX__
+#else
+#error "FTL <cwchar> does not know this compiler's wchar_t maximum"
+#endif
+#endif
+
+#ifndef WEOF
+#define WEOF (~0u)
+#endif
+
+using size_t = decltype(sizeof(0));
+
+namespace cwchar_detail {
+
+inline int runtime_vfwprintf(
+    FILE *stream,
+    const wchar_t *format,
+    va_list arguments) {
+#if defined(_WIN32)
+  return ::ftl_cwchar_runtime::__stdio_common_vfwprintf(
+      0,
+      stream,
+      format,
+      nullptr,
+      arguments);
+#else
+  return ::ftl_cwchar_runtime::vfwprintf(
+      stream,
+      format,
+      arguments);
+#endif
+}
+
+inline int runtime_vfwscanf(
+    FILE *stream,
+    const wchar_t *format,
+    va_list arguments) {
+#if defined(_WIN32)
+  return ::ftl_cwchar_runtime::__stdio_common_vfwscanf(
+      0,
+      stream,
+      format,
+      nullptr,
+      arguments);
+#else
+  return ::ftl_cwchar_runtime::vfwscanf(
+      stream,
+      format,
+      arguments);
+#endif
+}
+
+inline int runtime_vswscanf(
+    const wchar_t *string,
+    const wchar_t *format,
+    va_list arguments) {
+#if defined(_WIN32)
+  return ::ftl_cwchar_runtime::__stdio_common_vswscanf(
+      0,
+      string,
+      static_cast<size_t>(-1),
+      format,
+      nullptr,
+      arguments);
+#else
+  return ::ftl_cwchar_runtime::vswscanf(
+      string,
+      format,
+      arguments);
+#endif
+}
+
+inline int runtime_vwprintf(
+    const wchar_t *format,
+    va_list arguments) {
+#if defined(_WIN32)
+  return ::ftl_cwchar_runtime::__stdio_common_vfwprintf(
+      0,
+      ::ftl_cwchar_runtime::__acrt_iob_func(1),
+      format,
+      nullptr,
+      arguments);
+#else
+  return ::ftl_cwchar_runtime::vwprintf(
+      format,
+      arguments);
+#endif
+}
+
+inline int runtime_vwscanf(
+    const wchar_t *format,
+    va_list arguments) {
+#if defined(_WIN32)
+  return ::ftl_cwchar_runtime::__stdio_common_vfwscanf(
+      0,
+      ::ftl_cwchar_runtime::__acrt_iob_func(0),
+      format,
+      nullptr,
+      arguments);
+#else
+  return ::ftl_cwchar_runtime::vwscanf(
+      format,
+      arguments);
+#endif
+}
+
+
+inline constexpr wint_t wide_eof = static_cast<wint_t>(~0u);
+
+inline wint_t from_native_wint(ftl_cwchar_native_wint_t value) {
+#if defined(_WIN32)
+  if (static_cast<unsigned int>(value) == 0xffffu) {
+    return wide_eof;
+  }
+#else
+  if (static_cast<unsigned int>(value) == ~0u) {
+    return wide_eof;
+  }
+#endif
+
+  return static_cast<wint_t>(value);
+}
+
+inline ftl_cwchar_native_wint_t to_native_wint(wint_t value) {
+#if defined(_WIN32)
+  if (value == wide_eof) {
+    return static_cast<ftl_cwchar_native_wint_t>(0xffffu);
+  }
+#endif
+
+  return static_cast<ftl_cwchar_native_wint_t>(value);
+}
+
+inline wchar_t load(const wchar_t *pointer) {
+#if defined(_MSC_VER) && !defined(__clang__)
+  return *static_cast<const volatile wchar_t *>(pointer);
+#else
+  return *pointer;
+#endif
+}
+
+inline void store(wchar_t *pointer, wchar_t value) {
+#if defined(_MSC_VER) && !defined(__clang__)
+  *static_cast<volatile wchar_t *>(pointer) = value;
+#else
+  *pointer = value;
+#endif
+}
+
+inline bool contains(const wchar_t *set, wchar_t value) {
+  while (load(set) != L'\0') {
+    if (load(set) == value) {
+      return true;
+    }
+
+    ++set;
+  }
+
+  return false;
+}
+
+inline bool is_space(wchar_t value) {
+  return value == L' ' || value == L'\t' || value == L'\n' || value == L'\v' ||
+         value == L'\f' || value == L'\r';
+}
+
+inline int digit_value(wchar_t value) {
+  if (value >= L'0' && value <= L'9') {
+    return static_cast<int>(value - L'0');
+  }
+
+  if (value >= L'a' && value <= L'z') {
+    return static_cast<int>(value - L'a') + 10;
+  }
+
+  if (value >= L'A' && value <= L'Z') {
+    return static_cast<int>(value - L'A') + 10;
+  }
+
+  return -1;
+}
+
+inline bool valid_digit(wchar_t value, int base) {
+  const int digit = digit_value(value);
+  return digit >= 0 && digit < base;
+}
+
+inline const wchar_t *prepare_integer(const wchar_t *string, int &base,
+                                      bool &negative) {
+  const wchar_t *current = string;
+
+  while (is_space(load(current))) {
+    ++current;
+  }
+
+  negative = false;
+
+  if (load(current) == L'+' || load(current) == L'-') {
+    negative = load(current) == L'-';
+    ++current;
+  }
+
+  if (base == 0) {
+    if (load(current) == L'0') {
+      if ((load(current + 1) == L'x' || load(current + 1) == L'X') &&
+          valid_digit(load(current + 2), 16)) {
+        base = 16;
+        current += 2;
+      } else {
+        base = 8;
+      }
+    } else {
+      base = 10;
+    }
+  } else if (base == 16 && load(current) == L'0' &&
+             (load(current + 1) == L'x' || load(current + 1) == L'X') &&
+             valid_digit(load(current + 2), 16)) {
+    current += 2;
+  }
+
+  return current;
+}
+
+template <class Signed, class Unsigned>
+Signed parse_signed_integer(const wchar_t *string, wchar_t **end, int base) {
+  if (base != 0 && (base < 2 || base > 36)) {
+    if (end != nullptr) {
+      *end = const_cast<wchar_t *>(string);
+    }
+
+    return Signed{};
+  }
+
+  bool negative = false;
+  const wchar_t *current = prepare_integer(string, base, negative);
+
+  const wchar_t *digits_begin = current;
+
+  const Unsigned positive_limit =
+      static_cast<Unsigned>(numeric_limits<Signed>::max());
+
+  const Unsigned limit =
+      negative ? positive_limit + Unsigned{1} : positive_limit;
+
+  Unsigned value = 0;
+  bool overflow = false;
+
+  for (;;) {
+    const int digit = digit_value(load(current));
+
+    if (digit < 0 || digit >= base) {
+      break;
+    }
+
+    const auto unsigned_digit = static_cast<Unsigned>(digit);
+
+    if (value > (limit - unsigned_digit) / static_cast<Unsigned>(base)) {
+      overflow = true;
+    } else if (!overflow) {
+      value = value * static_cast<Unsigned>(base) + unsigned_digit;
+    }
+
+    ++current;
+  }
+
+  if (current == digits_begin) {
+    if (end != nullptr) {
+      *end = const_cast<wchar_t *>(string);
+    }
+
+    return Signed{};
+  }
+
+  if (end != nullptr) {
+    *end = const_cast<wchar_t *>(current);
+  }
+
+  if (overflow) {
+    errno = ERANGE;
+
+    return negative ? numeric_limits<Signed>::min()
+                    : numeric_limits<Signed>::max();
+  }
+
+  if (!negative) {
+    return static_cast<Signed>(value);
+  }
+
+  if (value == positive_limit + Unsigned{1}) {
+    return numeric_limits<Signed>::min();
+  }
+
+  return -static_cast<Signed>(value);
+}
+
+template <class Unsigned>
+Unsigned parse_unsigned_integer(const wchar_t *string, wchar_t **end,
+                                int base) {
+  if (base != 0 && (base < 2 || base > 36)) {
+    if (end != nullptr) {
+      *end = const_cast<wchar_t *>(string);
+    }
+
+    return Unsigned{};
+  }
+
+  bool negative = false;
+  const wchar_t *current = prepare_integer(string, base, negative);
+
+  const wchar_t *digits_begin = current;
+
+  constexpr Unsigned limit = numeric_limits<Unsigned>::max();
+
+  Unsigned value = 0;
+  bool overflow = false;
+
+  for (;;) {
+    const int digit = digit_value(load(current));
+
+    if (digit < 0 || digit >= base) {
+      break;
+    }
+
+    const auto unsigned_digit = static_cast<Unsigned>(digit);
+
+    if (value > (limit - unsigned_digit) / static_cast<Unsigned>(base)) {
+      overflow = true;
+    } else if (!overflow) {
+      value = value * static_cast<Unsigned>(base) + unsigned_digit;
+    }
+
+    ++current;
+  }
+
+  if (current == digits_begin) {
+    if (end != nullptr) {
+      *end = const_cast<wchar_t *>(string);
+    }
+
+    return Unsigned{};
+  }
+
+  if (end != nullptr) {
+    *end = const_cast<wchar_t *>(current);
+  }
+
+  if (overflow) {
+    errno = ERANGE;
+    return limit;
+  }
+
+  return negative ? Unsigned{} - value : value;
+}
+
+inline wchar_t ascii_lower(wchar_t value) {
+  if (value >= L'A' && value <= L'Z') {
+    return static_cast<wchar_t>(value - L'A' + L'a');
+  }
+
+  return value;
+}
+
+inline bool matches_ascii_case_insensitive(const wchar_t *string,
+                                           const wchar_t *expected) {
+  while (*expected != L'\0') {
+    const wchar_t actual = load(string);
+
+    if (actual == L'\0') {
+      return false;
+    }
+
+    if (ascii_lower(actual) != ascii_lower(*expected)) {
+      return false;
+    }
+
+    ++string;
+    ++expected;
+  }
+
+  return true;
+}
+
+inline bool nan_payload_character(wchar_t value) {
+  return (value >= L'0' && value <= L'9') || (value >= L'a' && value <= L'z') ||
+         (value >= L'A' && value <= L'Z') || value == L'_';
+}
+
+inline int decimal_digit_value(wchar_t value) {
+  if (value >= L'0' && value <= L'9') {
+    return static_cast<int>(value - L'0');
+  }
+
+  return -1;
+}
+
+inline int hexadecimal_digit_value(wchar_t value) {
+  if (value >= L'0' && value <= L'9') {
+    return static_cast<int>(value - L'0');
+  }
+
+  if (value >= L'a' && value <= L'f') {
+    return static_cast<int>(value - L'a') + 10;
+  }
+
+  if (value >= L'A' && value <= L'F') {
+    return static_cast<int>(value - L'A') + 10;
+  }
+
+  return -1;
+}
+
+inline void adjust_float_exponent(int &exponent, int adjustment) {
+  constexpr int exponent_limit = 100000;
+
+  if (adjustment > 0) {
+    if (exponent > exponent_limit - adjustment) {
+      exponent = exponent_limit;
+    } else {
+      exponent += adjustment;
+    }
+  } else {
+    if (exponent < -exponent_limit - adjustment) {
+      exponent = -exponent_limit;
+    } else {
+      exponent += adjustment;
+    }
+  }
+}
+
+inline bool parse_float_exponent(const wchar_t *string, const wchar_t *&end,
+                                 int &exponent) {
+  const wchar_t *current = string;
+
+  bool negative = false;
+
+  if (load(current) == L'+' || load(current) == L'-') {
+    negative = load(current) == L'-';
+    ++current;
+  }
+
+  if (decimal_digit_value(load(current)) < 0) {
+    return false;
+  }
+
+  constexpr int exponent_limit = 100000;
+  int magnitude = 0;
+
+  while (true) {
+    const int digit = decimal_digit_value(load(current));
+
+    if (digit < 0) {
+      break;
+    }
+
+    if (magnitude < exponent_limit) {
+      if (magnitude > (exponent_limit - digit) / 10) {
+        magnitude = exponent_limit;
+      } else {
+        magnitude = magnitude * 10 + digit;
+      }
+    }
+
+    ++current;
+  }
+
+  exponent = negative ? -magnitude : magnitude;
+  end = current;
+  return true;
+}
+
+inline long double scale_float(long double value, int base, int exponent) {
+  if (value == 0.0L || exponent == 0) {
+    return value;
+  }
+
+  const bool divide = exponent < 0;
+
+  unsigned int magnitude =
+      static_cast<unsigned int>(divide ? -exponent : exponent);
+
+  long double factor = static_cast<long double>(base);
+
+  while (magnitude != 0) {
+    if ((magnitude & 1u) != 0) {
+      value = divide ? value / factor : value * factor;
+    }
+
+    magnitude >>= 1u;
+
+    if (magnitude != 0) {
+      factor *= factor;
+    }
+  }
+
+  return value;
+}
+
+inline bool has_hexadecimal_significand(const wchar_t *string) {
+  if (load(string) != L'0' ||
+      (load(string + 1) != L'x' && load(string + 1) != L'X')) {
+    return false;
+  }
+
+  const wchar_t *current = string + 2;
+  bool have_digit = false;
+
+  while (hexadecimal_digit_value(load(current)) >= 0) {
+    have_digit = true;
+    ++current;
+  }
+
+  if (load(current) == L'.') {
+    ++current;
+
+    while (hexadecimal_digit_value(load(current)) >= 0) {
+      have_digit = true;
+      ++current;
+    }
+  }
+
+  return have_digit;
+}
+
+template <class Float>
+Float finish_floating_conversion(long double magnitude, bool negative,
+                                 bool mathematically_nonzero) {
+  if (magnitude > static_cast<long double>(numeric_limits<Float>::max())) {
+    errno = ERANGE;
+
+    const Float infinity = numeric_limits<Float>::infinity();
+
+    return negative ? -infinity : infinity;
+  }
+
+  if (mathematically_nonzero && magnitude == 0.0L) {
+    errno = ERANGE;
+
+    const Float zero = Float{};
+    return negative ? -zero : zero;
+  }
+
+  const Float result = static_cast<Float>(magnitude);
+
+  /*
+   * If conversion to the narrower destination flushed a
+   * nonzero value to zero, this is an underflow.
+   *
+   * For a representable nonzero subnormal result, whether
+   * errno becomes ERANGE is implementation-defined; FTL
+   * leaves it unchanged.
+   */
+  if (mathematically_nonzero && result == Float{} && magnitude != 0.0L) {
+    errno = ERANGE;
+
+    const Float zero = Float{};
+    return negative ? -zero : zero;
+  }
+
+  return negative ? -result : result;
+}
+
+template <class Float>
+Float parse_floating(const wchar_t *string, wchar_t **end) {
+  const wchar_t *const original = string;
+  const wchar_t *current = string;
+
+  while (is_space(load(current))) {
+    ++current;
+  }
+
+  bool negative = false;
+
+  if (load(current) == L'+' || load(current) == L'-') {
+    negative = load(current) == L'-';
+    ++current;
+  }
+
+  /*
+   * C requires either INFINITY, or INF when the following
+   * character does not continue an INFINITY prefix.
+   */
+  if (matches_ascii_case_insensitive(current, L"infinity")) {
+    current += 8;
+
+    if (end != nullptr) {
+      *end = const_cast<wchar_t *>(current);
+    }
+
+    const Float infinity = numeric_limits<Float>::infinity();
+
+    return negative ? -infinity : infinity;
+  }
+
+  if (matches_ascii_case_insensitive(current, L"inf") &&
+      ascii_lower(load(current + 3)) != L'i') {
+    current += 3;
+
+    if (end != nullptr) {
+      *end = const_cast<wchar_t *>(current);
+    }
+
+    const Float infinity = numeric_limits<Float>::infinity();
+
+    return negative ? -infinity : infinity;
+  }
+
+  if (matches_ascii_case_insensitive(current, L"nan")) {
+    const wchar_t *nan_end = current + 3;
+
+    if (load(nan_end) == L'(') {
+      const wchar_t *payload = nan_end + 1;
+
+      while (nan_payload_character(load(payload))) {
+        ++payload;
+      }
+
+      /*
+       * NAN followed by '(' is accepted only when the
+       * payload is syntactically complete.
+       */
+      if (load(payload) != L')') {
+        if (end != nullptr) {
+          *end = const_cast<wchar_t *>(original);
+        }
+
+        return Float{};
+      }
+
+      nan_end = payload + 1;
+    }
+
+    if (end != nullptr) {
+      *end = const_cast<wchar_t *>(nan_end);
+    }
+
+    const Float nan = numeric_limits<Float>::quiet_NaN();
+
+    return negative ? -nan : nan;
+  }
+
+  const bool hexadecimal = has_hexadecimal_significand(current);
+
+  const int base = hexadecimal ? 16 : 10;
+  const int digit_exponent = hexadecimal ? 4 : 1;
+
+  if (hexadecimal) {
+    current += 2;
+  }
+
+  const wchar_t *significand_begin = current;
+
+  /*
+   * Keep a few guard digits beyond the precision of long
+   * double. Extra digits are represented as a fractional tail
+   * and an exponent adjustment, so arbitrarily long inputs do
+   * not overflow the accumulator merely because they contain
+   * many digits.
+   */
+  const int maximum_stored_digits =
+      hexadecimal ? (numeric_limits<long double>::digits + 3) / 4 + 2
+                  : numeric_limits<long double>::digits10 + 4;
+
+  long double significand = 0.0L;
+  long double tail = 0.0L;
+  long double tail_factor = 1.0L / static_cast<long double>(base);
+
+  int stored_digits = 0;
+  int scale_exponent = 0;
+
+  bool after_point = false;
+  bool point_seen = false;
+  bool have_digit = false;
+  bool have_nonzero_digit = false;
+  bool dropping_digits = false;
+
+  for (;;) {
+    const wchar_t value = load(current);
+
+    const int digit = hexadecimal ? hexadecimal_digit_value(value)
+                                  : decimal_digit_value(value);
+
+    if (digit >= 0) {
+      have_digit = true;
+
+      if (after_point) {
+        adjust_float_exponent(scale_exponent, -digit_exponent);
+      }
+
+      if (digit != 0 || have_nonzero_digit) {
+        have_nonzero_digit = true;
+
+        if (stored_digits < maximum_stored_digits) {
+          significand = significand * static_cast<long double>(base) +
+                        static_cast<long double>(digit);
+
+          ++stored_digits;
+        } else {
+          /*
+           * Factoring each discarded digit out into
+           * the exponent keeps the leading
+           * significand bounded:
+           *
+           * 123456 -> 123.456 * 10^3
+           */
+          adjust_float_exponent(scale_exponent, digit_exponent);
+
+          if (!dropping_digits) {
+            dropping_digits = true;
+            tail_factor = 1.0L / static_cast<long double>(base);
+          }
+
+          tail += static_cast<long double>(digit) * tail_factor;
+
+          tail_factor /= static_cast<long double>(base);
+        }
+      }
+
+      ++current;
+      continue;
+    }
+
+    if (!point_seen && value == L'.') {
+      point_seen = true;
+      after_point = true;
+      ++current;
+      continue;
+    }
+
+    break;
+  }
+
+  if (!have_digit) {
+    /*
+     * A failed hexadecimal candidate was never selected by
+     * has_hexadecimal_significand(), so this also handles
+     * inputs such as "." cleanly.
+     */
+    static_cast<void>(significand_begin);
+
+    if (end != nullptr) {
+      *end = const_cast<wchar_t *>(original);
+    }
+
+    return Float{};
+  }
+
+  int explicit_exponent = 0;
+  const wchar_t exponent_marker = hexadecimal ? L'p' : L'e';
+
+  if (ascii_lower(load(current)) == exponent_marker) {
+    const wchar_t *exponent_end = nullptr;
+    int parsed_exponent = 0;
+
+    if (parse_float_exponent(current + 1, exponent_end, parsed_exponent)) {
+      explicit_exponent = parsed_exponent;
+      current = exponent_end;
+    }
+  }
+
+  if (end != nullptr) {
+    *end = const_cast<wchar_t *>(current);
+  }
+
+  /*
+   * This special case matters. "0e999999" is exactly zero,
+   * not a floating overflow caused by its enormous exponent.
+   */
+  if (!have_nonzero_digit) {
+    const Float zero = Float{};
+    return negative ? -zero : zero;
+  }
+
+  adjust_float_exponent(scale_exponent, explicit_exponent);
+
+  const long double magnitude =
+      scale_float(significand + tail, hexadecimal ? 2 : 10, scale_exponent);
+
+  return finish_floating_conversion<Float>(magnitude, negative, true);
+}
+
+struct time_writer {
+  wchar_t *destination;
+  size_t capacity;
+  size_t size = 0;
+  bool overflow = false;
+
+  void append(wchar_t value) {
+    if (size + 1 >= capacity) {
+      overflow = true;
+    } else if (destination != nullptr) {
+      destination[size] = value;
+    }
+
+    ++size;
+  }
+
+  void append(const wchar_t *string) {
+    while (*string != L'\0') {
+      append(*string++);
+    }
+  }
+
+  bool finish() {
+    if (overflow || size >= capacity) {
+      return false;
+    }
+
+    if (destination != nullptr) {
+      destination[size] = L'\0';
+    }
+
+    return true;
+  }
+};
+
+inline bool leap_year(long long year) {
+  return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+}
+
+inline int days_in_year(long long year) { return leap_year(year) ? 366 : 365; }
+
+inline int positive_mod(long long value, int divisor) {
+  int result = static_cast<int>(value % divisor);
+
+  if (result < 0) {
+    result += divisor;
+  }
+
+  return result;
+}
+
+inline void append_unsigned(time_writer &writer, unsigned long long value,
+                            int width, wchar_t padding = L'0') {
+  wchar_t digits[32];
+  int count = 0;
+
+  do {
+    digits[count++] = static_cast<wchar_t>(L'0' + value % 10);
+
+    value /= 10;
+  } while (value != 0);
+
+  while (count < width) {
+    writer.append(padding);
+    --width;
+  }
+
+  while (count != 0) {
+    writer.append(digits[--count]);
+  }
+}
+
+inline void append_signed_year(time_writer &writer, long long year) {
+  if (year < 0) {
+    writer.append(L'-');
+
+    const auto magnitude = static_cast<unsigned long long>(-(year + 1)) + 1;
+
+    append_unsigned(writer, magnitude, 4);
+    return;
+  }
+
+  append_unsigned(writer, static_cast<unsigned long long>(year), 4);
+}
+
+inline int iso_weekday(int weekday) { return weekday == 0 ? 7 : weekday; }
+
+struct iso_week_date {
+  long long year;
+  int week;
+};
+
+inline iso_week_date make_iso_week_date(const tm &value) {
+  long long year = static_cast<long long>(value.tm_year) + 1900;
+
+  const int weekday = iso_weekday(value.tm_wday);
+
+  /*
+   * ISO week-years are most easily located by finding the
+   * Thursday belonging to this week. The year containing that
+   * Thursday is the ISO week-based year.
+   */
+  int thursday = value.tm_yday + 1 + (4 - weekday);
+
+  if (thursday < 1) {
+    --year;
+    thursday += days_in_year(year);
+  } else {
+    const int year_days = days_in_year(year);
+
+    if (thursday > year_days) {
+      thursday -= year_days;
+      ++year;
+    }
+  }
+
+  return {year, (thursday - 1) / 7 + 1};
+}
+
+inline void append_hour_12(time_writer &writer, int hour) {
+  int converted = hour % 12;
+
+  if (converted == 0) {
+    converted = 12;
+  }
+
+  append_unsigned(writer, static_cast<unsigned>(converted), 2);
+}
+
+inline constexpr const wchar_t *abbreviated_weekdays[] = {
+    L"Sun", L"Mon", L"Tue", L"Wed", L"Thu", L"Fri", L"Sat"};
+
+inline constexpr const wchar_t *weekdays[] = {
+    L"Sunday",   L"Monday", L"Tuesday", L"Wednesday",
+    L"Thursday", L"Friday", L"Saturday"};
+
+inline constexpr const wchar_t *abbreviated_months[] = {
+    L"Jan", L"Feb", L"Mar", L"Apr", L"May", L"Jun",
+    L"Jul", L"Aug", L"Sep", L"Oct", L"Nov", L"Dec"};
+
+inline constexpr const wchar_t *months[] = {
+    L"January",   L"February", L"March",    L"April",
+    L"May",       L"June",     L"July",     L"August",
+    L"September", L"October",  L"November", L"December"};
+
+inline bool valid_weekday(int weekday) { return weekday >= 0 && weekday < 7; }
+
+inline bool valid_month(int month) { return month >= 0 && month < 12; }
+
+inline void append_time_format(time_writer &writer, wchar_t conversion,
+                               const tm &value) {
+  const long long year = static_cast<long long>(value.tm_year) + 1900;
+
+  switch (conversion) {
+  case L'%':
+    writer.append(L'%');
+    break;
+
+  case L'a':
+    if (valid_weekday(value.tm_wday)) {
+      writer.append(abbreviated_weekdays[value.tm_wday]);
+    }
+    break;
+
+  case L'A':
+    if (valid_weekday(value.tm_wday)) {
+      writer.append(weekdays[value.tm_wday]);
+    }
+    break;
+
+  case L'b':
+  case L'h':
+    if (valid_month(value.tm_mon)) {
+      writer.append(abbreviated_months[value.tm_mon]);
+    }
+    break;
+
+  case L'B':
+    if (valid_month(value.tm_mon)) {
+      writer.append(months[value.tm_mon]);
+    }
+    break;
+
+  case L'C': {
+    long long century = year / 100;
+
+    if (year < 0 && year % 100 != 0) {
+      --century;
+    }
+
+    if (century < 0) {
+      writer.append(L'-');
+      append_unsigned(writer,
+                      static_cast<unsigned long long>(-(century + 1)) + 1, 2);
+    } else {
+      append_unsigned(writer, static_cast<unsigned long long>(century), 2);
+    }
+
+    break;
+  }
+
+  case L'c':
+    /*
+     * FTL C locale:
+     * "%a %b %e %H:%M:%S %Y"
+     */
+    append_time_format(writer, L'a', value);
+    writer.append(L' ');
+    append_time_format(writer, L'b', value);
+    writer.append(L' ');
+    append_unsigned(writer, static_cast<unsigned>(value.tm_mday), 2, L' ');
+    writer.append(L' ');
+    append_time_format(writer, L'H', value);
+    writer.append(L':');
+    append_time_format(writer, L'M', value);
+    writer.append(L':');
+    append_time_format(writer, L'S', value);
+    writer.append(L' ');
+    append_time_format(writer, L'Y', value);
+    break;
+
+  case L'd':
+    append_unsigned(writer, static_cast<unsigned>(value.tm_mday), 2);
+    break;
+
+  case L'D':
+    append_time_format(writer, L'm', value);
+    writer.append(L'/');
+    append_time_format(writer, L'd', value);
+    writer.append(L'/');
+    append_time_format(writer, L'y', value);
+    break;
+
+  case L'e':
+    append_unsigned(writer, static_cast<unsigned>(value.tm_mday), 2, L' ');
+    break;
+
+  case L'F':
+    append_time_format(writer, L'Y', value);
+    writer.append(L'-');
+    append_time_format(writer, L'm', value);
+    writer.append(L'-');
+    append_time_format(writer, L'd', value);
+    break;
+
+  case L'g': {
+    const auto iso = make_iso_week_date(value);
+
+    append_unsigned(writer, static_cast<unsigned>(positive_mod(iso.year, 100)),
+                    2);
+    break;
+  }
+
+  case L'G': {
+    const auto iso = make_iso_week_date(value);
+    append_signed_year(writer, iso.year);
+    break;
+  }
+
+  case L'H':
+    append_unsigned(writer, static_cast<unsigned>(value.tm_hour), 2);
+    break;
+
+  case L'I':
+    append_hour_12(writer, value.tm_hour);
+    break;
+
+  case L'j':
+    append_unsigned(writer, static_cast<unsigned>(value.tm_yday + 1), 3);
+    break;
+
+  case L'm':
+    append_unsigned(writer, static_cast<unsigned>(value.tm_mon + 1), 2);
+    break;
+
+  case L'M':
+    append_unsigned(writer, static_cast<unsigned>(value.tm_min), 2);
+    break;
+
+  case L'n':
+    writer.append(L'\n');
+    break;
+
+  case L'p':
+    writer.append(value.tm_hour < 12 ? L"AM" : L"PM");
+    break;
+
+  case L'r':
+    append_time_format(writer, L'I', value);
+    writer.append(L':');
+    append_time_format(writer, L'M', value);
+    writer.append(L':');
+    append_time_format(writer, L'S', value);
+    writer.append(L' ');
+    append_time_format(writer, L'p', value);
+    break;
+
+  case L'R':
+    append_time_format(writer, L'H', value);
+    writer.append(L':');
+    append_time_format(writer, L'M', value);
+    break;
+
+  case L'S':
+    append_unsigned(writer, static_cast<unsigned>(value.tm_sec), 2);
+    break;
+
+  case L't':
+    writer.append(L'\t');
+    break;
+
+  case L'T':
+    append_time_format(writer, L'H', value);
+    writer.append(L':');
+    append_time_format(writer, L'M', value);
+    writer.append(L':');
+    append_time_format(writer, L'S', value);
+    break;
+
+  case L'u':
+    append_unsigned(writer, static_cast<unsigned>(iso_weekday(value.tm_wday)),
+                    1);
+    break;
+
+  case L'U': {
+    const int week = (value.tm_yday + 7 - value.tm_wday) / 7;
+
+    append_unsigned(writer, static_cast<unsigned>(week), 2);
+    break;
+  }
+
+  case L'V': {
+    const auto iso = make_iso_week_date(value);
+
+    append_unsigned(writer, static_cast<unsigned>(iso.week), 2);
+    break;
+  }
+
+  case L'w':
+    append_unsigned(writer, static_cast<unsigned>(value.tm_wday), 1);
+    break;
+
+  case L'W': {
+    const int monday_weekday = (value.tm_wday + 6) % 7;
+
+    const int week = (value.tm_yday + 7 - monday_weekday) / 7;
+
+    append_unsigned(writer, static_cast<unsigned>(week), 2);
+    break;
+  }
+
+  case L'x':
+    /*
+     * FTL C locale: "%m/%d/%y".
+     */
+    append_time_format(writer, L'D', value);
+    break;
+
+  case L'X':
+    /*
+     * FTL C locale: "%H:%M:%S".
+     */
+    append_time_format(writer, L'T', value);
+    break;
+
+  case L'y':
+    append_unsigned(writer, static_cast<unsigned>(positive_mod(year, 100)), 2);
+    break;
+
+  case L'Y':
+    append_signed_year(writer, year);
+    break;
+
+  case L'z':
+  case L'Z':
+    /*
+     * The standard permits no characters when timezone
+     * information is unavailable. FTL's portable tm has no
+     * timezone offset or timezone-name member.
+     */
+    break;
+
+  default:
+    /*
+     * Unknown conversion specifications have no portable
+     * useful interpretation. Preserve them literally rather
+     * than introducing undefined memory behavior.
+     */
+    writer.append(L'%');
+    writer.append(conversion);
+    break;
+  }
+}
+
+} // namespace cwchar_detail
+
+FTL_CWCHAR_NO_BUILTIN
+inline float wcstof(const wchar_t *nptr, wchar_t **endptr) {
+  return cwchar_detail::parse_floating<float>(nptr, endptr);
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline double wcstod(const wchar_t *nptr, wchar_t **endptr) {
+  return cwchar_detail::parse_floating<double>(nptr, endptr);
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline long double wcstold(const wchar_t *nptr, wchar_t **endptr) {
+  return cwchar_detail::parse_floating<long double>(nptr, endptr);
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline long wcstol(const wchar_t *nptr, wchar_t **endptr, int base) {
+  return cwchar_detail::parse_signed_integer<long, unsigned long>(nptr, endptr,
+                                                                  base);
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline long long wcstoll(const wchar_t *nptr, wchar_t **endptr, int base) {
+  return cwchar_detail::parse_signed_integer<long long, unsigned long long>(
+      nptr, endptr, base);
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline unsigned long wcstoul(const wchar_t *nptr, wchar_t **endptr, int base) {
+  return cwchar_detail::parse_unsigned_integer<unsigned long>(nptr, endptr,
+                                                              base);
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline unsigned long long wcstoull(const wchar_t *nptr, wchar_t **endptr,
+                                   int base) {
+  return cwchar_detail::parse_unsigned_integer<unsigned long long>(nptr, endptr,
+                                                                   base);
+}
+
+inline wint_t btowc(int c) {
+  if (c < 0 || c > 0x7f) {
+    return static_cast<wint_t>(~0u);
+  }
+
+  return static_cast<wint_t>(static_cast<unsigned char>(c));
+}
+
+inline int wctob(wint_t c) {
+  if (c > 0x7fu) {
+    return -1;
+  }
+
+  return static_cast<int>(c);
+}
+
+inline int mbsinit(const mbstate_t *ps) {
+  return ps == nullptr || (ps->state == 0 && ps->value == 0);
+}
+
+namespace cwchar_detail {
+
+inline void reset_state(mbstate_t &state) {
+  state.state = 0;
+  state.value = 0;
+}
+
+inline bool valid_multibyte_byte(unsigned char value) { return value <= 0x7f; }
+
+inline bool valid_wide_character(wchar_t value) {
+  return static_cast<unsigned long long>(value) <= 0x7full;
+}
+
+} // namespace cwchar_detail
+
+inline size_t mbrtowc(wchar_t *pwc, const char *s, size_t n, mbstate_t *ps) {
+  static mbstate_t internal_state{};
+
+  if (ps == nullptr) {
+    ps = &internal_state;
+  }
+
+  if (s == nullptr) {
+    static constexpr char empty[] = "";
+
+    s = empty;
+    n = 1;
+    pwc = nullptr;
+  }
+
+  if (n == 0) {
+    return static_cast<size_t>(-2);
+  }
+
+  const auto byte = static_cast<unsigned char>(*s);
+
+  if (!cwchar_detail::valid_multibyte_byte(byte)) {
+    errno = EILSEQ;
+    cwchar_detail::reset_state(*ps);
+    return static_cast<size_t>(-1);
+  }
+
+  cwchar_detail::reset_state(*ps);
+
+  if (pwc != nullptr) {
+    *pwc = static_cast<wchar_t>(byte);
+  }
+
+  if (byte == 0) {
+    return 0;
+  }
+
+  return 1;
+}
+
+inline size_t mbrlen(const char *s, size_t n, mbstate_t *ps) {
+  return mbrtowc(nullptr, s, n, ps);
+}
+
+inline size_t wcrtomb(char *s, wchar_t wc, mbstate_t *ps) {
+  static mbstate_t internal_state{};
+
+  if (ps == nullptr) {
+    ps = &internal_state;
+  }
+
+  if (s == nullptr) {
+    cwchar_detail::reset_state(*ps);
+    return 1;
+  }
+
+  if (!cwchar_detail::valid_wide_character(wc)) {
+    errno = EILSEQ;
+    cwchar_detail::reset_state(*ps);
+    return static_cast<size_t>(-1);
+  }
+
+  *s = static_cast<char>(static_cast<unsigned char>(wc));
+
+  cwchar_detail::reset_state(*ps);
+  return 1;
+}
+
+inline size_t mbsrtowcs(wchar_t *destination, const char **source,
+                        size_t length, mbstate_t *ps) {
+  static mbstate_t internal_state{};
+
+  if (ps == nullptr) {
+    ps = &internal_state;
+  }
+
+  const char *current = *source;
+
+  /*
+   * When destination is null, the conversion is a sizing pass.
+   * The source pointer is not modified.
+   */
+  if (destination == nullptr) {
+    size_t count = 0;
+
+    for (;;) {
+      const auto byte = static_cast<unsigned char>(*current);
+
+      if (!cwchar_detail::valid_multibyte_byte(byte)) {
+        errno = EILSEQ;
+        cwchar_detail::reset_state(*ps);
+        return static_cast<size_t>(-1);
+      }
+
+      if (byte == 0) {
+        cwchar_detail::reset_state(*ps);
+        return count;
+      }
+
+      ++count;
+      ++current;
+    }
+  }
+
+  size_t count = 0;
+
+  while (count < length) {
+    const auto byte = static_cast<unsigned char>(*current);
+
+    if (!cwchar_detail::valid_multibyte_byte(byte)) {
+      errno = EILSEQ;
+      cwchar_detail::reset_state(*ps);
+      *source = current;
+      return static_cast<size_t>(-1);
+    }
+
+    if (byte == 0) {
+      destination[count] = L'\0';
+      *source = nullptr;
+      cwchar_detail::reset_state(*ps);
+      return count;
+    }
+
+    destination[count] = static_cast<wchar_t>(byte);
+
+    ++count;
+    ++current;
+  }
+
+  *source = current;
+  cwchar_detail::reset_state(*ps);
+  return count;
+}
+
+inline size_t wcsrtombs(char *destination, const wchar_t **source,
+                        size_t length, mbstate_t *ps) {
+  static mbstate_t internal_state{};
+
+  if (ps == nullptr) {
+    ps = &internal_state;
+  }
+
+  const wchar_t *current = *source;
+
+  /*
+   * As with mbsrtowcs, a null destination performs a sizing
+   * conversion without updating the source pointer.
+   */
+  if (destination == nullptr) {
+    size_t count = 0;
+
+    for (;;) {
+      const wchar_t value = *current;
+
+      if (!cwchar_detail::valid_wide_character(value)) {
+        errno = EILSEQ;
+        cwchar_detail::reset_state(*ps);
+        return static_cast<size_t>(-1);
+      }
+
+      if (value == L'\0') {
+        cwchar_detail::reset_state(*ps);
+        return count;
+      }
+
+      ++count;
+      ++current;
+    }
+  }
+
+  size_t count = 0;
+
+  while (count < length) {
+    const wchar_t value = *current;
+
+    if (!cwchar_detail::valid_wide_character(value)) {
+      errno = EILSEQ;
+      cwchar_detail::reset_state(*ps);
+      *source = current;
+      return static_cast<size_t>(-1);
+    }
+
+    if (value == L'\0') {
+      destination[count] = '\0';
+      *source = nullptr;
+      cwchar_detail::reset_state(*ps);
+      return count;
+    }
+
+    destination[count] = static_cast<char>(static_cast<unsigned char>(value));
+
+    ++count;
+    ++current;
+  }
+
+  *source = current;
+  cwchar_detail::reset_state(*ps);
+  return count;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcscpy(wchar_t *s1, const wchar_t *s2) {
+  wchar_t *result = s1;
+
+  for (;;) {
+    const wchar_t value = cwchar_detail::load(s2++);
+    cwchar_detail::store(s1++, value);
+
+    if (value == L'\0') {
+      break;
+    }
+  }
+
+  return result;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcsncpy(wchar_t *s1, const wchar_t *s2, size_t n) {
+  wchar_t *result = s1;
+  size_t index = 0;
+
+  while (index < n) {
+    const wchar_t value = cwchar_detail::load(s2 + index);
+
+    if (value == L'\0') {
+      break;
+    }
+
+    cwchar_detail::store(s1 + index, value);
+    ++index;
+  }
+
+  while (index < n) {
+    cwchar_detail::store(s1 + index, L'\0');
+    ++index;
+  }
+
+  return result;
+}
+
+/*
+ * Reuse the already-hardened byte primitive. wchar_t object
+ * representations are trivially copyable through unsigned char storage.
+ */
+inline wchar_t *wmemcpy(wchar_t *s1, const wchar_t *s2, size_t n) {
+  memcpy(s1, s2, n * sizeof(wchar_t));
+  return s1;
+}
+
+inline wchar_t *wmemmove(wchar_t *s1, const wchar_t *s2, size_t n) {
+  memmove(s1, s2, n * sizeof(wchar_t));
+  return s1;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcscat(wchar_t *s1, const wchar_t *s2) {
+  wchar_t *result = s1;
+
+  while (cwchar_detail::load(s1) != L'\0') {
+    ++s1;
+  }
+
+  for (;;) {
+    const wchar_t value = cwchar_detail::load(s2++);
+    cwchar_detail::store(s1++, value);
+
+    if (value == L'\0') {
+      break;
+    }
+  }
+
+  return result;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcsncat(wchar_t *s1, const wchar_t *s2, size_t n) {
+  wchar_t *result = s1;
+
+  while (cwchar_detail::load(s1) != L'\0') {
+    ++s1;
+  }
+
+  size_t index = 0;
+
+  while (index < n) {
+    const wchar_t value = cwchar_detail::load(s2 + index);
+
+    if (value == L'\0') {
+      break;
+    }
+
+    cwchar_detail::store(s1 + index, value);
+    ++index;
+  }
+
+  cwchar_detail::store(s1 + index, L'\0');
+  return result;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline int wcscmp(const wchar_t *s1, const wchar_t *s2) {
+  for (;;) {
+    const wchar_t left = cwchar_detail::load(s1);
+    const wchar_t right = cwchar_detail::load(s2);
+
+    if (left < right) {
+      return -1;
+    }
+
+    if (left > right) {
+      return 1;
+    }
+
+    if (left == L'\0') {
+      return 0;
+    }
+
+    ++s1;
+    ++s2;
+  }
+}
+
+/*
+ * FTL currently implements only C-locale collation.
+ */
+inline int wcscoll(const wchar_t *s1, const wchar_t *s2) {
+  return wcscmp(s1, s2);
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline int wcsncmp(const wchar_t *s1, const wchar_t *s2, size_t n) {
+  for (size_t index = 0; index < n; ++index) {
+    const wchar_t left = cwchar_detail::load(s1 + index);
+    const wchar_t right = cwchar_detail::load(s2 + index);
+
+    if (left < right) {
+      return -1;
+    }
+
+    if (left > right) {
+      return 1;
+    }
+
+    if (left == L'\0') {
+      return 0;
+    }
+  }
+
+  return 0;
+}
+
+/*
+ * In the C locale, the identity transformation has the required
+ * relationship with wcscoll.
+ */
+FTL_CWCHAR_NO_BUILTIN
+inline size_t wcsxfrm(wchar_t *s1, const wchar_t *s2, size_t n) {
+  size_t length = 0;
+
+  while (cwchar_detail::load(s2 + length) != L'\0') {
+    ++length;
+  }
+
+  if (n == 0) {
+    return length;
+  }
+
+  if (length < n) {
+    for (size_t index = 0; index <= length; ++index) {
+      cwchar_detail::store(s1 + index, cwchar_detail::load(s2 + index));
+    }
+  } else {
+    for (size_t index = 0; index < n; ++index) {
+      cwchar_detail::store(s1 + index, cwchar_detail::load(s2 + index));
+    }
+  }
+
+  return length;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline int wmemcmp(const wchar_t *s1, const wchar_t *s2, size_t n) {
+  for (size_t index = 0; index < n; ++index) {
+    const wchar_t left = cwchar_detail::load(s1 + index);
+    const wchar_t right = cwchar_detail::load(s2 + index);
+
+    if (left < right) {
+      return -1;
+    }
+
+    if (left > right) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline const wchar_t *wcschr(const wchar_t *s, wchar_t c) {
+  for (;;) {
+    const wchar_t value = cwchar_detail::load(s);
+
+    if (value == c) {
+      return s;
+    }
+
+    if (value == L'\0') {
+      return nullptr;
+    }
+
+    ++s;
+  }
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcschr(wchar_t *s, wchar_t c) {
+  return const_cast<wchar_t *>(wcschr(static_cast<const wchar_t *>(s), c));
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline size_t wcscspn(const wchar_t *s1, const wchar_t *s2) {
+  size_t count = 0;
+
+  while (cwchar_detail::load(s1 + count) != L'\0') {
+    if (cwchar_detail::contains(s2, cwchar_detail::load(s1 + count))) {
+      break;
+    }
+
+    ++count;
+  }
+
+  return count;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline const wchar_t *wcspbrk(const wchar_t *s1, const wchar_t *s2) {
+  while (cwchar_detail::load(s1) != L'\0') {
+    if (cwchar_detail::contains(s2, cwchar_detail::load(s1))) {
+      return s1;
+    }
+
+    ++s1;
+  }
+
+  return nullptr;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcspbrk(wchar_t *s1, const wchar_t *s2) {
+  return const_cast<wchar_t *>(wcspbrk(static_cast<const wchar_t *>(s1), s2));
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline const wchar_t *wcsrchr(const wchar_t *s, wchar_t c) {
+  const wchar_t *result = nullptr;
+
+  for (;;) {
+    const wchar_t value = cwchar_detail::load(s);
+
+    if (value == c) {
+      result = s;
+    }
+
+    if (value == L'\0') {
+      return result;
+    }
+
+    ++s;
+  }
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcsrchr(wchar_t *s, wchar_t c) {
+  return const_cast<wchar_t *>(wcsrchr(static_cast<const wchar_t *>(s), c));
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline size_t wcsspn(const wchar_t *s1, const wchar_t *s2) {
+  size_t count = 0;
+
+  while (cwchar_detail::load(s1 + count) != L'\0') {
+    if (!cwchar_detail::contains(s2, cwchar_detail::load(s1 + count))) {
+      break;
+    }
+
+    ++count;
+  }
+
+  return count;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline const wchar_t *wcsstr(const wchar_t *s1, const wchar_t *s2) {
+  if (cwchar_detail::load(s2) == L'\0') {
+    return s1;
+  }
+
+  while (cwchar_detail::load(s1) != L'\0') {
+    const wchar_t *haystack = s1;
+    const wchar_t *needle = s2;
+
+    while (cwchar_detail::load(needle) != L'\0' &&
+           cwchar_detail::load(haystack) == cwchar_detail::load(needle)) {
+      ++haystack;
+      ++needle;
+    }
+
+    if (cwchar_detail::load(needle) == L'\0') {
+      return s1;
+    }
+
+    ++s1;
+  }
+
+  return nullptr;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcsstr(wchar_t *s1, const wchar_t *s2) {
+  return const_cast<wchar_t *>(wcsstr(static_cast<const wchar_t *>(s1), s2));
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline size_t wcsftime(wchar_t *s, size_t maxsize, const wchar_t *format,
+                       const tm *timeptr) {
+  cwchar_detail::time_writer writer{s, maxsize};
+
+  const wchar_t *current = format;
+
+  while (*current != L'\0') {
+    if (*current != L'%') {
+      writer.append(*current++);
+      continue;
+    }
+
+    ++current;
+
+    if (*current == L'\0') {
+      writer.append(L'%');
+      break;
+    }
+
+    /*
+     * E and O request locale-specific alternative forms.
+     * The C locale has no alternatives, so the modifier is
+     * ignored and the ordinary conversion is used.
+     */
+    if (*current == L'E' || *current == L'O') {
+      ++current;
+
+      if (*current == L'\0') {
+        break;
+      }
+    }
+
+    cwchar_detail::append_time_format(writer, *current, *timeptr);
+
+    ++current;
+  }
+
+  if (!writer.finish()) {
+    return 0;
+  }
+
+  return writer.size;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wcstok(wchar_t *s1, const wchar_t *s2, wchar_t **ptr) {
+  wchar_t *current = s1 != nullptr ? s1 : *ptr;
+
+  while (cwchar_detail::load(current) != L'\0' &&
+         cwchar_detail::contains(s2, cwchar_detail::load(current))) {
+    ++current;
+  }
+
+  if (cwchar_detail::load(current) == L'\0') {
+    *ptr = current;
+    return nullptr;
+  }
+
+  wchar_t *token = current;
+
+  while (cwchar_detail::load(current) != L'\0' &&
+         !cwchar_detail::contains(s2, cwchar_detail::load(current))) {
+    ++current;
+  }
+
+  if (cwchar_detail::load(current) != L'\0') {
+    cwchar_detail::store(current, L'\0');
+    ++current;
+  }
+
+  *ptr = current;
+  return token;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline const wchar_t *wmemchr(const wchar_t *s, wchar_t c, size_t n) {
+  for (size_t index = 0; index < n; ++index) {
+    if (cwchar_detail::load(s + index) == c) {
+      return s + index;
+    }
+  }
+
+  return nullptr;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wmemchr(wchar_t *s, wchar_t c, size_t n) {
+  return const_cast<wchar_t *>(wmemchr(static_cast<const wchar_t *>(s), c, n));
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline size_t wcslen(const wchar_t *s) {
+  size_t length = 0;
+
+  while (cwchar_detail::load(s + length) != L'\0') {
+    ++length;
+  }
+
+  return length;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline wchar_t *wmemset(wchar_t *s, wchar_t c, size_t n) {
+  for (size_t index = 0; index < n; ++index) {
+    cwchar_detail::store(s + index, c);
+  }
+
+  return s;
+}
+
+namespace cwchar_detail {
+enum class format_length { none, hh, h, l, ll, j, z, t, capital_l };
+
+struct format_options {
+  bool left = false;
+  bool plus = false;
+  bool space = false;
+  bool alternate = false;
+  bool zero = false;
+
+  int width = 0;
+  int precision = -1;
+
+  format_length length = format_length::none;
+};
+
+struct format_writer {
+  wchar_t *destination;
+  size_t capacity;
+  size_t size = 0;
+  bool overflow = false;
+  bool error = false;
+
+  void append(wchar_t value) {
+    if (capacity == 0 || size + 1 >= capacity) {
+      overflow = true;
+    } else if (destination != nullptr) {
+      destination[size] = value;
+    }
+
+    ++size;
+  }
+
+  void append(wchar_t value, size_t count) {
+    if (count == 0) {
+      return;
+    }
+
+    size_t writable = 0;
+
+    if (capacity != 0 && size < capacity - 1) {
+      const size_t available = capacity - 1 - size;
+
+      writable = count < available ? count : available;
+    }
+
+    if (destination != nullptr) {
+      for (size_t index = 0; index < writable; ++index) {
+        destination[size + index] = value;
+      }
+    }
+
+    if (writable != count) {
+      overflow = true;
+    }
+
+    size += count;
+  }
+
+  bool finish() {
+    if (error || overflow || capacity == 0 || size >= capacity) {
+      return false;
+    }
+
+    if (destination != nullptr) {
+      destination[size] = L'\0';
+    }
+
+    return true;
+  }
+};
+
+inline bool format_digit(wchar_t value) {
+  return value >= L'0' && value <= L'9';
+}
+
+inline int parse_format_number(const wchar_t *&current) {
+  int value = 0;
+
+  while (format_digit(*current)) {
+    const int digit = static_cast<int>(*current - L'0');
+
+    if (value > (numeric_limits<int>::max() - digit) / 10) {
+      value = numeric_limits<int>::max();
+
+      do {
+        ++current;
+      } while (format_digit(*current));
+
+      return value;
+    }
+
+    value = value * 10 + digit;
+    ++current;
+  }
+
+  return value;
+}
+
+inline format_length parse_format_length(const wchar_t *&current) {
+  if (*current == L'h') {
+    ++current;
+
+    if (*current == L'h') {
+      ++current;
+      return format_length::hh;
+    }
+
+    return format_length::h;
+  }
+
+  if (*current == L'l') {
+    ++current;
+
+    if (*current == L'l') {
+      ++current;
+      return format_length::ll;
+    }
+
+    return format_length::l;
+  }
+
+  if (*current == L'j') {
+    ++current;
+    return format_length::j;
+  }
+
+  if (*current == L'z') {
+    ++current;
+    return format_length::z;
+  }
+
+  if (*current == L't') {
+    ++current;
+    return format_length::t;
+  }
+
+  if (*current == L'L') {
+    ++current;
+    return format_length::capital_l;
+  }
+
+  return format_length::none;
+}
+
+inline intmax_t read_signed_argument(va_list &arguments, format_length length) {
+  switch (length) {
+  case format_length::hh:
+    return static_cast<signed char>(va_arg(arguments, int));
+
+  case format_length::h:
+    return static_cast<short>(va_arg(arguments, int));
+
+  case format_length::none:
+    return va_arg(arguments, int);
+
+  case format_length::l:
+    return va_arg(arguments, long);
+
+  case format_length::ll:
+    return va_arg(arguments, long long);
+
+  case format_length::j:
+    return va_arg(arguments, intmax_t);
+
+  case format_length::z:
+    return va_arg(arguments, make_signed_t<size_t>);
+
+  case format_length::t:
+    return va_arg(arguments, ptrdiff_t);
+
+  default:
+    return 0;
+  }
+}
+
+inline uintmax_t read_unsigned_argument(va_list &arguments,
+                                        format_length length) {
+  switch (length) {
+  case format_length::hh:
+    return static_cast<unsigned char>(va_arg(arguments, unsigned int));
+
+  case format_length::h:
+    return static_cast<unsigned short>(va_arg(arguments, unsigned int));
+
+  case format_length::none:
+    return va_arg(arguments, unsigned int);
+
+  case format_length::l:
+    return va_arg(arguments, unsigned long);
+
+  case format_length::ll:
+    return va_arg(arguments, unsigned long long);
+
+  case format_length::j:
+    return va_arg(arguments, uintmax_t);
+
+  case format_length::z:
+    return va_arg(arguments, size_t);
+
+  case format_length::t:
+    return va_arg(arguments, make_unsigned_t<ptrdiff_t>);
+
+  default:
+    return 0;
+  }
+}
+
+inline uintmax_t signed_magnitude(intmax_t value) {
+  const auto unsigned_value = static_cast<uintmax_t>(value);
+
+  if (value >= 0) {
+    return unsigned_value;
+  }
+
+  return uintmax_t{} - unsigned_value;
+}
+
+inline void append_integer(format_writer &writer, uintmax_t value,
+                           bool negative, unsigned base, bool uppercase,
+                           bool signed_conversion, format_options options) {
+  wchar_t digits[sizeof(uintmax_t) * 8 + 1];
+  size_t digit_count = 0;
+
+  const bool precision_specified = options.precision >= 0;
+
+  if (value != 0 || !precision_specified || options.precision != 0) {
+    do {
+      const unsigned digit = static_cast<unsigned>(value % base);
+
+      if (digit < 10) {
+        digits[digit_count++] = static_cast<wchar_t>(L'0' + digit);
+      } else {
+        digits[digit_count++] =
+            static_cast<wchar_t>((uppercase ? L'A' : L'a') + digit - 10);
+      }
+
+      value /= base;
+    } while (value != 0);
+  }
+
+  wchar_t sign = L'\0';
+
+  if (signed_conversion) {
+    if (negative) {
+      sign = L'-';
+    } else if (options.plus) {
+      sign = L'+';
+    } else if (options.space) {
+      sign = L' ';
+    }
+  }
+
+  wchar_t prefix[2];
+  size_t prefix_size = 0;
+
+  if (options.alternate && base == 8) {
+    /*
+     * %#o guarantees that the first digit is zero,
+     * including the %.0o zero case.
+     */
+    if (digit_count == 0) {
+      digits[digit_count++] = L'0';
+    } else if (digits[digit_count - 1] != L'0') {
+      const int required = static_cast<int>(digit_count + 1);
+
+      if (options.precision < required) {
+        options.precision = required;
+      }
+    }
+  } else if (options.alternate && base == 16 && digit_count != 0 &&
+             !(digit_count == 1 && digits[0] == L'0')) {
+    prefix[0] = L'0';
+    prefix[1] = uppercase ? L'X' : L'x';
+    prefix_size = 2;
+  }
+
+  int precision = options.precision;
+
+  if (precision < 0) {
+    precision = 1;
+  }
+
+  size_t precision_zeroes = 0;
+
+  if (precision > static_cast<int>(digit_count)) {
+    precision_zeroes =
+        static_cast<size_t>(precision - static_cast<int>(digit_count));
+  }
+
+  const size_t sign_size = sign == L'\0' ? 0u : 1u;
+
+  size_t total = sign_size + prefix_size + precision_zeroes + digit_count;
+
+  size_t width_padding = 0;
+
+  if (options.width > 0 && static_cast<size_t>(options.width) > total) {
+    width_padding = static_cast<size_t>(options.width) - total;
+  }
+
+  /*
+   * Integer precision disables zero field padding.
+   */
+  const bool width_zeroes =
+      options.zero && !options.left && !precision_specified;
+
+  if (!options.left && !width_zeroes) {
+    writer.append(L' ', width_padding);
+  }
+
+  if (sign != L'\0') {
+    writer.append(sign);
+  }
+
+  for (size_t index = 0; index < prefix_size; ++index) {
+    writer.append(prefix[index]);
+  }
+
+  if (width_zeroes) {
+    writer.append(L'0', width_padding);
+  }
+
+  writer.append(L'0', precision_zeroes);
+
+  while (digit_count != 0) {
+    writer.append(digits[--digit_count]);
+  }
+
+  if (options.left) {
+    writer.append(L' ', width_padding);
+  }
+}
+
+inline void append_pointer(format_writer &writer, const void *pointer,
+                           const format_options &options) {
+  wchar_t digits[sizeof(uintptr_t) * 2];
+  size_t digit_count = 0;
+
+  uintptr_t value = reinterpret_cast<uintptr_t>(pointer);
+
+  do {
+    const unsigned digit = static_cast<unsigned>(value & 0xfu);
+
+    digits[digit_count++] =
+        static_cast<wchar_t>(digit < 10 ? L'0' + digit : L'a' + digit - 10);
+
+    value >>= 4u;
+  } while (value != 0);
+
+  const size_t total = digit_count + 2;
+
+  size_t padding = 0;
+
+  if (options.width > 0 && static_cast<size_t>(options.width) > total) {
+    padding = static_cast<size_t>(options.width) - total;
+  }
+
+  if (!options.left && !options.zero) {
+    writer.append(L' ', padding);
+  }
+
+  writer.append(L'0');
+  writer.append(L'x');
+
+  if (!options.left && options.zero) {
+    writer.append(L'0', padding);
+  }
+
+  while (digit_count != 0) {
+    writer.append(digits[--digit_count]);
+  }
+
+  if (options.left) {
+    writer.append(L' ', padding);
+  }
+}
+
+inline void append_wide_character(format_writer &writer, wchar_t value,
+                                  const format_options &options) {
+  size_t padding = 0;
+
+  if (options.width > 1) {
+    padding = static_cast<size_t>(options.width - 1);
+  }
+
+  if (!options.left) {
+    writer.append(L' ', padding);
+  }
+
+  writer.append(value);
+
+  if (options.left) {
+    writer.append(L' ', padding);
+  }
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline void append_wide_string(format_writer &writer, const wchar_t *string,
+                               const format_options &options) {
+  size_t length = 0;
+
+  while (string[length] != L'\0' &&
+         (options.precision < 0 ||
+          length < static_cast<size_t>(options.precision))) {
+    ++length;
+  }
+
+  size_t padding = 0;
+
+  if (options.width > 0 && static_cast<size_t>(options.width) > length) {
+    padding = static_cast<size_t>(options.width) - length;
+  }
+
+  if (!options.left) {
+    writer.append(L' ', padding);
+  }
+
+  for (size_t index = 0; index < length; ++index) {
+    writer.append(string[index]);
+  }
+
+  if (options.left) {
+    writer.append(L' ', padding);
+  }
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline bool narrow_string_length(const char *string,
+                                 const format_options &options,
+                                 size_t &length) {
+  length = 0;
+
+  while (string[length] != '\0' &&
+         (options.precision < 0 ||
+          length < static_cast<size_t>(options.precision))) {
+    const auto byte = static_cast<unsigned char>(string[length]);
+
+    if (!valid_multibyte_byte(byte)) {
+      return false;
+    }
+
+    ++length;
+  }
+
+  return true;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline bool append_narrow_string(format_writer &writer, const char *string,
+                                 const format_options &options) {
+  size_t length = 0;
+
+  if (!narrow_string_length(string, options, length)) {
+    writer.error = true;
+    return false;
+  }
+
+  size_t padding = 0;
+
+  if (options.width > 0 && static_cast<size_t>(options.width) > length) {
+    padding = static_cast<size_t>(options.width) - length;
+  }
+
+  if (!options.left) {
+    writer.append(L' ', padding);
+  }
+
+  for (size_t index = 0; index < length; ++index) {
+    writer.append(
+        static_cast<wchar_t>(static_cast<unsigned char>(string[index])));
+  }
+
+  if (options.left) {
+    writer.append(L' ', padding);
+  }
+
+  return true;
+}
+
+inline void store_format_count(va_list &arguments, format_length length,
+                               size_t count) {
+  switch (length) {
+  case format_length::hh:
+    *va_arg(arguments, signed char *) = static_cast<signed char>(count);
+    break;
+
+  case format_length::h:
+    *va_arg(arguments, short *) = static_cast<short>(count);
+    break;
+
+  case format_length::none:
+    *va_arg(arguments, int *) = static_cast<int>(count);
+    break;
+
+  case format_length::l:
+    *va_arg(arguments, long *) = static_cast<long>(count);
+    break;
+
+  case format_length::ll:
+    *va_arg(arguments, long long *) = static_cast<long long>(count);
+    break;
+
+  case format_length::j:
+    *va_arg(arguments, intmax_t *) = static_cast<intmax_t>(count);
+    break;
+
+  case format_length::z:
+    *va_arg(arguments, make_signed_t<size_t> *) =
+        static_cast<make_signed_t<size_t>>(count);
+    break;
+
+  case format_length::t:
+    *va_arg(arguments, ptrdiff_t *) = static_cast<ptrdiff_t>(count);
+    break;
+
+  default:
+    break;
+  }
+}
+
+struct decimal_bigint {
+  static constexpr uint32_t base = 1000000000u;
+  static constexpr int maximum_binary_denominator_exponent =
+      numeric_limits<long double>::digits -
+      numeric_limits<long double>::min_exponent;
+
+  /*
+   * log10(5) < 0.7, so 5^k requires fewer than
+   * 0.7*k + 1 decimal digits.
+   *
+   * The denominator case dominates IEEE binary32/binary64 and
+   * x87 extended precision, but retain an independent upper
+   * bound for very large positive exponents.
+   */
+  static constexpr size_t maximum_denominator_digits = static_cast<size_t>(
+      (maximum_binary_denominator_exponent * 7 + 9) / 10 + 2);
+
+  static constexpr size_t maximum_integer_digits = static_cast<size_t>(
+      (numeric_limits<long double>::max_exponent * 31 + 99) / 100 + 2);
+
+  static constexpr size_t maximum_decimal_digits =
+      maximum_denominator_digits > maximum_integer_digits
+          ? maximum_denominator_digits
+          : maximum_integer_digits;
+
+  static constexpr size_t max_words = (maximum_decimal_digits + 8) / 9;
+
+  uint32_t words[max_words];
+  size_t size;
+  bool overflow;
+
+  decimal_bigint() : size(1), overflow(false) { words[0] = 0; }
+
+  void multiply(unsigned value) {
+    uint64_t carry = 0;
+
+    for (size_t index = 0; index < size; ++index) {
+      const uint64_t product =
+          static_cast<uint64_t>(words[index]) * static_cast<uint64_t>(value) +
+          carry;
+
+      words[index] = static_cast<uint32_t>(product % base);
+
+      carry = product / base;
+    }
+
+    if (carry != 0) {
+      if (size == max_words) {
+        overflow = true;
+        return;
+      }
+
+      words[size++] = static_cast<uint32_t>(carry);
+    }
+  }
+
+  void add_one() {
+    size_t index = 0;
+
+    for (;;) {
+      if (index == size) {
+        if (size == max_words) {
+          overflow = true;
+          return;
+        }
+
+        words[size++] = 1;
+        return;
+      }
+
+      ++words[index];
+
+      if (words[index] != base) {
+        return;
+      }
+
+      words[index] = 0;
+      ++index;
+    }
+  }
+
+  size_t write_decimal(char *destination) const {
+    size_t result = 0;
+
+    {
+      uint32_t value = words[size - 1];
+      char reversed[10];
+      size_t count = 0;
+
+      do {
+        reversed[count++] = static_cast<char>('0' + value % 10);
+
+        value /= 10;
+      } while (value != 0);
+
+      while (count != 0) {
+        destination[result++] = reversed[--count];
+      }
+    }
+
+    for (size_t word_index = size - 1; word_index != 0; --word_index) {
+      uint32_t value = words[word_index - 1];
+
+      char chunk[9];
+
+      for (int digit = 8; digit >= 0; --digit) {
+        chunk[digit] = static_cast<char>('0' + value % 10);
+
+        value /= 10;
+      }
+
+      for (char digit : chunk) {
+        destination[result++] = digit;
+      }
+    }
+
+    return result;
+  }
+};
+
+struct exact_decimal {
+  static constexpr size_t max_digits = decimal_bigint::max_words * 9 + 1;
+
+  char digits[max_digits];
+  size_t length;
+  int scale;
+};
+
+inline bool floating_is_nan(long double value) { return value != value; }
+
+inline bool floating_is_infinite(long double value) {
+  const long double infinity = numeric_limits<long double>::infinity();
+
+  return value == infinity || value == -infinity;
+}
+
+inline bool floating_is_negative(long double value) {
+#if defined(__clang__) || defined(__GNUC__)
+  return __builtin_signbit(value);
+#else
+  if (value < 0.0L) {
+    return true;
+  }
+
+  /*
+   * Preserve the sign of negative zero. FTL's supported
+   * floating targets use IEC 60559 semantics.
+   */
+  if (value == 0.0L) {
+    return (1.0L / value) < 0.0L;
+  }
+
+  return false;
+#endif
+}
+
+inline long double floating_magnitude(long double value) {
+  return floating_is_negative(value) ? -value : value;
+}
+
+inline bool make_exact_decimal(long double value, exact_decimal &result) {
+  if (value == 0.0L) {
+    result.digits[0] = '0';
+    result.length = 1;
+    result.scale = 0;
+    return true;
+  }
+
+  /*
+   * Normalize to [1, 2). Multiplication/division by two is
+   * exact for binary floating-point values.
+   */
+  long double normalized = value;
+  int exponent = 0;
+
+  while (normalized >= 2.0L) {
+    normalized *= 0.5L;
+    ++exponent;
+  }
+
+  while (normalized < 1.0L) {
+    normalized *= 2.0L;
+    --exponent;
+  }
+
+  decimal_bigint integer{};
+
+  /*
+   * Recover the exact binary significand without depending on
+   * the object representation of long double. This therefore
+   * works for:
+   *
+   *   MSVC long double == double
+   *   x87 extended precision
+   *   ordinary IEEE binary64
+   *   wider binary long doubles
+   */
+  for (int bit = 0; bit < numeric_limits<long double>::digits; ++bit) {
+    integer.multiply(2);
+
+    if (normalized >= 1.0L) {
+      integer.add_one();
+      normalized -= 1.0L;
+    }
+
+    normalized *= 2.0L;
+  }
+
+  if (integer.overflow) {
+    return false;
+  }
+
+  const int binary_exponent =
+      exponent - (numeric_limits<long double>::digits - 1);
+
+  if (binary_exponent >= 0) {
+    for (int index = 0; index < binary_exponent; ++index) {
+      integer.multiply(2);
+
+      if (integer.overflow) {
+        return false;
+      }
+    }
+
+    result.scale = 0;
+  } else {
+    /*
+     * m / 2^k == m * 5^k / 10^k.
+     *
+     * This gives us an exact terminating decimal integer plus
+     * a decimal scale, with no floating arithmetic involved in
+     * the eventual rounding.
+     */
+    const int denominator_exponent = -binary_exponent;
+
+    for (int index = 0; index < denominator_exponent; ++index) {
+      integer.multiply(5);
+
+      if (integer.overflow) {
+        return false;
+      }
+    }
+
+    result.scale = denominator_exponent;
+  }
+
+  result.length = integer.write_decimal(result.digits);
+
+  return true;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline bool discarded_decimal_nonzero(const char *digits, size_t begin,
+                                      size_t end) {
+  for (size_t index = begin; index < end; ++index) {
+    if (digits[index] != '0') {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline bool should_round_decimal_up(const char *digits, size_t length,
+                                    size_t keep) {
+  if (keep >= length) {
+    return false;
+  }
+
+  const char first_discarded = digits[keep];
+
+  if (first_discarded > '5') {
+    return true;
+  }
+
+  if (first_discarded < '5') {
+    return false;
+  }
+
+  if (discarded_decimal_nonzero(digits, keep + 1, length)) {
+    return true;
+  }
+
+  if (keep == 0) {
+    return false;
+  }
+
+  return ((digits[keep - 1] - '0') & 1) != 0;
+}
+
+struct rounded_fixed_decimal {
+  char digits[exact_decimal::max_digits + 1];
+  size_t length;
+  size_t trailing_zeroes;
+};
+
+FTL_CWCHAR_NO_BUILTIN
+inline bool round_fixed_decimal(const exact_decimal &source, int precision,
+                                rounded_fixed_decimal &result) {
+  if (source.length != 0) {
+    memcpy(result.digits, source.digits, source.length);
+  }
+
+  result.length = source.length;
+  result.trailing_zeroes = 0;
+
+  const long long cut =
+      static_cast<long long>(source.scale) - static_cast<long long>(precision);
+
+  if (cut <= 0) {
+    result.trailing_zeroes = static_cast<size_t>(-cut);
+
+    return true;
+  }
+
+  const size_t remove = static_cast<size_t>(cut);
+
+  if (remove > result.length) {
+    result.digits[0] = '0';
+    result.length = 1;
+    return true;
+  }
+
+  const size_t keep = result.length - remove;
+
+  const bool round_up =
+      should_round_decimal_up(result.digits, result.length, keep);
+
+  if (keep == 0) {
+    result.digits[0] = round_up ? '1' : '0';
+
+    result.length = 1;
+    return true;
+  }
+
+  result.length = keep;
+
+  if (!round_up) {
+    return true;
+  }
+
+  /*
+   * Find the first digit that can absorb the carry.
+   */
+  size_t carry_index = keep;
+
+  while (carry_index != 0 && result.digits[carry_index - 1] == '9') {
+    --carry_index;
+  }
+
+  if (carry_index != 0) {
+    ++result.digits[carry_index - 1];
+
+    if (carry_index < keep) {
+      memset(result.digits + carry_index, '0', keep - carry_index);
+    }
+
+    return true;
+  }
+
+  /*
+   * 99... -> 100...
+   */
+  if (keep + 1 > exact_decimal::max_digits + 1) {
+    return false;
+  }
+
+  result.digits[0] = '1';
+
+  if (keep != 0) {
+    memset(result.digits + 1, '0', keep);
+  }
+
+  result.length = keep + 1;
+  return true;
+}
+
+inline char fixed_digit_at(const rounded_fixed_decimal &value, size_t index) {
+  if (index < value.length) {
+    return value.digits[index];
+  }
+
+  return '0';
+}
+
+inline wchar_t floating_sign(bool negative, const format_options &options) {
+  if (negative) {
+    return L'-';
+  }
+
+  if (options.plus) {
+    return L'+';
+  }
+
+  if (options.space) {
+    return L' ';
+  }
+
+  return L'\0';
+}
+
+inline void begin_floating_field(format_writer &writer,
+                                 const format_options &options, wchar_t sign,
+                                 size_t body_length, bool special,
+                                 size_t &trailing_spaces) {
+  const size_t sign_length = sign == L'\0' ? 0u : 1u;
+
+  const size_t total = sign_length + body_length;
+
+  size_t padding = 0;
+
+  if (options.width > 0 && static_cast<size_t>(options.width) > total) {
+    padding = static_cast<size_t>(options.width) - total;
+  }
+
+  /*
+   * '0' is ignored for infinities and NaNs and whenever '-'
+   * is active.
+   */
+  const bool zero_padding = options.zero && !options.left && !special;
+
+  if (!options.left && !zero_padding) {
+    writer.append(L' ', padding);
+  }
+
+  if (sign != L'\0') {
+    writer.append(sign);
+  }
+
+  if (zero_padding) {
+    writer.append(L'0', padding);
+  }
+
+  trailing_spaces = options.left ? padding : 0;
+}
+
+inline void append_fixed_floating(format_writer &writer, long double value,
+                                  format_options options, bool uppercase) {
+  const bool negative = floating_is_negative(value);
+
+  const wchar_t sign = floating_sign(negative, options);
+
+  if (floating_is_nan(value)) {
+    size_t trailing_spaces = 0;
+
+    begin_floating_field(writer, options, sign, 3, true, trailing_spaces);
+
+    if (uppercase) {
+      writer.append(L'N');
+      writer.append(L'A');
+      writer.append(L'N');
+    } else {
+      writer.append(L'n');
+      writer.append(L'a');
+      writer.append(L'n');
+    }
+
+    writer.append(L' ', trailing_spaces);
+    return;
+  }
+
+  if (floating_is_infinite(value)) {
+    size_t trailing_spaces = 0;
+
+    begin_floating_field(writer, options, sign, 3, true, trailing_spaces);
+
+    if (uppercase) {
+      writer.append(L'I');
+      writer.append(L'N');
+      writer.append(L'F');
+    } else {
+      writer.append(L'i');
+      writer.append(L'n');
+      writer.append(L'f');
+    }
+
+    writer.append(L' ', trailing_spaces);
+    return;
+  }
+
+  if (options.precision < 0) {
+    options.precision = 6;
+  }
+
+  exact_decimal exact;
+
+  if (!make_exact_decimal(floating_magnitude(value), exact)) {
+    writer.error = true;
+    return;
+  }
+
+  rounded_fixed_decimal rounded;
+
+  if (!round_fixed_decimal(exact, options.precision, rounded)) {
+    writer.error = true;
+    return;
+  }
+
+  const size_t total_digits = rounded.length + rounded.trailing_zeroes;
+
+  const size_t precision = static_cast<size_t>(options.precision);
+
+  const size_t integer_digits =
+      total_digits > precision ? total_digits - precision : 1;
+
+  const bool decimal_point = precision != 0 || options.alternate;
+
+  const size_t body_length =
+      integer_digits + (decimal_point ? 1u : 0u) + precision;
+
+  size_t trailing_spaces = 0;
+
+  begin_floating_field(writer, options, sign, body_length, false,
+                       trailing_spaces);
+
+  if (total_digits > precision) {
+    const size_t integer_count = total_digits - precision;
+
+    for (size_t index = 0; index < integer_count; ++index) {
+      writer.append(static_cast<wchar_t>(fixed_digit_at(rounded, index)));
+    }
+  } else {
+    writer.append(L'0');
+  }
+
+  if (decimal_point) {
+    writer.append(L'.');
+  }
+
+  if (precision != 0) {
+    if (total_digits < precision) {
+      writer.append(L'0', precision - total_digits);
+
+      for (size_t index = 0; index < total_digits; ++index) {
+        writer.append(static_cast<wchar_t>(fixed_digit_at(rounded, index)));
+      }
+    } else {
+      const size_t fractional_begin = total_digits - precision;
+
+      for (size_t index = fractional_begin; index < total_digits; ++index) {
+        writer.append(static_cast<wchar_t>(fixed_digit_at(rounded, index)));
+      }
+    }
+  }
+
+  writer.append(L' ', trailing_spaces);
+}
+
+struct rounded_significant_decimal {
+  char digits[exact_decimal::max_digits + 1];
+  size_t length;
+  size_t trailing_zeroes;
+  int exponent;
+};
+
+FTL_CWCHAR_NO_BUILTIN
+inline bool round_significant_decimal(const exact_decimal &source,
+                                      size_t significant,
+                                      rounded_significant_decimal &result) {
+  if (significant == 0) {
+    return false;
+  }
+
+  result.trailing_zeroes = 0;
+
+  result.exponent = static_cast<int>(source.length) - source.scale - 1;
+
+  if (source.length == 1 && source.digits[0] == '0') {
+    result.digits[0] = '0';
+    result.length = 1;
+    result.trailing_zeroes = significant - 1;
+    result.exponent = 0;
+    return true;
+  }
+
+  const size_t copied =
+      source.length < significant ? source.length : significant;
+
+  if (copied != 0) {
+    memcpy(result.digits, source.digits, copied);
+  }
+
+  result.length = copied;
+
+  if (significant >= source.length) {
+    result.trailing_zeroes = significant - source.length;
+
+    return true;
+  }
+
+  const bool round_up =
+      should_round_decimal_up(source.digits, source.length, significant);
+
+  if (!round_up) {
+    return true;
+  }
+
+  size_t carry_index = significant;
+
+  while (carry_index != 0 && result.digits[carry_index - 1] == '9') {
+    --carry_index;
+  }
+
+  if (carry_index != 0) {
+    ++result.digits[carry_index - 1];
+
+    if (carry_index < significant) {
+      memset(result.digits + carry_index, '0', significant - carry_index);
+    }
+
+    return true;
+  }
+
+  /*
+   * 9.99... -> 1.00... with the decimal exponent
+   * advanced by one.
+   */
+  result.digits[0] = '1';
+
+  if (significant > 1) {
+    memset(result.digits + 1, '0', significant - 1);
+  }
+
+  result.length = significant;
+  ++result.exponent;
+
+  return true;
+}
+
+inline char significant_digit_at(const rounded_significant_decimal &value,
+                                 size_t index) {
+  if (index < value.length) {
+    return value.digits[index];
+  }
+
+  return '0';
+}
+
+inline size_t decimal_exponent_digit_count(int exponent) {
+  unsigned magnitude = exponent < 0
+                           ? static_cast<unsigned>(-(exponent + 1)) + 1u
+                           : static_cast<unsigned>(exponent);
+
+  size_t result = 1;
+
+  while (magnitude >= 10) {
+    magnitude /= 10;
+    ++result;
+  }
+
+  return result;
+}
+
+inline void append_decimal_exponent(format_writer &writer, int exponent,
+                                    bool uppercase) {
+  writer.append(uppercase ? L'E' : L'e');
+  writer.append(exponent < 0 ? L'-' : L'+');
+
+  unsigned magnitude = exponent < 0
+                           ? static_cast<unsigned>(-(exponent + 1)) + 1u
+                           : static_cast<unsigned>(exponent);
+
+  wchar_t digits[16];
+  size_t count = 0;
+
+  do {
+    digits[count++] = static_cast<wchar_t>(L'0' + magnitude % 10);
+
+    magnitude /= 10;
+  } while (magnitude != 0);
+
+  while (count < 2) {
+    digits[count++] = L'0';
+  }
+
+  while (count != 0) {
+    writer.append(digits[--count]);
+  }
+}
+
+inline bool append_nonfinite_floating(format_writer &writer, long double value,
+                                      const format_options &options,
+                                      bool uppercase) {
+  if (!floating_is_nan(value) && !floating_is_infinite(value)) {
+    return false;
+  }
+
+  const bool negative = floating_is_negative(value);
+
+  const wchar_t sign = floating_sign(negative, options);
+
+  size_t trailing_spaces = 0;
+
+  begin_floating_field(writer, options, sign, 3, true, trailing_spaces);
+
+  if (floating_is_nan(value)) {
+    if (uppercase) {
+      writer.append(L'N');
+      writer.append(L'A');
+      writer.append(L'N');
+    } else {
+      writer.append(L'n');
+      writer.append(L'a');
+      writer.append(L'n');
+    }
+  } else {
+    if (uppercase) {
+      writer.append(L'I');
+      writer.append(L'N');
+      writer.append(L'F');
+    } else {
+      writer.append(L'i');
+      writer.append(L'n');
+      writer.append(L'f');
+    }
+  }
+
+  writer.append(L' ', trailing_spaces);
+  return true;
+}
+
+inline void append_scientific_floating(format_writer &writer, long double value,
+                                       format_options options, bool uppercase) {
+  if (append_nonfinite_floating(writer, value, options, uppercase)) {
+    return;
+  }
+
+  const bool negative = floating_is_negative(value);
+
+  const wchar_t sign = floating_sign(negative, options);
+
+  if (options.precision < 0) {
+    options.precision = 6;
+  }
+
+  exact_decimal exact;
+
+  if (!make_exact_decimal(floating_magnitude(value), exact)) {
+    writer.error = true;
+    return;
+  }
+
+  rounded_significant_decimal rounded;
+
+  const size_t significant = static_cast<size_t>(options.precision) + 1;
+
+  if (!round_significant_decimal(exact, significant, rounded)) {
+    writer.error = true;
+    return;
+  }
+
+  const bool decimal_point = options.precision != 0 || options.alternate;
+
+  const size_t exponent_digits = decimal_exponent_digit_count(rounded.exponent);
+
+  const size_t body_length = 1 + (decimal_point ? 1u : 0u) +
+                             static_cast<size_t>(options.precision) + 1 + 1 +
+                             (exponent_digits < 2 ? 2 : exponent_digits);
+
+  size_t trailing_spaces = 0;
+
+  begin_floating_field(writer, options, sign, body_length, false,
+                       trailing_spaces);
+
+  writer.append(static_cast<wchar_t>(significant_digit_at(rounded, 0)));
+
+  if (decimal_point) {
+    writer.append(L'.');
+  }
+
+  for (size_t index = 1; index < significant; ++index) {
+    writer.append(static_cast<wchar_t>(significant_digit_at(rounded, index)));
+  }
+
+  append_decimal_exponent(writer, rounded.exponent, uppercase);
+
+  writer.append(L' ', trailing_spaces);
+}
+
+inline void append_general_floating(format_writer &writer, long double value,
+                                    format_options options, bool uppercase) {
+  if (append_nonfinite_floating(writer, value, options, uppercase)) {
+    return;
+  }
+
+  int precision = options.precision;
+
+  if (precision < 0) {
+    precision = 6;
+  } else if (precision == 0) {
+    precision = 1;
+  }
+
+  exact_decimal exact;
+
+  if (!make_exact_decimal(floating_magnitude(value), exact)) {
+    writer.error = true;
+    return;
+  }
+
+  rounded_significant_decimal rounded;
+
+  if (!round_significant_decimal(exact, static_cast<size_t>(precision),
+                                 rounded)) {
+    writer.error = true;
+    return;
+  }
+
+  size_t used = static_cast<size_t>(precision);
+
+  if (!options.alternate) {
+    while (used > 1 && significant_digit_at(rounded, used - 1) == '0') {
+      --used;
+    }
+  }
+
+  const bool scientific =
+      rounded.exponent < -4 || rounded.exponent >= precision;
+
+  const bool negative = floating_is_negative(value);
+
+  const wchar_t sign = floating_sign(negative, options);
+
+  if (scientific) {
+    const size_t fractional = used > 0 ? used - 1 : 0;
+
+    const bool decimal_point = fractional != 0 || options.alternate;
+
+    const size_t exponent_digits =
+        decimal_exponent_digit_count(rounded.exponent);
+
+    const size_t body_length = 1 + (decimal_point ? 1u : 0u) + fractional + 1 +
+                               1 + (exponent_digits < 2 ? 2 : exponent_digits);
+
+    size_t trailing_spaces = 0;
+
+    begin_floating_field(writer, options, sign, body_length, false,
+                         trailing_spaces);
+
+    writer.append(static_cast<wchar_t>(significant_digit_at(rounded, 0)));
+
+    if (decimal_point) {
+      writer.append(L'.');
+    }
+
+    for (size_t index = 1; index < used; ++index) {
+      writer.append(static_cast<wchar_t>(significant_digit_at(rounded, index)));
+    }
+
+    append_decimal_exponent(writer, rounded.exponent, uppercase);
+
+    writer.append(L' ', trailing_spaces);
+    return;
+  }
+
+  const long long point = static_cast<long long>(rounded.exponent) + 1;
+
+  size_t body_length = 0;
+
+  if (point <= 0) {
+    body_length = 2 + static_cast<size_t>(-point) + used;
+  } else if (static_cast<size_t>(point) >= used) {
+    body_length = static_cast<size_t>(point) + (options.alternate ? 1u : 0u);
+  } else {
+    body_length = used + 1;
+  }
+
+  size_t trailing_spaces = 0;
+
+  begin_floating_field(writer, options, sign, body_length, false,
+                       trailing_spaces);
+
+  if (point <= 0) {
+    writer.append(L'0');
+    writer.append(L'.');
+
+    writer.append(L'0', static_cast<size_t>(-point));
+
+    for (size_t index = 0; index < used; ++index) {
+      writer.append(static_cast<wchar_t>(significant_digit_at(rounded, index)));
+    }
+  } else {
+    const size_t integer_digits = static_cast<size_t>(point);
+
+    for (size_t index = 0; index < integer_digits; ++index) {
+      writer.append(index < used ? static_cast<wchar_t>(
+                                       significant_digit_at(rounded, index))
+                                 : L'0');
+    }
+
+    if (integer_digits < used || options.alternate) {
+      writer.append(L'.');
+    }
+
+    for (size_t index = integer_digits; index < used; ++index) {
+      writer.append(static_cast<wchar_t>(significant_digit_at(rounded, index)));
+    }
+  }
+
+  writer.append(L' ', trailing_spaces);
+}
+
+inline wchar_t hexadecimal_digit(unsigned value, bool uppercase) {
+  if (value < 10) {
+    return static_cast<wchar_t>(L'0' + value);
+  }
+
+  return static_cast<wchar_t>((uppercase ? L'A' : L'a') + value - 10);
+}
+
+inline size_t binary_exponent_digit_count(int exponent) {
+  unsigned magnitude = exponent < 0
+                           ? static_cast<unsigned>(-(exponent + 1)) + 1u
+                           : static_cast<unsigned>(exponent);
+
+  size_t result = 1;
+
+  while (magnitude >= 10) {
+    magnitude /= 10;
+    ++result;
+  }
+
+  return result;
+}
+
+inline void append_binary_exponent(format_writer &writer, int exponent,
+                                   bool uppercase) {
+  writer.append(uppercase ? L'P' : L'p');
+  writer.append(exponent < 0 ? L'-' : L'+');
+
+  unsigned magnitude = exponent < 0
+                           ? static_cast<unsigned>(-(exponent + 1)) + 1u
+                           : static_cast<unsigned>(exponent);
+
+  wchar_t digits[16];
+  size_t count = 0;
+
+  do {
+    digits[count++] = static_cast<wchar_t>(L'0' + magnitude % 10);
+
+    magnitude /= 10;
+  } while (magnitude != 0);
+
+  while (count != 0) {
+    writer.append(digits[--count]);
+  }
+}
+
+inline void append_hexadecimal_floating(format_writer &writer,
+                                        long double value,
+                                        format_options options, bool uppercase,
+                                        int binary_digits) {
+  if (append_nonfinite_floating(writer, value, options, uppercase)) {
+    return;
+  }
+
+  const bool negative = floating_is_negative(value);
+
+  const wchar_t sign = floating_sign(negative, options);
+
+  long double magnitude = floating_magnitude(value);
+
+  unsigned leading = 0;
+  int exponent = 0;
+
+  constexpr size_t maximum_hex_digits =
+      (numeric_limits<long double>::digits + 2) / 4 + 1;
+
+  unsigned exact_digits[maximum_hex_digits];
+
+  size_t exact_count = 0;
+
+  if (magnitude != 0.0L) {
+    long double normalized = magnitude;
+
+    while (normalized >= 2.0L) {
+      normalized *= 0.5L;
+      ++exponent;
+    }
+
+    while (normalized < 1.0L) {
+      normalized *= 2.0L;
+      --exponent;
+    }
+
+    leading = 1;
+
+    long double fraction = normalized - 1.0L;
+
+    exact_count = static_cast<size_t>((binary_digits - 1 + 3) / 4);
+
+    for (size_t index = 0; index < exact_count; ++index) {
+      fraction *= 16.0L;
+
+      unsigned digit = static_cast<unsigned>(fraction);
+
+      if (digit > 15) {
+        digit = 15;
+      }
+
+      exact_digits[index] = digit;
+
+      fraction -= static_cast<long double>(digit);
+    }
+  }
+
+  int requested_precision = options.precision;
+
+  if (requested_precision < 0) {
+    requested_precision = magnitude == 0.0L ? 0 : static_cast<int>(exact_count);
+  }
+
+  const size_t precision = static_cast<size_t>(requested_precision);
+
+  if (magnitude != 0.0L && precision < exact_count) {
+    const unsigned next = exact_digits[precision];
+
+    bool sticky = false;
+
+    for (size_t index = precision + 1; index < exact_count; ++index) {
+      if (exact_digits[index] != 0) {
+        sticky = true;
+        break;
+      }
+    }
+
+    bool round_up = false;
+
+    if (next > 8) {
+      round_up = true;
+    } else if (next == 8) {
+      if (sticky) {
+        round_up = true;
+      } else {
+        const unsigned previous =
+            precision == 0 ? leading : exact_digits[precision - 1];
+
+        round_up = (previous & 1u) != 0;
+      }
+    }
+
+    if (round_up) {
+      if (precision == 0) {
+        ++leading;
+      } else {
+        size_t index = precision;
+
+        while (index != 0) {
+          --index;
+
+          if (exact_digits[index] != 15) {
+            ++exact_digits[index];
+            break;
+          }
+
+          exact_digits[index] = 0;
+
+          if (index == 0) {
+            ++leading;
+          }
+        }
+      }
+    }
+  }
+
+  const bool decimal_point = precision != 0 || options.alternate;
+
+  const size_t exponent_digits = binary_exponent_digit_count(exponent);
+
+  const size_t body_length =
+      2 + 1 + (decimal_point ? 1u : 0u) + precision + 1 + 1 + exponent_digits;
+
+  size_t trailing_spaces = 0;
+
+  begin_floating_field(writer, options, sign, body_length, false,
+                       trailing_spaces);
+
+  writer.append(L'0');
+  writer.append(uppercase ? L'X' : L'x');
+
+  writer.append(hexadecimal_digit(leading, uppercase));
+
+  if (decimal_point) {
+    writer.append(L'.');
+  }
+
+  for (size_t index = 0; index < precision; ++index) {
+    const unsigned digit = index < exact_count ? exact_digits[index] : 0;
+
+    writer.append(hexadecimal_digit(digit, uppercase));
+  }
+
+  append_binary_exponent(writer, exponent, uppercase);
+
+  writer.append(L' ', trailing_spaces);
+}
+
+} // namespace cwchar_detail
+
+FTL_CWCHAR_NO_BUILTIN
+inline int vswprintf(wchar_t *s, size_t n, const wchar_t *format, va_list arg) {
+  cwchar_detail::format_writer writer{s, n};
+
+  va_list arguments;
+  va_copy(arguments, arg);
+
+  const wchar_t *current = format;
+
+  while (*current != L'\0' && !writer.error) {
+    if (*current != L'%') {
+      writer.append(*current++);
+      continue;
+    }
+
+    ++current;
+
+    if (*current == L'%') {
+      writer.append(L'%');
+      ++current;
+      continue;
+    }
+
+    cwchar_detail::format_options options{};
+
+    bool parsing_flags = true;
+
+    while (parsing_flags) {
+      switch (*current) {
+      case L'-':
+        options.left = true;
+        ++current;
+        break;
+
+      case L'+':
+        options.plus = true;
+        ++current;
+        break;
+
+      case L' ':
+        options.space = true;
+        ++current;
+        break;
+
+      case L'#':
+        options.alternate = true;
+        ++current;
+        break;
+
+      case L'0':
+        options.zero = true;
+        ++current;
+        break;
+
+      default:
+        parsing_flags = false;
+        break;
+      }
+    }
+
+    if (*current == L'*') {
+      int width = va_arg(arguments, int);
+      ++current;
+
+      if (width < 0) {
+        options.left = true;
+
+        if (width == numeric_limits<int>::min()) {
+          options.width = numeric_limits<int>::max();
+        } else {
+          options.width = -width;
+        }
+      } else {
+        options.width = width;
+      }
+    } else {
+      options.width = cwchar_detail::parse_format_number(current);
+    }
+
+    if (*current == L'.') {
+      ++current;
+
+      if (*current == L'*') {
+        const int precision = va_arg(arguments, int);
+
+        ++current;
+
+        if (precision >= 0) {
+          options.precision = precision;
+        }
+      } else {
+        options.precision = cwchar_detail::parse_format_number(current);
+      }
+    }
+
+    options.length = cwchar_detail::parse_format_length(current);
+
+    const wchar_t conversion = *current;
+
+    if (conversion == L'\0') {
+      writer.error = true;
+      break;
+    }
+
+    ++current;
+
+    switch (conversion) {
+    case L'd':
+    case L'i': {
+      const intmax_t value =
+          cwchar_detail::read_signed_argument(arguments, options.length);
+
+      cwchar_detail::append_integer(writer,
+                                    cwchar_detail::signed_magnitude(value),
+                                    value < 0, 10, false, true, options);
+
+      break;
+    }
+
+    case L'o':
+    case L'u':
+    case L'x':
+    case L'X': {
+      const uintmax_t value =
+          cwchar_detail::read_unsigned_argument(arguments, options.length);
+
+      const unsigned base = conversion == L'o'   ? 8u
+                            : conversion == L'u' ? 10u
+                                                 : 16u;
+
+      cwchar_detail::append_integer(writer, value, false, base,
+                                    conversion == L'X', false, options);
+
+      break;
+    }
+
+    case L'c': {
+      wchar_t value = L'\0';
+
+      if (options.length == cwchar_detail::format_length::l) {
+        value = static_cast<wchar_t>(va_arg(arguments, wint_t));
+      } else {
+        const int character = va_arg(arguments, int);
+
+        const wint_t converted = btowc(character);
+
+        if (converted == static_cast<wint_t>(WEOF)) {
+          writer.error = true;
+          break;
+        }
+
+        value = static_cast<wchar_t>(converted);
+      }
+
+      cwchar_detail::append_wide_character(writer, value, options);
+
+      break;
+    }
+
+    case L's': {
+      if (options.length == cwchar_detail::format_length::l) {
+        const wchar_t *string = va_arg(arguments, const wchar_t *);
+
+        cwchar_detail::append_wide_string(writer, string, options);
+      } else {
+        const char *string = va_arg(arguments, const char *);
+
+        cwchar_detail::append_narrow_string(writer, string, options);
+      }
+
+      break;
+    }
+
+    case L'p': {
+      const void *pointer = va_arg(arguments, void *);
+
+      cwchar_detail::append_pointer(writer, pointer, options);
+
+      break;
+    }
+
+    case L'n':
+      cwchar_detail::store_format_count(arguments, options.length, writer.size);
+      break;
+
+    case L'f':
+    case L'F': {
+      const long double value =
+          options.length == cwchar_detail::format_length::capital_l
+              ? va_arg(arguments, long double)
+              : static_cast<long double>(va_arg(arguments, double));
+
+      cwchar_detail::append_fixed_floating(writer, value, options,
+                                           conversion == L'F');
+
+      break;
+    }
+
+    case L'e':
+    case L'E': {
+      const long double value =
+          options.length == cwchar_detail::format_length::capital_l
+              ? va_arg(arguments, long double)
+              : static_cast<long double>(va_arg(arguments, double));
+
+      cwchar_detail::append_scientific_floating(writer, value, options,
+                                                conversion == L'E');
+
+      break;
+    }
+
+    case L'g':
+    case L'G': {
+      const long double value =
+          options.length == cwchar_detail::format_length::capital_l
+              ? va_arg(arguments, long double)
+              : static_cast<long double>(va_arg(arguments, double));
+
+      cwchar_detail::append_general_floating(writer, value, options,
+                                             conversion == L'G');
+
+      break;
+    }
+
+    case L'a':
+    case L'A': {
+      const bool is_long_double =
+          options.length == cwchar_detail::format_length::capital_l;
+
+      const long double value =
+          is_long_double ? va_arg(arguments, long double)
+                         : static_cast<long double>(va_arg(arguments, double));
+
+      cwchar_detail::append_hexadecimal_floating(
+          writer, value, options, conversion == L'A',
+          is_long_double ? numeric_limits<long double>::digits
+                         : numeric_limits<double>::digits);
+
+      break;
+    }
+
+    default:
+      writer.error = true;
+      break;
+    }
+  }
+
+  va_end(arguments);
+
+  if (!writer.finish()) {
+    return -1;
+  }
+
+  if (writer.size > static_cast<size_t>(numeric_limits<int>::max())) {
+    return -1;
+  }
+
+  return static_cast<int>(writer.size);
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline int swprintf(wchar_t *s, size_t n, const wchar_t *format, ...) {
+  va_list arguments;
+  va_start(arguments, format);
+
+  const int result = vswprintf(s, n, format, arguments);
+
+  va_end(arguments);
+  return result;
+}
+
+inline int vfwprintf(FILE *stream, const wchar_t *format, va_list arg) {
+  return cwchar_detail::runtime_vfwprintf(stream, format, arg);
+}
+
+inline int fwprintf(FILE *stream, const wchar_t *format, ...) {
+  va_list arguments;
+  va_start(arguments, format);
+
+  const int result =
+      cwchar_detail::runtime_vfwprintf(stream, format, arguments);
+
+  va_end(arguments);
+  return result;
+}
+
+inline int vfwscanf(FILE *stream, const wchar_t *format, va_list arg) {
+  return cwchar_detail::runtime_vfwscanf(stream, format, arg);
+}
+
+inline int fwscanf(FILE *stream, const wchar_t *format, ...) {
+  va_list arguments;
+  va_start(arguments, format);
+
+  const int result = cwchar_detail::runtime_vfwscanf(stream, format, arguments);
+
+  va_end(arguments);
+  return result;
+}
+
+inline int vswscanf(const wchar_t *string, const wchar_t *format, va_list arg) {
+  return cwchar_detail::runtime_vswscanf(string, format, arg);
+}
+
+inline int swscanf(const wchar_t *string, const wchar_t *format, ...) {
+  va_list arguments;
+  va_start(arguments, format);
+
+  const int result = cwchar_detail::runtime_vswscanf(string, format, arguments);
+
+  va_end(arguments);
+  return result;
+}
+
+inline int vwprintf(const wchar_t *format, va_list arg) {
+  return cwchar_detail::runtime_vwprintf(format, arg);
+}
+
+inline int wprintf(const wchar_t *format, ...) {
+  va_list arguments;
+  va_start(arguments, format);
+
+  const int result = cwchar_detail::runtime_vwprintf(format, arguments);
+
+  va_end(arguments);
+  return result;
+}
+
+inline int vwscanf(const wchar_t *format, va_list arg) {
+  return cwchar_detail::runtime_vwscanf(format, arg);
+}
+
+inline int wscanf(const wchar_t *format, ...) {
+  va_list arguments;
+  va_start(arguments, format);
+
+  const int result = cwchar_detail::runtime_vwscanf(format, arguments);
+
+  va_end(arguments);
+  return result;
+}
+
+inline wint_t fgetwc(FILE *stream) {
+  return cwchar_detail::from_native_wint(::ftl_cwchar_runtime::fgetwc(stream));
+}
+
+inline wchar_t *fgetws(wchar_t *string, int count, FILE *stream) {
+  return ::ftl_cwchar_runtime::fgetws(string, count, stream);
+}
+
+inline wint_t fputwc(wchar_t character, FILE *stream) {
+  return cwchar_detail::from_native_wint(::ftl_cwchar_runtime::fputwc(character, stream));
+}
+
+inline int fputws(const wchar_t *string, FILE *stream) {
+  return ::ftl_cwchar_runtime::fputws(string, stream);
+}
+
+inline int fwide(FILE *stream, int mode) { return ::ftl_cwchar_runtime::fwide(stream, mode); }
+
+inline wint_t getwc(FILE *stream) { return ::ftl_cwchar_runtime::fgetwc(stream); }
+
+inline wint_t getwchar() {
+  return cwchar_detail::from_native_wint(::ftl_cwchar_runtime::getwchar());
+}
+
+inline wint_t putwc(wchar_t character, FILE *stream) {
+  return ::ftl_cwchar_runtime::fputwc(character, stream);
+}
+
+inline wint_t putwchar(wchar_t character) {
+  return cwchar_detail::from_native_wint(::ftl_cwchar_runtime::putwchar(character));
+}
+
+inline wint_t ungetwc(wint_t character, FILE *stream) {
+  if (character == cwchar_detail::wide_eof) {
+    return cwchar_detail::wide_eof;
+  }
+
+  return cwchar_detail::from_native_wint(
+      ::ftl_cwchar_runtime::ungetwc(cwchar_detail::to_native_wint(character), stream));
+}
+
+} // namespace std or ftl
+
+#undef FTL_CWCHAR_NO_BUILTIN
+
+#endif // FTL_CWCHAR_HEADER

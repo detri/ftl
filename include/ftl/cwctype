@@ -1,0 +1,280 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CWCTYPE_HEADER
+#define FTL_CWCTYPE_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <__c_wide_types.hpp>
+#else
+#include <ftl/__c_wide_types.hpp>
+#endif
+
+#ifdef FTL_REPLACE_STL
+namespace std {
+#else
+namespace ftl {
+#endif
+
+using wctrans_t = unsigned int;
+using wctype_t = unsigned int;
+
+namespace cwctype_detail {
+
+inline constexpr wctype_t alnum = 1;
+inline constexpr wctype_t alpha = 2;
+inline constexpr wctype_t blank = 3;
+inline constexpr wctype_t cntrl = 4;
+inline constexpr wctype_t digit = 5;
+inline constexpr wctype_t graph = 6;
+inline constexpr wctype_t lower = 7;
+inline constexpr wctype_t print = 8;
+inline constexpr wctype_t punct = 9;
+inline constexpr wctype_t space = 10;
+inline constexpr wctype_t upper = 11;
+inline constexpr wctype_t xdigit = 12;
+
+inline constexpr wctrans_t tolower = 1;
+inline constexpr wctrans_t toupper = 2;
+
+inline bool ascii_equal(const char *left, const char *right) {
+  while (*left != '\0' && *right != '\0') {
+    if (*left != *right) {
+      return false;
+    }
+
+    ++left;
+    ++right;
+  }
+
+  return *left == *right;
+}
+
+inline bool ascii_upper(wint_t value) {
+  return value >= static_cast<wint_t>('A') && value <= static_cast<wint_t>('Z');
+}
+
+inline bool ascii_lower(wint_t value) {
+  return value >= static_cast<wint_t>('a') && value <= static_cast<wint_t>('z');
+}
+
+inline bool ascii_alpha(wint_t value) {
+  return ascii_upper(value) || ascii_lower(value);
+}
+
+inline bool ascii_digit(wint_t value) {
+  return value >= static_cast<wint_t>('0') && value <= static_cast<wint_t>('9');
+}
+
+inline bool ascii_xdigit(wint_t value) {
+  return ascii_digit(value) ||
+         (value >= static_cast<wint_t>('A') &&
+          value <= static_cast<wint_t>('F')) ||
+         (value >= static_cast<wint_t>('a') &&
+          value <= static_cast<wint_t>('f'));
+}
+
+inline bool ascii_space(wint_t value) {
+  return value == static_cast<wint_t>(' ') ||
+         value == static_cast<wint_t>('\t') ||
+         value == static_cast<wint_t>('\n') ||
+         value == static_cast<wint_t>('\v') ||
+         value == static_cast<wint_t>('\f') ||
+         value == static_cast<wint_t>('\r');
+}
+
+inline bool ascii_blank(wint_t value) {
+  return value == static_cast<wint_t>(' ') ||
+         value == static_cast<wint_t>('\t');
+}
+
+inline bool ascii_cntrl(wint_t value) {
+  return value <= 0x1fu || value == 0x7fu;
+}
+
+inline bool ascii_print(wint_t value) {
+  return value >= 0x20u && value <= 0x7eu;
+}
+
+inline bool ascii_graph(wint_t value) {
+  return value >= 0x21u && value <= 0x7eu;
+}
+
+inline bool ascii_alnum(wint_t value) {
+  return ascii_alpha(value) || ascii_digit(value);
+}
+
+inline bool ascii_punct(wint_t value) {
+  return ascii_graph(value) && !ascii_alnum(value);
+}
+
+} // namespace cwctype_detail
+
+inline int iswalnum(wint_t wc) { return cwctype_detail::ascii_alnum(wc); }
+
+inline int iswalpha(wint_t wc) { return cwctype_detail::ascii_alpha(wc); }
+
+inline int iswblank(wint_t wc) { return cwctype_detail::ascii_blank(wc); }
+
+inline int iswcntrl(wint_t wc) { return cwctype_detail::ascii_cntrl(wc); }
+
+inline int iswdigit(wint_t wc) { return cwctype_detail::ascii_digit(wc); }
+
+inline int iswgraph(wint_t wc) { return cwctype_detail::ascii_graph(wc); }
+
+inline int iswlower(wint_t wc) { return cwctype_detail::ascii_lower(wc); }
+
+inline int iswprint(wint_t wc) { return cwctype_detail::ascii_print(wc); }
+
+inline int iswpunct(wint_t wc) { return cwctype_detail::ascii_punct(wc); }
+
+inline int iswspace(wint_t wc) { return cwctype_detail::ascii_space(wc); }
+
+inline int iswupper(wint_t wc) { return cwctype_detail::ascii_upper(wc); }
+
+inline int iswxdigit(wint_t wc) { return cwctype_detail::ascii_xdigit(wc); }
+
+inline int iswctype(wint_t wc, wctype_t desc) {
+  switch (desc) {
+  case cwctype_detail::alnum:
+    return iswalnum(wc);
+
+  case cwctype_detail::alpha:
+    return iswalpha(wc);
+
+  case cwctype_detail::blank:
+    return iswblank(wc);
+
+  case cwctype_detail::cntrl:
+    return iswcntrl(wc);
+
+  case cwctype_detail::digit:
+    return iswdigit(wc);
+
+  case cwctype_detail::graph:
+    return iswgraph(wc);
+
+  case cwctype_detail::lower:
+    return iswlower(wc);
+
+  case cwctype_detail::print:
+    return iswprint(wc);
+
+  case cwctype_detail::punct:
+    return iswpunct(wc);
+
+  case cwctype_detail::space:
+    return iswspace(wc);
+
+  case cwctype_detail::upper:
+    return iswupper(wc);
+
+  case cwctype_detail::xdigit:
+    return iswxdigit(wc);
+
+  default:
+    return 0;
+  }
+}
+
+inline wctype_t wctype(const char *property) {
+  using namespace cwctype_detail;
+
+  if (ascii_equal(property, "alnum")) {
+    return alnum;
+  }
+
+  if (ascii_equal(property, "alpha")) {
+    return alpha;
+  }
+
+  if (ascii_equal(property, "blank")) {
+    return blank;
+  }
+
+  if (ascii_equal(property, "cntrl")) {
+    return cntrl;
+  }
+
+  if (ascii_equal(property, "digit")) {
+    return digit;
+  }
+
+  if (ascii_equal(property, "graph")) {
+    return graph;
+  }
+
+  if (ascii_equal(property, "lower")) {
+    return lower;
+  }
+
+  if (ascii_equal(property, "print")) {
+    return print;
+  }
+
+  if (ascii_equal(property, "punct")) {
+    return punct;
+  }
+
+  if (ascii_equal(property, "space")) {
+    return space;
+  }
+
+  if (ascii_equal(property, "upper")) {
+    return upper;
+  }
+
+  if (ascii_equal(property, "xdigit")) {
+    return xdigit;
+  }
+
+  return 0;
+}
+
+inline wint_t towlower(wint_t wc) {
+  if (cwctype_detail::ascii_upper(wc)) {
+    return wc - static_cast<wint_t>('A') + static_cast<wint_t>('a');
+  }
+
+  return wc;
+}
+
+inline wint_t towupper(wint_t wc) {
+  if (cwctype_detail::ascii_lower(wc)) {
+    return wc - static_cast<wint_t>('a') + static_cast<wint_t>('A');
+  }
+
+  return wc;
+}
+
+inline wint_t towctrans(wint_t wc, wctrans_t desc) {
+  switch (desc) {
+  case cwctype_detail::tolower:
+    return towlower(wc);
+
+  case cwctype_detail::toupper:
+    return towupper(wc);
+
+  default:
+    return wc;
+  }
+}
+
+inline wctrans_t wctrans(const char *property) {
+  if (cwctype_detail::ascii_equal(property, "tolower")) {
+    return cwctype_detail::tolower;
+  }
+
+  if (cwctype_detail::ascii_equal(property, "toupper")) {
+    return cwctype_detail::toupper;
+  }
+
+  return 0;
+}
+
+} // namespace std or ftl
+
+#ifndef WEOF
+#define WEOF (~0u)
+#endif
+
+#endif // FTL_CWCTYPE_HEADER
