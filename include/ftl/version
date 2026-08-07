@@ -103,5 +103,12 @@
 #define __cpp_lib_ranges_join_with 202202L
 #define __cpp_lib_ranges_to_container 202202L
 #define __cpp_lib_execution 201902L
+#define __cpp_lib_ranges_starts_ends_with 202106L
+#define __cpp_lib_ranges_contains 202207L
+#define __cpp_lib_ranges_find_last 202207L
+#if !defined(__cpp_lib_shift) || __cpp_lib_shift < 202202L
+#undef __cpp_lib_shift
+#define __cpp_lib_shift 202202L
+#endif
 
 #endif

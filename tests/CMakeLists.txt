@@ -224,6 +224,26 @@ foreach(header IN ITEMS
         istream_view
         execution
         algorithm_ranges_result
+        algorithm_all_any_none
+        algorithm_count
+        algorithm_for_each
+        algorithm_find
+        algorithm_range_compare
+        algorithm_search
+        algorithm_copy_move
+        algorithm_transform_generate
+        algorithm_fill
+        algorithm_replace
+        algorithm_remove_unique
+        algorithm_reverse_rotate
+        algorithm_swap_shift
+        algorithm_partition
+        algorithm_sort
+        algorithm_binary_search
+        algorithm_merge
+        algorithm_set
+        algorithm_heap
+        algorithm_partial_sort
 )
     add_ftl_test(${header})
 endforeach()
