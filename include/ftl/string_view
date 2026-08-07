@@ -37,146 +37,138 @@ inline void string_view_at_failure() {
 
 [[noreturn]] inline void string_view_substr_failure() {
 #if FTL_HAS_EXCEPTIONS
-    throw out_of_range("string_view::substr");
+  throw out_of_range("string_view::substr");
 #else
-    FTL_STRING_VIEW_TRAP();
+  FTL_STRING_VIEW_TRAP();
 #endif
 }
-}
+} // namespace detail
 
-template<class Character, class Traits = char_traits<Character>>
+template <class Character, class Traits = char_traits<Character>>
 class basic_string_view {
 public:
-    using traits_type            = Traits;
-    using value_type             = Character;
-    using pointer                = Character*;
-    using const_pointer          = const Character*;
-    using reference              = Character&;
-    using const_reference        = const Character&;
-    using const_iterator         = const Character*;
-    using iterator               = const_iterator;
-    using size_type              = size_t;
-    using difference_type        = ptrdiff_t;
-    static constexpr size_type npos = size_type(-1);
+  using traits_type = Traits;
+  using value_type = Character;
+  using pointer = Character *;
+  using const_pointer = const Character *;
+  using reference = Character &;
+  using const_reference = const Character &;
+  using const_iterator = const Character *;
+  using iterator = const_iterator;
+  using size_type = size_t;
+  using difference_type = ptrdiff_t;
+  static constexpr size_type npos = size_type(-1);
 
-    constexpr basic_string_view() noexcept = default;
-    constexpr basic_string_view(
-        const Character* input, size_type length) noexcept
-        : first{input}, count{length} {}
-    constexpr basic_string_view(const Character* input)
-        : first{input}, count{Traits::length(input)} {}
+  constexpr basic_string_view() noexcept = default;
+  constexpr basic_string_view(const Character *input, size_type length) noexcept
+      : first{input}, count{length} {}
+  constexpr basic_string_view(const Character *input)
+      : first{input}, count{Traits::length(input)} {}
 
-    constexpr const_iterator begin() const noexcept { return first; }
-    constexpr const_iterator end() const noexcept { return first + count; }
-    constexpr const_iterator cbegin() const noexcept { return begin(); }
-    constexpr const_iterator cend() const noexcept { return end(); }
-    constexpr const_reference operator[](size_type index) const noexcept {
-        return first[index];
-    }
-    constexpr const_reference at(size_type index) const {
-        if (index >= count)
-            detail::string_view_at_failure();
-        return first[index];
-    }
-    constexpr const_reference front() const noexcept { return first[0]; }
-    constexpr const_reference back() const noexcept {
-        return first[count - 1];
-    }
-    constexpr const_pointer data() const noexcept { return first; }
-    constexpr size_type size() const noexcept { return count; }
-    constexpr size_type length() const noexcept { return count; }
-    constexpr size_type max_size() const noexcept { return npos; }
-    constexpr bool empty() const noexcept { return count == 0; }
+  constexpr const_iterator begin() const noexcept { return first; }
+  constexpr const_iterator end() const noexcept { return first + count; }
+  constexpr const_iterator cbegin() const noexcept { return begin(); }
+  constexpr const_iterator cend() const noexcept { return end(); }
+  constexpr const_reference operator[](size_type index) const noexcept {
+    return first[index];
+  }
+  constexpr const_reference at(size_type index) const {
+    if (index >= count)
+      detail::string_view_at_failure();
+    return first[index];
+  }
+  constexpr const_reference front() const noexcept { return first[0]; }
+  constexpr const_reference back() const noexcept { return first[count - 1]; }
+  constexpr const_pointer data() const noexcept { return first; }
+  constexpr size_type size() const noexcept { return count; }
+  constexpr size_type length() const noexcept { return count; }
+  constexpr size_type max_size() const noexcept { return npos; }
+  constexpr bool empty() const noexcept { return count == 0; }
 
-    constexpr void remove_prefix(size_type amount) {
-        first += amount;
-        count -= amount;
-    }
-    constexpr void remove_suffix(size_type amount) { count -= amount; }
-    constexpr void swap(basic_string_view& other) noexcept {
-        const auto old_first = first;
-        const auto old_count = count;
-        first = other.first;
-        count = other.count;
-        other.first = old_first;
-        other.count = old_count;
-    }
-    constexpr basic_string_view substr(
-        size_type position = 0, size_type length = npos) const {
-        if (position > count)
-            detail::string_view_substr_failure();
-        const size_type remaining = count - position;
-        return {first + position,
-                length < remaining ? length : remaining};
-    }
-    constexpr int compare(basic_string_view other) const noexcept {
-        const size_type length = count < other.count ? count : other.count;
-        if (const int result = Traits::compare(first, other.first, length))
-            return result;
-        return count < other.count ? -1 : count > other.count ? 1 : 0;
-    }
-    constexpr bool starts_with(basic_string_view value) const noexcept {
-        return count >= value.count &&
-               Traits::compare(first, value.first, value.count) == 0;
-    }
-    constexpr bool starts_with(Character value) const noexcept {
-        return count && Traits::eq(first[0], value);
-    }
-    constexpr bool ends_with(basic_string_view value) const noexcept {
-        return count >= value.count &&
-               Traits::compare(first + count - value.count,
-                               value.first, value.count) == 0;
-    }
-    constexpr bool ends_with(Character value) const noexcept {
-        return count && Traits::eq(first[count - 1], value);
-    }
-    constexpr bool contains(basic_string_view value) const noexcept {
-        return find(value) != npos;
-    }
-    constexpr bool contains(Character value) const noexcept {
-        return find(value) != npos;
-    }
-    constexpr size_type find(
-        basic_string_view value, size_type position = 0) const noexcept {
-        if (value.empty())
-            return position <= count ? position : npos;
-        for (; position + value.count <= count; ++position)
-            if (Traits::compare(first + position,
-                                value.first, value.count) == 0)
-                return position;
-        return npos;
-    }
-    constexpr size_type find(
-        Character value, size_type position = 0) const noexcept {
-        const auto* result =
-            position < count
-                ? Traits::find(first + position, count - position, value)
-                : nullptr;
-        return result ? size_type(result - first) : npos;
-    }
+  constexpr void remove_prefix(size_type amount) {
+    first += amount;
+    count -= amount;
+  }
+  constexpr void remove_suffix(size_type amount) { count -= amount; }
+  constexpr void swap(basic_string_view &other) noexcept {
+    const auto old_first = first;
+    const auto old_count = count;
+    first = other.first;
+    count = other.count;
+    other.first = old_first;
+    other.count = old_count;
+  }
+  constexpr basic_string_view substr(size_type position = 0,
+                                     size_type length = npos) const {
+    if (position > count)
+      detail::string_view_substr_failure();
+    const size_type remaining = count - position;
+    return {first + position, length < remaining ? length : remaining};
+  }
+  constexpr int compare(basic_string_view other) const noexcept {
+    const size_type length = count < other.count ? count : other.count;
+    if (const int result = Traits::compare(first, other.first, length))
+      return result;
+    return count < other.count ? -1 : count > other.count ? 1 : 0;
+  }
+  constexpr bool starts_with(basic_string_view value) const noexcept {
+    return count >= value.count &&
+           Traits::compare(first, value.first, value.count) == 0;
+  }
+  constexpr bool starts_with(Character value) const noexcept {
+    return count && Traits::eq(first[0], value);
+  }
+  constexpr bool ends_with(basic_string_view value) const noexcept {
+    return count >= value.count &&
+           Traits::compare(first + count - value.count, value.first,
+                           value.count) == 0;
+  }
+  constexpr bool ends_with(Character value) const noexcept {
+    return count && Traits::eq(first[count - 1], value);
+  }
+  constexpr bool contains(basic_string_view value) const noexcept {
+    return find(value) != npos;
+  }
+  constexpr bool contains(Character value) const noexcept {
+    return find(value) != npos;
+  }
+  constexpr size_type find(basic_string_view value,
+                           size_type position = 0) const noexcept {
+    if (value.empty())
+      return position <= count ? position : npos;
+    for (; position + value.count <= count; ++position)
+      if (Traits::compare(first + position, value.first, value.count) == 0)
+        return position;
+    return npos;
+  }
+  constexpr size_type find(Character value,
+                           size_type position = 0) const noexcept {
+    const auto *result =
+        position < count
+            ? Traits::find(first + position, count - position, value)
+            : nullptr;
+    return result ? size_type(result - first) : npos;
+  }
 
 private:
-    const Character* first{};
-    size_type count{};
+  const Character *first{};
+  size_type count{};
 };
 
-template<class Character, class Traits>
-constexpr bool operator==(
-    basic_string_view<Character, Traits> left,
-    basic_string_view<Character, Traits> right) noexcept {
-    return left.size() == right.size() && left.compare(right) == 0;
+template <class Character, class Traits>
+constexpr bool operator==(basic_string_view<Character, Traits> left,
+                          basic_string_view<Character, Traits> right) noexcept {
+  return left.size() == right.size() && left.compare(right) == 0;
 }
-template<class Character, class Traits>
-constexpr bool operator==(
-    basic_string_view<Character, Traits> left,
-    const Character* right) noexcept {
-    return left == basic_string_view<Character, Traits>{right};
+template <class Character, class Traits>
+constexpr bool operator==(basic_string_view<Character, Traits> left,
+                          const Character *right) noexcept {
+  return left == basic_string_view<Character, Traits>{right};
 }
-template<class Character, class Traits>
-constexpr bool operator==(
-    const Character* left,
-    basic_string_view<Character, Traits> right) noexcept {
-    return basic_string_view<Character, Traits>{left} == right;
+template <class Character, class Traits>
+constexpr bool operator==(const Character *left,
+                          basic_string_view<Character, Traits> right) noexcept {
+  return basic_string_view<Character, Traits>{left} == right;
 }
 
 using string_view = basic_string_view<char>;
@@ -184,6 +176,32 @@ using wstring_view = basic_string_view<wchar_t>;
 using u8string_view = basic_string_view<char8_t>;
 using u16string_view = basic_string_view<char16_t>;
 using u32string_view = basic_string_view<char32_t>;
+
+} // namespace std or ftl
+
+#ifdef FTL_REPLACE_STL
+#include <concepts>
+#include <iterator>
+#include <utility>
+#include <detail/range_access>
+#else
+#include <ftl/concepts>
+#include <ftl/iterator>
+#include <ftl/utility>
+#include <ftl/detail/range_access>
+#endif
+
+#ifdef FTL_REPLACE_STL
+namespace std {
+#else
+namespace ftl {
+#endif
+
+template <class charT, class traits>
+constexpr bool ranges::enable_view<basic_string_view<charT, traits>> = true;
+template <class charT, class traits>
+constexpr bool ranges::enable_borrowed_range<basic_string_view<charT, traits>> =
+    true;
 
 } // namespace std or ftl
 
