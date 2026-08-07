@@ -145,7 +145,7 @@ if(MSVC)
 else()
     target_compile_options(
             ftl_check_cstring_freestanding_link
-            PRIVATE -O3
+            PRIVATE -O3 -fno-stack-protector
     )
 endif()
 add_ftl_disabled_features_check(disabled_features checks/disabled_features.cpp)
