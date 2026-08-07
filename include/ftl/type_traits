@@ -2047,80 +2047,149 @@ constexpr bool is_corresponding_member(Member1 Class1::* left,
 #endif
 }
 
-#ifndef __cpp_lib_integral_constant_callable
+#if !defined(__cpp_lib_integral_constant_callable) || \
+    __cpp_lib_integral_constant_callable < 201304L
+#undef __cpp_lib_integral_constant_callable
 #define __cpp_lib_integral_constant_callable 201304L
 #endif
-#ifndef __cpp_lib_is_null_pointer
+
+#if !defined(__cpp_lib_is_null_pointer) || \
+    __cpp_lib_is_null_pointer < 201309L
+#undef __cpp_lib_is_null_pointer
 #define __cpp_lib_is_null_pointer 201309L
 #endif
-#ifndef __cpp_lib_is_final
+
+#if !defined(__cpp_lib_is_final) || __cpp_lib_is_final < 201402L
+#undef __cpp_lib_is_final
 #define __cpp_lib_is_final 201402L
 #endif
-#ifndef __cpp_lib_transformation_trait_aliases
+
+#if !defined(__cpp_lib_transformation_trait_aliases) || \
+    __cpp_lib_transformation_trait_aliases < 201304L
+#undef __cpp_lib_transformation_trait_aliases
 #define __cpp_lib_transformation_trait_aliases 201304L
 #endif
-#ifndef __cpp_lib_void_t
+
+#if !defined(__cpp_lib_void_t) || __cpp_lib_void_t < 201411L
+#undef __cpp_lib_void_t
 #define __cpp_lib_void_t 201411L
 #endif
-#ifndef __cpp_lib_bool_constant
+
+#if !defined(__cpp_lib_bool_constant) || \
+    __cpp_lib_bool_constant < 201505L
+#undef __cpp_lib_bool_constant
 #define __cpp_lib_bool_constant 201505L
 #endif
-#ifndef __cpp_lib_logical_traits
+
+#if !defined(__cpp_lib_logical_traits) || \
+    __cpp_lib_logical_traits < 201510L
+#undef __cpp_lib_logical_traits
 #define __cpp_lib_logical_traits 201510L
 #endif
-#ifndef __cpp_lib_type_trait_variable_templates
+
+#if !defined(__cpp_lib_type_trait_variable_templates) || \
+    __cpp_lib_type_trait_variable_templates < 201510L
+#undef __cpp_lib_type_trait_variable_templates
 #define __cpp_lib_type_trait_variable_templates 201510L
 #endif
-#ifndef __cpp_lib_has_unique_object_representations
+
+#if !defined(__cpp_lib_has_unique_object_representations) || \
+    __cpp_lib_has_unique_object_representations < 201606L
+#undef __cpp_lib_has_unique_object_representations
 #define __cpp_lib_has_unique_object_representations 201606L
 #endif
-#ifndef __cpp_lib_is_swappable
+
+#if !defined(__cpp_lib_is_swappable) || \
+    __cpp_lib_is_swappable < 201603L
+#undef __cpp_lib_is_swappable
 #define __cpp_lib_is_swappable 201603L
 #endif
-#ifndef __cpp_lib_is_aggregate
+
+#if !defined(__cpp_lib_is_aggregate) || \
+    __cpp_lib_is_aggregate < 201703L
+#undef __cpp_lib_is_aggregate
 #define __cpp_lib_is_aggregate 201703L
 #endif
-#ifndef __cpp_lib_is_invocable
+
+#if !defined(__cpp_lib_is_invocable) || \
+    __cpp_lib_is_invocable < 201703L
+#undef __cpp_lib_is_invocable
 #define __cpp_lib_is_invocable 201703L
 #endif
-#ifndef __cpp_lib_is_nothrow_convertible
+
+#if !defined(__cpp_lib_is_nothrow_convertible) || \
+    __cpp_lib_is_nothrow_convertible < 201806L
+#undef __cpp_lib_is_nothrow_convertible
 #define __cpp_lib_is_nothrow_convertible 201806L
 #endif
-#ifndef __cpp_lib_type_identity
+
+#if !defined(__cpp_lib_type_identity) || \
+    __cpp_lib_type_identity < 201806L
+#undef __cpp_lib_type_identity
 #define __cpp_lib_type_identity 201806L
 #endif
-#ifndef __cpp_lib_common_reference
+
+#if !defined(__cpp_lib_common_reference) || \
+    __cpp_lib_common_reference < 202302L
+#undef __cpp_lib_common_reference
 #define __cpp_lib_common_reference 202302L
 #endif
-#ifndef __cpp_lib_remove_cvref
+
+#if !defined(__cpp_lib_remove_cvref) || \
+    __cpp_lib_remove_cvref < 201711L
+#undef __cpp_lib_remove_cvref
 #define __cpp_lib_remove_cvref 201711L
 #endif
-#ifndef __cpp_lib_is_constant_evaluated
+
+#if !defined(__cpp_lib_is_constant_evaluated) || \
+    __cpp_lib_is_constant_evaluated < 201811L
+#undef __cpp_lib_is_constant_evaluated
 #define __cpp_lib_is_constant_evaluated 201811L
 #endif
-#ifndef __cpp_lib_unwrap_ref
+
+#if !defined(__cpp_lib_unwrap_ref) || \
+    __cpp_lib_unwrap_ref < 201811L
+#undef __cpp_lib_unwrap_ref
 #define __cpp_lib_unwrap_ref 201811L
 #endif
-#ifndef __cpp_lib_bounded_array_traits
+
+#if !defined(__cpp_lib_bounded_array_traits) || \
+    __cpp_lib_bounded_array_traits < 201902L
+#undef __cpp_lib_bounded_array_traits
 #define __cpp_lib_bounded_array_traits 201902L
 #endif
-#ifndef __cpp_lib_is_layout_compatible
+
+#if !defined(__cpp_lib_is_layout_compatible) || \
+    __cpp_lib_is_layout_compatible < 201907L
+#undef __cpp_lib_is_layout_compatible
 #define __cpp_lib_is_layout_compatible 201907L
 #endif
-#ifndef __cpp_lib_is_pointer_interconvertible
+
+#if !defined(__cpp_lib_is_pointer_interconvertible) || \
+    __cpp_lib_is_pointer_interconvertible < 201907L
+#undef __cpp_lib_is_pointer_interconvertible
 #define __cpp_lib_is_pointer_interconvertible 201907L
 #endif
-#ifndef __cpp_lib_is_scoped_enum
+
+#if !defined(__cpp_lib_is_scoped_enum) || \
+    __cpp_lib_is_scoped_enum < 202011L
+#undef __cpp_lib_is_scoped_enum
 #define __cpp_lib_is_scoped_enum 202011L
 #endif
+
 #if FTL_HAS_REFERENCE_CONSTRUCTS_FROM_TEMPORARY && \
     FTL_HAS_REFERENCE_CONVERTS_FROM_TEMPORARY
-#ifndef __cpp_lib_reference_from_temporary
+#if !defined(__cpp_lib_reference_from_temporary) || \
+    __cpp_lib_reference_from_temporary < 202202L
+#undef __cpp_lib_reference_from_temporary
 #define __cpp_lib_reference_from_temporary 202202L
 #endif
 #endif
+
 #if FTL_HAS_IS_IMPLICIT_LIFETIME
-#ifndef __cpp_lib_is_implicit_lifetime
+#if !defined(__cpp_lib_is_implicit_lifetime) || \
+    __cpp_lib_is_implicit_lifetime < 202302L
+#undef __cpp_lib_is_implicit_lifetime
 #define __cpp_lib_is_implicit_lifetime 202302L
 #endif
 #endif

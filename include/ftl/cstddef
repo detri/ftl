@@ -3,10 +3,6 @@
 #ifndef FTL_CSTDDEF_HEADER
 #define FTL_CSTDDEF_HEADER
 
-#ifndef __cpp_lib_byte
-#define __cpp_lib_byte 201603L
-#endif
-
 #ifndef NULL
 #define NULL nullptr
 #endif
@@ -142,5 +138,10 @@ FTL_CSTDDEF_END_NAMESPACE
 
 #undef FTL_CSTDDEF_BEGIN_NAMESPACE
 #undef FTL_CSTDDEF_END_NAMESPACE
+
+#if !defined(__cpp_lib_byte) || __cpp_lib_byte < 201603L
+#undef __cpp_lib_byte
+#define __cpp_lib_byte 201603L
+#endif
 
 #endif // FTL_CSTDDEF_HEADER

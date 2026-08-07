@@ -3,8 +3,6 @@
 #ifndef FTL_ANY_HEADER
 #define FTL_ANY_HEADER
 
-#define __cpp_lib_any 201606L
-
 #ifdef FTL_REPLACE_STL
 #include <initializer_list>
 #include <memory>
@@ -219,5 +217,10 @@ T any_cast(any&& operand) {
 }
 
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_any) || __cpp_lib_any < 201606L
+#undef __cpp_lib_any
+#define __cpp_lib_any 201606L
+#endif
 
 #endif // FTL_ANY_HEADER

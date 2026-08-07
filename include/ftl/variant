@@ -3,8 +3,6 @@
 #ifndef FTL_VARIANT_HEADER
 #define FTL_VARIANT_HEADER
 
-#define __cpp_lib_variant 202106L
-
 #ifdef FTL_REPLACE_STL
 #include <compare>
 #include <exception>
@@ -697,5 +695,10 @@ template<> struct hash<monostate> {
 };
 
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_variant) || __cpp_lib_variant < 202106L
+#undef __cpp_lib_variant
+#define __cpp_lib_variant 202106L
+#endif
 
 #endif // FTL_VARIANT_HEADER

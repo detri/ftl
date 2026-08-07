@@ -37,24 +37,6 @@ template<class T, class... Args>
 constexpr T* construct_at(T* location, Args&&... args)
     noexcept(is_nothrow_constructible_v<T, Args...>);
 
-#ifndef __cpp_lib_raw_memory_algorithms
-#define __cpp_lib_raw_memory_algorithms 201606L
-#define __cpp_lib_make_unique 201304L
-#define __cpp_lib_shared_ptr_arrays 201707L
-#define __cpp_lib_smart_ptr_for_overwrite 202002L
-#define __cpp_lib_constexpr_memory 202202L
-#define __cpp_lib_allocate_at_least 202302L
-#define __cpp_lib_out_ptr 202106L
-#define __cpp_lib_assume_aligned 201811L
-#define __cpp_lib_to_address 201711L
-#define __cpp_lib_constexpr_dynamic_alloc 201907L
-#define __cpp_lib_uses_allocator_construction 201811L
-#define __cpp_lib_atomic_shared_ptr 201711L
-#define __cpp_lib_enable_shared_from_this 201603L
-#define __cpp_lib_shared_ptr_weak_type 201606L
-#define __cpp_lib_start_lifetime_as 202207L
-#endif
-
 inline void* align(size_t alignment, size_t size, void*& pointer,
                    size_t& space) {
     auto address = reinterpret_cast<size_t>(pointer);
@@ -2239,5 +2221,92 @@ auto inout_ptr(Smart& smart, Args&&... args) {
 FTL_END_NAMESPACE
 
 #undef FTL_MEMORY_NAMESPACE
+
+#if !defined(__cpp_lib_raw_memory_algorithms) || \
+    __cpp_lib_raw_memory_algorithms < 201606L
+#undef __cpp_lib_raw_memory_algorithms
+#define __cpp_lib_raw_memory_algorithms 201606L
+#endif
+
+#if !defined(__cpp_lib_make_unique) || __cpp_lib_make_unique < 201304L
+#undef __cpp_lib_make_unique
+#define __cpp_lib_make_unique 201304L
+#endif
+
+#if !defined(__cpp_lib_shared_ptr_arrays) || \
+    __cpp_lib_shared_ptr_arrays < 201707L
+#undef __cpp_lib_shared_ptr_arrays
+#define __cpp_lib_shared_ptr_arrays 201707L
+#endif
+
+#if !defined(__cpp_lib_smart_ptr_for_overwrite) || \
+    __cpp_lib_smart_ptr_for_overwrite < 202002L
+#undef __cpp_lib_smart_ptr_for_overwrite
+#define __cpp_lib_smart_ptr_for_overwrite 202002L
+#endif
+
+#if !defined(__cpp_lib_constexpr_memory) || \
+    __cpp_lib_constexpr_memory < 202202L
+#undef __cpp_lib_constexpr_memory
+#define __cpp_lib_constexpr_memory 202202L
+#endif
+
+#if !defined(__cpp_lib_allocate_at_least) || \
+    __cpp_lib_allocate_at_least < 202302L
+#undef __cpp_lib_allocate_at_least
+#define __cpp_lib_allocate_at_least 202302L
+#endif
+
+#if !defined(__cpp_lib_out_ptr) || __cpp_lib_out_ptr < 202106L
+#undef __cpp_lib_out_ptr
+#define __cpp_lib_out_ptr 202106L
+#endif
+
+#if !defined(__cpp_lib_assume_aligned) || \
+    __cpp_lib_assume_aligned < 201811L
+#undef __cpp_lib_assume_aligned
+#define __cpp_lib_assume_aligned 201811L
+#endif
+
+#if !defined(__cpp_lib_to_address) || __cpp_lib_to_address < 201711L
+#undef __cpp_lib_to_address
+#define __cpp_lib_to_address 201711L
+#endif
+
+#if !defined(__cpp_lib_constexpr_dynamic_alloc) || \
+    __cpp_lib_constexpr_dynamic_alloc < 201907L
+#undef __cpp_lib_constexpr_dynamic_alloc
+#define __cpp_lib_constexpr_dynamic_alloc 201907L
+#endif
+
+#if !defined(__cpp_lib_uses_allocator_construction) || \
+    __cpp_lib_uses_allocator_construction < 201811L
+#undef __cpp_lib_uses_allocator_construction
+#define __cpp_lib_uses_allocator_construction 201811L
+#endif
+
+#if !defined(__cpp_lib_atomic_shared_ptr) || \
+    __cpp_lib_atomic_shared_ptr < 201711L
+#undef __cpp_lib_atomic_shared_ptr
+#define __cpp_lib_atomic_shared_ptr 201711L
+#endif
+
+#if !defined(__cpp_lib_enable_shared_from_this) || \
+    __cpp_lib_enable_shared_from_this < 201603L
+#undef __cpp_lib_enable_shared_from_this
+#define __cpp_lib_enable_shared_from_this 201603L
+#endif
+
+#if !defined(__cpp_lib_shared_ptr_weak_type) || \
+    __cpp_lib_shared_ptr_weak_type < 201606L
+#undef __cpp_lib_shared_ptr_weak_type
+#define __cpp_lib_shared_ptr_weak_type 201606L
+#endif
+
+#if !defined(__cpp_lib_start_lifetime_as) || \
+    __cpp_lib_start_lifetime_as < 202207L
+#undef __cpp_lib_start_lifetime_as
+#define __cpp_lib_start_lifetime_as 202207L
+#endif
 
 #endif // FTL_MEMORY_HEADER

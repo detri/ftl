@@ -2569,23 +2569,32 @@ template <class E> constexpr const E *data(initializer_list<E> x) noexcept {
   return x.begin();
 }
 
-#ifndef __cpp_lib_nonmember_container_access
+#if !defined(__cpp_lib_nonmember_container_access) || \
+    __cpp_lib_nonmember_container_access < 201411L
+#undef __cpp_lib_nonmember_container_access
 #define __cpp_lib_nonmember_container_access 201411L
 #endif
 
-#ifndef __cpp_lib_ssize
+#if !defined(__cpp_lib_ssize) || __cpp_lib_ssize < 201902L
+#undef __cpp_lib_ssize
 #define __cpp_lib_ssize 201902L
 #endif
 
-#ifndef __cpp_lib_constexpr_iterator
+#if !defined(__cpp_lib_constexpr_iterator) || \
+    __cpp_lib_constexpr_iterator < 201811L
+#undef __cpp_lib_constexpr_iterator
 #define __cpp_lib_constexpr_iterator 201811L
 #endif
 
-#ifndef __cpp_lib_const_iterator
+#if !defined(__cpp_lib_const_iterator) || \
+    __cpp_lib_const_iterator < 202207L
+#undef __cpp_lib_const_iterator
 #define __cpp_lib_const_iterator 202207L
 #endif
 
-#ifndef __cpp_lib_move_iterator_concept
+#if !defined(__cpp_lib_move_iterator_concept) || \
+    __cpp_lib_move_iterator_concept < 202207L
+#undef __cpp_lib_move_iterator_concept
 #define __cpp_lib_move_iterator_concept 202207L
 #endif
 

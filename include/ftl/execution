@@ -3,8 +3,6 @@
 #ifndef FTL_EXECUTION_HEADER
 #define FTL_EXECUTION_HEADER
 
-#define __cpp_lib_execution 201902L
-
 #ifdef FTL_REPLACE_STL
 #include <type_traits>
 #else
@@ -15,6 +13,11 @@
 #include <__execution/policy_access.hpp>
 #else
 #include <ftl/__execution/policy_access.hpp>
+#endif
+
+#if !defined(__cpp_lib_execution) || __cpp_lib_execution < 201902L
+#undef __cpp_lib_execution
+#define __cpp_lib_execution 201902L
 #endif
 
 #endif

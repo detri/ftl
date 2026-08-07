@@ -3,9 +3,6 @@
 #ifndef FTL_ARRAY_HEADER
 #define FTL_ARRAY_HEADER
 
-#define __cpp_lib_array_constexpr 201811L
-#define __cpp_lib_to_array 201907L
-
 #if defined(_MSC_VER) && !defined(__clang__)
 extern "C" void __cdecl __fastfail(unsigned int);
 #pragma intrinsic(__fastfail)
@@ -273,4 +270,17 @@ constexpr array<remove_cv_t<T>, N> to_array(T (&&value)[N]) {
 FTL_END_NAMESPACE
 
 #undef FTL_ARRAY_TRAP
+
+#if !defined(__cpp_lib_array_constexpr) || \
+    __cpp_lib_array_constexpr < 201811L
+#undef __cpp_lib_array_constexpr
+#define __cpp_lib_array_constexpr 201811L
+#endif
+
+#if !defined(__cpp_lib_to_array) || \
+    __cpp_lib_to_array < 201907L
+#undef __cpp_lib_to_array
+#define __cpp_lib_to_array 201907L
+#endif
+
 #endif // FTL_ARRAY_HEADER

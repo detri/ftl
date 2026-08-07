@@ -3,10 +3,6 @@
 #ifndef FTL_MEMORY_RESOURCE_HEADER
 #define FTL_MEMORY_RESOURCE_HEADER
 
-#ifndef __cpp_lib_memory_resource
-#define __cpp_lib_memory_resource 201603L
-#endif
-
 #ifdef FTL_REPLACE_STL
 #include <memory>
 #include <cstdint>
@@ -324,4 +320,11 @@ private:
 
 } // namespace pmr
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_memory_resource) || \
+    __cpp_lib_memory_resource < 201603L
+#undef __cpp_lib_memory_resource
+#define __cpp_lib_memory_resource 201603L
+#endif
+
 #endif

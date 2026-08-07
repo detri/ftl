@@ -3,8 +3,6 @@
 #ifndef FTL_COROUTINE_HEADER
 #define FTL_COROUTINE_HEADER
 
-#define __cpp_lib_coroutine 201902L
-
 #ifdef FTL_REPLACE_STL
 #include <compare>
 #include <cstddef>
@@ -330,5 +328,10 @@ struct suspend_always {
 };
 
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_coroutine) || __cpp_lib_coroutine < 201902L
+#undef __cpp_lib_coroutine
+#define __cpp_lib_coroutine 201902L
+#endif
 
 #endif // FTL_COROUTINE_HEADER

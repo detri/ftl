@@ -77,5 +77,10 @@ private:
 
 }
 
+#if !defined(__cpp_lib_source_location) || \
+    __cpp_lib_source_location < 201907L
+#undef __cpp_lib_source_location
 #define __cpp_lib_source_location 201907L
+#endif
+
 #endif

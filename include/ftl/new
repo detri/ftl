@@ -62,13 +62,6 @@ inline new_handler set_new_handler(new_handler handler) noexcept {
 inline constexpr size_t hardware_destructive_interference_size = 64;
 inline constexpr size_t hardware_constructive_interference_size = 64;
 
-#ifndef __cpp_lib_hardware_interference_size
-#define __cpp_lib_hardware_interference_size 201703L
-#endif
-#ifndef __cpp_lib_launder
-#define __cpp_lib_launder 201606L
-#endif
-
 class bad_alloc : public exception {
 public:
     [[nodiscard]] const char* what() const noexcept override {
@@ -150,5 +143,16 @@ inline void operator delete[](void*, void*) noexcept {}
 #undef FTL_NEW_BEGIN_NAMESPACE
 #undef FTL_NEW_END_NAMESPACE
 #undef FTL_NEW_NAMESPACE
+
+#if !defined(__cpp_lib_hardware_interference_size) || \
+    __cpp_lib_hardware_interference_size < 201703L
+#undef __cpp_lib_hardware_interference_size
+#define __cpp_lib_hardware_interference_size 201703L
+#endif
+
+#if !defined(__cpp_lib_launder) || __cpp_lib_launder < 201606L
+#undef __cpp_lib_launder
+#define __cpp_lib_launder 201606L
+#endif
 
 #endif // FTL_NEW_HEADER

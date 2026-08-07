@@ -3,16 +3,6 @@
 #ifndef FTL_FUNCTIONAL_HEADER
 #define FTL_FUNCTIONAL_HEADER
 
-#define __cpp_lib_invoke 201411L
-#define __cpp_lib_invoke_r 202106L
-#define __cpp_lib_not_fn 201603L
-#define __cpp_lib_bind_front 201907L
-#define __cpp_lib_bind_back 202202L
-#define __cpp_lib_boyer_moore_searcher 201603L
-#define __cpp_lib_constexpr_functional 201907L
-#define __cpp_lib_move_only_function 202110L
-#define __cpp_lib_transparent_operators 201510L
-
 #ifdef FTL_REPLACE_STL
 #include <compare>
 #include <exception>
@@ -775,5 +765,54 @@ struct hash<basic_string_view<Character, Traits>> {
 };
 
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_invoke) || __cpp_lib_invoke < 201411L
+#undef __cpp_lib_invoke
+#define __cpp_lib_invoke 201411L
+#endif
+
+#if !defined(__cpp_lib_invoke_r) || __cpp_lib_invoke_r < 202106L
+#undef __cpp_lib_invoke_r
+#define __cpp_lib_invoke_r 202106L
+#endif
+
+#if !defined(__cpp_lib_not_fn) || __cpp_lib_not_fn < 201603L
+#undef __cpp_lib_not_fn
+#define __cpp_lib_not_fn 201603L
+#endif
+
+#if !defined(__cpp_lib_bind_front) || __cpp_lib_bind_front < 201907L
+#undef __cpp_lib_bind_front
+#define __cpp_lib_bind_front 201907L
+#endif
+
+#if !defined(__cpp_lib_bind_back) || __cpp_lib_bind_back < 202202L
+#undef __cpp_lib_bind_back
+#define __cpp_lib_bind_back 202202L
+#endif
+
+#if !defined(__cpp_lib_boyer_moore_searcher) || \
+    __cpp_lib_boyer_moore_searcher < 201603L
+#undef __cpp_lib_boyer_moore_searcher
+#define __cpp_lib_boyer_moore_searcher 201603L
+#endif
+
+#if !defined(__cpp_lib_constexpr_functional) || \
+    __cpp_lib_constexpr_functional < 201907L
+#undef __cpp_lib_constexpr_functional
+#define __cpp_lib_constexpr_functional 201907L
+#endif
+
+#if !defined(__cpp_lib_move_only_function) || \
+    __cpp_lib_move_only_function < 202110L
+#undef __cpp_lib_move_only_function
+#define __cpp_lib_move_only_function 202110L
+#endif
+
+#if !defined(__cpp_lib_transparent_operators) || \
+    __cpp_lib_transparent_operators < 201510L
+#undef __cpp_lib_transparent_operators
+#define __cpp_lib_transparent_operators 201510L
+#endif
 
 #endif // FTL_FUNCTIONAL_HEADER

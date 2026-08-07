@@ -3,8 +3,6 @@
 #ifndef FTL_OPTIONAL_HEADER
 #define FTL_OPTIONAL_HEADER
 
-#define __cpp_lib_optional 202110L
-
 #ifdef FTL_REPLACE_STL
 #include <compare>
 #include <exception>
@@ -594,5 +592,10 @@ struct hash<optional<T>> {
 };
 
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_optional) || __cpp_lib_optional < 202110L
+#undef __cpp_lib_optional
+#define __cpp_lib_optional 202110L
+#endif
 
 #endif // FTL_OPTIONAL_HEADER
