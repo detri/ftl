@@ -476,5 +476,270 @@ bool ftl_test() {
     }
   }
 
+  // Single-byte/wide conversion in FTL's C locale.
+  {
+    if (tested::btowc('A') != static_cast<tested::wint_t>(L'A')) {
+      return false;
+    }
+
+    if (tested::btowc(0x80) != static_cast<tested::wint_t>(WEOF)) {
+      return false;
+    }
+
+    if (tested::wctob(static_cast<tested::wint_t>(L'A')) != 'A') {
+      return false;
+    }
+
+    if (tested::wctob(static_cast<tested::wint_t>(0x80)) != -1) {
+      return false;
+    }
+  }
+
+  // Initial conversion state.
+  {
+    tested::mbstate_t state{};
+
+    if (tested::mbsinit(&state) == 0) {
+      return false;
+    }
+
+    if (tested::mbsinit(nullptr) == 0) {
+      return false;
+    }
+  }
+
+  // mbrtowc.
+  {
+    tested::mbstate_t state{};
+    wchar_t result = L'\0';
+
+    if (tested::mbrtowc(&result, "A", 1, &state) != 1) {
+      return false;
+    }
+
+    if (result != L'A') {
+      return false;
+    }
+
+    if (tested::mbsinit(&state) == 0) {
+      return false;
+    }
+  }
+
+  // Null character conversion returns zero.
+  {
+    tested::mbstate_t state{};
+    wchar_t result = L'x';
+
+    if (tested::mbrtowc(&result, "", 1, &state) != 0) {
+      return false;
+    }
+
+    if (result != L'\0') {
+      return false;
+    }
+  }
+
+  // Zero bytes available means potentially incomplete.
+  {
+    tested::mbstate_t state{};
+
+    if (tested::mbrtowc(nullptr, "A", 0, &state) !=
+        static_cast<tested::size_t>(-2)) {
+      return false;
+    }
+  }
+
+  // Non-C-locale byte is an encoding error.
+  {
+    tested::mbstate_t state{};
+
+    const char invalid[] = {static_cast<char>(0x80), '\0'};
+
+    if (tested::mbrtowc(nullptr, invalid, 1, &state) !=
+        static_cast<tested::size_t>(-1)) {
+      return false;
+    }
+
+    if (tested::mbsinit(&state) == 0) {
+      return false;
+    }
+  }
+
+  // mbrlen.
+  {
+    tested::mbstate_t state{};
+
+    if (tested::mbrlen("A", 1, &state) != 1) {
+      return false;
+    }
+
+    if (tested::mbrlen("", 1, &state) != 0) {
+      return false;
+    }
+
+    if (tested::mbrlen("A", 0, &state) != static_cast<tested::size_t>(-2)) {
+      return false;
+    }
+  }
+
+  // wcrtomb.
+  {
+    tested::mbstate_t state{};
+    char output[2]{};
+
+    if (tested::wcrtomb(output, L'A', &state) != 1) {
+      return false;
+    }
+
+    if (output[0] != 'A') {
+      return false;
+    }
+
+    if (tested::mbsinit(&state) == 0) {
+      return false;
+    }
+  }
+
+  // wcrtomb rejects characters outside the C-locale
+  // execution character set.
+  {
+    tested::mbstate_t state{};
+    char output[2]{};
+
+    if (tested::wcrtomb(output, static_cast<wchar_t>(0x80), &state) !=
+        static_cast<tested::size_t>(-1)) {
+      return false;
+    }
+  }
+
+  // Null destination resets wcrtomb state and returns the
+  // length of the null conversion.
+  {
+    tested::mbstate_t state{};
+
+    state.state = 1;
+    state.value = 123;
+
+    if (tested::wcrtomb(nullptr, L'x', &state) != 1) {
+      return false;
+    }
+
+    if (tested::mbsinit(&state) == 0) {
+      return false;
+    }
+  }
+
+  // mbsrtowcs.
+  {
+    const char text[] = "ftl";
+    const char *source = text;
+    wchar_t output[4]{};
+    tested::mbstate_t state{};
+
+    if (tested::mbsrtowcs(output, &source, 4, &state) != 3) {
+      return false;
+    }
+
+    if (source != nullptr) {
+      return false;
+    }
+
+    if (tested::wcscmp(output, L"ftl") != 0) {
+      return false;
+    }
+  }
+
+  // mbsrtowcs stops when destination capacity is exhausted.
+  {
+    const char text[] = "abcd";
+    const char *source = text;
+    wchar_t output[2]{};
+    tested::mbstate_t state{};
+
+    if (tested::mbsrtowcs(output, &source, 2, &state) != 2) {
+      return false;
+    }
+
+    if (source != text + 2) {
+      return false;
+    }
+
+    if (output[0] != L'a' || output[1] != L'b') {
+      return false;
+    }
+  }
+
+  // mbsrtowcs sizing pass does not move source.
+  {
+    const char text[] = "ftl";
+    const char *source = text;
+    tested::mbstate_t state{};
+
+    if (tested::mbsrtowcs(nullptr, &source, 0, &state) != 3) {
+      return false;
+    }
+
+    if (source != text) {
+      return false;
+    }
+  }
+
+  // wcsrtombs.
+  {
+    const wchar_t text[] = L"ftl";
+    const wchar_t *source = text;
+    char output[4]{};
+    tested::mbstate_t state{};
+
+    if (tested::wcsrtombs(output, &source, 4, &state) != 3) {
+      return false;
+    }
+
+    if (source != nullptr) {
+      return false;
+    }
+
+    if (output[0] != 'f' || output[1] != 't' || output[2] != 'l' ||
+        output[3] != '\0') {
+      return false;
+    }
+  }
+
+  // wcsrtombs stops at byte capacity.
+  {
+    const wchar_t text[] = L"abcd";
+    const wchar_t *source = text;
+    char output[2]{};
+    tested::mbstate_t state{};
+
+    if (tested::wcsrtombs(output, &source, 2, &state) != 2) {
+      return false;
+    }
+
+    if (source != text + 2) {
+      return false;
+    }
+
+    if (output[0] != 'a' || output[1] != 'b') {
+      return false;
+    }
+  }
+
+  // wcsrtombs sizing pass does not move source.
+  {
+    const wchar_t text[] = L"ftl";
+    const wchar_t *source = text;
+    tested::mbstate_t state{};
+
+    if (tested::wcsrtombs(nullptr, &source, 0, &state) != 3) {
+      return false;
+    }
+
+    if (source != text) {
+      return false;
+    }
+  }
+
   return true;
 }

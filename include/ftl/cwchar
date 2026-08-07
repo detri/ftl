@@ -288,6 +288,241 @@ inline unsigned long long wcstoull(const wchar_t *nptr, wchar_t **endptr,
                                                                    base);
 }
 
+inline wint_t btowc(int c) {
+  if (c < 0 || c > 0x7f) {
+    return static_cast<wint_t>(~0u);
+  }
+
+  return static_cast<wint_t>(static_cast<unsigned char>(c));
+}
+
+inline int wctob(wint_t c) {
+  if (c > 0x7fu) {
+    return -1;
+  }
+
+  return static_cast<int>(c);
+}
+
+inline int mbsinit(const mbstate_t *ps) {
+  return ps == nullptr || (ps->state == 0 && ps->value == 0);
+}
+
+namespace cwchar_detail {
+
+inline void reset_state(mbstate_t &state) {
+  state.state = 0;
+  state.value = 0;
+}
+
+inline bool valid_multibyte_byte(unsigned char value) { return value <= 0x7f; }
+
+inline bool valid_wide_character(wchar_t value) {
+  return static_cast<unsigned long long>(value) <= 0x7full;
+}
+
+} // namespace cwchar_detail
+
+inline size_t mbrtowc(wchar_t *pwc, const char *s, size_t n, mbstate_t *ps) {
+  static mbstate_t internal_state{};
+
+  if (ps == nullptr) {
+    ps = &internal_state;
+  }
+
+  if (s == nullptr) {
+    static constexpr char empty[] = "";
+
+    s = empty;
+    n = 1;
+    pwc = nullptr;
+  }
+
+  if (n == 0) {
+    return static_cast<size_t>(-2);
+  }
+
+  const auto byte = static_cast<unsigned char>(*s);
+
+  if (!cwchar_detail::valid_multibyte_byte(byte)) {
+    errno = EILSEQ;
+    cwchar_detail::reset_state(*ps);
+    return static_cast<size_t>(-1);
+  }
+
+  cwchar_detail::reset_state(*ps);
+
+  if (pwc != nullptr) {
+    *pwc = static_cast<wchar_t>(byte);
+  }
+
+  if (byte == 0) {
+    return 0;
+  }
+
+  return 1;
+}
+
+inline size_t mbrlen(const char *s, size_t n, mbstate_t *ps) {
+  return mbrtowc(nullptr, s, n, ps);
+}
+
+inline size_t wcrtomb(char *s, wchar_t wc, mbstate_t *ps) {
+  static mbstate_t internal_state{};
+
+  if (ps == nullptr) {
+    ps = &internal_state;
+  }
+
+  if (s == nullptr) {
+    cwchar_detail::reset_state(*ps);
+    return 1;
+  }
+
+  if (!cwchar_detail::valid_wide_character(wc)) {
+    errno = EILSEQ;
+    cwchar_detail::reset_state(*ps);
+    return static_cast<size_t>(-1);
+  }
+
+  *s = static_cast<char>(static_cast<unsigned char>(wc));
+
+  cwchar_detail::reset_state(*ps);
+  return 1;
+}
+
+inline size_t mbsrtowcs(wchar_t *destination, const char **source,
+                        size_t length, mbstate_t *ps) {
+  static mbstate_t internal_state{};
+
+  if (ps == nullptr) {
+    ps = &internal_state;
+  }
+
+  const char *current = *source;
+
+  /*
+   * When destination is null, the conversion is a sizing pass.
+   * The source pointer is not modified.
+   */
+  if (destination == nullptr) {
+    size_t count = 0;
+
+    for (;;) {
+      const auto byte = static_cast<unsigned char>(*current);
+
+      if (!cwchar_detail::valid_multibyte_byte(byte)) {
+        errno = EILSEQ;
+        cwchar_detail::reset_state(*ps);
+        return static_cast<size_t>(-1);
+      }
+
+      if (byte == 0) {
+        cwchar_detail::reset_state(*ps);
+        return count;
+      }
+
+      ++count;
+      ++current;
+    }
+  }
+
+  size_t count = 0;
+
+  while (count < length) {
+    const auto byte = static_cast<unsigned char>(*current);
+
+    if (!cwchar_detail::valid_multibyte_byte(byte)) {
+      errno = EILSEQ;
+      cwchar_detail::reset_state(*ps);
+      *source = current;
+      return static_cast<size_t>(-1);
+    }
+
+    if (byte == 0) {
+      destination[count] = L'\0';
+      *source = nullptr;
+      cwchar_detail::reset_state(*ps);
+      return count;
+    }
+
+    destination[count] = static_cast<wchar_t>(byte);
+
+    ++count;
+    ++current;
+  }
+
+  *source = current;
+  cwchar_detail::reset_state(*ps);
+  return count;
+}
+
+inline size_t wcsrtombs(char *destination, const wchar_t **source,
+                        size_t length, mbstate_t *ps) {
+  static mbstate_t internal_state{};
+
+  if (ps == nullptr) {
+    ps = &internal_state;
+  }
+
+  const wchar_t *current = *source;
+
+  /*
+   * As with mbsrtowcs, a null destination performs a sizing
+   * conversion without updating the source pointer.
+   */
+  if (destination == nullptr) {
+    size_t count = 0;
+
+    for (;;) {
+      const wchar_t value = *current;
+
+      if (!cwchar_detail::valid_wide_character(value)) {
+        errno = EILSEQ;
+        cwchar_detail::reset_state(*ps);
+        return static_cast<size_t>(-1);
+      }
+
+      if (value == L'\0') {
+        cwchar_detail::reset_state(*ps);
+        return count;
+      }
+
+      ++count;
+      ++current;
+    }
+  }
+
+  size_t count = 0;
+
+  while (count < length) {
+    const wchar_t value = *current;
+
+    if (!cwchar_detail::valid_wide_character(value)) {
+      errno = EILSEQ;
+      cwchar_detail::reset_state(*ps);
+      *source = current;
+      return static_cast<size_t>(-1);
+    }
+
+    if (value == L'\0') {
+      destination[count] = '\0';
+      *source = nullptr;
+      cwchar_detail::reset_state(*ps);
+      return count;
+    }
+
+    destination[count] = static_cast<char>(static_cast<unsigned char>(value));
+
+    ++count;
+    ++current;
+  }
+
+  *source = current;
+  cwchar_detail::reset_state(*ps);
+  return count;
+}
+
 FTL_CWCHAR_NO_BUILTIN
 inline wchar_t *wcscpy(wchar_t *s1, const wchar_t *s2) {
   wchar_t *result = s1;
