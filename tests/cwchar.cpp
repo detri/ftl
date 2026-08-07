@@ -916,5 +916,199 @@ bool ftl_test() {
     }
   }
 
+  // wcsftime basic calendar and clock fields.
+  {
+    tested::tm value{};
+
+    value.tm_sec = 6;
+    value.tm_min = 5;
+    value.tm_hour = 16;
+    value.tm_mday = 1;
+    value.tm_mon = 0;
+    value.tm_year = 121; // 2021
+    value.tm_wday = 5;   // Friday
+    value.tm_yday = 0;
+
+    wchar_t output[128]{};
+
+    const auto length =
+        tested::wcsftime(output, 128, L"%Y-%m-%d %H:%M:%S", &value);
+
+    if (length != 19) {
+      return false;
+    }
+
+    if (tested::wcscmp(output, L"2021-01-01 16:05:06") != 0) {
+      return false;
+    }
+  }
+
+  // C-locale names and 12-hour clock.
+  {
+    tested::tm value{};
+
+    value.tm_sec = 6;
+    value.tm_min = 5;
+    value.tm_hour = 16;
+    value.tm_mday = 1;
+    value.tm_mon = 0;
+    value.tm_year = 121;
+    value.tm_wday = 5;
+    value.tm_yday = 0;
+
+    wchar_t output[128]{};
+
+    tested::wcsftime(output, 128, L"%a|%A|%b|%B|%I|%p", &value);
+
+    if (tested::wcscmp(output, L"Fri|Friday|Jan|January|04|PM") != 0) {
+      return false;
+    }
+  }
+
+  // Composite C-locale formats.
+  {
+    tested::tm value{};
+
+    value.tm_sec = 6;
+    value.tm_min = 5;
+    value.tm_hour = 16;
+    value.tm_mday = 1;
+    value.tm_mon = 0;
+    value.tm_year = 121;
+    value.tm_wday = 5;
+    value.tm_yday = 0;
+
+    wchar_t output[256]{};
+
+    tested::wcsftime(output, 256, L"%c|%x|%X|%D|%F|%r|%R|%T", &value);
+
+    if (tested::wcscmp(output, L"Fri Jan  1 16:05:06 2021|"
+                               L"01/01/21|"
+                               L"16:05:06|"
+                               L"01/01/21|"
+                               L"2021-01-01|"
+                               L"04:05:06 PM|"
+                               L"16:05|"
+                               L"16:05:06") != 0) {
+      return false;
+    }
+  }
+
+  // ISO week-year boundary:
+  // 2021-01-01 belongs to ISO week 53 of 2020.
+  {
+    tested::tm value{};
+
+    value.tm_mday = 1;
+    value.tm_mon = 0;
+    value.tm_year = 121;
+    value.tm_wday = 5;
+    value.tm_yday = 0;
+
+    wchar_t output[64]{};
+
+    tested::wcsftime(output, 64, L"%G-W%V-%u %g", &value);
+
+    if (tested::wcscmp(output, L"2020-W53-5 20") != 0) {
+      return false;
+    }
+  }
+
+  // Ordinal day and conventional week numbers.
+  {
+    tested::tm value{};
+
+    value.tm_mday = 1;
+    value.tm_mon = 0;
+    value.tm_year = 121;
+    value.tm_wday = 5;
+    value.tm_yday = 0;
+
+    wchar_t output[64]{};
+
+    tested::wcsftime(output, 64, L"%j %U %W %u %w", &value);
+
+    if (tested::wcscmp(output, L"001 00 00 5 5") != 0) {
+      return false;
+    }
+  }
+
+  // Leap-day ordinal.
+  {
+    tested::tm value{};
+
+    value.tm_mday = 29;
+    value.tm_mon = 1;
+    value.tm_year = 124; // 2024
+    value.tm_wday = 4;   // Thursday
+    value.tm_yday = 59;
+
+    wchar_t output[64]{};
+
+    tested::wcsftime(output, 64, L"%F %j", &value);
+
+    if (tested::wcscmp(output, L"2024-02-29 060") != 0) {
+      return false;
+    }
+  }
+
+  // E/O modifiers reduce to their ordinary C-locale forms.
+  {
+    tested::tm value{};
+
+    value.tm_mday = 9;
+    value.tm_mon = 7;
+    value.tm_year = 126;
+    value.tm_wday = 0;
+    value.tm_yday = 220;
+
+    wchar_t output[64]{};
+
+    tested::wcsftime(output, 64, L"%EY %Om %Od", &value);
+
+    if (tested::wcscmp(output, L"2026 08 09") != 0) {
+      return false;
+    }
+  }
+
+  // No timezone information is available in FTL's portable tm.
+  {
+    tested::tm value{};
+    wchar_t output[16]{};
+
+    tested::wcsftime(output, 16, L"A%zB%ZC", &value);
+
+    if (tested::wcscmp(output, L"ABC") != 0) {
+      return false;
+    }
+  }
+
+  // Newline, tab, and literal percent.
+  {
+    tested::tm value{};
+    wchar_t output[16]{};
+
+    tested::wcsftime(output, 16, L"a%n%tb%%", &value);
+
+    if (tested::wcscmp(output, L"a\n\tb%") != 0) {
+      return false;
+    }
+  }
+
+  // Insufficient destination capacity returns zero.
+  {
+    tested::tm value{};
+
+    value.tm_year = 126;
+    value.tm_mon = 7;
+    value.tm_mday = 7;
+
+    wchar_t output[5]{};
+
+    if (tested::wcsftime(output, 5, L"%F", &value) != 0) {
+      return false;
+    }
+  }
+
   return true;
 }

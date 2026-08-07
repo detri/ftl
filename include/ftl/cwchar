@@ -4,11 +4,13 @@
 #define FTL_CWCHAR_HEADER
 
 #ifdef FTL_REPLACE_STL
+#include <__c_time_types.hpp>
 #include <__c_wide_types.hpp>
 #include <cerrno>
 #include <cstring>
 #include <limits>
 #else
+#include <ftl/__c_time_types.hpp>
 #include <ftl/__c_wide_types.hpp>
 #include <ftl/cerrno>
 #include <ftl/cstring>
@@ -687,6 +689,400 @@ Float parse_floating(const wchar_t *string, wchar_t **end) {
   return finish_floating_conversion<Float>(magnitude, negative, true);
 }
 
+struct time_writer {
+  wchar_t *destination;
+  size_t capacity;
+  size_t size = 0;
+  bool overflow = false;
+
+  void append(wchar_t value) {
+    if (size + 1 >= capacity) {
+      overflow = true;
+    } else if (destination != nullptr) {
+      destination[size] = value;
+    }
+
+    ++size;
+  }
+
+  void append(const wchar_t *string) {
+    while (*string != L'\0') {
+      append(*string++);
+    }
+  }
+
+  bool finish() {
+    if (overflow || size >= capacity) {
+      return false;
+    }
+
+    if (destination != nullptr) {
+      destination[size] = L'\0';
+    }
+
+    return true;
+  }
+};
+
+inline bool leap_year(long long year) {
+  return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+}
+
+inline int days_in_year(long long year) { return leap_year(year) ? 366 : 365; }
+
+inline int positive_mod(long long value, int divisor) {
+  int result = static_cast<int>(value % divisor);
+
+  if (result < 0) {
+    result += divisor;
+  }
+
+  return result;
+}
+
+inline void append_unsigned(time_writer &writer, unsigned long long value,
+                            int width, wchar_t padding = L'0') {
+  wchar_t digits[32]{};
+  int count = 0;
+
+  do {
+    digits[count++] = static_cast<wchar_t>(L'0' + value % 10);
+
+    value /= 10;
+  } while (value != 0);
+
+  while (count < width) {
+    writer.append(padding);
+    --width;
+  }
+
+  while (count != 0) {
+    writer.append(digits[--count]);
+  }
+}
+
+inline void append_signed_year(time_writer &writer, long long year) {
+  if (year < 0) {
+    writer.append(L'-');
+
+    const auto magnitude = static_cast<unsigned long long>(-(year + 1)) + 1;
+
+    append_unsigned(writer, magnitude, 4);
+    return;
+  }
+
+  append_unsigned(writer, static_cast<unsigned long long>(year), 4);
+}
+
+inline int iso_weekday(int weekday) { return weekday == 0 ? 7 : weekday; }
+
+struct iso_week_date {
+  long long year;
+  int week;
+};
+
+inline iso_week_date make_iso_week_date(const tm &value) {
+  long long year = static_cast<long long>(value.tm_year) + 1900;
+
+  const int weekday = iso_weekday(value.tm_wday);
+
+  /*
+   * ISO week-years are most easily located by finding the
+   * Thursday belonging to this week. The year containing that
+   * Thursday is the ISO week-based year.
+   */
+  int thursday = value.tm_yday + 1 + (4 - weekday);
+
+  if (thursday < 1) {
+    --year;
+    thursday += days_in_year(year);
+  } else {
+    const int year_days = days_in_year(year);
+
+    if (thursday > year_days) {
+      thursday -= year_days;
+      ++year;
+    }
+  }
+
+  return {year, (thursday - 1) / 7 + 1};
+}
+
+inline void append_hour_12(time_writer &writer, int hour) {
+  int converted = hour % 12;
+
+  if (converted == 0) {
+    converted = 12;
+  }
+
+  append_unsigned(writer, static_cast<unsigned>(converted), 2);
+}
+
+inline constexpr const wchar_t *abbreviated_weekdays[] = {
+    L"Sun", L"Mon", L"Tue", L"Wed", L"Thu", L"Fri", L"Sat"};
+
+inline constexpr const wchar_t *weekdays[] = {
+    L"Sunday",   L"Monday", L"Tuesday", L"Wednesday",
+    L"Thursday", L"Friday", L"Saturday"};
+
+inline constexpr const wchar_t *abbreviated_months[] = {
+    L"Jan", L"Feb", L"Mar", L"Apr", L"May", L"Jun",
+    L"Jul", L"Aug", L"Sep", L"Oct", L"Nov", L"Dec"};
+
+inline constexpr const wchar_t *months[] = {
+    L"January",   L"February", L"March",    L"April",
+    L"May",       L"June",     L"July",     L"August",
+    L"September", L"October",  L"November", L"December"};
+
+inline bool valid_weekday(int weekday) { return weekday >= 0 && weekday < 7; }
+
+inline bool valid_month(int month) { return month >= 0 && month < 12; }
+
+inline void append_time_format(time_writer &writer, wchar_t conversion,
+                               const tm &value) {
+  const long long year = static_cast<long long>(value.tm_year) + 1900;
+
+  switch (conversion) {
+  case L'%':
+    writer.append(L'%');
+    break;
+
+  case L'a':
+    if (valid_weekday(value.tm_wday)) {
+      writer.append(abbreviated_weekdays[value.tm_wday]);
+    }
+    break;
+
+  case L'A':
+    if (valid_weekday(value.tm_wday)) {
+      writer.append(weekdays[value.tm_wday]);
+    }
+    break;
+
+  case L'b':
+  case L'h':
+    if (valid_month(value.tm_mon)) {
+      writer.append(abbreviated_months[value.tm_mon]);
+    }
+    break;
+
+  case L'B':
+    if (valid_month(value.tm_mon)) {
+      writer.append(months[value.tm_mon]);
+    }
+    break;
+
+  case L'C': {
+    long long century = year / 100;
+
+    if (year < 0 && year % 100 != 0) {
+      --century;
+    }
+
+    if (century < 0) {
+      writer.append(L'-');
+      append_unsigned(writer,
+                      static_cast<unsigned long long>(-(century + 1)) + 1, 2);
+    } else {
+      append_unsigned(writer, static_cast<unsigned long long>(century), 2);
+    }
+
+    break;
+  }
+
+  case L'c':
+    /*
+     * FTL C locale:
+     * "%a %b %e %H:%M:%S %Y"
+     */
+    append_time_format(writer, L'a', value);
+    writer.append(L' ');
+    append_time_format(writer, L'b', value);
+    writer.append(L' ');
+    append_unsigned(writer, static_cast<unsigned>(value.tm_mday), 2, L' ');
+    writer.append(L' ');
+    append_time_format(writer, L'H', value);
+    writer.append(L':');
+    append_time_format(writer, L'M', value);
+    writer.append(L':');
+    append_time_format(writer, L'S', value);
+    writer.append(L' ');
+    append_time_format(writer, L'Y', value);
+    break;
+
+  case L'd':
+    append_unsigned(writer, static_cast<unsigned>(value.tm_mday), 2);
+    break;
+
+  case L'D':
+    append_time_format(writer, L'm', value);
+    writer.append(L'/');
+    append_time_format(writer, L'd', value);
+    writer.append(L'/');
+    append_time_format(writer, L'y', value);
+    break;
+
+  case L'e':
+    append_unsigned(writer, static_cast<unsigned>(value.tm_mday), 2, L' ');
+    break;
+
+  case L'F':
+    append_time_format(writer, L'Y', value);
+    writer.append(L'-');
+    append_time_format(writer, L'm', value);
+    writer.append(L'-');
+    append_time_format(writer, L'd', value);
+    break;
+
+  case L'g': {
+    const auto iso = make_iso_week_date(value);
+
+    append_unsigned(writer, static_cast<unsigned>(positive_mod(iso.year, 100)),
+                    2);
+    break;
+  }
+
+  case L'G': {
+    const auto iso = make_iso_week_date(value);
+    append_signed_year(writer, iso.year);
+    break;
+  }
+
+  case L'H':
+    append_unsigned(writer, static_cast<unsigned>(value.tm_hour), 2);
+    break;
+
+  case L'I':
+    append_hour_12(writer, value.tm_hour);
+    break;
+
+  case L'j':
+    append_unsigned(writer, static_cast<unsigned>(value.tm_yday + 1), 3);
+    break;
+
+  case L'm':
+    append_unsigned(writer, static_cast<unsigned>(value.tm_mon + 1), 2);
+    break;
+
+  case L'M':
+    append_unsigned(writer, static_cast<unsigned>(value.tm_min), 2);
+    break;
+
+  case L'n':
+    writer.append(L'\n');
+    break;
+
+  case L'p':
+    writer.append(value.tm_hour < 12 ? L"AM" : L"PM");
+    break;
+
+  case L'r':
+    append_time_format(writer, L'I', value);
+    writer.append(L':');
+    append_time_format(writer, L'M', value);
+    writer.append(L':');
+    append_time_format(writer, L'S', value);
+    writer.append(L' ');
+    append_time_format(writer, L'p', value);
+    break;
+
+  case L'R':
+    append_time_format(writer, L'H', value);
+    writer.append(L':');
+    append_time_format(writer, L'M', value);
+    break;
+
+  case L'S':
+    append_unsigned(writer, static_cast<unsigned>(value.tm_sec), 2);
+    break;
+
+  case L't':
+    writer.append(L'\t');
+    break;
+
+  case L'T':
+    append_time_format(writer, L'H', value);
+    writer.append(L':');
+    append_time_format(writer, L'M', value);
+    writer.append(L':');
+    append_time_format(writer, L'S', value);
+    break;
+
+  case L'u':
+    append_unsigned(writer, static_cast<unsigned>(iso_weekday(value.tm_wday)),
+                    1);
+    break;
+
+  case L'U': {
+    const int week = (value.tm_yday + 7 - value.tm_wday) / 7;
+
+    append_unsigned(writer, static_cast<unsigned>(week), 2);
+    break;
+  }
+
+  case L'V': {
+    const auto iso = make_iso_week_date(value);
+
+    append_unsigned(writer, static_cast<unsigned>(iso.week), 2);
+    break;
+  }
+
+  case L'w':
+    append_unsigned(writer, static_cast<unsigned>(value.tm_wday), 1);
+    break;
+
+  case L'W': {
+    const int monday_weekday = (value.tm_wday + 6) % 7;
+
+    const int week = (value.tm_yday + 7 - monday_weekday) / 7;
+
+    append_unsigned(writer, static_cast<unsigned>(week), 2);
+    break;
+  }
+
+  case L'x':
+    /*
+     * FTL C locale: "%m/%d/%y".
+     */
+    append_time_format(writer, L'D', value);
+    break;
+
+  case L'X':
+    /*
+     * FTL C locale: "%H:%M:%S".
+     */
+    append_time_format(writer, L'T', value);
+    break;
+
+  case L'y':
+    append_unsigned(writer, static_cast<unsigned>(positive_mod(year, 100)), 2);
+    break;
+
+  case L'Y':
+    append_signed_year(writer, year);
+    break;
+
+  case L'z':
+  case L'Z':
+    /*
+     * The standard permits no characters when timezone
+     * information is unavailable. FTL's portable tm has no
+     * timezone offset or timezone-name member.
+     */
+    break;
+
+  default:
+    /*
+     * Unknown conversion specifications have no portable
+     * useful interpretation. Preserve them literally rather
+     * than introducing undefined memory behavior.
+     */
+    writer.append(L'%');
+    writer.append(conversion);
+    break;
+  }
+}
+
 } // namespace cwchar_detail
 
 FTL_CWCHAR_NO_BUILTIN
@@ -1285,6 +1681,51 @@ inline const wchar_t *wcsstr(const wchar_t *s1, const wchar_t *s2) {
 FTL_CWCHAR_NO_BUILTIN
 inline wchar_t *wcsstr(wchar_t *s1, const wchar_t *s2) {
   return const_cast<wchar_t *>(wcsstr(static_cast<const wchar_t *>(s1), s2));
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline size_t wcsftime(wchar_t *s, size_t maxsize, const wchar_t *format,
+                       const tm *timeptr) {
+  cwchar_detail::time_writer writer{s, maxsize};
+
+  const wchar_t *current = format;
+
+  while (*current != L'\0') {
+    if (*current != L'%') {
+      writer.append(*current++);
+      continue;
+    }
+
+    ++current;
+
+    if (*current == L'\0') {
+      writer.append(L'%');
+      break;
+    }
+
+    /*
+     * E and O request locale-specific alternative forms.
+     * The C locale has no alternatives, so the modifier is
+     * ignored and the ordinary conversion is used.
+     */
+    if (*current == L'E' || *current == L'O') {
+      ++current;
+
+      if (*current == L'\0') {
+        break;
+      }
+    }
+
+    cwchar_detail::append_time_format(writer, *current, *timeptr);
+
+    ++current;
+  }
+
+  if (!writer.finish()) {
+    return 0;
+  }
+
+  return writer.size;
 }
 
 FTL_CWCHAR_NO_BUILTIN
