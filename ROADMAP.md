@@ -132,6 +132,10 @@ dependency order, not hundreds of individual overloads.
 | `<execution>`        | Stage 3.1         |
 | `<algorithm>`        | Stage 3.1         |
 | `<numeric>`          | Stage 3.1         |
+| `<cstring>`          | Stage 3.2         |
+| `<cwchar>`           | Stage 3.2         |
+| `<cwctype>`          | Stage 3.2         |
+| `<cuchar>`           | Stage 3.2         |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -144,7 +148,6 @@ synopses:
 
 | Header          | Implemented direction                                                                                            | Major remaining groups                                                                                             |
 |-----------------|------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
-| `<cstring>`     | common byte/string operations                                                                                    | complete C++23 C-string synopsis                                                                                   |
 | `<atomic>`      | integral atomics and memory orders                                                                               | generic/pointer atomics, `atomic_ref`, flag, fences, wait/notify, lock-free rules                                  |
 | `<string_view>` | core `basic_string_view`, `char_traits` integration, and standard `out_of_range` behavior for checked operations | remaining searches, iterators/literals, I/O and hash integration, plus complete C++23 synopsis coverage            |
 | `<stdexcept>`   | standard exception hierarchy, owned C-string messages, non-throwing copy operations                              | `basic_string` constructors, full synopsis and ABI/behavior audit                                                  |
@@ -172,7 +175,7 @@ remain required when C++23 still specifies them; they are not silently dropped.
 | Containers                | `<deque>`, `<flat_map>`, `<flat_set>`, `<forward_list>`, `<list>`, `<map>`, `<queue>`, `<set>`, `<stack>`, `<unordered_map>`, `<unordered_set>`, `<vector>`        |
 | Text/encoding             | `<charconv>`, `<codecvt>`, `<string>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                     |
 | Errors/time/localization  | `<chrono>`, `<system_error>`, `<stacktrace>`, `<locale>`, `<clocale>`, `<ctime>`                                                                                   |
-| C numerics/text           | `<cfenv>`, `<cmath>`, `<complex>`, `<cuchar>`, `<cwchar>`, `<cwctype>`                                                                                             |
+| C numerics/text           | `<cfenv>`, `<cmath>`, `<complex>`                                                                                                                                  |
 | I/O/formatting/files      | `<cstdio>`, `<fstream>`, `<iomanip>`, `<iostream>`, `<ostream>`, `<sstream>`, `<spanstream>`, `<strstream>`, `<syncstream>`, `<filesystem>`, `<format>`, `<print>` |
 | Concurrency               | `<barrier>`, `<condition_variable>`, `<future>`, `<latch>`, `<mutex>`, `<semaphore>`, `<shared_mutex>`, `<stop_token>`, `<thread>`                                 |
 | C compatibility           | `<stdatomic.h>`                                                                                                                                                    |
@@ -322,12 +325,12 @@ without depending on a container or I/O subsystem.
 
 ### Stage 3 — Algorithms and text core
 
-**Status: active. Closure 1 complete.**
+**Status: active. Closures 1–2 complete.**
 
 Take these closures in order:
 
 1. `<execution>` + `<algorithm>` + `<numeric>` — **complete**
-2. `<cstring>` + `<cwchar>` + `<cwctype>` + `<cuchar>`
+2. `<cstring>` + `<cwchar>` + `<cwctype>` + `<cuchar>` — **complete**
 3. `<string_view>` + `<charconv>`
 4. `<string>`
 5. `<bitset>`
@@ -337,6 +340,12 @@ execution-policy vocabulary required by their policy overloads. Standard
 execution policies may currently use a sequential implementation strategy;
 their specified overload participation and execution-policy semantics remain
 part of the completed interface.
+
+Stage 3.2 completes the C++23 narrow and wide C string, character
+classification, and Unicode conversion surfaces, together with their required
+C compatibility header spellings. FTL currently models the C locale for
+collation, classification, and multibyte conversion; hosted wide-stream
+operations remain an explicit platform C-runtime boundary.
 
 **Exit:** algorithms and owning/non-owning text are complete, allocation-aware,
 and usable as dependencies by containers and diagnostics.
