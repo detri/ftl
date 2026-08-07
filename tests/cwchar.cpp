@@ -18,6 +18,16 @@ int test_vswprintf(wchar_t *destination, tested::size_t capacity,
   return result;
 }
 
+int test_vswscanf(const wchar_t *input, const wchar_t *format, ...) {
+  tested::va_list arguments;
+  va_start(arguments, format);
+
+  const int result = tested::vswscanf(input, format, arguments);
+
+  va_end(arguments);
+  return result;
+}
+
 bool ftl_test() {
   // Foundational types/macros.
   {
@@ -1596,6 +1606,93 @@ bool ftl_test() {
     tested::swprintf(output, 64, L"%.0a", 1.5);
 
     if (tested::wcscmp(output, L"0x2p+0") != 0) {
+      return false;
+    }
+  }
+
+  // swscanf basic conversions.
+  {
+    int integer = 0;
+    wchar_t word[16]{};
+    double floating = 0.0;
+
+    const int result = tested::swscanf(L"42 ftl 1.25", L"%d %ls %lf", &integer,
+                                       word, &floating);
+
+    if (result != 3) {
+      return false;
+    }
+
+    if (integer != 42) {
+      return false;
+    }
+
+    if (tested::wcscmp(word, L"ftl") != 0) {
+      return false;
+    }
+
+    if (floating != 1.25) {
+      return false;
+    }
+  }
+
+  // Integer bases.
+  {
+    int automatic = 0;
+    unsigned hexadecimal = 0;
+    unsigned octal = 0;
+
+    if (tested::swscanf(L"0x2a 2a 52", L"%i %x %o", &automatic, &hexadecimal,
+                        &octal) != 3) {
+      return false;
+    }
+
+    if (automatic != 42 || hexadecimal != 42 || octal != 42) {
+      return false;
+    }
+  }
+
+  // Width and assignment suppression.
+  {
+    wchar_t word[8]{};
+    int value = 0;
+
+    if (tested::swscanf(L"abcdef 42", L"%3ls%*3ls %d", word, &value) != 2) {
+      return false;
+    }
+
+    if (tested::wcscmp(word, L"abc") != 0) {
+      return false;
+    }
+
+    if (value != 42) {
+      return false;
+    }
+  }
+
+  // %n does not increment assignment count.
+  {
+    int value = 0;
+    int count = -1;
+
+    if (tested::swscanf(L"123xyz", L"%d%n", &value, &count) != 1) {
+      return false;
+    }
+
+    if (value != 123 || count != 3) {
+      return false;
+    }
+  }
+
+  // v-form.
+  {
+    int value = 0;
+
+    if (test_vswscanf(L"77", L"%d", &value) != 1) {
+      return false;
+    }
+
+    if (value != 77) {
       return false;
     }
   }

@@ -25,6 +25,66 @@
 #include <ftl/type_traits>
 #endif
 
+#if defined(_MSC_VER)
+
+extern "C" {
+__declspec(selectany) int _fltused = 1;
+}
+
+#endif
+
+#if defined(_MSC_VER) && !defined(__clang__)
+using ftl_cwchar_native_va_list = char *;
+#else
+using ftl_cwchar_native_va_list = __builtin_va_list;
+#endif
+
+#if defined(_WIN32)
+using ftl_cwchar_native_wint_t = unsigned short;
+#elif defined(__APPLE__)
+using ftl_cwchar_native_wint_t = int;
+#else
+using ftl_cwchar_native_wint_t = unsigned int;
+#endif
+
+#if defined(_WIN32)
+
+extern "C" {
+
+FILE *__cdecl __acrt_iob_func(unsigned index);
+
+int __cdecl __stdio_common_vfwprintf(unsigned long long options, FILE *stream,
+                                     const wchar_t *format, void *locale,
+                                     ftl_cwchar_native_va_list arguments);
+
+int __cdecl __stdio_common_vfwscanf(unsigned long long options, FILE *stream,
+                                    const wchar_t *format, void *locale,
+                                    ftl_cwchar_native_va_list arguments);
+
+int __cdecl __stdio_common_vswscanf(unsigned long long options,
+                                    const wchar_t *buffer,
+                                    decltype(sizeof(0)) buffer_count,
+                                    const wchar_t *format, void *locale,
+                                    ftl_cwchar_native_va_list arguments);
+}
+
+#else
+
+extern "C" {
+
+int vfwprintf(FILE *, const wchar_t *, ftl_cwchar_native_va_list);
+
+int vfwscanf(FILE *, const wchar_t *, ftl_cwchar_native_va_list);
+
+int vswscanf(const wchar_t *, const wchar_t *, ftl_cwchar_native_va_list);
+
+int vwprintf(const wchar_t *, ftl_cwchar_native_va_list);
+
+int vwscanf(const wchar_t *, ftl_cwchar_native_va_list);
+}
+
+#endif
+
 #if defined(__clang__)
 
 #define FTL_CWCHAR_NO_BUILTIN __attribute__((no_builtin))
@@ -77,6 +137,78 @@ namespace ftl {
 using size_t = decltype(sizeof(0));
 
 namespace cwchar_detail {
+
+inline int runtime_vfwprintf(FILE *stream, const wchar_t *format,
+                             va_list arguments) {
+#if defined(_WIN32)
+  return ::__stdio_common_vfwprintf(0, stream, format, nullptr, arguments);
+#else
+  return ::vfwprintf(stream, format, arguments);
+#endif
+}
+
+inline int runtime_vfwscanf(FILE *stream, const wchar_t *format,
+                            va_list arguments) {
+#if defined(_WIN32)
+  return ::__stdio_common_vfwscanf(0, stream, format, nullptr, arguments);
+#else
+  return ::vfwscanf(stream, format, arguments);
+#endif
+}
+
+inline int runtime_vswscanf(const wchar_t *string, const wchar_t *format,
+                            va_list arguments) {
+#if defined(_WIN32)
+  return ::__stdio_common_vswscanf(0, string, static_cast<size_t>(-1), format,
+                                   nullptr, arguments);
+#else
+  return ::vswscanf(string, format, arguments);
+#endif
+}
+
+inline int runtime_vwprintf(const wchar_t *format, va_list arguments) {
+#if defined(_WIN32)
+  return ::__stdio_common_vfwprintf(0, ::__acrt_iob_func(1), format, nullptr,
+                                    arguments);
+#else
+  return ::vwprintf(format, arguments);
+#endif
+}
+
+inline int runtime_vwscanf(const wchar_t *format, va_list arguments) {
+#if defined(_WIN32)
+  return ::__stdio_common_vfwscanf(0, ::__acrt_iob_func(0), format, nullptr,
+                                   arguments);
+#else
+  return ::vwscanf(format, arguments);
+#endif
+}
+
+inline constexpr wint_t wide_eof = static_cast<wint_t>(~0u);
+
+inline wint_t from_native_wint(ftl_cwchar_native_wint_t value) {
+#if defined(_WIN32)
+  if (static_cast<unsigned int>(value) == 0xffffu) {
+    return wide_eof;
+  }
+#else
+  if (static_cast<unsigned int>(value) == ~0u) {
+    return wide_eof;
+  }
+#endif
+
+  return static_cast<wint_t>(value);
+}
+
+inline ftl_cwchar_native_wint_t to_native_wint(wint_t value) {
+#if defined(_WIN32)
+  if (value == wide_eof) {
+    return static_cast<ftl_cwchar_native_wint_t>(0xffffu);
+  }
+#endif
+
+  return static_cast<ftl_cwchar_native_wint_t>(value);
+}
 
 inline wchar_t load(const wchar_t *pointer) {
 #if defined(_MSC_VER) && !defined(__clang__)
@@ -778,7 +910,7 @@ inline int positive_mod(long long value, int divisor) {
 
 inline void append_unsigned(time_writer &writer, unsigned long long value,
                             int width, wchar_t padding = L'0') {
-  wchar_t digits[32]{};
+  wchar_t digits[32];
   int count = 0;
 
   do {
@@ -2051,7 +2183,7 @@ inline uintmax_t signed_magnitude(intmax_t value) {
 inline void append_integer(format_writer &writer, uintmax_t value,
                            bool negative, unsigned base, bool uppercase,
                            bool signed_conversion, format_options options) {
-  wchar_t digits[sizeof(uintmax_t) * 8 + 1]{};
+  wchar_t digits[sizeof(uintmax_t) * 8 + 1];
   size_t digit_count = 0;
 
   const bool precision_specified = options.precision >= 0;
@@ -2083,7 +2215,7 @@ inline void append_integer(format_writer &writer, uintmax_t value,
     }
   }
 
-  wchar_t prefix[2]{};
+  wchar_t prefix[2];
   size_t prefix_size = 0;
 
   if (options.alternate && base == 8) {
@@ -2165,7 +2297,7 @@ inline void append_integer(format_writer &writer, uintmax_t value,
 
 inline void append_pointer(format_writer &writer, const void *pointer,
                            const format_options &options) {
-  wchar_t digits[sizeof(uintptr_t) * 2]{};
+  wchar_t digits[sizeof(uintptr_t) * 2];
   size_t digit_count = 0;
 
   uintptr_t value = reinterpret_cast<uintptr_t>(pointer);
@@ -2226,6 +2358,7 @@ inline void append_wide_character(format_writer &writer, wchar_t value,
   }
 }
 
+FTL_CWCHAR_NO_BUILTIN
 inline void append_wide_string(format_writer &writer, const wchar_t *string,
                                const format_options &options) {
   size_t length = 0;
@@ -2255,39 +2388,28 @@ inline void append_wide_string(format_writer &writer, const wchar_t *string,
   }
 }
 
+FTL_CWCHAR_NO_BUILTIN
 inline bool narrow_string_length(const char *string,
                                  const format_options &options,
                                  size_t &length) {
-  mbstate_t state{};
   length = 0;
 
-  const char *current = string;
+  while (string[length] != '\0' &&
+         (options.precision < 0 ||
+          length < static_cast<size_t>(options.precision))) {
+    const auto byte = static_cast<unsigned char>(string[length]);
 
-  while (options.precision < 0 ||
-         length < static_cast<size_t>(options.precision)) {
-    wchar_t converted = L'\0';
-
-    const size_t result = mbrtowc(&converted, current, 1, &state);
-
-    if (result == static_cast<size_t>(-1)) {
+    if (!valid_multibyte_byte(byte)) {
       return false;
-    }
-
-    if (result == static_cast<size_t>(-2)) {
-      return false;
-    }
-
-    if (result == 0) {
-      return true;
     }
 
     ++length;
-    current += result;
   }
 
   return true;
 }
 
+FTL_CWCHAR_NO_BUILTIN
 inline bool append_narrow_string(format_writer &writer, const char *string,
                                  const format_options &options) {
   size_t length = 0;
@@ -2307,22 +2429,9 @@ inline bool append_narrow_string(format_writer &writer, const char *string,
     writer.append(L' ', padding);
   }
 
-  mbstate_t state{};
-  const char *current = string;
-
   for (size_t index = 0; index < length; ++index) {
-    wchar_t converted = L'\0';
-
-    const size_t result = mbrtowc(&converted, current, 1, &state);
-
-    if (result == static_cast<size_t>(-1) ||
-        result == static_cast<size_t>(-2)) {
-      writer.error = true;
-      return false;
-    }
-
-    writer.append(converted);
-    current += result;
+    writer.append(
+        static_cast<wchar_t>(static_cast<unsigned char>(string[index])));
   }
 
   if (options.left) {
@@ -2375,11 +2484,36 @@ inline void store_format_count(va_list &arguments, format_length length,
 
 struct decimal_bigint {
   static constexpr uint32_t base = 1000000000u;
-  static constexpr size_t max_words = 2048;
+  static constexpr int maximum_binary_denominator_exponent =
+      numeric_limits<long double>::digits -
+      numeric_limits<long double>::min_exponent;
 
-  uint32_t words[max_words]{};
-  size_t size = 1;
-  bool overflow = false;
+  /*
+   * log10(5) < 0.7, so 5^k requires fewer than
+   * 0.7*k + 1 decimal digits.
+   *
+   * The denominator case dominates IEEE binary32/binary64 and
+   * x87 extended precision, but retain an independent upper
+   * bound for very large positive exponents.
+   */
+  static constexpr size_t maximum_denominator_digits = static_cast<size_t>(
+      (maximum_binary_denominator_exponent * 7 + 9) / 10 + 2);
+
+  static constexpr size_t maximum_integer_digits = static_cast<size_t>(
+      (numeric_limits<long double>::max_exponent * 31 + 99) / 100 + 2);
+
+  static constexpr size_t maximum_decimal_digits =
+      maximum_denominator_digits > maximum_integer_digits
+          ? maximum_denominator_digits
+          : maximum_integer_digits;
+
+  static constexpr size_t max_words = (maximum_decimal_digits + 8) / 9;
+
+  uint32_t words[max_words];
+  size_t size;
+  bool overflow;
+
+  decimal_bigint() : size(1), overflow(false) { words[0] = 0; }
 
   void multiply(unsigned value) {
     uint64_t carry = 0;
@@ -2434,7 +2568,7 @@ struct decimal_bigint {
 
     {
       uint32_t value = words[size - 1];
-      char reversed[10]{};
+      char reversed[10];
       size_t count = 0;
 
       do {
@@ -2451,7 +2585,7 @@ struct decimal_bigint {
     for (size_t word_index = size - 1; word_index != 0; --word_index) {
       uint32_t value = words[word_index - 1];
 
-      char chunk[9]{};
+      char chunk[9];
 
       for (int digit = 8; digit >= 0; --digit) {
         chunk[digit] = static_cast<char>('0' + value % 10);
@@ -2471,15 +2605,9 @@ struct decimal_bigint {
 struct exact_decimal {
   static constexpr size_t max_digits = decimal_bigint::max_words * 9 + 1;
 
-  char digits[max_digits]{};
-  size_t length = 0;
-
-  /*
-   * Numeric value is:
-   *
-   *   digits-as-integer * 10^-scale
-   */
-  int scale = 0;
+  char digits[max_digits];
+  size_t length;
+  int scale;
 };
 
 inline bool floating_is_nan(long double value) { return value != value; }
@@ -2605,6 +2733,7 @@ inline bool make_exact_decimal(long double value, exact_decimal &result) {
   return true;
 }
 
+FTL_CWCHAR_NO_BUILTIN
 inline bool discarded_decimal_nonzero(const char *digits, size_t begin,
                                       size_t end) {
   for (size_t index = begin; index < end; ++index) {
@@ -2616,6 +2745,7 @@ inline bool discarded_decimal_nonzero(const char *digits, size_t begin,
   return false;
 }
 
+FTL_CWCHAR_NO_BUILTIN
 inline bool should_round_decimal_up(const char *digits, size_t length,
                                     size_t keep) {
   if (keep >= length) {
@@ -2632,16 +2762,10 @@ inline bool should_round_decimal_up(const char *digits, size_t length,
     return false;
   }
 
-  /*
-   * Greater than halfway.
-   */
   if (discarded_decimal_nonzero(digits, keep + 1, length)) {
     return true;
   }
 
-  /*
-   * Exact halfway: round to even.
-   */
   if (keep == 0) {
     return false;
   }
@@ -2650,33 +2774,24 @@ inline bool should_round_decimal_up(const char *digits, size_t length,
 }
 
 struct rounded_fixed_decimal {
-  char digits[exact_decimal::max_digits + 1]{};
-  size_t length = 0;
-
-  /*
-   * Zeroes logically appended after digits.
-   *
-   * This lets "%.100000f" fail quickly against a small
-   * destination without constructing a 100k temporary.
-   */
-  size_t trailing_zeroes = 0;
+  char digits[exact_decimal::max_digits + 1];
+  size_t length;
+  size_t trailing_zeroes;
 };
 
+FTL_CWCHAR_NO_BUILTIN
 inline bool round_fixed_decimal(const exact_decimal &source, int precision,
                                 rounded_fixed_decimal &result) {
-  for (size_t index = 0; index < source.length; ++index) {
-    result.digits[index] = source.digits[index];
+  if (source.length != 0) {
+    memcpy(result.digits, source.digits, source.length);
   }
 
   result.length = source.length;
+  result.trailing_zeroes = 0;
 
   const long long cut =
       static_cast<long long>(source.scale) - static_cast<long long>(precision);
 
-  /*
-   * Exact representation has fewer fractional places than the
-   * requested result, so no rounding is necessary.
-   */
   if (cut <= 0) {
     result.trailing_zeroes = static_cast<size_t>(-cut);
 
@@ -2686,14 +2801,8 @@ inline bool round_fixed_decimal(const exact_decimal &source, int precision,
   const size_t remove = static_cast<size_t>(cut);
 
   if (remove > result.length) {
-    /*
-     * Value is strictly below half of the smallest requested
-     * unit because its first significant digit occurs even
-     * farther to the right.
-     */
     result.digits[0] = '0';
     result.length = 1;
-    result.trailing_zeroes = 0;
     return true;
   }
 
@@ -2706,33 +2815,36 @@ inline bool round_fixed_decimal(const exact_decimal &source, int precision,
     result.digits[0] = round_up ? '1' : '0';
 
     result.length = 1;
-    result.trailing_zeroes = 0;
     return true;
   }
 
   result.length = keep;
 
   if (!round_up) {
-    result.trailing_zeroes = 0;
     return true;
   }
 
-  size_t index = keep;
+  /*
+   * Find the first digit that can absorb the carry.
+   */
+  size_t carry_index = keep;
 
-  while (index != 0) {
-    --index;
+  while (carry_index != 0 && result.digits[carry_index - 1] == '9') {
+    --carry_index;
+  }
 
-    if (result.digits[index] != '9') {
-      ++result.digits[index];
-      result.trailing_zeroes = 0;
-      return true;
+  if (carry_index != 0) {
+    ++result.digits[carry_index - 1];
+
+    if (carry_index < keep) {
+      memset(result.digits + carry_index, '0', keep - carry_index);
     }
 
-    result.digits[index] = '0';
+    return true;
   }
 
   /*
-   * 99... rounds to 100...
+   * 99... -> 100...
    */
   if (keep + 1 > exact_decimal::max_digits + 1) {
     return false;
@@ -2740,12 +2852,11 @@ inline bool round_fixed_decimal(const exact_decimal &source, int precision,
 
   result.digits[0] = '1';
 
-  for (size_t digit = 1; digit <= keep; ++digit) {
-    result.digits[digit] = '0';
+  if (keep != 0) {
+    memset(result.digits + 1, '0', keep);
   }
 
   result.length = keep + 1;
-  result.trailing_zeroes = 0;
   return true;
 }
 
@@ -2856,14 +2967,14 @@ inline void append_fixed_floating(format_writer &writer, long double value,
     options.precision = 6;
   }
 
-  exact_decimal exact{};
+  exact_decimal exact;
 
   if (!make_exact_decimal(floating_magnitude(value), exact)) {
     writer.error = true;
     return;
   }
 
-  rounded_fixed_decimal rounded{};
+  rounded_fixed_decimal rounded;
 
   if (!round_fixed_decimal(exact, options.precision, rounded)) {
     writer.error = true;
@@ -2921,18 +3032,21 @@ inline void append_fixed_floating(format_writer &writer, long double value,
 }
 
 struct rounded_significant_decimal {
-  char digits[exact_decimal::max_digits + 1]{};
-  size_t length = 0;
-  size_t trailing_zeroes = 0;
-  int exponent = 0;
+  char digits[exact_decimal::max_digits + 1];
+  size_t length;
+  size_t trailing_zeroes;
+  int exponent;
 };
 
+FTL_CWCHAR_NO_BUILTIN
 inline bool round_significant_decimal(const exact_decimal &source,
                                       size_t significant,
                                       rounded_significant_decimal &result) {
   if (significant == 0) {
     return false;
   }
+
+  result.trailing_zeroes = 0;
 
   result.exponent = static_cast<int>(source.length) - source.scale - 1;
 
@@ -2947,8 +3061,8 @@ inline bool round_significant_decimal(const exact_decimal &source,
   const size_t copied =
       source.length < significant ? source.length : significant;
 
-  for (size_t index = 0; index < copied; ++index) {
-    result.digits[index] = source.digits[index];
+  if (copied != 0) {
+    memcpy(result.digits, source.digits, copied);
   }
 
   result.length = copied;
@@ -2966,32 +3080,35 @@ inline bool round_significant_decimal(const exact_decimal &source,
     return true;
   }
 
-  size_t index = significant;
+  size_t carry_index = significant;
 
-  while (index != 0) {
-    --index;
+  while (carry_index != 0 && result.digits[carry_index - 1] == '9') {
+    --carry_index;
+  }
 
-    if (result.digits[index] != '9') {
-      ++result.digits[index];
-      return true;
+  if (carry_index != 0) {
+    ++result.digits[carry_index - 1];
+
+    if (carry_index < significant) {
+      memset(result.digits + carry_index, '0', significant - carry_index);
     }
 
-    result.digits[index] = '0';
+    return true;
   }
 
   /*
-   * 9.99... -> 1.00... with one larger decimal
-   * exponent.
+   * 9.99... -> 1.00... with the decimal exponent
+   * advanced by one.
    */
   result.digits[0] = '1';
 
-  for (size_t digit = 1; digit < significant; ++digit) {
-    result.digits[digit] = '0';
+  if (significant > 1) {
+    memset(result.digits + 1, '0', significant - 1);
   }
 
   result.length = significant;
-  result.trailing_zeroes = 0;
   ++result.exponent;
+
   return true;
 }
 
@@ -3028,7 +3145,7 @@ inline void append_decimal_exponent(format_writer &writer, int exponent,
                            ? static_cast<unsigned>(-(exponent + 1)) + 1u
                            : static_cast<unsigned>(exponent);
 
-  wchar_t digits[16]{};
+  wchar_t digits[16];
   size_t count = 0;
 
   do {
@@ -3101,14 +3218,14 @@ inline void append_scientific_floating(format_writer &writer, long double value,
     options.precision = 6;
   }
 
-  exact_decimal exact{};
+  exact_decimal exact;
 
   if (!make_exact_decimal(floating_magnitude(value), exact)) {
     writer.error = true;
     return;
   }
 
-  rounded_significant_decimal rounded{};
+  rounded_significant_decimal rounded;
 
   const size_t significant = static_cast<size_t>(options.precision) + 1;
 
@@ -3159,14 +3276,14 @@ inline void append_general_floating(format_writer &writer, long double value,
     precision = 1;
   }
 
-  exact_decimal exact{};
+  exact_decimal exact;
 
   if (!make_exact_decimal(floating_magnitude(value), exact)) {
     writer.error = true;
     return;
   }
 
-  rounded_significant_decimal rounded{};
+  rounded_significant_decimal rounded;
 
   if (!round_significant_decimal(exact, static_cast<size_t>(precision),
                                  rounded)) {
@@ -3300,7 +3417,7 @@ inline void append_binary_exponent(format_writer &writer, int exponent,
                            ? static_cast<unsigned>(-(exponent + 1)) + 1u
                            : static_cast<unsigned>(exponent);
 
-  wchar_t digits[16]{};
+  wchar_t digits[16];
   size_t count = 0;
 
   do {
@@ -3334,7 +3451,7 @@ inline void append_hexadecimal_floating(format_writer &writer,
   constexpr size_t maximum_hex_digits =
       (numeric_limits<long double>::digits + 2) / 4 + 1;
 
-  unsigned exact_digits[maximum_hex_digits]{};
+  unsigned exact_digits[maximum_hex_digits];
 
   size_t exact_count = 0;
 
@@ -3465,6 +3582,7 @@ inline void append_hexadecimal_floating(format_writer &writer,
 
 } // namespace cwchar_detail
 
+FTL_CWCHAR_NO_BUILTIN
 inline int vswprintf(wchar_t *s, size_t n, const wchar_t *format, va_list arg) {
   cwchar_detail::format_writer writer{s, n};
 
@@ -3724,6 +3842,7 @@ inline int vswprintf(wchar_t *s, size_t n, const wchar_t *format, va_list arg) {
   return static_cast<int>(writer.size);
 }
 
+FTL_CWCHAR_NO_BUILTIN
 inline int swprintf(wchar_t *s, size_t n, const wchar_t *format, ...) {
   va_list arguments;
   va_start(arguments, format);
@@ -3732,6 +3851,118 @@ inline int swprintf(wchar_t *s, size_t n, const wchar_t *format, ...) {
 
   va_end(arguments);
   return result;
+}
+
+inline int vfwprintf(FILE *stream, const wchar_t *format, va_list arg) {
+  return cwchar_detail::runtime_vfwprintf(stream, format, arg);
+}
+
+inline int fwprintf(FILE *stream, const wchar_t *format, ...) {
+  va_list arguments;
+  va_start(arguments, format);
+
+  const int result =
+      cwchar_detail::runtime_vfwprintf(stream, format, arguments);
+
+  va_end(arguments);
+  return result;
+}
+
+inline int vfwscanf(FILE *stream, const wchar_t *format, va_list arg) {
+  return cwchar_detail::runtime_vfwscanf(stream, format, arg);
+}
+
+inline int fwscanf(FILE *stream, const wchar_t *format, ...) {
+  va_list arguments;
+  va_start(arguments, format);
+
+  const int result = cwchar_detail::runtime_vfwscanf(stream, format, arguments);
+
+  va_end(arguments);
+  return result;
+}
+
+inline int vswscanf(const wchar_t *string, const wchar_t *format, va_list arg) {
+  return cwchar_detail::runtime_vswscanf(string, format, arg);
+}
+
+inline int swscanf(const wchar_t *string, const wchar_t *format, ...) {
+  va_list arguments;
+  va_start(arguments, format);
+
+  const int result = cwchar_detail::runtime_vswscanf(string, format, arguments);
+
+  va_end(arguments);
+  return result;
+}
+
+inline int vwprintf(const wchar_t *format, va_list arg) {
+  return cwchar_detail::runtime_vwprintf(format, arg);
+}
+
+inline int wprintf(const wchar_t *format, ...) {
+  va_list arguments;
+  va_start(arguments, format);
+
+  const int result = cwchar_detail::runtime_vwprintf(format, arguments);
+
+  va_end(arguments);
+  return result;
+}
+
+inline int vwscanf(const wchar_t *format, va_list arg) {
+  return cwchar_detail::runtime_vwscanf(format, arg);
+}
+
+inline int wscanf(const wchar_t *format, ...) {
+  va_list arguments;
+  va_start(arguments, format);
+
+  const int result = cwchar_detail::runtime_vwscanf(format, arguments);
+
+  va_end(arguments);
+  return result;
+}
+
+inline wint_t fgetwc(FILE *stream) {
+  return cwchar_detail::from_native_wint(fgetwc(stream));
+}
+
+inline wchar_t *fgetws(wchar_t *string, int count, FILE *stream) {
+  return fgetws(string, count, stream);
+}
+
+inline wint_t fputwc(wchar_t character, FILE *stream) {
+  return cwchar_detail::from_native_wint(fputwc(character, stream));
+}
+
+inline int fputws(const wchar_t *string, FILE *stream) {
+  return fputws(string, stream);
+}
+
+inline int fwide(FILE *stream, int mode) { return fwide(stream, mode); }
+
+inline wint_t getwc(FILE *stream) { return fgetwc(stream); }
+
+inline wint_t getwchar() {
+  return cwchar_detail::from_native_wint(getwchar());
+}
+
+inline wint_t putwc(wchar_t character, FILE *stream) {
+  return fputwc(character, stream);
+}
+
+inline wint_t putwchar(wchar_t character) {
+  return cwchar_detail::from_native_wint(putwchar(character));
+}
+
+inline wint_t ungetwc(wint_t character, FILE *stream) {
+  if (character == cwchar_detail::wide_eof) {
+    return cwchar_detail::wide_eof;
+  }
+
+  return cwchar_detail::from_native_wint(
+      ungetwc(cwchar_detail::to_native_wint(character), stream));
 }
 
 } // namespace std or ftl
