@@ -1,0 +1,12 @@
+#ifndef FTL_ALGORITHMS_HEADER
+#define FTL_ALGORITHMS_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <__algorithms/result.hpp>
+#include <__execution/policy_access.hpp>
+#else
+#include <ftl/__algorithms/result.hpp>
+#include <ftl/__execution/policy_access.hpp>
+#endif
+
+#endif // FTL_ALGORITHMS_HEADER

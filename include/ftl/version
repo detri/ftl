@@ -102,5 +102,6 @@
 #define __cpp_lib_ranges_as_rvalue 202207L
 #define __cpp_lib_ranges_join_with 202202L
 #define __cpp_lib_ranges_to_container 202202L
+#define __cpp_lib_execution 201902L
 
 #endif

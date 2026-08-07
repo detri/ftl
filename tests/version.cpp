@@ -25,6 +25,11 @@
 #ifndef __cpp_lib_coroutine
 #error "__cpp_lib_coroutine must be defined"
 #endif
+#ifndef __cpp_lib_execution
+#error "__cpp_lib_execution must be defined"
+#endif
+
+static_assert(__cpp_lib_execution == 201902L);
 
 static_assert(__cpp_lib_coroutine == 201902L);
 

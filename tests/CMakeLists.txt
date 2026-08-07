@@ -222,6 +222,8 @@ foreach(header IN ITEMS
         ios
         istream
         istream_view
+        execution
+        algorithm_ranges_result
 )
     add_ftl_test(${header})
 endforeach()
