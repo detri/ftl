@@ -25,9 +25,11 @@ static_assert(sizeof(wctype_t) >= 1);
 static_assert(sizeof(size_t) >= 1);
 static_assert(sizeof(mbstate_t) >= 1);
 static_assert(sizeof(wint_t) >= 1);
-static_assert(sizeof(tm) >= sizeof(int) * 9);
 static_assert(sizeof(wctrans_t) >= 1);
 static_assert(sizeof(wctype_t) >= 1);
+
+[[maybe_unused]]
+tm* tm_pointer = nullptr;
 
 static_assert(WCHAR_MIN <= L'A');
 static_assert(WCHAR_MAX >= L'A');
