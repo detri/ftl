@@ -197,11 +197,13 @@ namespace std {
 namespace ftl {
 #endif
 
+namespace ranges {
 template <class charT, class traits>
-constexpr bool ranges::enable_view<basic_string_view<charT, traits>> = true;
+constexpr bool enable_view<basic_string_view<charT, traits>> = true;
 template <class charT, class traits>
-constexpr bool ranges::enable_borrowed_range<basic_string_view<charT, traits>> =
+constexpr bool enable_borrowed_range<basic_string_view<charT, traits>> =
     true;
+}
 
 } // namespace std or ftl
 
