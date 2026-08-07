@@ -391,4 +391,9 @@ FTL_END_NAMESPACE
 
 #undef FTL_SPAN_NAMESPACE
 
+#if !defined(__cpp_lib_span) || __cpp_lib_span < 202002L
+#undef __cpp_lib_span
+#define __cpp_lib_span 202002L
+#endif
+
 #endif // FTL_SPAN_HEADER

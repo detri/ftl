@@ -1278,7 +1278,8 @@ mdspan(const typename AccessorType::data_handle_type &,
 
 FTL_END_NAMESPACE
 
-#ifndef __cpp_lib_mdspan
+#if !defined(__cpp_lib_mdspan) || __cpp_lib_mdspan < 202207L
+#undef __cpp_lib_mdspan
 #define __cpp_lib_mdspan 202207L
 #endif
 

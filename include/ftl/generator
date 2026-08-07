@@ -665,6 +665,9 @@ FTL_END_NAMESPACE
 
 #undef FTL_GENERATOR_NAMESPACE
 
+#if !defined(__cpp_lib_generator) || __cpp_lib_generator < 202207L
+#undef __cpp_lib_generator
 #define __cpp_lib_generator 202207L
+#endif
 
 #endif // FTL_GENERATOR_HEADER

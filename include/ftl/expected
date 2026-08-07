@@ -3,8 +3,6 @@
 #ifndef FTL_EXPECTED_HEADER
 #define FTL_EXPECTED_HEADER
 
-#define __cpp_lib_expected 202211L
-
 #ifdef FTL_REPLACE_STL
 #include <exception>
 #include <functional>
@@ -695,5 +693,10 @@ constexpr void swap(expected<T, E>& left, expected<T, E>& right)
     requires requires { left.swap(right); } { left.swap(right); }
 
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_expected) || __cpp_lib_expected < 202211L
+#undef __cpp_lib_expected
+#define __cpp_lib_expected 202211L
+#endif
 
 #endif // FTL_EXPECTED_HEADER

@@ -1,0 +1,23 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_EXECUTION_HEADER
+#define FTL_EXECUTION_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <type_traits>
+#else
+#include <ftl/type_traits>
+#endif
+
+#ifdef FTL_REPLACE_STL
+#include <__execution/policy_access.hpp>
+#else
+#include <ftl/__execution/policy_access.hpp>
+#endif
+
+#if !defined(__cpp_lib_execution) || __cpp_lib_execution < 201902L
+#undef __cpp_lib_execution
+#define __cpp_lib_execution 201902L
+#endif
+
+#endif

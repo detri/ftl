@@ -3,10 +3,6 @@
 #ifndef FTL_TUPLE_HEADER
 #define FTL_TUPLE_HEADER
 
-#define __cpp_lib_constexpr_tuple 201811L
-#define __cpp_lib_apply 201603L
-#define __cpp_lib_make_from_tuple 201606L
-
 #ifdef FTL_REPLACE_STL
 #include <utility>
 #else
@@ -856,4 +852,22 @@ constexpr auto tuple_cat(First &&first, Second &&second, Rest &&...rest) {
 
 FTL_END_NAMESPACE
 #undef FTL_TUPLE_NO_UNIQUE_ADDRESS
+
+#if !defined(__cpp_lib_constexpr_tuple) || \
+    __cpp_lib_constexpr_tuple < 201811L
+#undef __cpp_lib_constexpr_tuple
+#define __cpp_lib_constexpr_tuple 201811L
+#endif
+
+#if !defined(__cpp_lib_apply) || __cpp_lib_apply < 201603L
+#undef __cpp_lib_apply
+#define __cpp_lib_apply 201603L
+#endif
+
+#if !defined(__cpp_lib_make_from_tuple) || \
+    __cpp_lib_make_from_tuple < 201606L
+#undef __cpp_lib_make_from_tuple
+#define __cpp_lib_make_from_tuple 201606L
+#endif
+
 #endif

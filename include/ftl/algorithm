@@ -1,0 +1,125 @@
+#ifndef FTL_ALGORITHMS_HEADER
+#define FTL_ALGORITHMS_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <__algorithms/result.hpp>
+#include <__algorithms/all_any_none.hpp>
+#include <__algorithms/count.hpp>
+#include <__algorithms/for_each.hpp>
+#include <__algorithms/find.hpp>
+#include <__algorithms/range_compare.hpp>
+#include <__algorithms/search.hpp>
+#include <__algorithms/copy_move.hpp>
+#include <__algorithms/transform_generate.hpp>
+#include <__algorithms/fill.hpp>
+#include <__algorithms/replace.hpp>
+#include <__algorithms/remove_unique.hpp>
+#include <__algorithms/reverse_rotate.hpp>
+#include <__algorithms/swap_shift.hpp>
+#include <__algorithms/partition.hpp>
+#include <__algorithms/sort.hpp>
+#include <__algorithms/binary_search.hpp>
+#include <__algorithms/merge.hpp>
+#include <__algorithms/set.hpp>
+#include <__algorithms/heap.hpp>
+#include <__algorithms/partial_sort.hpp>
+#include <__algorithms/min_max.hpp>
+#include <__algorithms/fold.hpp>
+#include <__algorithms/permutation.hpp>
+#include <__algorithms/lexicographical.hpp>
+#include <__algorithms/random.hpp>
+#else
+#include <ftl/__algorithms/result.hpp>
+#include <ftl/__algorithms/all_any_none.hpp>
+#include <ftl/__algorithms/count.hpp>
+#include <ftl/__algorithms/for_each.hpp>
+#include <ftl/__algorithms/find.hpp>
+#include <ftl/__algorithms/range_compare.hpp>
+#include <ftl/__algorithms/search.hpp>
+#include <ftl/__algorithms/copy_move.hpp>
+#include <ftl/__algorithms/transform_generate.hpp>
+#include <ftl/__algorithms/fill.hpp>
+#include <ftl/__algorithms/replace.hpp>
+#include <ftl/__algorithms/remove_unique.hpp>
+#include <ftl/__algorithms/reverse_rotate.hpp>
+#include <ftl/__algorithms/swap_shift.hpp>
+#include <ftl/__algorithms/partition.hpp>
+#include <ftl/__algorithms/sort.hpp>
+#include <ftl/__algorithms/binary_search.hpp>
+#include <ftl/__algorithms/merge.hpp>
+#include <ftl/__algorithms/set.hpp>
+#include <ftl/__algorithms/heap.hpp>
+#include <ftl/__algorithms/partial_sort.hpp>
+#include <ftl/__algorithms/min_max.hpp>
+#include <ftl/__algorithms/fold.hpp>
+#include <ftl/__algorithms/permutation.hpp>
+#include <ftl/__algorithms/lexicographical.hpp>
+#include <ftl/__algorithms/random.hpp>
+#endif
+
+#if !defined(__cpp_lib_ranges_starts_ends_with) || \
+    __cpp_lib_ranges_starts_ends_with < 202106L
+#undef __cpp_lib_ranges_starts_ends_with
+#define __cpp_lib_ranges_starts_ends_with 202106L
+#endif
+
+#if !defined(__cpp_lib_ranges_contains) || \
+    __cpp_lib_ranges_contains < 202207L
+#undef __cpp_lib_ranges_contains
+#define __cpp_lib_ranges_contains 202207L
+#endif
+
+#if !defined(__cpp_lib_ranges_find_last) || \
+    __cpp_lib_ranges_find_last < 202207L
+#undef __cpp_lib_ranges_find_last
+#define __cpp_lib_ranges_find_last 202207L
+#endif
+
+#if !defined(__cpp_lib_shift) || __cpp_lib_shift < 202202L
+#undef __cpp_lib_shift
+#define __cpp_lib_shift 202202L
+#endif
+
+#if !defined(__cpp_lib_ranges_fold) || \
+    __cpp_lib_ranges_fold < 202207L
+#undef __cpp_lib_ranges_fold
+#define __cpp_lib_ranges_fold 202207L
+#endif
+
+#if !defined(__cpp_lib_robust_nonmodifying_seq_ops) || \
+    __cpp_lib_robust_nonmodifying_seq_ops < 201304L
+#undef __cpp_lib_robust_nonmodifying_seq_ops
+#define __cpp_lib_robust_nonmodifying_seq_ops 201304L
+#endif
+
+#if !defined(__cpp_lib_clamp) || \
+    __cpp_lib_clamp < 201603L
+#undef __cpp_lib_clamp
+#define __cpp_lib_clamp 201603L
+#endif
+
+#if !defined(__cpp_lib_sample) || \
+    __cpp_lib_sample < 201603L
+#undef __cpp_lib_sample
+#define __cpp_lib_sample 201603L
+#endif
+
+#if !defined(__cpp_lib_constexpr_algorithms) || \
+    __cpp_lib_constexpr_algorithms < 201806L
+#undef __cpp_lib_constexpr_algorithms
+#define __cpp_lib_constexpr_algorithms 201806L
+#endif
+
+#if !defined(__cpp_lib_parallel_algorithm) || \
+    __cpp_lib_parallel_algorithm < 201603L
+#undef __cpp_lib_parallel_algorithm
+#define __cpp_lib_parallel_algorithm 201603L
+#endif
+
+#if !defined(__cpp_lib_algorithm_iterator_requirements) || \
+    __cpp_lib_algorithm_iterator_requirements < 202207L
+#undef __cpp_lib_algorithm_iterator_requirements
+#define __cpp_lib_algorithm_iterator_requirements 202207L
+#endif
+
+#endif // FTL_ALGORITHMS_HEADER

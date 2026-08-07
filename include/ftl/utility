@@ -727,31 +727,62 @@ constexpr bool in_range(T value) noexcept {
 #endif
 }
 
-#ifndef __cpp_lib_exchange_function
+#if !defined(__cpp_lib_exchange_function) || \
+    __cpp_lib_exchange_function < 201304L
+#undef __cpp_lib_exchange_function
 #define __cpp_lib_exchange_function 201304L
 #endif
-#ifndef __cpp_lib_integer_sequence
+
+#if !defined(__cpp_lib_integer_sequence) || \
+    __cpp_lib_integer_sequence < 201304L
+#undef __cpp_lib_integer_sequence
 #define __cpp_lib_integer_sequence 201304L
 #endif
-#ifndef __cpp_lib_tuples_by_type
+
+#if !defined(__cpp_lib_tuple_element_t) || \
+    __cpp_lib_tuple_element_t < 201402L
+#undef __cpp_lib_tuple_element_t
+#define __cpp_lib_tuple_element_t 201402L
+#endif
+
+#if !defined(__cpp_lib_tuples_by_type) || \
+    __cpp_lib_tuples_by_type < 201304L
+#undef __cpp_lib_tuples_by_type
 #define __cpp_lib_tuples_by_type 201304L
 #endif
-#ifndef __cpp_lib_as_const
+
+#if !defined(__cpp_lib_as_const) || __cpp_lib_as_const < 201510L
+#undef __cpp_lib_as_const
 #define __cpp_lib_as_const 201510L
 #endif
-#ifndef __cpp_lib_constexpr_utility
+
+#if !defined(__cpp_lib_constexpr_utility) || \
+    __cpp_lib_constexpr_utility < 201811L
+#undef __cpp_lib_constexpr_utility
 #define __cpp_lib_constexpr_utility 201811L
 #endif
-#ifndef __cpp_lib_integer_comparison_functions
+
+#if !defined(__cpp_lib_integer_comparison_functions) || \
+    __cpp_lib_integer_comparison_functions < 202002L
+#undef __cpp_lib_integer_comparison_functions
 #define __cpp_lib_integer_comparison_functions 202002L
 #endif
-#ifndef __cpp_lib_to_underlying
+
+#if !defined(__cpp_lib_to_underlying) || \
+    __cpp_lib_to_underlying < 202102L
+#undef __cpp_lib_to_underlying
 #define __cpp_lib_to_underlying 202102L
 #endif
-#ifndef __cpp_lib_unreachable
+
+#if !defined(__cpp_lib_unreachable) || \
+    __cpp_lib_unreachable < 202202L
+#undef __cpp_lib_unreachable
 #define __cpp_lib_unreachable 202202L
 #endif
-#ifndef __cpp_lib_forward_like
+
+#if !defined(__cpp_lib_forward_like) || \
+    __cpp_lib_forward_like < 202207L
+#undef __cpp_lib_forward_like
 #define __cpp_lib_forward_like 202207L
 #endif
 

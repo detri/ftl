@@ -655,13 +655,15 @@ inline constexpr detail::strong_fallback_fn compare_strong_order_fallback{};
 inline constexpr detail::weak_fallback_fn compare_weak_order_fallback{};
 inline constexpr detail::partial_fallback_fn compare_partial_order_fallback{};
 
-#ifndef __cpp_lib_three_way_comparison
-#define __cpp_lib_three_way_comparison 201907L
-#endif
-
 FTL_COMPARE_END_NAMESPACE
 
 #undef FTL_COMPARE_BEGIN_NAMESPACE
 #undef FTL_COMPARE_END_NAMESPACE
+
+#if !defined(__cpp_lib_three_way_comparison) || \
+    __cpp_lib_three_way_comparison < 201907L
+#undef __cpp_lib_three_way_comparison
+#define __cpp_lib_three_way_comparison 201907L
+#endif
 
 #endif // FTL_COMPARE_HEADER

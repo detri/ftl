@@ -200,7 +200,8 @@ concept equivalence_relation = relation<Relation, T, U>;
 template<class Relation, class T, class U>
 concept strict_weak_order = relation<Relation, T, U>;
 
-#ifndef __cpp_lib_concepts
+#if !defined(__cpp_lib_concepts) || __cpp_lib_concepts < 202002L
+#undef __cpp_lib_concepts
 #define __cpp_lib_concepts 202002L
 #endif
 

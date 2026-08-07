@@ -1,0 +1,940 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_NUMERIC_HEADER
+#define FTL_NUMERIC_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <__execution/policy_access.hpp>
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <limits>
+#include <ranges>
+#include <type_traits>
+#include <utility>
+#else
+#include <ftl/__execution/policy_access.hpp>
+#include <ftl/algorithm>
+#include <ftl/functional>
+#include <ftl/iterator>
+#include <ftl/limits>
+#include <ftl/ranges>
+#include <ftl/type_traits>
+#include <ftl/utility>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+namespace detail {
+
+template <class Unsigned, class T>
+constexpr Unsigned numeric_magnitude(T value) noexcept {
+  Unsigned result = static_cast<Unsigned>(value);
+
+  if constexpr (is_signed_v<T>) {
+    if (value < 0)
+      result = Unsigned{0} - result;
+  }
+
+  return result;
+}
+
+template <class Unsigned>
+constexpr Unsigned numeric_gcd(Unsigned left, Unsigned right) noexcept {
+  while (right != 0) {
+    const Unsigned remainder = left % right;
+    left = right;
+    right = remainder;
+  }
+
+  return left;
+}
+
+} // namespace detail
+
+// [accumulate]
+
+template <class InputIterator, class T>
+constexpr T accumulate(InputIterator first, InputIterator last, T init) {
+  for (; first != last; ++first)
+    init = move(init) + *first;
+
+  return init;
+}
+
+template <class InputIterator, class T, class BinaryOperation>
+constexpr T accumulate(InputIterator first, InputIterator last, T init,
+                       BinaryOperation binary_op) {
+
+  for (; first != last; ++first)
+    init = binary_op(move(init), *first);
+
+  return init;
+}
+
+// [reduce]
+
+template <class InputIterator, class T, class BinaryOperation>
+constexpr T reduce(InputIterator first, InputIterator last, T init,
+                   BinaryOperation binary_op) {
+
+  static_assert(
+      requires(BinaryOperation &operation, T &value) {
+        requires is_convertible_v<
+            decltype(operation(value, *declval<InputIterator &>())), T>;
+
+        requires is_convertible_v<
+            decltype(operation(*declval<InputIterator &>(), value)), T>;
+
+        requires is_convertible_v<decltype(operation(value, value)), T>;
+
+        requires is_convertible_v<decltype(operation(
+                                      *declval<InputIterator &>(),
+                                      *declval<InputIterator &>())),
+                                  T>;
+      }, "reduce binary operation does not satisfy N4950 mandates");
+
+  // A left-associated reduction is one permitted generalized sum.
+  for (; first != last; ++first)
+    init = binary_op(init, *first);
+
+  return init;
+}
+
+template <class InputIterator, class T>
+constexpr T reduce(InputIterator first, InputIterator last, T init) {
+  return reduce(first, last, init, plus<>{});
+}
+
+template <class InputIterator>
+constexpr typename iterator_traits<InputIterator>::value_type
+reduce(InputIterator first, InputIterator last) {
+  using value_type = typename iterator_traits<InputIterator>::value_type;
+
+  return reduce(first, last, value_type{});
+}
+
+template <class ExecutionPolicy, class ForwardIterator, class T,
+          class BinaryOperation>
+  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
+T reduce(ExecutionPolicy &&exec, ForwardIterator first, ForwardIterator last,
+         T init, BinaryOperation binary_op) {
+  static_cast<void>(exec);
+  return [&]() noexcept {
+    return reduce(first, last, init, binary_op);
+  }();
+}
+
+template <class ExecutionPolicy, class ForwardIterator, class T>
+  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
+T reduce(ExecutionPolicy &&exec, ForwardIterator first, ForwardIterator last,
+         T init) {
+  return [&]() noexcept {
+    return reduce(forward<ExecutionPolicy>(exec), first, last, init, plus<>{});
+  }();
+}
+
+template <class ExecutionPolicy, class ForwardIterator>
+  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
+typename iterator_traits<ForwardIterator>::value_type
+reduce(ExecutionPolicy &&exec, ForwardIterator first, ForwardIterator last) {
+
+  using value_type = typename iterator_traits<ForwardIterator>::value_type;
+
+  return [&]() noexcept {
+    return reduce(forward<ExecutionPolicy>(exec), first, last, value_type{});
+  }();
+}
+
+// [inner.product]
+
+template <class InputIterator1, class InputIterator2, class T,
+          class BinaryOperation1, class BinaryOperation2>
+constexpr T inner_product(InputIterator1 first1, InputIterator1 last1,
+                          InputIterator2 first2, T init,
+                          BinaryOperation1 binary_op1,
+                          BinaryOperation2 binary_op2) {
+
+  for (; first1 != last1; ++first1, ++first2)
+    init = binary_op1(move(init), binary_op2(*first1, *first2));
+
+  return init;
+}
+
+template <class InputIterator1, class InputIterator2, class T>
+constexpr T inner_product(InputIterator1 first1, InputIterator1 last1,
+                          InputIterator2 first2, T init) {
+
+  for (; first1 != last1; ++first1, ++first2)
+    init = move(init) + (*first1 * *first2);
+
+  return init;
+}
+
+// [transform.reduce]
+
+template <class InputIterator1, class InputIterator2, class T,
+          class BinaryOperation1, class BinaryOperation2>
+constexpr T transform_reduce(InputIterator1 first1, InputIterator1 last1,
+                             InputIterator2 first2, T init,
+                             BinaryOperation1 binary_op1,
+                             BinaryOperation2 binary_op2) {
+
+  static_assert(
+      requires(BinaryOperation1 &operation1, BinaryOperation2 &operation2,
+               T &value) {
+        requires is_convertible_v<decltype(operation1(value, value)), T>;
+
+        requires is_convertible_v<
+            decltype(operation1(value,
+                                operation2(*declval<InputIterator1 &>(),
+                                           *declval<InputIterator2 &>()))),
+            T>;
+
+        requires is_convertible_v<decltype(operation1(
+                                      operation2(*declval<InputIterator1 &>(),
+                                                 *declval<InputIterator2 &>()),
+                                      value)),
+                                  T>;
+
+        requires is_convertible_v<
+            decltype(operation1(operation2(*declval<InputIterator1 &>(),
+                                           *declval<InputIterator2 &>()),
+                                operation2(*declval<InputIterator1 &>(),
+                                           *declval<InputIterator2 &>()))),
+            T>;
+      },
+      "transform_reduce operations do not satisfy N4950 mandates");
+
+  for (; first1 != last1; ++first1, ++first2)
+    init = binary_op1(init, binary_op2(*first1, *first2));
+
+  return init;
+}
+
+template <class InputIterator, class T, class BinaryOperation,
+          class UnaryOperation>
+constexpr T transform_reduce(InputIterator first, InputIterator last, T init,
+                             BinaryOperation binary_op,
+                             UnaryOperation unary_op) {
+
+  static_assert(
+      requires(BinaryOperation &binary, UnaryOperation &unary, T &value) {
+        requires is_convertible_v<decltype(binary(value, value)), T>;
+
+        requires is_convertible_v<
+            decltype(binary(value, unary(*declval<InputIterator &>()))), T>;
+
+        requires is_convertible_v<
+            decltype(binary(unary(*declval<InputIterator &>()), value)), T>;
+
+        requires is_convertible_v<decltype(binary(
+                                      unary(*declval<InputIterator &>()),
+                                      unary(*declval<InputIterator &>()))),
+                                  T>;
+      }, "transform_reduce operations do not satisfy N4950 mandates");
+
+  for (; first != last; ++first)
+    init = binary_op(init, unary_op(*first));
+
+  return init;
+}
+
+template <class InputIterator1, class InputIterator2, class T>
+constexpr T transform_reduce(InputIterator1 first1, InputIterator1 last1,
+                             InputIterator2 first2, T init) {
+
+  return transform_reduce(first1, last1, first2, init, plus<>{},
+                          multiplies<>{});
+}
+
+template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
+          class T, class BinaryOperation1, class BinaryOperation2>
+  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
+T transform_reduce(ExecutionPolicy &&exec, ForwardIterator1 first1,
+                   ForwardIterator1 last1, ForwardIterator2 first2, T init,
+                   BinaryOperation1 binary_op1, BinaryOperation2 binary_op2) {
+
+  static_cast<void>(exec);
+  return [&]() noexcept {
+    return transform_reduce(first1, last1, first2, init, binary_op1, binary_op2);
+  }();
+}
+
+template <class ExecutionPolicy, class ForwardIterator, class T,
+          class BinaryOperation, class UnaryOperation>
+  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
+T transform_reduce(ExecutionPolicy &&exec, ForwardIterator first,
+                   ForwardIterator last, T init, BinaryOperation binary_op,
+                   UnaryOperation unary_op) {
+
+  static_cast<void>(exec);
+  return [&]() noexcept {
+    return transform_reduce(first, last, init, binary_op, unary_op);
+  }();
+}
+
+template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
+          class T>
+  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
+T transform_reduce(ExecutionPolicy &&exec, ForwardIterator1 first1,
+                   ForwardIterator1 last1, ForwardIterator2 first2, T init) {
+  return [&]() noexcept {
+    return transform_reduce(forward<ExecutionPolicy>(exec), first1, last1, first2,
+                          init, plus<>{}, multiplies<>{});
+  }();
+}
+
+// [partial.sum]
+
+template <class InputIterator, class OutputIterator, class BinaryOperation>
+constexpr OutputIterator partial_sum(InputIterator first, InputIterator last,
+                                     OutputIterator result,
+                                     BinaryOperation binary_op) {
+
+  using value_type = typename iterator_traits<InputIterator>::value_type;
+
+  static_assert(
+      is_constructible_v<value_type, decltype(*declval<InputIterator &>())>,
+      "partial_sum accumulator is not constructible from the input");
+
+  static_assert(
+      requires(BinaryOperation &operation) {
+        requires is_convertible_v<decltype(operation(
+                                      declval<value_type &&>(),
+                                      *declval<InputIterator &>())),
+                                  value_type>;
+      }, "partial_sum binary operation does not satisfy N4950 mandates");
+
+  static_assert(
+      requires(OutputIterator &output, value_type &value) { *output = value; },
+      "partial_sum accumulator is not writable to the output");
+
+  if (first == last)
+    return result;
+
+  value_type accumulator = *first;
+  *result = accumulator;
+
+  ++first;
+  ++result;
+
+  for (; first != last; ++first, ++result) {
+    accumulator = binary_op(move(accumulator), *first);
+
+    *result = accumulator;
+  }
+
+  return result;
+}
+
+template <class InputIterator, class OutputIterator>
+constexpr OutputIterator partial_sum(InputIterator first, InputIterator last,
+                                     OutputIterator result) {
+
+  return partial_sum(first, last, result, plus<>{});
+}
+
+// [exclusive.scan]
+
+template <class InputIterator, class OutputIterator, class T,
+          class BinaryOperation>
+constexpr OutputIterator exclusive_scan(InputIterator first, InputIterator last,
+                                        OutputIterator result, T init,
+                                        BinaryOperation binary_op) {
+
+  static_assert(
+      requires(BinaryOperation &operation, T &value) {
+        requires is_convertible_v<decltype(operation(value, value)), T>;
+
+        requires is_convertible_v<
+            decltype(operation(value, *declval<InputIterator &>())), T>;
+
+        requires is_convertible_v<decltype(operation(
+                                      *declval<InputIterator &>(),
+                                      *declval<InputIterator &>())),
+                                  T>;
+      }, "exclusive_scan binary operation does not satisfy N4950 mandates");
+
+  for (; first != last; ++first, ++result) {
+    T next = binary_op(init, *first);
+
+    *result = init;
+    init = move(next);
+  }
+
+  return result;
+}
+
+template <class InputIterator, class OutputIterator, class T>
+constexpr OutputIterator exclusive_scan(InputIterator first, InputIterator last,
+                                        OutputIterator result, T init) {
+
+  return exclusive_scan(first, last, result, init, plus<>{});
+}
+
+template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
+          class T, class BinaryOperation>
+  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
+ForwardIterator2 exclusive_scan(ExecutionPolicy &&exec, ForwardIterator1 first,
+                                ForwardIterator1 last, ForwardIterator2 result,
+                                T init, BinaryOperation binary_op) {
+
+  static_cast<void>(exec);
+
+  return [&]() noexcept {
+    return exclusive_scan(first, last, result, init, binary_op);
+  }();
+}
+
+template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
+          class T>
+  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
+ForwardIterator2 exclusive_scan(ExecutionPolicy &&exec, ForwardIterator1 first,
+                                ForwardIterator1 last, ForwardIterator2 result,
+                                T init) {
+  return [&]() noexcept {
+    return exclusive_scan(forward<ExecutionPolicy>(exec), first, last, result,
+                          init, plus<>{});
+  }();
+}
+
+// [inclusive.scan]
+
+template <class InputIterator, class OutputIterator, class BinaryOperation,
+          class T>
+constexpr OutputIterator inclusive_scan(InputIterator first, InputIterator last,
+                                        OutputIterator result,
+                                        BinaryOperation binary_op, T init) {
+
+  static_assert(
+      requires(BinaryOperation &operation, T &value) {
+        requires is_convertible_v<decltype(operation(value, value)), T>;
+
+        requires is_convertible_v<
+            decltype(operation(value, *declval<InputIterator &>())), T>;
+
+        requires is_convertible_v<decltype(operation(
+                                      *declval<InputIterator &>(),
+                                      *declval<InputIterator &>())),
+                                  T>;
+      }, "inclusive_scan binary operation does not satisfy N4950 mandates");
+
+  for (; first != last; ++first, ++result) {
+    init = binary_op(init, *first);
+    *result = init;
+  }
+
+  return result;
+}
+
+template <class InputIterator, class OutputIterator, class BinaryOperation>
+constexpr OutputIterator inclusive_scan(InputIterator first, InputIterator last,
+                                        OutputIterator result,
+                                        BinaryOperation binary_op) {
+
+  using value_type = typename iterator_traits<InputIterator>::value_type;
+
+  static_assert(
+      requires(BinaryOperation &operation) {
+        requires is_convertible_v<decltype(operation(
+                                      *declval<InputIterator &>(),
+                                      *declval<InputIterator &>())),
+                                  value_type>;
+      }, "inclusive_scan binary operation does not satisfy N4950 mandates");
+
+  if (first == last)
+    return result;
+
+  value_type accumulator = *first;
+  *result = accumulator;
+
+  ++first;
+  ++result;
+
+  for (; first != last; ++first, ++result) {
+    accumulator = binary_op(accumulator, *first);
+    *result = accumulator;
+  }
+
+  return result;
+}
+
+template <class InputIterator, class OutputIterator>
+constexpr OutputIterator inclusive_scan(InputIterator first, InputIterator last,
+                                        OutputIterator result) {
+
+  return inclusive_scan(first, last, result, plus<>{});
+}
+
+template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
+          class BinaryOperation, class T>
+  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
+ForwardIterator2 inclusive_scan(ExecutionPolicy &&exec, ForwardIterator1 first,
+                                ForwardIterator1 last, ForwardIterator2 result,
+                                BinaryOperation binary_op, T init) {
+
+  static_cast<void>(exec);
+  return [&]() noexcept {
+    return inclusive_scan(first, last, result, binary_op, init);
+  }();
+}
+
+template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
+          class BinaryOperation>
+  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
+ForwardIterator2 inclusive_scan(ExecutionPolicy &&exec, ForwardIterator1 first,
+                                ForwardIterator1 last, ForwardIterator2 result,
+                                BinaryOperation binary_op) {
+
+  static_cast<void>(exec);
+
+  return [&]() noexcept {
+    return inclusive_scan(first, last, result, binary_op);
+  }();
+}
+
+template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2>
+  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
+ForwardIterator2 inclusive_scan(ExecutionPolicy &&exec, ForwardIterator1 first,
+                                ForwardIterator1 last,
+                                ForwardIterator2 result) {
+
+  return [&]() noexcept {
+    return inclusive_scan(forward<ExecutionPolicy>(exec), first, last, result,
+                          plus<>{});
+  }();
+}
+
+// [transform.exclusive.scan]
+
+template <class InputIterator, class OutputIterator, class T,
+          class BinaryOperation, class UnaryOperation>
+constexpr OutputIterator
+transform_exclusive_scan(InputIterator first, InputIterator last,
+                         OutputIterator result, T init,
+                         BinaryOperation binary_op, UnaryOperation unary_op) {
+
+  static_assert(
+      requires(BinaryOperation &binary, UnaryOperation &unary, T &value) {
+        requires is_convertible_v<decltype(binary(value, value)), T>;
+
+        requires is_convertible_v<
+            decltype(binary(value, unary(*declval<InputIterator &>()))), T>;
+
+        requires is_convertible_v<decltype(binary(
+                                      unary(*declval<InputIterator &>()),
+                                      unary(*declval<InputIterator &>()))),
+                                  T>;
+      }, "transform_exclusive_scan operations do not satisfy N4950 mandates");
+
+  for (; first != last; ++first, ++result) {
+    T next = binary_op(init, unary_op(*first));
+
+    *result = init;
+    init = move(next);
+  }
+
+  return result;
+}
+
+template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
+          class T, class BinaryOperation, class UnaryOperation>
+  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
+ForwardIterator2
+transform_exclusive_scan(ExecutionPolicy &&exec, ForwardIterator1 first,
+                         ForwardIterator1 last, ForwardIterator2 result, T init,
+                         BinaryOperation binary_op, UnaryOperation unary_op) {
+
+  static_cast<void>(exec);
+
+  return [&]() noexcept {
+    return transform_exclusive_scan(first, last, result, init, binary_op,
+                                    unary_op);
+  }();
+}
+
+// [transform.inclusive.scan]
+
+template <class InputIterator, class OutputIterator, class BinaryOperation,
+          class UnaryOperation, class T>
+constexpr OutputIterator
+transform_inclusive_scan(InputIterator first, InputIterator last,
+                         OutputIterator result, BinaryOperation binary_op,
+                         UnaryOperation unary_op, T init) {
+
+  static_assert(
+      requires(BinaryOperation &binary, UnaryOperation &unary, T &value) {
+        requires is_convertible_v<decltype(binary(value, value)), T>;
+
+        requires is_convertible_v<
+            decltype(binary(value, unary(*declval<InputIterator &>()))), T>;
+
+        requires is_convertible_v<decltype(binary(
+                                      unary(*declval<InputIterator &>()),
+                                      unary(*declval<InputIterator &>()))),
+                                  T>;
+      }, "transform_inclusive_scan operations do not satisfy N4950 mandates");
+
+  for (; first != last; ++first, ++result) {
+    init = binary_op(init, unary_op(*first));
+    *result = init;
+  }
+
+  return result;
+}
+
+template <class InputIterator, class OutputIterator, class BinaryOperation,
+          class UnaryOperation>
+constexpr OutputIterator
+transform_inclusive_scan(InputIterator first, InputIterator last,
+                         OutputIterator result, BinaryOperation binary_op,
+                         UnaryOperation unary_op) {
+
+  using value_type = typename iterator_traits<InputIterator>::value_type;
+
+  static_assert(
+      requires(BinaryOperation &binary, UnaryOperation &unary) {
+        requires is_convertible_v<decltype(binary(
+                                      unary(*declval<InputIterator &>()),
+                                      unary(*declval<InputIterator &>()))),
+                                  value_type>;
+      }, "transform_inclusive_scan operations do not satisfy N4950 mandates");
+
+  if (first == last)
+    return result;
+
+  value_type init = unary_op(*first);
+  *result = init;
+
+  ++first;
+  ++result;
+
+  return transform_inclusive_scan(first, last, result, binary_op, unary_op,
+                                  move(init));
+}
+
+template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
+          class BinaryOperation, class UnaryOperation, class T>
+  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
+ForwardIterator2
+transform_inclusive_scan(ExecutionPolicy &&exec, ForwardIterator1 first,
+                         ForwardIterator1 last, ForwardIterator2 result,
+                         BinaryOperation binary_op, UnaryOperation unary_op,
+                         T init) {
+
+  static_cast<void>(exec);
+
+  return [&]() noexcept {
+    return transform_inclusive_scan(first, last, result, binary_op, unary_op,
+                                    init);
+  }();
+}
+
+template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
+          class BinaryOperation, class UnaryOperation>
+  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
+ForwardIterator2
+transform_inclusive_scan(ExecutionPolicy &&exec, ForwardIterator1 first,
+                         ForwardIterator1 last, ForwardIterator2 result,
+                         BinaryOperation binary_op, UnaryOperation unary_op) {
+
+  static_cast<void>(exec);
+  return [&]() noexcept {
+    return transform_inclusive_scan(first, last, result, binary_op, unary_op);
+  }();
+}
+
+// [adjacent.difference]
+
+template <class InputIterator, class OutputIterator, class BinaryOperation>
+constexpr OutputIterator
+adjacent_difference(InputIterator first, InputIterator last,
+                    OutputIterator result, BinaryOperation binary_op) {
+
+  using value_type = typename iterator_traits<InputIterator>::value_type;
+
+  static_assert(
+      is_constructible_v<value_type, decltype(*declval<InputIterator &>())>,
+      "adjacent_difference accumulator is not constructible from input");
+
+  static_assert(
+      requires(OutputIterator &output, BinaryOperation &operation,
+               value_type &accumulator, value_type &value) {
+        *output = accumulator;
+        *output = operation(value, move(accumulator));
+      },
+      "adjacent_difference does not satisfy N4950 mandates");
+
+  if (first == last)
+    return result;
+
+  value_type accumulator = *first;
+  *result = accumulator;
+
+  ++first;
+  ++result;
+
+  for (; first != last; ++first, ++result) {
+    value_type value = *first;
+
+    *result = binary_op(value, move(accumulator));
+
+    accumulator = move(value);
+  }
+
+  return result;
+}
+
+template <class InputIterator, class OutputIterator>
+constexpr OutputIterator adjacent_difference(InputIterator first,
+                                             InputIterator last,
+                                             OutputIterator result) {
+
+  return adjacent_difference(first, last, result, minus<>{});
+}
+
+template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
+          class BinaryOperation>
+  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
+ForwardIterator2
+adjacent_difference(ExecutionPolicy &&exec, ForwardIterator1 first,
+                    ForwardIterator1 last, ForwardIterator2 result,
+                    BinaryOperation binary_op) {
+
+  static_cast<void>(exec);
+
+  static_assert(
+      requires(ForwardIterator1 &input, ForwardIterator2 &output,
+               BinaryOperation &operation) {
+        *output = *input;
+        *output = operation(*input, *input);
+      },
+      "policy adjacent_difference does not satisfy N4950 mandates");
+return [&]() noexcept {
+  if (first == last)
+    return result;
+
+  ForwardIterator1 previous = first;
+
+  *result = *first;
+
+  ++first;
+  ++result;
+
+  for (; first != last; ++first, ++previous, ++result)
+    *result = binary_op(*first, *previous);
+
+  return result;
+}();
+}
+
+template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2>
+  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
+ForwardIterator2
+adjacent_difference(ExecutionPolicy &&exec, ForwardIterator1 first,
+                    ForwardIterator1 last, ForwardIterator2 result) {
+
+  return [&]() noexcept {
+    return adjacent_difference(forward<ExecutionPolicy>(exec), first, last,
+                               result, minus<>{});
+  }();
+}
+
+// [numeric.iota]
+
+template <class ForwardIterator, class T>
+constexpr void iota(ForwardIterator first, ForwardIterator last, T value) {
+
+  using value_type = typename iterator_traits<ForwardIterator>::value_type;
+
+  static_assert(is_convertible_v<T, value_type>,
+                "iota value is not convertible to the iterator value type");
+
+  static_assert(
+      requires(T &current) { ++current; }, "iota value is not incrementable");
+
+  for (; first != last; ++first, ++value)
+    *first = value;
+}
+
+namespace ranges {
+
+template <class O, class T> using iota_result = out_value_result<O, T>;
+
+namespace detail {
+
+struct iota_fn {
+  template <input_or_output_iterator O, sentinel_for<O> S,
+            weakly_incrementable T>
+    requires indirectly_writable<O, const T &>
+  constexpr iota_result<O, T> operator()(O first, S last, T value) const {
+    while (first != last) {
+      *first = as_const(value);
+      ++first;
+      ++value;
+    }
+
+    return {static_cast<O &&>(first), static_cast<T &&>(value)};
+  }
+
+  template <weakly_incrementable T, output_range<const T &> R>
+  constexpr iota_result<borrowed_iterator_t<R>, T> operator()(R &&range,
+                                                              T value) const {
+    auto result = (*this)(ranges::begin(range), ranges::end(range),
+                          static_cast<T &&>(value));
+
+    return {static_cast<decltype(result.out) &&>(result.out),
+            static_cast<T &&>(result.value)};
+  }
+};
+
+} // namespace detail
+
+inline constexpr detail::iota_fn iota{};
+
+} // namespace ranges
+
+// [numeric.ops.gcd]
+
+template <class M, class N> constexpr common_type_t<M, N> gcd(M m, N n) {
+  static_assert(is_integral_v<M> && is_integral_v<N>,
+                "gcd arguments must be integer types");
+
+  static_assert(!is_same_v<remove_cv_t<M>, bool> &&
+                    !is_same_v<remove_cv_t<N>, bool>,
+                "gcd arguments must not be bool");
+
+  using common_type = common_type_t<M, N>;
+  using unsigned_type = make_unsigned_t<common_type>;
+
+  const unsigned_type left = detail::numeric_magnitude<unsigned_type>(m);
+
+  const unsigned_type right = detail::numeric_magnitude<unsigned_type>(n);
+
+  return static_cast<common_type>(detail::numeric_gcd(left, right));
+}
+
+// [numeric.ops.lcm]
+
+template <class M, class N> constexpr common_type_t<M, N> lcm(M m, N n) {
+  static_assert(is_integral_v<M> && is_integral_v<N>,
+                "lcm arguments must be integer types");
+
+  static_assert(!is_same_v<remove_cv_t<M>, bool> &&
+                    !is_same_v<remove_cv_t<N>, bool>,
+                "lcm arguments must not be bool");
+
+  using common_type = common_type_t<M, N>;
+  using unsigned_type = make_unsigned_t<common_type>;
+
+  const unsigned_type left = detail::numeric_magnitude<unsigned_type>(m);
+
+  const unsigned_type right = detail::numeric_magnitude<unsigned_type>(n);
+
+  if (left == 0 || right == 0)
+    return common_type{0};
+
+  const unsigned_type divisor = detail::numeric_gcd(left, right);
+
+  return static_cast<common_type>((left / divisor) * right);
+}
+
+// [numeric.ops.midpoint]
+
+template <class T>
+  requires(is_arithmetic_v<T> && !is_same_v<T, bool>)
+constexpr T midpoint(T a, T b) noexcept {
+  using value_type = remove_cv_t<T>;
+
+  if constexpr (is_same_v<value_type, bool>) {
+    return a;
+  } else if constexpr (is_integral_v<T>) {
+    using unsigned_type = make_unsigned_t<value_type>;
+
+    const value_type left = a;
+    const value_type right = b;
+
+    if (left < right) {
+      const unsigned_type distance =
+          static_cast<unsigned_type>(right) - static_cast<unsigned_type>(left);
+
+      return static_cast<T>(left + static_cast<value_type>(distance / 2));
+    }
+
+    const unsigned_type distance =
+        static_cast<unsigned_type>(left) - static_cast<unsigned_type>(right);
+
+    return static_cast<T>(left - static_cast<value_type>(distance / 2));
+  } else {
+    constexpr value_type low =
+        numeric_limits<value_type>::min() * value_type{2};
+
+    constexpr value_type high =
+        numeric_limits<value_type>::max() / value_type{2};
+
+    const value_type left = a;
+    const value_type right = b;
+
+    const value_type abs_left = left < value_type{0} ? -left : left;
+
+    const value_type abs_right = right < value_type{0} ? -right : right;
+
+    if (abs_left <= high && abs_right <= high)
+      return static_cast<T>((left + right) / value_type{2});
+
+    if (abs_left < low)
+      return static_cast<T>(left + right / value_type{2});
+
+    if (abs_right < low)
+      return static_cast<T>(left / value_type{2} + right);
+
+    return static_cast<T>(left / value_type{2} + right / value_type{2});
+  }
+}
+
+template <class T>
+  requires is_object_v<T>
+constexpr T *midpoint(T *a, T *b) {
+  static_assert(sizeof(T) != 0,
+                "midpoint pointer element type must be complete");
+
+  return a + (b - a) / 2;
+}
+
+FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_algorithm_iterator_requirements) ||                     \
+    __cpp_lib_algorithm_iterator_requirements < 202207L
+#undef __cpp_lib_algorithm_iterator_requirements
+#define __cpp_lib_algorithm_iterator_requirements 202207L
+#endif
+
+#if !defined(__cpp_lib_constexpr_numeric) ||                                   \
+    __cpp_lib_constexpr_numeric < 201911L
+#undef __cpp_lib_constexpr_numeric
+#define __cpp_lib_constexpr_numeric 201911L
+#endif
+
+#if !defined(__cpp_lib_gcd_lcm) || __cpp_lib_gcd_lcm < 201606L
+#undef __cpp_lib_gcd_lcm
+#define __cpp_lib_gcd_lcm 201606L
+#endif
+
+#if !defined(__cpp_lib_interpolate) || __cpp_lib_interpolate < 201902L
+#undef __cpp_lib_interpolate
+#define __cpp_lib_interpolate 201902L
+#endif
+
+#if !defined(__cpp_lib_parallel_algorithm) ||                                  \
+    __cpp_lib_parallel_algorithm < 201603L
+#undef __cpp_lib_parallel_algorithm
+#define __cpp_lib_parallel_algorithm 201603L
+#endif
+
+#if !defined(__cpp_lib_ranges_iota) || __cpp_lib_ranges_iota < 202202L
+#undef __cpp_lib_ranges_iota
+#define __cpp_lib_ranges_iota 202202L
+#endif
+
+#endif // FTL_NUMERIC_HEADER
