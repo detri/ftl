@@ -86,4 +86,34 @@
 #define __cpp_lib_ranges_fold 202207L
 #endif
 
+#if !defined(__cpp_lib_robust_nonmodifying_seq_ops) || \
+    __cpp_lib_robust_nonmodifying_seq_ops < 201304L
+#undef __cpp_lib_robust_nonmodifying_seq_ops
+#define __cpp_lib_robust_nonmodifying_seq_ops 201304L
+#endif
+
+#if !defined(__cpp_lib_clamp) || \
+    __cpp_lib_clamp < 201603L
+#undef __cpp_lib_clamp
+#define __cpp_lib_clamp 201603L
+#endif
+
+#if !defined(__cpp_lib_sample) || \
+    __cpp_lib_sample < 201603L
+#undef __cpp_lib_sample
+#define __cpp_lib_sample 201603L
+#endif
+
+#if !defined(__cpp_lib_constexpr_algorithms) || \
+    __cpp_lib_constexpr_algorithms < 201806L
+#undef __cpp_lib_constexpr_algorithms
+#define __cpp_lib_constexpr_algorithms 201806L
+#endif
+
+#if !defined(__cpp_lib_parallel_algorithm) || \
+    __cpp_lib_parallel_algorithm < 201603L
+#undef __cpp_lib_parallel_algorithm
+#define __cpp_lib_parallel_algorithm 201603L
+#endif
+
 #endif // FTL_ALGORITHMS_HEADER
