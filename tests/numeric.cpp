@@ -373,11 +373,45 @@ static_assert(test_iota());
 static_assert(test_gcd_lcm());
 static_assert(test_midpoint());
 
+bool test_policy_overloads() {
+  int input[]{1, 2, 3, 4};
+  int second[]{4, 5, 6, 7};
+  int output[4]{};
+
+  const auto policy = tested::execution::seq;
+
+  if (tested::reduce(policy, input, input + 4, 0) != 10)
+    return false;
+
+  if (tested::transform_reduce(
+          policy, input, input + 4, second, 0) != 60)
+    return false;
+
+  tested::exclusive_scan(
+      policy, input, input + 4, output, 0);
+
+  tested::inclusive_scan(
+      policy, input, input + 4, output);
+
+  tested::transform_exclusive_scan(
+      policy, input, input + 4, output,
+      0, add{}, square{});
+
+  tested::transform_inclusive_scan(
+      policy, input, input + 4, output,
+      add{}, square{});
+
+  tested::adjacent_difference(
+      policy, input, input + 4, output);
+
+  return true;
+}
+
 bool ftl_test() {
   return test_accumulate() && test_reduce() && test_inner_product() &&
          test_transform_reduce() && test_partial_sum() &&
          test_exclusive_scan() && test_inclusive_scan() &&
          test_transform_exclusive_scan() && test_transform_inclusive_scan() &&
          test_adjacent_difference() && test_iota() && test_gcd_lcm() &&
-         test_midpoint();
+         test_midpoint() && test_policy_overloads();
 }

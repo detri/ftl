@@ -119,17 +119,19 @@ template <class ExecutionPolicy, class ForwardIterator, class T,
   requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
 T reduce(ExecutionPolicy &&exec, ForwardIterator first, ForwardIterator last,
          T init, BinaryOperation binary_op) {
-
   static_cast<void>(exec);
-  return reduce(first, last, init, binary_op);
+  return [&]() noexcept {
+    return reduce(first, last, init, binary_op);
+  }();
 }
 
 template <class ExecutionPolicy, class ForwardIterator, class T>
   requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
 T reduce(ExecutionPolicy &&exec, ForwardIterator first, ForwardIterator last,
          T init) {
-
-  return reduce(forward<ExecutionPolicy>(exec), first, last, init, plus<>{});
+  return [&]() noexcept {
+    return reduce(forward<ExecutionPolicy>(exec), first, last, init, plus<>{});
+  }();
 }
 
 template <class ExecutionPolicy, class ForwardIterator>
@@ -139,7 +141,9 @@ reduce(ExecutionPolicy &&exec, ForwardIterator first, ForwardIterator last) {
 
   using value_type = typename iterator_traits<ForwardIterator>::value_type;
 
-  return reduce(forward<ExecutionPolicy>(exec), first, last, value_type{});
+  return [&]() noexcept {
+    return reduce(forward<ExecutionPolicy>(exec), first, last, value_type{});
+  }();
 }
 
 // [inner.product]
@@ -252,8 +256,9 @@ T transform_reduce(ExecutionPolicy &&exec, ForwardIterator1 first1,
                    BinaryOperation1 binary_op1, BinaryOperation2 binary_op2) {
 
   static_cast<void>(exec);
-
-  return transform_reduce(first1, last1, first2, init, binary_op1, binary_op2);
+  return [&]() noexcept {
+    return transform_reduce(first1, last1, first2, init, binary_op1, binary_op2);
+  }();
 }
 
 template <class ExecutionPolicy, class ForwardIterator, class T,
@@ -264,8 +269,9 @@ T transform_reduce(ExecutionPolicy &&exec, ForwardIterator first,
                    UnaryOperation unary_op) {
 
   static_cast<void>(exec);
-
-  return transform_reduce(first, last, init, binary_op, unary_op);
+  return [&]() noexcept {
+    return transform_reduce(first, last, init, binary_op, unary_op);
+  }();
 }
 
 template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
@@ -273,9 +279,10 @@ template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
   requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
 T transform_reduce(ExecutionPolicy &&exec, ForwardIterator1 first1,
                    ForwardIterator1 last1, ForwardIterator2 first2, T init) {
-
-  return transform_reduce(forward<ExecutionPolicy>(exec), first1, last1, first2,
+  return [&]() noexcept {
+    return transform_reduce(forward<ExecutionPolicy>(exec), first1, last1, first2,
                           init, plus<>{}, multiplies<>{});
+  }();
 }
 
 // [partial.sum]
@@ -375,7 +382,9 @@ ForwardIterator2 exclusive_scan(ExecutionPolicy &&exec, ForwardIterator1 first,
 
   static_cast<void>(exec);
 
-  return exclusive_scan(first, last, result, init, binary_op);
+  return [&]() noexcept {
+    return exclusive_scan(first, last, result, init, binary_op);
+  }();
 }
 
 template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
@@ -384,9 +393,10 @@ template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
 ForwardIterator2 exclusive_scan(ExecutionPolicy &&exec, ForwardIterator1 first,
                                 ForwardIterator1 last, ForwardIterator2 result,
                                 T init) {
-
-  return exclusive_scan(forward<ExecutionPolicy>(exec), first, last, result,
-                        init, plus<>{});
+  return [&]() noexcept {
+    return exclusive_scan(forward<ExecutionPolicy>(exec), first, last, result,
+                          init, plus<>{});
+  }();
 }
 
 // [inclusive.scan]
@@ -465,8 +475,9 @@ ForwardIterator2 inclusive_scan(ExecutionPolicy &&exec, ForwardIterator1 first,
                                 BinaryOperation binary_op, T init) {
 
   static_cast<void>(exec);
-
-  return inclusive_scan(first, last, result, binary_op, init);
+  return [&]() noexcept {
+    return inclusive_scan(first, last, result, binary_op, init);
+  }();
 }
 
 template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
@@ -478,7 +489,9 @@ ForwardIterator2 inclusive_scan(ExecutionPolicy &&exec, ForwardIterator1 first,
 
   static_cast<void>(exec);
 
-  return inclusive_scan(first, last, result, binary_op);
+  return [&]() noexcept {
+    return inclusive_scan(first, last, result, binary_op);
+  }();
 }
 
 template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2>
@@ -487,25 +500,13 @@ ForwardIterator2 inclusive_scan(ExecutionPolicy &&exec, ForwardIterator1 first,
                                 ForwardIterator1 last,
                                 ForwardIterator2 result) {
 
-  return inclusive_scan(forward<ExecutionPolicy>(exec), first, last, result,
-                        plus<>{});
+  return [&]() noexcept {
+    return inclusive_scan(forward<ExecutionPolicy>(exec), first, last, result,
+                          plus<>{});
+  }();
 }
 
 // [transform.exclusive.scan]
-
-template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
-          class T, class BinaryOperation, class UnaryOperation>
-  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
-ForwardIterator2
-transform_exclusive_scan(ExecutionPolicy &&exec, ForwardIterator1 first,
-                         ForwardIterator1 last, ForwardIterator2 result, T init,
-                         BinaryOperation binary_op, UnaryOperation unary_op) {
-
-  static_cast<void>(exec);
-
-  return transform_exclusive_scan(first, last, result, init, binary_op,
-                                  unary_op);
-}
 
 template <class InputIterator, class OutputIterator, class T,
           class BinaryOperation, class UnaryOperation>
@@ -535,6 +536,22 @@ transform_exclusive_scan(InputIterator first, InputIterator last,
   }
 
   return result;
+}
+
+template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
+          class T, class BinaryOperation, class UnaryOperation>
+  requires(is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>)
+ForwardIterator2
+transform_exclusive_scan(ExecutionPolicy &&exec, ForwardIterator1 first,
+                         ForwardIterator1 last, ForwardIterator2 result, T init,
+                         BinaryOperation binary_op, UnaryOperation unary_op) {
+
+  static_cast<void>(exec);
+
+  return [&]() noexcept {
+    return transform_exclusive_scan(first, last, result, init, binary_op,
+                                    unary_op);
+  }();
 }
 
 // [transform.inclusive.scan]
@@ -608,8 +625,10 @@ transform_inclusive_scan(ExecutionPolicy &&exec, ForwardIterator1 first,
 
   static_cast<void>(exec);
 
-  return transform_inclusive_scan(first, last, result, binary_op, unary_op,
-                                  init);
+  return [&]() noexcept {
+    return transform_inclusive_scan(first, last, result, binary_op, unary_op,
+                                    init);
+  }();
 }
 
 template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2,
@@ -621,8 +640,9 @@ transform_inclusive_scan(ExecutionPolicy &&exec, ForwardIterator1 first,
                          BinaryOperation binary_op, UnaryOperation unary_op) {
 
   static_cast<void>(exec);
-
-  return transform_inclusive_scan(first, last, result, binary_op, unary_op);
+  return [&]() noexcept {
+    return transform_inclusive_scan(first, last, result, binary_op, unary_op);
+  }();
 }
 
 // [adjacent.difference]
@@ -691,7 +711,7 @@ adjacent_difference(ExecutionPolicy &&exec, ForwardIterator1 first,
         *output = operation(*input, *input);
       },
       "policy adjacent_difference does not satisfy N4950 mandates");
-
+return [&]() noexcept {
   if (first == last)
     return result;
 
@@ -706,6 +726,7 @@ adjacent_difference(ExecutionPolicy &&exec, ForwardIterator1 first,
     *result = binary_op(*first, *previous);
 
   return result;
+}();
 }
 
 template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2>
@@ -714,8 +735,10 @@ ForwardIterator2
 adjacent_difference(ExecutionPolicy &&exec, ForwardIterator1 first,
                     ForwardIterator1 last, ForwardIterator2 result) {
 
-  return adjacent_difference(forward<ExecutionPolicy>(exec), first, last,
-                             result, minus<>{});
+  return [&]() noexcept {
+    return adjacent_difference(forward<ExecutionPolicy>(exec), first, last,
+                               result, minus<>{});
+  }();
 }
 
 // [numeric.iota]

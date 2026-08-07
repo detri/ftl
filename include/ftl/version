@@ -603,4 +603,31 @@
 #define __cpp_lib_parallel_algorithm 201603L
 #endif
 
+#if !defined(__cpp_lib_algorithm_iterator_requirements) ||                     \
+    __cpp_lib_algorithm_iterator_requirements < 202207L
+#undef __cpp_lib_algorithm_iterator_requirements
+#define __cpp_lib_algorithm_iterator_requirements 202207L
+#endif
+
+#if !defined(__cpp_lib_constexpr_numeric) ||                                   \
+    __cpp_lib_constexpr_numeric < 201911L
+#undef __cpp_lib_constexpr_numeric
+#define __cpp_lib_constexpr_numeric 201911L
+#endif
+
+#if !defined(__cpp_lib_gcd_lcm) || __cpp_lib_gcd_lcm < 201606L
+#undef __cpp_lib_gcd_lcm
+#define __cpp_lib_gcd_lcm 201606L
+#endif
+
+#if !defined(__cpp_lib_interpolate) || __cpp_lib_interpolate < 201902L
+#undef __cpp_lib_interpolate
+#define __cpp_lib_interpolate 201902L
+#endif
+
+#if !defined(__cpp_lib_ranges_iota) || __cpp_lib_ranges_iota < 202202L
+#undef __cpp_lib_ranges_iota
+#define __cpp_lib_ranges_iota 202202L
+#endif
+
 #endif

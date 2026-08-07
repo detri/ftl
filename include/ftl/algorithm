@@ -116,4 +116,10 @@
 #define __cpp_lib_parallel_algorithm 201603L
 #endif
 
+#if !defined(__cpp_lib_algorithm_iterator_requirements) || \
+    __cpp_lib_algorithm_iterator_requirements < 202207L
+#undef __cpp_lib_algorithm_iterator_requirements
+#define __cpp_lib_algorithm_iterator_requirements 202207L
+#endif
+
 #endif // FTL_ALGORITHMS_HEADER
