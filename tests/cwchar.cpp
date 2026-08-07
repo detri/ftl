@@ -217,6 +217,181 @@ bool ftl_test() {
     }
   }
 
+  // Decimal floating conversion.
+  {
+    const wchar_t input[] = L"  -12.5e2tail";
+    wchar_t *end = nullptr;
+
+    const double value = tested::wcstod(input, &end);
+
+    if (value != -1250.0) {
+      return false;
+    }
+
+    if (end != input + 9 || *end != L't') {
+      return false;
+    }
+  }
+
+  // Fraction without an integer part.
+  {
+    wchar_t *end = nullptr;
+
+    if (tested::wcstof(L".25", &end) != 0.25f) {
+      return false;
+    }
+
+    if (end == nullptr || *end != L'\0') {
+      return false;
+    }
+  }
+
+  // Decimal exponent is consumed only when complete.
+  {
+    const wchar_t input[] = L"1e+";
+    wchar_t *end = nullptr;
+
+    if (tested::wcstod(input, &end) != 1.0) {
+      return false;
+    }
+
+    if (end != input + 1 || *end != L'e') {
+      return false;
+    }
+  }
+
+  // Hexadecimal floating conversion.
+  {
+    const wchar_t input[] = L"0x1.8p2!";
+    wchar_t *end = nullptr;
+
+    if (tested::wcstod(input, &end) != 6.0) {
+      return false;
+    }
+
+    if (end != input + 7 || *end != L'!') {
+      return false;
+    }
+  }
+
+  // The strtod/wcstod family permits hexadecimal input without
+  // an explicit binary exponent.
+  {
+    wchar_t *end = nullptr;
+
+    if (tested::wcstod(L"0x10", &end) != 16.0) {
+      return false;
+    }
+
+    if (end == nullptr || *end != L'\0') {
+      return false;
+    }
+  }
+
+  // A failed hexadecimal prefix falls back to the valid
+  // decimal prefix.
+  {
+    const wchar_t input[] = L"0x";
+    wchar_t *end = nullptr;
+
+    if (tested::wcstod(input, &end) != 0.0) {
+      return false;
+    }
+
+    if (end != input + 1 || *end != L'x') {
+      return false;
+    }
+  }
+
+  // Infinity.
+  {
+    const wchar_t input[] = L"-INFINITY!";
+    wchar_t *end = nullptr;
+
+    const double value = tested::wcstod(input, &end);
+
+    if (value != -tested::numeric_limits<double>::infinity()) {
+      return false;
+    }
+
+    if (end != input + 9 || *end != L'!') {
+      return false;
+    }
+  }
+
+  {
+    const wchar_t input[] = L"inf!";
+    wchar_t *end = nullptr;
+
+    if (tested::wcstod(input, &end) !=
+        tested::numeric_limits<double>::infinity()) {
+      return false;
+    }
+
+    if (end != input + 3 || *end != L'!') {
+      return false;
+    }
+  }
+
+  // NaN, including an implementation-defined payload.
+  {
+    const wchar_t input[] = L"NaN(ftl_23)!";
+    wchar_t *end = nullptr;
+
+    const double value = tested::wcstod(input, &end);
+
+    if (value == value) {
+      return false;
+    }
+
+    if (end != input + 11 || *end != L'!') {
+      return false;
+    }
+  }
+
+  // Malformed NAN(payload) is not accepted as a valid NAN
+  // subject sequence.
+  {
+    const wchar_t input[] = L"nan(bad";
+    wchar_t *end = nullptr;
+
+    if (tested::wcstod(input, &end) != 0.0) {
+      return false;
+    }
+
+    if (end != input) {
+      return false;
+    }
+  }
+
+  // No conversion.
+  {
+    const wchar_t input[] = L"xyz";
+    wchar_t *end = nullptr;
+
+    if (tested::wcstold(input, &end) != 0.0L) {
+      return false;
+    }
+
+    if (end != input) {
+      return false;
+    }
+  }
+
+  // A mathematically zero significand remains zero regardless
+  // of an absurd exponent.
+  {
+    wchar_t *end = nullptr;
+
+    if (tested::wcstod(L"0.0e99999", &end) != 0.0) {
+      return false;
+    }
+
+    if (end == nullptr || *end != L'\0') {
+      return false;
+    }
+  }
+
   // Automatic base selection.
   {
     wchar_t *end = nullptr;

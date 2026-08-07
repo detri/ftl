@@ -261,7 +261,448 @@ Unsigned parse_unsigned_integer(const wchar_t *string, wchar_t **end,
   return negative ? Unsigned{} - value : value;
 }
 
+inline wchar_t ascii_lower(wchar_t value) {
+  if (value >= L'A' && value <= L'Z') {
+    return static_cast<wchar_t>(value - L'A' + L'a');
+  }
+
+  return value;
+}
+
+inline bool matches_ascii_case_insensitive(const wchar_t *string,
+                                           const wchar_t *expected) {
+  while (*expected != L'\0') {
+    const wchar_t actual = load(string);
+
+    if (actual == L'\0') {
+      return false;
+    }
+
+    if (ascii_lower(actual) != ascii_lower(*expected)) {
+      return false;
+    }
+
+    ++string;
+    ++expected;
+  }
+
+  return true;
+}
+
+inline bool nan_payload_character(wchar_t value) {
+  return (value >= L'0' && value <= L'9') || (value >= L'a' && value <= L'z') ||
+         (value >= L'A' && value <= L'Z') || value == L'_';
+}
+
+inline int decimal_digit_value(wchar_t value) {
+  if (value >= L'0' && value <= L'9') {
+    return static_cast<int>(value - L'0');
+  }
+
+  return -1;
+}
+
+inline int hexadecimal_digit_value(wchar_t value) {
+  if (value >= L'0' && value <= L'9') {
+    return static_cast<int>(value - L'0');
+  }
+
+  if (value >= L'a' && value <= L'f') {
+    return static_cast<int>(value - L'a') + 10;
+  }
+
+  if (value >= L'A' && value <= L'F') {
+    return static_cast<int>(value - L'A') + 10;
+  }
+
+  return -1;
+}
+
+inline void adjust_float_exponent(int &exponent, int adjustment) {
+  constexpr int exponent_limit = 100000;
+
+  if (adjustment > 0) {
+    if (exponent > exponent_limit - adjustment) {
+      exponent = exponent_limit;
+    } else {
+      exponent += adjustment;
+    }
+  } else {
+    if (exponent < -exponent_limit - adjustment) {
+      exponent = -exponent_limit;
+    } else {
+      exponent += adjustment;
+    }
+  }
+}
+
+inline bool parse_float_exponent(const wchar_t *string, const wchar_t *&end,
+                                 int &exponent) {
+  const wchar_t *current = string;
+
+  bool negative = false;
+
+  if (load(current) == L'+' || load(current) == L'-') {
+    negative = load(current) == L'-';
+    ++current;
+  }
+
+  if (decimal_digit_value(load(current)) < 0) {
+    return false;
+  }
+
+  constexpr int exponent_limit = 100000;
+  int magnitude = 0;
+
+  while (true) {
+    const int digit = decimal_digit_value(load(current));
+
+    if (digit < 0) {
+      break;
+    }
+
+    if (magnitude < exponent_limit) {
+      if (magnitude > (exponent_limit - digit) / 10) {
+        magnitude = exponent_limit;
+      } else {
+        magnitude = magnitude * 10 + digit;
+      }
+    }
+
+    ++current;
+  }
+
+  exponent = negative ? -magnitude : magnitude;
+  end = current;
+  return true;
+}
+
+inline long double scale_float(long double value, int base, int exponent) {
+  if (value == 0.0L || exponent == 0) {
+    return value;
+  }
+
+  const bool divide = exponent < 0;
+
+  unsigned int magnitude =
+      static_cast<unsigned int>(divide ? -exponent : exponent);
+
+  long double factor = static_cast<long double>(base);
+
+  while (magnitude != 0) {
+    if ((magnitude & 1u) != 0) {
+      value = divide ? value / factor : value * factor;
+    }
+
+    magnitude >>= 1u;
+
+    if (magnitude != 0) {
+      factor *= factor;
+    }
+  }
+
+  return value;
+}
+
+inline bool has_hexadecimal_significand(const wchar_t *string) {
+  if (load(string) != L'0' ||
+      (load(string + 1) != L'x' && load(string + 1) != L'X')) {
+    return false;
+  }
+
+  const wchar_t *current = string + 2;
+  bool have_digit = false;
+
+  while (hexadecimal_digit_value(load(current)) >= 0) {
+    have_digit = true;
+    ++current;
+  }
+
+  if (load(current) == L'.') {
+    ++current;
+
+    while (hexadecimal_digit_value(load(current)) >= 0) {
+      have_digit = true;
+      ++current;
+    }
+  }
+
+  return have_digit;
+}
+
+template <class Float>
+Float finish_floating_conversion(long double magnitude, bool negative,
+                                 bool mathematically_nonzero) {
+  if (magnitude > static_cast<long double>(numeric_limits<Float>::max())) {
+    errno = ERANGE;
+
+    const Float infinity = numeric_limits<Float>::infinity();
+
+    return negative ? -infinity : infinity;
+  }
+
+  if (mathematically_nonzero && magnitude == 0.0L) {
+    errno = ERANGE;
+
+    const Float zero = Float{};
+    return negative ? -zero : zero;
+  }
+
+  const Float result = static_cast<Float>(magnitude);
+
+  /*
+   * If conversion to the narrower destination flushed a
+   * nonzero value to zero, this is an underflow.
+   *
+   * For a representable nonzero subnormal result, whether
+   * errno becomes ERANGE is implementation-defined; FTL
+   * leaves it unchanged.
+   */
+  if (mathematically_nonzero && result == Float{} && magnitude != 0.0L) {
+    errno = ERANGE;
+
+    const Float zero = Float{};
+    return negative ? -zero : zero;
+  }
+
+  return negative ? -result : result;
+}
+
+template <class Float>
+Float parse_floating(const wchar_t *string, wchar_t **end) {
+  const wchar_t *const original = string;
+  const wchar_t *current = string;
+
+  while (is_space(load(current))) {
+    ++current;
+  }
+
+  bool negative = false;
+
+  if (load(current) == L'+' || load(current) == L'-') {
+    negative = load(current) == L'-';
+    ++current;
+  }
+
+  /*
+   * C requires either INFINITY, or INF when the following
+   * character does not continue an INFINITY prefix.
+   */
+  if (matches_ascii_case_insensitive(current, L"infinity")) {
+    current += 8;
+
+    if (end != nullptr) {
+      *end = const_cast<wchar_t *>(current);
+    }
+
+    const Float infinity = numeric_limits<Float>::infinity();
+
+    return negative ? -infinity : infinity;
+  }
+
+  if (matches_ascii_case_insensitive(current, L"inf") &&
+      ascii_lower(load(current + 3)) != L'i') {
+    current += 3;
+
+    if (end != nullptr) {
+      *end = const_cast<wchar_t *>(current);
+    }
+
+    const Float infinity = numeric_limits<Float>::infinity();
+
+    return negative ? -infinity : infinity;
+  }
+
+  if (matches_ascii_case_insensitive(current, L"nan")) {
+    const wchar_t *nan_end = current + 3;
+
+    if (load(nan_end) == L'(') {
+      const wchar_t *payload = nan_end + 1;
+
+      while (nan_payload_character(load(payload))) {
+        ++payload;
+      }
+
+      /*
+       * NAN followed by '(' is accepted only when the
+       * payload is syntactically complete.
+       */
+      if (load(payload) != L')') {
+        if (end != nullptr) {
+          *end = const_cast<wchar_t *>(original);
+        }
+
+        return Float{};
+      }
+
+      nan_end = payload + 1;
+    }
+
+    if (end != nullptr) {
+      *end = const_cast<wchar_t *>(nan_end);
+    }
+
+    const Float nan = numeric_limits<Float>::quiet_NaN();
+
+    return negative ? -nan : nan;
+  }
+
+  const bool hexadecimal = has_hexadecimal_significand(current);
+
+  const int base = hexadecimal ? 16 : 10;
+  const int digit_exponent = hexadecimal ? 4 : 1;
+
+  if (hexadecimal) {
+    current += 2;
+  }
+
+  const wchar_t *significand_begin = current;
+
+  /*
+   * Keep a few guard digits beyond the precision of long
+   * double. Extra digits are represented as a fractional tail
+   * and an exponent adjustment, so arbitrarily long inputs do
+   * not overflow the accumulator merely because they contain
+   * many digits.
+   */
+  const int maximum_stored_digits =
+      hexadecimal ? (numeric_limits<long double>::digits + 3) / 4 + 2
+                  : numeric_limits<long double>::digits10 + 4;
+
+  long double significand = 0.0L;
+  long double tail = 0.0L;
+  long double tail_factor = 1.0L / static_cast<long double>(base);
+
+  int stored_digits = 0;
+  int scale_exponent = 0;
+
+  bool after_point = false;
+  bool point_seen = false;
+  bool have_digit = false;
+  bool have_nonzero_digit = false;
+  bool dropping_digits = false;
+
+  for (;;) {
+    const wchar_t value = load(current);
+
+    const int digit = hexadecimal ? hexadecimal_digit_value(value)
+                                  : decimal_digit_value(value);
+
+    if (digit >= 0) {
+      have_digit = true;
+
+      if (after_point) {
+        adjust_float_exponent(scale_exponent, -digit_exponent);
+      }
+
+      if (digit != 0 || have_nonzero_digit) {
+        have_nonzero_digit = true;
+
+        if (stored_digits < maximum_stored_digits) {
+          significand = significand * static_cast<long double>(base) +
+                        static_cast<long double>(digit);
+
+          ++stored_digits;
+        } else {
+          /*
+           * Factoring each discarded digit out into
+           * the exponent keeps the leading
+           * significand bounded:
+           *
+           * 123456 -> 123.456 * 10^3
+           */
+          adjust_float_exponent(scale_exponent, digit_exponent);
+
+          if (!dropping_digits) {
+            dropping_digits = true;
+            tail_factor = 1.0L / static_cast<long double>(base);
+          }
+
+          tail += static_cast<long double>(digit) * tail_factor;
+
+          tail_factor /= static_cast<long double>(base);
+        }
+      }
+
+      ++current;
+      continue;
+    }
+
+    if (!point_seen && value == L'.') {
+      point_seen = true;
+      after_point = true;
+      ++current;
+      continue;
+    }
+
+    break;
+  }
+
+  if (!have_digit) {
+    /*
+     * A failed hexadecimal candidate was never selected by
+     * has_hexadecimal_significand(), so this also handles
+     * inputs such as "." cleanly.
+     */
+    static_cast<void>(significand_begin);
+
+    if (end != nullptr) {
+      *end = const_cast<wchar_t *>(original);
+    }
+
+    return Float{};
+  }
+
+  int explicit_exponent = 0;
+  const wchar_t exponent_marker = hexadecimal ? L'p' : L'e';
+
+  if (ascii_lower(load(current)) == exponent_marker) {
+    const wchar_t *exponent_end = nullptr;
+    int parsed_exponent = 0;
+
+    if (parse_float_exponent(current + 1, exponent_end, parsed_exponent)) {
+      explicit_exponent = parsed_exponent;
+      current = exponent_end;
+    }
+  }
+
+  if (end != nullptr) {
+    *end = const_cast<wchar_t *>(current);
+  }
+
+  /*
+   * This special case matters. "0e999999" is exactly zero,
+   * not a floating overflow caused by its enormous exponent.
+   */
+  if (!have_nonzero_digit) {
+    const Float zero = Float{};
+    return negative ? -zero : zero;
+  }
+
+  adjust_float_exponent(scale_exponent, explicit_exponent);
+
+  const long double magnitude =
+      scale_float(significand + tail, hexadecimal ? 2 : 10, scale_exponent);
+
+  return finish_floating_conversion<Float>(magnitude, negative, true);
+}
+
 } // namespace cwchar_detail
+
+FTL_CWCHAR_NO_BUILTIN
+inline float wcstof(const wchar_t *nptr, wchar_t **endptr) {
+  return cwchar_detail::parse_floating<float>(nptr, endptr);
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline double wcstod(const wchar_t *nptr, wchar_t **endptr) {
+  return cwchar_detail::parse_floating<double>(nptr, endptr);
+}
+
+FTL_CWCHAR_NO_BUILTIN
+inline long double wcstold(const wchar_t *nptr, wchar_t **endptr) {
+  return cwchar_detail::parse_floating<long double>(nptr, endptr);
+}
 
 FTL_CWCHAR_NO_BUILTIN
 inline long wcstol(const wchar_t *nptr, wchar_t **endptr, int base) {
