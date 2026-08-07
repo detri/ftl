@@ -31,12 +31,7 @@ FTL_BEGIN_NAMESPACE
 
 namespace detail {
 
-struct lexicographical_less {
-  template <class T, class U>
-  constexpr bool operator()(T &&left, U &&right) const {
-    return static_cast<T &&>(left) < static_cast<U &&>(right);
-  }
-};
+using lexicographical_less = FTL_LEXICOGRAPHICAL_NAMESPACE::less<>;
 
 template <class Iterator1, class Sentinel1, class Iterator2, class Sentinel2,
           class Comparator>

@@ -29,12 +29,7 @@ FTL_BEGIN_NAMESPACE
 
 namespace detail {
 
-struct heap_less {
-  template <class T, class U>
-  constexpr bool operator()(T &&left, U &&right) const {
-    return static_cast<T &&>(left) < static_cast<U &&>(right);
-  }
-};
+using heap_less = FTL_HEAP_NAMESPACE::less<>;
 
 template <class Comparator, class Projection, class T, class U>
 constexpr bool heap_before(Comparator &comparator, Projection &projection,

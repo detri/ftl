@@ -33,12 +33,7 @@ FTL_BEGIN_NAMESPACE
 
 namespace detail {
 
-struct merge_less {
-  template <class T, class U>
-  constexpr bool operator()(T &&left, U &&right) const {
-    return static_cast<T &&>(left) < static_cast<U &&>(right);
-  }
-};
+using merge_less = FTL_MERGE_NAMESPACE::less<>;
 
 template <class Iterator1, class Sentinel1, class Iterator2, class Sentinel2,
           class Output, class Comparator, class Projection1, class Projection2>

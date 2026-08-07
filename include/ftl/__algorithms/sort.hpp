@@ -31,12 +31,7 @@ FTL_BEGIN_NAMESPACE
 
 namespace detail {
 
-struct algorithm_less {
-  template <class T, class U>
-  constexpr bool operator()(T &&left, U &&right) const {
-    return static_cast<T &&>(left) < static_cast<U &&>(right);
-  }
-};
+using algorithm_less = FTL_SORT_NAMESPACE::less<>;
 
 template <class Comparator, class Projection, class T, class U>
 constexpr bool sort_before(Comparator &comparator, Projection &projection,

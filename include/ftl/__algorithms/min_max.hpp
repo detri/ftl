@@ -33,12 +33,7 @@ FTL_BEGIN_NAMESPACE
 
 namespace detail {
 
-struct min_max_less {
-  template <class T, class U>
-  constexpr bool operator()(T &&left, U &&right) const {
-    return static_cast<T &&>(left) < static_cast<U &&>(right);
-  }
-};
+using min_max_less = FTL_MIN_MAX_NAMESPACE::less<>;
 
 template <class Comparator, class Projection, class T, class U>
 constexpr bool min_max_before(Comparator &comparator, Projection &projection,

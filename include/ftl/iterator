@@ -6,12 +6,14 @@
 #ifdef FTL_REPLACE_STL
 #include <compare>
 #include <concepts>
+#include <cstdint>
 #include <initializer_list>
 #include <new>
 #include <utility>
 #else
 #include <ftl/compare>
 #include <ftl/concepts>
+#include <ftl/cstdint>
 #include <ftl/initializer_list>
 #include <ftl/new>
 #include <ftl/utility>
@@ -386,6 +388,54 @@ using iter_difference_t = typename detail::iter_difference<T>::type;
 
 template <class T> using iter_value_t = typename detail::iter_value<T>::type;
 
+namespace detail {
+
+template <class T, class U>
+constexpr bool pointer_total_less(T *left, U *right) noexcept {
+  /*
+   * Integer conversion is not permitted in a constant expression.
+   * For constexpr evaluation, use the language pointer ordering;
+   * this is also what libstdc++ does.
+   */
+  if (is_constant_evaluated()) {
+    return left < right;
+  }
+
+  return reinterpret_cast<uintptr_t>(left) <
+         reinterpret_cast<uintptr_t>(right);
+}
+
+template <class T, class U>
+concept has_member_less = requires(T &&left, U &&right) {
+  static_cast<T &&>(left).operator<(static_cast<U &&>(right));
+};
+
+template <class T, class U>
+concept has_nonmember_less = requires(T &&left, U &&right) {
+  operator<(static_cast<T &&>(left), static_cast<U &&>(right));
+};
+
+template <class T, class U>
+concept has_member_three_way = requires(T &&left, U &&right) {
+  static_cast<T &&>(left).operator<=>(static_cast<U &&>(right));
+};
+
+template <class T, class U>
+concept has_nonmember_three_way = requires(T &&left, U &&right) {
+  operator<=>(static_cast<T &&>(left), static_cast<U &&>(right));
+};
+
+template <class T, class U>
+inline constexpr bool uses_builtin_object_pointer_less_v =
+    is_convertible_v<T, const volatile void *> &&
+    is_convertible_v<U, const volatile void *> &&
+    !has_member_less<T, U> &&
+    !has_nonmember_less<T, U> &&
+    !has_member_three_way<T, U> &&
+    !has_nonmember_three_way<T, U>;
+
+} // namespace detail
+
 namespace ranges {
 struct less {
   using is_transparent = void;
@@ -393,8 +443,25 @@ struct less {
   template <class T, class U>
     requires totally_ordered_with<T, U>
   constexpr bool operator()(T &&left, U &&right) const
-      noexcept(noexcept(static_cast<T &&>(left) < static_cast<U &&>(right))) {
-    return static_cast<T &&>(left) < static_cast<U &&>(right);
+      noexcept(noexcept(static_cast<T &&>(left) <
+                        static_cast<U &&>(right))) {
+    if constexpr (
+        is_pointer_v<remove_reference_t<T>> &&
+        is_pointer_v<remove_reference_t<U>>) {
+      return FTL_ITER_NS::detail::pointer_total_less(
+          static_cast<T &&>(left),
+          static_cast<U &&>(right));
+    } else if constexpr (
+        FTL_ITER_NS::detail::uses_builtin_object_pointer_less_v<T, U>) {
+      return FTL_ITER_NS::detail::pointer_total_less(
+          static_cast<const volatile void *>(
+              static_cast<T &&>(left)),
+          static_cast<const volatile void *>(
+              static_cast<U &&>(right)));
+    } else {
+      return static_cast<T &&>(left) <
+             static_cast<U &&>(right);
+    }
   }
 };
 

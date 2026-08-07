@@ -33,4 +33,11 @@ static_assert(__cpp_lib_execution >= 201902L);
 
 static_assert(__cpp_lib_coroutine >= 201902L);
 
+static_assert(__cpp_lib_algorithm_iterator_requirements >= 202207L);
+static_assert(__cpp_lib_constexpr_numeric >= 201911L);
+static_assert(__cpp_lib_gcd_lcm >= 201606L);
+static_assert(__cpp_lib_interpolate >= 201902L);
+static_assert(__cpp_lib_parallel_algorithm >= 201603L);
+static_assert(__cpp_lib_ranges_iota >= 202202L);
+
 bool ftl_test() { return true; }

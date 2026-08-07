@@ -25,12 +25,7 @@ FTL_BEGIN_NAMESPACE
 
 namespace detail {
 
-struct binary_search_less {
-  template <class T, class U>
-  constexpr bool operator()(T &&left, U &&right) const {
-    return static_cast<T &&>(left) < static_cast<U &&>(right);
-  }
-};
+using binary_search_less = FTL_BINARY_SEARCH_NAMESPACE::less<>;
 
 template <class Iterator, class Sentinel, class T, class Comparator,
           class Projection>
