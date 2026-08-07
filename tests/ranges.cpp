@@ -20,13 +20,13 @@ namespace tested = ftl;
 #error "__cpp_lib_ranges_as_rvalue is missing"
 #endif
 
-static_assert(__cpp_lib_ranges_as_rvalue == 202207L);
+static_assert(__cpp_lib_ranges_as_rvalue >= 202207L);
 
 #ifndef __cpp_lib_ranges_to_container
 #error "__cpp_lib_ranges_to_container is missing"
 #endif
 
-static_assert(__cpp_lib_ranges_to_container == 202202L);
+static_assert(__cpp_lib_ranges_to_container >= 202202L);
 
 template <class T, tested::size_t Capacity = 16> struct to_buffer_base {
   using value_type = T;

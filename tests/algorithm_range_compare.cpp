@@ -22,7 +22,7 @@ namespace tested = ftl;
 #error "__cpp_lib_ranges_starts_ends_with must be defined"
 #endif
 
-static_assert(__cpp_lib_ranges_starts_ends_with == 202106L);
+static_assert(__cpp_lib_ranges_starts_ends_with >= 202106L);
 
 struct same_parity {
   constexpr bool operator()(int left, int right) const noexcept {

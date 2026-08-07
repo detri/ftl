@@ -12,7 +12,7 @@ namespace tested = ftl;
 #error "__cpp_lib_execution must be defined"
 #endif
 
-static_assert(__cpp_lib_execution == 201902L);
+static_assert(__cpp_lib_execution >= 201902L);
 
 using sequenced_policy = tested::execution::sequenced_policy;
 

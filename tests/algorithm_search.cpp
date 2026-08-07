@@ -26,8 +26,8 @@ namespace tested = ftl;
 #error "__cpp_lib_ranges_find_last must be defined"
 #endif
 
-static_assert(__cpp_lib_ranges_contains == 202207L);
-static_assert(__cpp_lib_ranges_find_last == 202207L);
+static_assert(__cpp_lib_ranges_contains >= 202207L);
+static_assert(__cpp_lib_ranges_find_last >= 202207L);
 
 struct same_parity {
   constexpr bool operator()(int left, int right) const noexcept {

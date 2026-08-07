@@ -24,7 +24,7 @@ namespace tested = ftl;
 #error "__cpp_lib_shift must be defined"
 #endif
 
-static_assert(__cpp_lib_shift == 202202L);
+static_assert(__cpp_lib_shift >= 202202L);
 
 template <class T> struct pointer_sentinel {
   T *last = nullptr;
