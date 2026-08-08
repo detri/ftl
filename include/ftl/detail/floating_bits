@@ -138,14 +138,24 @@ struct x87_storage {
 
 static_assert(sizeof(x87_storage) == sizeof(long double));
 
-#elif defined(FTL_LONG_DOUBLE_BINARY128)
+#endif
+
+#if defined(FTL_LONG_DOUBLE_BINARY128) || defined(__STDCPP_FLOAT128_T__)
 
 struct binary128_storage {
   FTL_FLOATING_BITS_STD::uint64_t first;
   FTL_FLOATING_BITS_STD::uint64_t second;
 };
 
+static_assert(sizeof(binary128_storage) == 16);
+
+#if defined(FTL_LONG_DOUBLE_BINARY128)
 static_assert(sizeof(binary128_storage) == sizeof(long double));
+#endif
+
+#if defined(__STDCPP_FLOAT128_T__)
+static_assert(sizeof(binary128_storage) == sizeof(decltype(0.0f128)));
+#endif
 
 [[nodiscard]]
 constexpr FTL_FLOATING_BITS_STD::uint64_t
@@ -196,6 +206,82 @@ template <>
 struct floating_format_traits<double>
     : floating_bits_detail::ieee_binary_format<
           double, FTL_FLOATING_BITS_STD::uint64_t, 52, 11, 1023> {};
+
+#ifdef __STDCPP_FLOAT16_T__
+
+template <>
+struct floating_format_traits<decltype(0.0f16)>
+    : floating_bits_detail::ieee_binary_format<
+          decltype(0.0f16),
+          FTL_FLOATING_BITS_STD::uint16_t,
+          10,
+          5,
+          15> {};
+
+#endif
+
+#ifdef __STDCPP_FLOAT32_T__
+
+template <>
+struct floating_format_traits<decltype(0.0f32)>
+    : floating_bits_detail::ieee_binary_format<
+          decltype(0.0f32),
+          FTL_FLOATING_BITS_STD::uint32_t,
+          23,
+          8,
+          127> {};
+
+#endif
+
+#ifdef __STDCPP_FLOAT64_T__
+
+template <>
+struct floating_format_traits<decltype(0.0f64)>
+    : floating_bits_detail::ieee_binary_format<
+          decltype(0.0f64),
+          FTL_FLOATING_BITS_STD::uint64_t,
+          52,
+          11,
+          1023> {};
+
+#endif
+
+#ifdef __STDCPP_FLOAT128_T__
+
+template <>
+struct floating_format_traits<decltype(0.0f128)> {
+  using float_type = decltype(0.0f128);
+  using storage_type = floating_bits_detail::binary128_storage;
+
+  static constexpr int fraction_bits = 112;
+  static constexpr int exponent_bits = 15;
+  static constexpr int exponent_bias = 16383;
+  static constexpr int significand_bits = 113;
+  static constexpr int total_bits = 128;
+
+  static constexpr int exponent_field_max = (1 << exponent_bits) - 1;
+
+  static constexpr int minimum_significand_exponent =
+      1 - exponent_bias - fraction_bits;
+
+  static constexpr int maximum_significand_exponent =
+      exponent_field_max - 1 - exponent_bias - fraction_bits;
+};
+
+#endif
+
+#ifdef __STDCPP_BFLOAT16_T__
+
+template <>
+struct floating_format_traits<decltype(0.0bf16)>
+    : floating_bits_detail::ieee_binary_format<
+          decltype(0.0bf16),
+          FTL_FLOATING_BITS_STD::uint16_t,
+          7,
+          8,
+          127> {};
+
+#endif
 
 template <> struct floating_format_traits<long double> {
 #if defined(FTL_LONG_DOUBLE_BINARY64)
@@ -258,6 +344,127 @@ constexpr Float floating_from_bits(
     typename floating_format_traits<Float>::storage_type bits) noexcept {
   return FTL_FLOATING_BITS_STD::bit_cast<Float>(bits);
 }
+
+#ifdef __STDCPP_FLOAT128_T__
+
+using extended_float128_type = decltype(0.0f128);
+
+[[nodiscard]]
+constexpr binary_parts<extended_float128_type>
+decompose(extended_float128_type value) noexcept {
+  using format = floating_format_traits<extended_float128_type>;
+  using uint64_t = FTL_FLOATING_BITS_STD::uint64_t;
+
+  const auto raw =
+      FTL_FLOATING_BITS_STD::bit_cast<
+          floating_bits_detail::binary128_storage>(value);
+
+  const uint64_t low = floating_bits_detail::binary128_low(raw);
+  const uint64_t high = floating_bits_detail::binary128_high(raw);
+
+  constexpr uint64_t sign_mask = 0x8000000000000000ull;
+  constexpr uint64_t fraction_high_mask = 0x0000ffffffffffffull;
+  constexpr uint64_t hidden_high_bit = 0x0001000000000000ull;
+
+  const bool negative = (high & sign_mask) != 0;
+  const uint64_t exponent_field = (high >> 48) & 0x7fffu;
+  const uint64_t fraction_high = high & fraction_high_mask;
+
+  if (exponent_field == 0) {
+    if (fraction_high == 0 && low == 0)
+      return {floating_kind::zero, negative, {}, 0};
+
+    return {
+        floating_kind::finite,
+        negative,
+        {low, fraction_high},
+        format::minimum_significand_exponent};
+  }
+
+  if (exponent_field == 0x7fffu) {
+    if (fraction_high == 0 && low == 0)
+      return {floating_kind::infinity, negative, {}, 0};
+
+    return {
+        floating_kind::nan,
+        negative,
+        {low, fraction_high},
+        0};
+  }
+
+  return {
+      floating_kind::finite,
+      negative,
+      {low, fraction_high | hidden_high_bit},
+      static_cast<int>(exponent_field) -
+          format::exponent_bias -
+          format::fraction_bits};
+}
+
+[[nodiscard]]
+constexpr extended_float128_type
+compose(const binary_parts<extended_float128_type>& parts) noexcept {
+  using format = floating_format_traits<extended_float128_type>;
+  using uint64_t = FTL_FLOATING_BITS_STD::uint64_t;
+
+  constexpr uint64_t sign_mask = 0x8000000000000000ull;
+  constexpr uint64_t exponent_mask = 0x7fff000000000000ull;
+  constexpr uint64_t fraction_high_mask = 0x0000ffffffffffffull;
+  constexpr uint64_t hidden_high_bit = 0x0001000000000000ull;
+
+  uint64_t low = 0;
+  uint64_t high = parts.negative ? sign_mask : uint64_t{0};
+
+  switch (parts.kind) {
+  case floating_kind::zero:
+    break;
+
+  case floating_kind::infinity:
+    high |= exponent_mask;
+    break;
+
+  case floating_kind::nan: {
+    low = parts.significand.low;
+
+    uint64_t fraction_high =
+        parts.significand.high & fraction_high_mask;
+
+    if (low == 0 && fraction_high == 0)
+      low = 1;
+
+    high |= exponent_mask | fraction_high;
+    break;
+  }
+
+  case floating_kind::finite: {
+    low = parts.significand.low;
+
+    const uint64_t significand_high = parts.significand.high;
+
+    if (significand_high < hidden_high_bit) {
+      high |= significand_high & fraction_high_mask;
+      break;
+    }
+
+    const int exponent_field =
+        parts.exponent +
+        format::exponent_bias +
+        format::fraction_bits;
+
+    high |= static_cast<uint64_t>(exponent_field) << 48;
+    high |= significand_high & fraction_high_mask;
+    break;
+  }
+  }
+
+  const auto raw =
+      floating_bits_detail::make_binary128_storage(low, high);
+
+  return FTL_FLOATING_BITS_STD::bit_cast<
+      extended_float128_type>(raw);
+}
+
+#endif
 
 template <class Float>
 [[nodiscard]]

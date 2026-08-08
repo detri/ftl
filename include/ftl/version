@@ -653,4 +653,15 @@
 #define __cpp_lib_string_contains 202011L
 #endif
 
+#if !defined(__cpp_lib_to_chars) || __cpp_lib_to_chars < 201611L
+#undef __cpp_lib_to_chars
+#define __cpp_lib_to_chars 201611L
+#endif
+
+#if !defined(__cpp_lib_constexpr_charconv) ||                           \
+    __cpp_lib_constexpr_charconv < 202207L
+#undef __cpp_lib_constexpr_charconv
+#define __cpp_lib_constexpr_charconv 202207L
+#endif
+
 #endif

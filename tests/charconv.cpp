@@ -10,6 +10,14 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+#if __cpp_lib_to_chars < 201611L
+#error <charconv> must advertise primitive numeric conversions
+#endif
+
+#if __cpp_lib_constexpr_charconv < 202207L
+#error <charconv> must advertise constexpr integer conversion
+#endif
+
 enum charconv_unscoped_enum { charconv_enum_value = 42 };
 
 enum class charconv_scoped_enum { value = 42 };
@@ -24,6 +32,46 @@ concept has_integer_from_chars =
     requires(const char *first, const char *last, T &value) {
       tested::from_chars(first, last, value);
     };
+
+template <class Float>
+concept has_exact_floating_charconv_overloads = requires {
+  static_cast<tested::to_chars_result (*)(char *, char *, Float)>(
+      &tested::to_chars);
+
+  static_cast<tested::to_chars_result (*)(
+      char *, char *, Float, tested::chars_format)>(&tested::to_chars);
+
+  static_cast<tested::to_chars_result (*)(
+      char *, char *, Float, tested::chars_format, int)>(&tested::to_chars);
+
+  static_cast<tested::from_chars_result (*)(const char *, const char *, Float &,
+                                            tested::chars_format)>(
+      &tested::from_chars);
+};
+
+static_assert(has_exact_floating_charconv_overloads<float>);
+static_assert(has_exact_floating_charconv_overloads<double>);
+static_assert(has_exact_floating_charconv_overloads<long double>);
+
+#ifdef __STDCPP_FLOAT16_T__
+static_assert(has_exact_floating_charconv_overloads<decltype(0.0f16)>);
+#endif
+
+#ifdef __STDCPP_FLOAT32_T__
+static_assert(has_exact_floating_charconv_overloads<decltype(0.0f32)>);
+#endif
+
+#ifdef __STDCPP_FLOAT64_T__
+static_assert(has_exact_floating_charconv_overloads<decltype(0.0f64)>);
+#endif
+
+#ifdef __STDCPP_FLOAT128_T__
+static_assert(has_exact_floating_charconv_overloads<decltype(0.0f128)>);
+#endif
+
+#ifdef __STDCPP_BFLOAT16_T__
+static_assert(has_exact_floating_charconv_overloads<decltype(0.0bf16)>);
+#endif
 
 static_assert(has_integer_to_chars<char>);
 static_assert(has_integer_to_chars<signed char>);
@@ -1388,7 +1436,214 @@ bool floating_to_chars_shortest_tests() {
   return true;
 }
 
+template <class Float> bool extended_floating_charconv_tests_for() {
+  char buffer[256]{};
+
+  /*
+   * Shortest no-format conversion.
+   */
+  {
+    const Float value = static_cast<Float>(1.5);
+
+    const auto result = tested::to_chars(buffer, buffer + 256, value);
+
+    if (result.ec != tested::errc{} || !equal_text(buffer, result.ptr, "1.5")) {
+      return false;
+    }
+
+    Float parsed{};
+
+    const auto round_trip = tested::from_chars(buffer, result.ptr, parsed);
+
+    if (round_trip.ec != tested::errc{} || round_trip.ptr != result.ptr ||
+        parsed != value) {
+      return false;
+    }
+  }
+
+  /*
+   * Format-constrained shortest scientific form.
+   */
+  {
+    const Float value = static_cast<Float>(1.5);
+
+    const auto result = tested::to_chars(buffer, buffer + 256, value,
+                                         tested::chars_format::scientific);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1.5e+00")) {
+      return false;
+    }
+  }
+
+  /*
+   * Precision overload and %g trimming.
+   */
+  {
+    const Float value = static_cast<Float>(1.25);
+
+    const auto result = tested::to_chars(buffer, buffer + 256, value,
+                                         tested::chars_format::general, 6);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1.25")) {
+      return false;
+    }
+  }
+
+  /*
+   * Exact hexadecimal conversion.
+   */
+  {
+    const Float value = static_cast<Float>(1.5);
+
+    const auto result = tested::to_chars(buffer, buffer + 256, value,
+                                         tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1.8p+0")) {
+      return false;
+    }
+
+    Float parsed{};
+
+    const auto round_trip = tested::from_chars(buffer, result.ptr, parsed,
+                                               tested::chars_format::hex);
+
+    if (round_trip.ec != tested::errc{} || round_trip.ptr != result.ptr ||
+        parsed != value) {
+      return false;
+    }
+  }
+
+  /*
+   * Smallest subnormal exercises the complete
+   * exponent range and shortest normalized hex path.
+   */
+  {
+    const Float value = tested::numeric_limits<Float>::denorm_min();
+
+    const auto result = tested::to_chars(buffer, buffer + 256, value,
+                                         tested::chars_format::hex);
+
+    if (result.ec != tested::errc{})
+      return false;
+
+    Float parsed{};
+
+    const auto round_trip = tested::from_chars(buffer, result.ptr, parsed,
+                                               tested::chars_format::hex);
+
+    if (round_trip.ec != tested::errc{} || round_trip.ptr != result.ptr ||
+        parsed != value) {
+      return false;
+    }
+  }
+
+  /*
+   * Decimal parsing through the type-specific path.
+   */
+  {
+    Float value = static_cast<Float>(99.0);
+
+    constexpr char text[] = "1.5";
+
+    const auto result = tested::from_chars(text, text + 3, value);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 3 ||
+        value != static_cast<Float>(1.5)) {
+      return false;
+    }
+  }
+
+  /*
+   * Extreme decimal exponents must classify as range
+   * errors without modifying the destination.
+   */
+  {
+    const Float original = static_cast<Float>(1.5);
+    Float value = original;
+
+    constexpr char text[] = "1e100000";
+
+    const auto result = tested::from_chars(text, text + 8, value);
+
+    if (result.ec != tested::errc::result_out_of_range ||
+        result.ptr != text + 8 || value != original) {
+      return false;
+    }
+  }
+
+  {
+    const Float original = static_cast<Float>(1.5);
+    Float value = original;
+
+    constexpr char text[] = "1e-100000";
+
+    const auto result = tested::from_chars(text, text + 9, value);
+
+    if (result.ec != tested::errc::result_out_of_range ||
+        result.ptr != text + 9 || value != original) {
+      return false;
+    }
+  }
+
+  /*
+   * Specials exercise extended-type composition.
+   */
+  {
+    const Float value = tested::numeric_limits<Float>::infinity();
+
+    const auto result = tested::to_chars(buffer, buffer + 256, value);
+
+    if (result.ec != tested::errc{} || !equal_text(buffer, result.ptr, "inf")) {
+      return false;
+    }
+
+    Float parsed{};
+
+    const auto round_trip = tested::from_chars(buffer, result.ptr, parsed);
+
+    if (round_trip.ec != tested::errc{} || round_trip.ptr != result.ptr ||
+        parsed != value) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool extended_floating_charconv_tests() {
+#ifdef __STDCPP_FLOAT16_T__
+  if (!extended_floating_charconv_tests_for<decltype(0.0f16)>())
+    return false;
+#endif
+
+#ifdef __STDCPP_FLOAT32_T__
+  if (!extended_floating_charconv_tests_for<decltype(0.0f32)>())
+    return false;
+#endif
+
+#ifdef __STDCPP_FLOAT64_T__
+  if (!extended_floating_charconv_tests_for<decltype(0.0f64)>())
+    return false;
+#endif
+
+#ifdef __STDCPP_FLOAT128_T__
+  if (!extended_floating_charconv_tests_for<decltype(0.0f128)>())
+    return false;
+#endif
+
+#ifdef __STDCPP_BFLOAT16_T__
+  if (!extended_floating_charconv_tests_for<decltype(0.0bf16)>())
+    return false;
+#endif
+
+  return true;
+}
+
 bool ftl_test() {
   return floating_from_chars_tests() && floating_to_chars_precision_tests() &&
-         floating_to_chars_shortest_tests();
+         floating_to_chars_shortest_tests() &&
+         extended_floating_charconv_tests();
 }

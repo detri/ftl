@@ -104,4 +104,9 @@
 #error Stage 3.3 string_view feature macros are incomplete
 #endif
 
+#if __cpp_lib_to_chars < 201611L ||                                     \
+    __cpp_lib_constexpr_charconv < 202207L
+#error Stage 3.3 charconv feature macros are incomplete
+#endif
+
 int main() {}
