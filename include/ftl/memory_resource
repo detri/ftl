@@ -120,7 +120,12 @@ public:
     polymorphic_allocator& operator=(const polymorphic_allocator&) = delete;
 
     [[nodiscard]] T* allocate(size_t count) {
-        if (count > size_t(-1) / sizeof(T)) throw bad_array_new_length{};
+        if (count > size_t(-1) / sizeof(T))
+#if FTL_HAS_EXCEPTIONS
+          throw bad_array_new_length{};
+#else
+          terminate();
+#endif
         return static_cast<T*>(resource_value->allocate(count * sizeof(T), alignof(T)));
     }
     void deallocate(T* p, size_t count) {
@@ -135,7 +140,12 @@ public:
         resource_value->deallocate(p, bytes, alignment);
     }
     template<class U> [[nodiscard]] U* allocate_object(size_t count = 1) {
-        if (count > size_t(-1) / sizeof(U)) throw bad_array_new_length{};
+        if (count > size_t(-1) / sizeof(U))
+#if FTL_HAS_EXCEPTIONS
+          throw bad_array_new_length{};
+#else
+          terminate();
+#endif
         return static_cast<U*>(allocate_bytes(count * sizeof(U), alignof(U)));
     }
     template<class U> void deallocate_object(U* p, size_t count = 1) {
