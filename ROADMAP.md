@@ -138,6 +138,7 @@ dependency order, not hundreds of individual overloads.
 | `<cuchar>`           | Stage 3.2         |
 | `<charconv>`         | Stage 3.3         |
 | `<string_view>`      | Stage 3.3         |
+| `<string>`           | Stage 3.4         |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -148,14 +149,14 @@ Normal namespace mode still provides and tests the library types directly.
 The following public headers exist but remain incomplete against their C++23
 synopses:
 
-| Header          | Implemented direction                                                                                            | Major remaining groups                                                                                             |
-|-----------------|------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
-| `<atomic>`      | integral atomics and memory orders                                                                               | generic/pointer atomics, `atomic_ref`, flag, fences, wait/notify, lock-free rules                                  |
-| `<stdexcept>`   | standard exception hierarchy, owned C-string messages, non-throwing copy operations                              | `basic_string` constructors, full synopsis and ABI/behavior audit                                                  |
-| `<iosfwd>`      | `char_traits`, fundamental stream types, aliases, and stream-class forward declarations                          | complete C++23 forward-declaration and positioning-type inventory                                                  |
-| `<streambuf>`   | input/get-area stream-buffer machinery needed by seeded input streams                                            | put area, positioning/seeking, locale, synchronization, putback, and complete synopsis                             |
-| `<ios>`         | stream state, buffer association, state observers, and boolean conversion                                        | full `ios_base`/`basic_ios` formatting, locales, callbacks, ties, exception masks, and synopsis                    |
-| `<istream>`     | core unformatted character input, bulk reads, stream-state propagation, and user-defined extraction integration  | sentry, formatted extraction, remaining unformatted overloads, positioning, synchronization, and complete synopsis |
+| Header        | Implemented direction                                                                                            | Major remaining groups                                                                                             |
+|---------------|------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
+| `<atomic>`    | integral atomics and memory orders                                                                               | generic/pointer atomics, `atomic_ref`, flag, fences, wait/notify, lock-free rules                                  |
+| `<stdexcept>` | standard exception hierarchy, owned C-string messages, `basic_string` constructors, non-throwing copy operations | full synopsis and ABI/behavior audit                                                                               |
+| `<iosfwd>`    | `char_traits`, fundamental stream types, aliases, and stream-class forward declarations                          | complete C++23 forward-declaration and positioning-type inventory                                                  |
+| `<streambuf>` | input/get-area stream-buffer machinery needed by seeded input streams                                            | put area, positioning/seeking, locale, synchronization, putback, and complete synopsis                             |
+| `<ios>`       | stream state, buffer association, state observers, and boolean conversion                                        | full `ios_base`/`basic_ios` formatting, locales, callbacks, ties, exception masks, and synopsis                    |
+| `<istream>`   | core unformatted character input, bulk reads, stream-state propagation, and user-defined extraction integration  | sentry, formatted extraction, remaining unformatted overloads, positioning, synchronization, and complete synopsis |
 
 `include/ftl/detail/rapidhash` is an implementation detail, not a standard
 header or roadmap milestone.
@@ -174,7 +175,7 @@ remain required when C++23 still specifies them; they are not silently dropped.
 | Concepts/types/vocabulary | `<bitset>`, `<ratio>`                                                                                                                                              |
 | Algorithms/numerics       | `<numbers>`, `<random>`, `<valarray>`                                                                                                                              |
 | Containers                | `<deque>`, `<flat_map>`, `<flat_set>`, `<forward_list>`, `<list>`, `<map>`, `<queue>`, `<set>`, `<stack>`, `<unordered_map>`, `<unordered_set>`, `<vector>`        |
-| Text/encoding             | `<codecvt>`, `<string>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                   |
+| Text/encoding             | `<codecvt>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                               |
 | Errors/time/localization  | `<chrono>`, `<system_error>`, `<stacktrace>`, `<locale>`, `<clocale>`, `<ctime>`                                                                                   |
 | C numerics/text           | `<cfenv>`, `<cmath>`, `<complex>`                                                                                                                                  |
 | I/O/formatting/files      | `<cstdio>`, `<fstream>`, `<iomanip>`, `<iostream>`, `<ostream>`, `<sstream>`, `<spanstream>`, `<strstream>`, `<syncstream>`, `<filesystem>`, `<format>`, `<print>` |
@@ -326,14 +327,14 @@ without depending on a container or I/O subsystem.
 
 ### Stage 3 — Algorithms and text core
 
-**Status: active. Closures 1–3 complete.**
+**Status: active. Closures 1–4 complete.**
 
 Take these closures in order:
 
 1. `<execution>` + `<algorithm>` + `<numeric>` — **complete**
 2. `<cstring>` + `<cwchar>` + `<cwctype>` + `<cuchar>` — **complete**
 3. `<string_view>` + `<charconv>` — **complete**
-4. `<string>`
+4. `<string>` — **complete**
 5. `<bitset>`
 
 Stage 3.1 completes the C++23 algorithm and numeric surfaces together with the
@@ -357,6 +358,13 @@ decimal and hexadecimal parsing, precision formatting, shortest-roundtrip
 formatting, `long double`, and the extended floating-point types exposed by
 FTL when supported by the compiler. Both headers advertise their completed
 C++23 feature-test macros.
+
+Stage 3.4 completes the C++23 owning string surface. `<string>` includes the
+complete `basic_string` synopsis, allocator-aware storage with small-string
+optimization, C++23 range construction and mutation, comparisons,
+concatenation, hashing, literals, numeric conversions, and the applicable
+stream declarations. It is constexpr-capable and validated in both normal and
+`FTL_REPLACE_STL` modes while preserving freestanding linkage.
 
 **Exit:** algorithms and owning/non-owning text are complete, allocation-aware,
 and usable as dependencies by containers and diagnostics.

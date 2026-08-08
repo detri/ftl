@@ -39,8 +39,12 @@ function(add_ftl_test header)
         endif ()
 
         set(target ftl_${mode}_${header})
-        add_executable(${target} gtest_driver.cpp $<TARGET_OBJECTS:${object}>)
-        target_link_libraries(${target} PRIVATE GTest::gtest_main)
+        if (mode STREQUAL replace AND header STREQUAL string)
+            add_executable(${target} standalone_driver.cpp $<TARGET_OBJECTS:${object}>)
+        else ()
+            add_executable(${target} gtest_driver.cpp $<TARGET_OBJECTS:${object}>)
+            target_link_libraries(${target} PRIVATE GTest::gtest_main)
+        endif ()
         target_compile_options(${target} PRIVATE "$<$<CXX_COMPILER_ID:MSVC>:/EHsc>")
         add_test(NAME "${mode}.${header}" COMMAND ${target})
     endforeach ()
@@ -133,12 +137,20 @@ add_ftl_compile_fail_check(
         string_view_rejects_nullptr
         checks/string_view_nullptr_compile_fail.cpp
 )
+add_ftl_compile_fail_check(
+        string_rejects_nullptr
+        checks/string_nullptr_compile_fail.cpp
+)
 add_ftl_standalone_check(feature_macros checks/feature_macros.cpp)
 add_ftl_standalone_check(no_allocation checks/no_allocation.cpp)
 add_ftl_freestanding_link_check(freestanding_link checks/freestanding_link.cpp)
 add_ftl_freestanding_link_check(
         cstring_freestanding_link
         checks/cstring_freestanding_link.cpp
+)
+add_ftl_freestanding_link_check(
+        string_freestanding_link
+        checks/string_freestanding_link.cpp
 )
 
 if (MSVC)
@@ -214,6 +226,7 @@ foreach (header IN ITEMS
         cinttypes
         c_headers
         string_view
+        string
         iterator
         tuple
         coroutine

@@ -109,4 +109,10 @@
 #error Stage 3.3 charconv feature macros are incomplete
 #endif
 
+#if __cpp_lib_constexpr_string < 201907L ||                             \
+    __cpp_lib_string_resize_and_overwrite < 202110L ||                  \
+    __cpp_lib_containers_ranges < 202202L
+#error Stage 3.4 string feature macros are incomplete
+#endif
+
 int main() {}

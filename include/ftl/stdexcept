@@ -17,6 +17,10 @@
 
 FTL_BEGIN_NAMESPACE
 
+template <class Character> struct char_traits;
+template <class T> class allocator;
+template <class Character, class Traits, class Allocator> class basic_string;
+
 namespace detail {
 
 struct stdexcept_message_block {
@@ -115,6 +119,8 @@ private:
 
 class logic_error : public exception {
 public:
+  explicit logic_error(
+      const basic_string<char, char_traits<char>, allocator<char>> &what_arg);
   explicit logic_error(const char *what_arg) : message_(what_arg) {}
 
   logic_error(const logic_error &) noexcept = default;
@@ -132,26 +138,36 @@ private:
 
 class domain_error : public logic_error {
 public:
+  explicit domain_error(
+      const basic_string<char, char_traits<char>, allocator<char>> &what_arg);
   explicit domain_error(const char *what_arg) : logic_error(what_arg) {}
 };
 
 class invalid_argument : public logic_error {
 public:
+  explicit invalid_argument(
+      const basic_string<char, char_traits<char>, allocator<char>> &what_arg);
   explicit invalid_argument(const char *what_arg) : logic_error(what_arg) {}
 };
 
 class length_error : public logic_error {
 public:
+  explicit length_error(
+      const basic_string<char, char_traits<char>, allocator<char>> &what_arg);
   explicit length_error(const char *what_arg) : logic_error(what_arg) {}
 };
 
 class out_of_range : public logic_error {
 public:
+  explicit out_of_range(
+      const basic_string<char, char_traits<char>, allocator<char>> &what_arg);
   explicit out_of_range(const char *what_arg) : logic_error(what_arg) {}
 };
 
 class runtime_error : public exception {
 public:
+  explicit runtime_error(
+      const basic_string<char, char_traits<char>, allocator<char>> &what_arg);
   explicit runtime_error(const char *what_arg) : message_(what_arg) {}
 
   runtime_error(const runtime_error &) noexcept = default;
@@ -169,16 +185,22 @@ private:
 
 class range_error : public runtime_error {
 public:
+  explicit range_error(
+      const basic_string<char, char_traits<char>, allocator<char>> &what_arg);
   explicit range_error(const char *what_arg) : runtime_error(what_arg) {}
 };
 
 class overflow_error : public runtime_error {
 public:
+  explicit overflow_error(
+      const basic_string<char, char_traits<char>, allocator<char>> &what_arg);
   explicit overflow_error(const char *what_arg) : runtime_error(what_arg) {}
 };
 
 class underflow_error : public runtime_error {
 public:
+  explicit underflow_error(
+      const basic_string<char, char_traits<char>, allocator<char>> &what_arg);
   explicit underflow_error(const char *what_arg) : runtime_error(what_arg) {}
 };
 
