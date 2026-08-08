@@ -298,6 +298,24 @@ constexpr bool comparison_tests() {
 
 static_assert(comparison_tests());
 
+/*
+ * char_traits<char> ordering is defined in terms of
+ * unsigned-char values, regardless of whether plain
+ * char itself is signed.
+ */
+static_assert(tested::char_traits<char>::lt(static_cast<char>(0x7f),
+                                            static_cast<char>(0x80)));
+
+static_assert(!tested::char_traits<char>::lt(static_cast<char>(0x80),
+                                             static_cast<char>(0x7f)));
+
+constexpr char string_view_low_byte[] = {static_cast<char>(0x7f)};
+
+constexpr char string_view_high_byte[] = {static_cast<char>(0x80)};
+
+static_assert(tested::string_view(string_view_low_byte, 1) <
+              tested::string_view(string_view_high_byte, 1));
+
 static_assert("abc"sv == tested::string_view("abc"));
 static_assert(L"abc"sv == tested::wstring_view(L"abc"));
 static_assert(u8"abc"sv == tested::u8string_view(u8"abc"));

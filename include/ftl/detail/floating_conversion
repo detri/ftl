@@ -2679,6 +2679,8 @@ inline floating_format_result format_general_precision(
     char* last,
     Float value,
     unsigned precision) noexcept {
+  using size_type = decltype(sizeof(0));
+
   namespace detail = floating_conversion_detail;
 
   static_assert(detail::decimal_binary_supported<Float>);
@@ -2698,55 +2700,154 @@ inline floating_format_result format_general_precision(
    * printf-style %g treats precision zero as one
    * significant digit.
    */
-  const unsigned significant_digits = precision == 0 ? 1 : precision;
-
-  long long exponent = 0;
-
-  if (!detail::rounded_decimal_exponent(
-          parts, significant_digits, exponent)) {
-    return {last, floating_format_status::value_too_large};
-  }
+  const unsigned significant_digits =
+      precision == 0 ? 1 : precision;
 
   /*
-   * %g chooses fixed notation iff:
+   * Build the exact decimal once, round it to the
+   * requested significant-digit precision, then emit
+   * the final %g representation directly.
    *
-   *   -4 <= exponent < P
-   *
-   * where P is the effective significant-digit
-   * precision and exponent is the exponent that the
-   * corresponding scientific conversion would use.
+   * This is important for the to_chars capacity
+   * contract: trailing zeroes removed by %g must not
+   * count against [first, last).
    */
-  if (exponent >= -4 &&
-      exponent < static_cast<long long>(significant_digits)) {
-    unsigned fixed_precision;
+  detail::exact_decimal_digits decimal{};
 
-    if (exponent >= 0) {
-      fixed_precision =
-          significant_digits - 1 - static_cast<unsigned>(exponent);
-    } else {
-      fixed_precision =
-          significant_digits - 1 + static_cast<unsigned>(-exponent);
-    }
-
-    auto result =
-        format_fixed_precision(first, last, value, fixed_precision);
-
-    if (result.status != floating_format_status::success)
-      return result;
-
-    result.ptr = detail::trim_general_fixed(first, result.ptr);
-    return result;
+  if (parts.kind == floating_kind::zero) {
+    decimal.digits[0] = '0';
+    decimal.count = 1;
+    decimal.exponent = 0;
+  } else {
+    if (!detail::build_exact_decimal_digits(parts, decimal))
+      return {last, floating_format_status::value_too_large};
   }
 
-  auto result =
-      format_scientific_precision(
-          first, last, value, significant_digits - 1);
+  const size_type requested_digits =
+      static_cast<size_type>(significant_digits);
 
-  if (result.status != floating_format_status::success)
-    return result;
+  if (requested_digits < decimal.count) {
+    detail::round_decimal_significant_digits(
+        decimal, requested_digits);
+  }
 
-  result.ptr = detail::trim_general_scientific(first, result.ptr);
-  return result;
+  size_type digit_count =
+      requested_digits < decimal.count
+          ? requested_digits
+          : decimal.count;
+
+  /*
+   * %g removes trailing zeroes from the significand.
+   *
+   * The decimal exponent remains unchanged, so this is
+   * also correct for integer zeroes:
+   *
+   *   digits = "12", exponent = 2
+   *
+   * still emits 120 in fixed notation.
+   */
+  while (digit_count > 1 &&
+         decimal.digits[digit_count - 1] == '0') {
+    --digit_count;
+  }
+
+  const long long exponent = decimal.exponent;
+
+  const bool use_fixed =
+      exponent >= -4 &&
+      exponent < static_cast<long long>(significant_digits);
+
+  unsigned long long required =
+      static_cast<unsigned long long>(parts.negative);
+
+  if (use_fixed) {
+    const long long point = exponent + 1;
+
+    if (point <= 0) {
+      required +=
+          2ull +
+          static_cast<unsigned long long>(-point) +
+          static_cast<unsigned long long>(digit_count);
+    } else if (point >= static_cast<long long>(digit_count)) {
+      required += static_cast<unsigned long long>(point);
+    } else {
+      required +=
+          static_cast<unsigned long long>(digit_count) + 1ull;
+    }
+  } else {
+    required +=
+        static_cast<unsigned long long>(digit_count) +
+        static_cast<unsigned long long>(digit_count > 1) +
+        2ull +
+        detail::decimal_exponent_digits(exponent);
+  }
+
+  if (static_cast<unsigned long long>(last - first) < required)
+    return {last, floating_format_status::value_too_large};
+
+  char* output = first;
+
+  if (parts.negative)
+    *output++ = '-';
+
+  if (use_fixed) {
+    const long long point = exponent + 1;
+
+    if (point <= 0) {
+      *output++ = '0';
+      *output++ = '.';
+
+      for (long long index = 0; index < -point; ++index)
+        *output++ = '0';
+
+      for (size_type index = 0; index < digit_count; ++index)
+        *output++ = decimal.digits[index];
+
+      return {output, floating_format_status::success};
+    }
+
+    if (point >= static_cast<long long>(digit_count)) {
+      for (size_type index = 0; index < digit_count; ++index)
+        *output++ = decimal.digits[index];
+
+      for (long long index = static_cast<long long>(digit_count);
+           index < point;
+           ++index) {
+        *output++ = '0';
+      }
+
+      return {output, floating_format_status::success};
+    }
+
+    const size_type split = static_cast<size_type>(point);
+
+    for (size_type index = 0; index < split; ++index)
+      *output++ = decimal.digits[index];
+
+    *output++ = '.';
+
+    for (size_type index = split; index < digit_count; ++index)
+      *output++ = decimal.digits[index];
+
+    return {output, floating_format_status::success};
+  }
+
+  *output++ = decimal.digits[0];
+
+  if (digit_count > 1) {
+    *output++ = '.';
+
+    for (size_type index = 1; index < digit_count; ++index)
+      *output++ = decimal.digits[index];
+  }
+
+  detail::emit_scientific_exponent(
+      exponent,
+      [&](char character) {
+        *output++ = character;
+      });
+
+  return {output, floating_format_status::success};
 }
 
 template <class Float>

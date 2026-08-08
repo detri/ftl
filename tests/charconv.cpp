@@ -10,6 +10,10 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+enum charconv_unscoped_enum { charconv_enum_value = 42 };
+
+enum class charconv_scoped_enum { value = 42 };
+
 template <class T>
 concept has_integer_to_chars = requires(char *first, char *last, T value) {
   tested::to_chars(first, last, value);
@@ -46,10 +50,10 @@ static_assert(has_integer_from_chars<long long>);
 static_assert(has_integer_from_chars<unsigned long long>);
 
 static_assert(!has_integer_to_chars<bool>);
-static_assert(!has_integer_to_chars<wchar_t>);
-static_assert(!has_integer_to_chars<char8_t>);
-static_assert(!has_integer_to_chars<char16_t>);
-static_assert(!has_integer_to_chars<char32_t>);
+static_assert(has_integer_to_chars<wchar_t>);
+static_assert(has_integer_to_chars<char8_t>);
+static_assert(has_integer_to_chars<char16_t>);
+static_assert(has_integer_to_chars<char32_t>);
 
 static_assert(!has_integer_from_chars<bool>);
 static_assert(!has_integer_from_chars<wchar_t>);
@@ -60,6 +64,12 @@ static_assert(!has_integer_from_chars<char32_t>);
 static_assert(!has_integer_from_chars<const int>);
 static_assert(!has_integer_from_chars<volatile int>);
 static_assert(!has_integer_from_chars<const volatile int>);
+
+static_assert(has_integer_to_chars<charconv_unscoped_enum>);
+static_assert(!has_integer_to_chars<charconv_scoped_enum>);
+
+static_assert(!has_integer_from_chars<charconv_unscoped_enum>);
+static_assert(!has_integer_from_chars<charconv_scoped_enum>);
 
 constexpr bool equal_text(const char *first, const char *last,
                           const char *expected) {
@@ -123,6 +133,19 @@ constexpr bool integer_to_chars_tests() {
     auto result = tested::to_chars(tiny, tiny + 1, 42);
 
     if (result.ptr != tiny + 1 || result.ec != tested::errc::value_too_large)
+      return false;
+  }
+
+  /*
+   * N4950 specifies a real overload set rather than
+   * a deduced integral template. An unscoped enum can
+   * therefore reach the appropriate integer overload
+   * through integral promotion.
+   */
+  {
+    auto result = tested::to_chars(buffer, buffer + 128, charconv_enum_value);
+
+    if (result.ec != tested::errc{} || !equal_text(buffer, result.ptr, "42"))
       return false;
   }
 
@@ -220,6 +243,17 @@ constexpr bool integer_from_chars_tests() {
      * On overflow the complete matching digit
      * sequence is still consumed.
      */
+    if (result.ec != tested::errc::result_out_of_range ||
+        result.ptr != text + 21 || value != 99)
+      return false;
+  }
+
+  {
+    int value = 99;
+    constexpr char text[] = "999999999999999999999";
+
+    auto result = tested::from_chars(text, text + 21, value);
+
     if (result.ec != tested::errc::result_out_of_range ||
         result.ptr != text + 21 || value != 99)
       return false;
@@ -947,6 +981,53 @@ bool floating_to_chars_precision_tests() {
 
     if (result.ec != tested::errc{} || result.ptr != exact + 6 ||
         !equal_text(exact, result.ptr, "1.8p+0"))
+      return false;
+  }
+
+  /*
+   * %g capacity is checked against the final,
+   * trailing-zero-trimmed representation.
+   */
+  {
+    char exact[4]{};
+
+    auto result = tested::to_chars(exact, exact + 4, 1.25,
+                                   tested::chars_format::general, 6);
+
+    if (result.ec != tested::errc{} || result.ptr != exact + 4 ||
+        !equal_text(exact, result.ptr, "1.25"))
+      return false;
+  }
+
+  /*
+   * Same rule when rounding itself creates the
+   * removable trailing zero.
+   */
+  {
+    char exact[5]{};
+
+    auto result = tested::to_chars(exact, exact + 5, 999.0,
+                                   tested::chars_format::general, 2);
+
+    if (result.ec != tested::errc{} || result.ptr != exact + 5 ||
+        !equal_text(exact, result.ptr, "1e+03"))
+      return false;
+  }
+
+  /*
+   * Enormous precision does not imply enormous
+   * output once %g trailing-zero suppression is
+   * applied.
+   */
+  {
+    char exact[4]{};
+
+    auto result =
+        tested::to_chars(exact, exact + 4, 1.25, tested::chars_format::general,
+                         tested::numeric_limits<int>::max());
+
+    if (result.ec != tested::errc{} || result.ptr != exact + 4 ||
+        !equal_text(exact, result.ptr, "1.25"))
       return false;
   }
 

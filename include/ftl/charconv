@@ -99,12 +99,6 @@ constexpr char digit_character(unsigned value) noexcept {
                      : static_cast<char>('a' + value - 10u);
 }
 
-template <class T>
-concept charconv_integer =
-    is_integral_v<T> && is_same_v<T, remove_cv_t<T>> && !is_same_v<T, bool> &&
-    !is_same_v<T, wchar_t> && !is_same_v<T, char8_t> &&
-    !is_same_v<T, char16_t> && !is_same_v<T, char32_t>;
-
 template <class Integer>
 using unsigned_integer_t = make_unsigned_t<remove_cv_t<Integer>>;
 
@@ -195,14 +189,16 @@ integer_from_chars(const char *first, const char *last, Integer &destination,
   constexpr unsigned_type positive_limit =
       static_cast<unsigned_type>(numeric_limits<integer_type>::max());
 
-  const unsigned_type limit = [&] {
-    if constexpr (is_signed_v<integer_type>) {
-      if (negative)
-        return positive_limit + unsigned_type{1};
-    }
+  unsigned_type limit = numeric_limits<unsigned_type>::max();
 
-    return numeric_limits<unsigned_type>::max();
-  }();
+  if constexpr (is_signed_v<integer_type>) {
+    if (negative) {
+      limit = positive_limit;
+      ++limit;
+    } else {
+      limit = positive_limit;
+    }
+  }
 
   unsigned_type value = 0;
   bool overflow = false;
@@ -394,11 +390,26 @@ inline to_chars_result floating_to_chars_precision(
 
 } // namespace charconv_detail
 
-template <charconv_detail::charconv_integer Integer>
-constexpr to_chars_result to_chars(char *first, char *last, Integer value,
-                                   int base = 10) {
-  return charconv_detail::integer_to_chars(first, last, value, base);
-}
+#define FTL_CHARCONV_TO_CHARS_INTEGER_OVERLOAD(Type)                    \
+  constexpr to_chars_result                                             \
+  to_chars(char *first, char *last, Type value, int base = 10) {       \
+    return charconv_detail::integer_to_chars<Type>(                     \
+        first, last, value, base);                                      \
+  }
+
+FTL_CHARCONV_TO_CHARS_INTEGER_OVERLOAD(char);
+FTL_CHARCONV_TO_CHARS_INTEGER_OVERLOAD(signed char);
+FTL_CHARCONV_TO_CHARS_INTEGER_OVERLOAD(unsigned char);
+FTL_CHARCONV_TO_CHARS_INTEGER_OVERLOAD(short);
+FTL_CHARCONV_TO_CHARS_INTEGER_OVERLOAD(unsigned short);
+FTL_CHARCONV_TO_CHARS_INTEGER_OVERLOAD(int);
+FTL_CHARCONV_TO_CHARS_INTEGER_OVERLOAD(unsigned int);
+FTL_CHARCONV_TO_CHARS_INTEGER_OVERLOAD(long);
+FTL_CHARCONV_TO_CHARS_INTEGER_OVERLOAD(unsigned long);
+FTL_CHARCONV_TO_CHARS_INTEGER_OVERLOAD(long long);
+FTL_CHARCONV_TO_CHARS_INTEGER_OVERLOAD(unsigned long long);
+
+#undef FTL_CHARCONV_TO_CHARS_INTEGER_OVERLOAD
 
 to_chars_result to_chars(char *, char *, bool, int = 10) = delete;
 
@@ -440,11 +451,27 @@ inline to_chars_result to_chars(char* first, char* last, long double value,
       first, last, value, format, precision);
 }
 
-template <charconv_detail::charconv_integer Integer>
-constexpr from_chars_result from_chars(const char *first, const char *last,
-                                       Integer &value, int base = 10) {
-  return charconv_detail::integer_from_chars(first, last, value, base);
-}
+#define FTL_CHARCONV_FROM_CHARS_INTEGER_OVERLOAD(Type)                  \
+  constexpr from_chars_result                                           \
+  from_chars(const char *first, const char *last,                       \
+             Type &value, int base = 10) {                              \
+    return charconv_detail::integer_from_chars<Type>(                   \
+        first, last, value, base);                                      \
+  }
+
+FTL_CHARCONV_FROM_CHARS_INTEGER_OVERLOAD(char);
+FTL_CHARCONV_FROM_CHARS_INTEGER_OVERLOAD(signed char);
+FTL_CHARCONV_FROM_CHARS_INTEGER_OVERLOAD(unsigned char);
+FTL_CHARCONV_FROM_CHARS_INTEGER_OVERLOAD(short);
+FTL_CHARCONV_FROM_CHARS_INTEGER_OVERLOAD(unsigned short);
+FTL_CHARCONV_FROM_CHARS_INTEGER_OVERLOAD(int);
+FTL_CHARCONV_FROM_CHARS_INTEGER_OVERLOAD(unsigned int);
+FTL_CHARCONV_FROM_CHARS_INTEGER_OVERLOAD(long);
+FTL_CHARCONV_FROM_CHARS_INTEGER_OVERLOAD(unsigned long);
+FTL_CHARCONV_FROM_CHARS_INTEGER_OVERLOAD(long long);
+FTL_CHARCONV_FROM_CHARS_INTEGER_OVERLOAD(unsigned long long);
+
+#undef FTL_CHARCONV_FROM_CHARS_INTEGER_OVERLOAD
 
 inline from_chars_result
 from_chars(const char *first, const char *last, float &value,

@@ -39,7 +39,12 @@ template <class Character> struct char_traits {
 
   [[nodiscard]]
   static constexpr bool lt(char_type left, char_type right) noexcept {
-    return left < right;
+    if constexpr (is_same_v<char_type, char>) {
+      return static_cast<unsigned char>(left) <
+             static_cast<unsigned char>(right);
+    } else {
+      return left < right;
+    }
   }
 
   [[nodiscard]]
