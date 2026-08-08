@@ -39,7 +39,7 @@ function(add_ftl_test header)
         endif ()
 
         set(target ftl_${mode}_${header})
-        if (mode STREQUAL replace AND header STREQUAL string)
+        if (mode STREQUAL replace AND (header STREQUAL string OR header STREQUAL vector))
             add_executable(${target} standalone_driver.cpp $<TARGET_OBJECTS:${object}>)
         else ()
             add_executable(${target} gtest_driver.cpp $<TARGET_OBJECTS:${object}>)
@@ -141,6 +141,8 @@ add_ftl_compile_fail_check(
         string_rejects_nullptr
         checks/string_nullptr_compile_fail.cpp
 )
+add_ftl_compile_fail_check(vector_rejects_mismatched_allocator
+        checks/vector_mismatched_allocator_compile_fail.cpp)
 add_ftl_standalone_check(feature_macros checks/feature_macros.cpp)
 add_ftl_standalone_check(no_allocation checks/no_allocation.cpp)
 add_ftl_freestanding_link_check(freestanding_link checks/freestanding_link.cpp)
@@ -152,6 +154,12 @@ add_ftl_freestanding_link_check(
         string_freestanding_link
         checks/string_freestanding_link.cpp
 )
+add_ftl_freestanding_link_check(vector_freestanding_link
+        checks/vector_freestanding_link.cpp)
+target_compile_definitions(ftl_check_vector_freestanding_link PRIVATE FTL_NO_EXCEPTIONS)
+if (MSVC)
+    target_compile_options(ftl_check_vector_freestanding_link PRIVATE /O2 /GS- /EHs-c-)
+endif ()
 add_ftl_freestanding_link_check(
         bitset_freestanding_link
         checks/bitset_freestanding_link.cpp
@@ -232,6 +240,7 @@ foreach (header IN ITEMS
         c_headers
         string_view
         string
+        vector
         iterator
         tuple
         coroutine
