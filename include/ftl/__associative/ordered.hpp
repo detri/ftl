@@ -10,6 +10,9 @@
 FTL_BEGIN_NAMESPACE
 namespace detail {
 
+template <class Compare>
+concept transparent_compare = requires { typename Compare::is_transparent; };
+
 template <class Key> struct set_key {
   const Key &operator()(const Key &value) const noexcept { return value; }
 };
@@ -232,7 +235,9 @@ public:
   size_type erase(const Key &key) { return tree_.erase_key(key); }
   template <class K>
   size_type erase(K &&key)
-    requires requires { typename Compare::is_transparent; }
+    requires(transparent_compare<Compare> &&
+             !is_convertible_v<K &&, iterator> &&
+             !is_convertible_v<K &&, const_iterator>)
   {
     return tree_.erase_key(key);
   }
@@ -245,7 +250,9 @@ public:
   node_type extract(const Key &key) { return tree_.extract(key); }
   template <class K>
   node_type extract(K &&key)
-    requires requires { typename Compare::is_transparent; }
+    requires(transparent_compare<Compare> &&
+             !is_convertible_v<K &&, iterator> &&
+             !is_convertible_v<K &&, const_iterator>)
   {
     return tree_.extract(key);
   }
@@ -256,44 +263,44 @@ public:
   value_compare value_comp() const { return value_compare(key_comp()); }
   iterator find(const Key &key) { return tree_.find(key); }
   const_iterator find(const Key &key) const { return tree_.find(key); }
-  template <class K> iterator find(const K &key) { return tree_.find(key); }
-  template <class K> const_iterator find(const K &key) const {
+  template <class K> iterator find(const K &key) requires transparent_compare<Compare> { return tree_.find(key); }
+  template <class K> const_iterator find(const K &key) const requires transparent_compare<Compare> {
     return tree_.find(key);
   }
   size_type count(const Key &key) const { return tree_.count(key); }
-  template <class K> size_type count(const K &key) const {
+  template <class K> size_type count(const K &key) const requires transparent_compare<Compare> {
     return tree_.count(key);
   }
   bool contains(const Key &key) const { return tree_.contains(key); }
-  template <class K> bool contains(const K &key) const {
+  template <class K> bool contains(const K &key) const requires transparent_compare<Compare> {
     return tree_.contains(key);
   }
   iterator lower_bound(const Key &key) { return tree_.lower_bound(key); }
   const_iterator lower_bound(const Key &key) const {
     return tree_.lower_bound(key);
   }
-  template <class K> iterator lower_bound(const K &key) {
+  template <class K> iterator lower_bound(const K &key) requires transparent_compare<Compare> {
     return tree_.lower_bound(key);
   }
-  template <class K> const_iterator lower_bound(const K &key) const {
+  template <class K> const_iterator lower_bound(const K &key) const requires transparent_compare<Compare> {
     return tree_.lower_bound(key);
   }
   iterator upper_bound(const Key &key) { return tree_.upper_bound(key); }
   const_iterator upper_bound(const Key &key) const {
     return tree_.upper_bound(key);
   }
-  template <class K> iterator upper_bound(const K &key) {
+  template <class K> iterator upper_bound(const K &key) requires transparent_compare<Compare> {
     return tree_.upper_bound(key);
   }
-  template <class K> const_iterator upper_bound(const K &key) const {
+  template <class K> const_iterator upper_bound(const K &key) const requires transparent_compare<Compare> {
     return tree_.upper_bound(key);
   }
   auto equal_range(const Key &key) { return tree_.equal_range(key); }
   auto equal_range(const Key &key) const { return tree_.equal_range(key); }
-  template <class K> auto equal_range(const K &key) {
+  template <class K> auto equal_range(const K &key) requires transparent_compare<Compare> {
     return tree_.equal_range(key);
   }
-  template <class K> auto equal_range(const K &key) const {
+  template <class K> auto equal_range(const K &key) const requires transparent_compare<Compare> {
     return tree_.equal_range(key);
   }
 };
@@ -414,7 +421,9 @@ public:
   size_type erase(const Key &key) { return tree_.erase_key(key); }
   template <class K>
   size_type erase(K &&key)
-    requires requires { typename Compare::is_transparent; }
+    requires(transparent_compare<Compare> &&
+             !is_convertible_v<K &&, iterator> &&
+             !is_convertible_v<K &&, const_iterator>)
   {
     return tree_.erase_key(key);
   }
@@ -427,7 +436,9 @@ public:
   node_type extract(const Key &key) { return tree_.extract(key); }
   template <class K>
   node_type extract(K &&key)
-    requires requires { typename Compare::is_transparent; }
+    requires(transparent_compare<Compare> &&
+             !is_convertible_v<K &&, iterator> &&
+             !is_convertible_v<K &&, const_iterator>)
   {
     return tree_.extract(key);
   }
@@ -435,22 +446,28 @@ public:
   void merge(ordered_set_base &&other) { merge(other); }
   key_compare key_comp() const { return tree_.key_comp(); }
   value_compare value_comp() const { return tree_.key_comp(); }
-  template <class K> iterator find(const K &key) const {
+  iterator find(const Key &key) const { return tree_.find(key); }
+  template <class K> iterator find(const K &key) const requires transparent_compare<Compare> {
     return tree_.find(key);
   }
-  template <class K> size_type count(const K &key) const {
+  size_type count(const Key &key) const { return tree_.count(key); }
+  template <class K> size_type count(const K &key) const requires transparent_compare<Compare> {
     return tree_.count(key);
   }
-  template <class K> bool contains(const K &key) const {
+  bool contains(const Key &key) const { return tree_.contains(key); }
+  template <class K> bool contains(const K &key) const requires transparent_compare<Compare> {
     return tree_.contains(key);
   }
-  template <class K> iterator lower_bound(const K &key) const {
+  iterator lower_bound(const Key &key) const { return tree_.lower_bound(key); }
+  template <class K> iterator lower_bound(const K &key) const requires transparent_compare<Compare> {
     return tree_.lower_bound(key);
   }
-  template <class K> iterator upper_bound(const K &key) const {
+  iterator upper_bound(const Key &key) const { return tree_.upper_bound(key); }
+  template <class K> iterator upper_bound(const K &key) const requires transparent_compare<Compare> {
     return tree_.upper_bound(key);
   }
-  template <class K> auto equal_range(const K &key) const {
+  auto equal_range(const Key &key) const { return tree_.equal_range(key); }
+  template <class K> auto equal_range(const K &key) const requires transparent_compare<Compare> {
     return tree_.equal_range(key);
   }
 };

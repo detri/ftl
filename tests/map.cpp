@@ -16,6 +16,24 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+struct probe {};
+struct transparent_compare {
+  using is_transparent = void;
+  bool operator()(int left, int right) const { return left < right; }
+  bool operator()(int, probe) const { return true; }
+  bool operator()(probe, int) const { return false; }
+};
+struct throwing_compare {
+  throwing_compare() = default;
+  throwing_compare(throwing_compare &&) = default;
+  throwing_compare &operator=(throwing_compare &&) noexcept(false) {
+    return *this;
+  }
+  bool operator()(int left, int right) const { return left < right; }
+};
+template <class C> concept probe_findable = requires(C &c) { c.find(probe{}); };
+template <class C> concept probe_erasable = requires(C &c) { c.erase(probe{}); };
+
 static_assert(tested::bidirectional_iterator<tested::map<int, int>::iterator>);
 static_assert(tested::ranges::bidirectional_range<tested::map<int, int>>);
 static_assert(
@@ -25,7 +43,13 @@ static_assert(
     tested::is_same_v<tested::pmr::map<int, int>,
                       tested::map<int, int, tested::less<int>,
                                   tested::pmr::polymorphic_allocator<
-                                      tested::pair<const int, int>>>>);
+                                  tested::pair<const int, int>>>>);
+static_assert(probe_findable<tested::map<int, int, transparent_compare>>);
+static_assert(probe_findable<tested::multimap<int, int, transparent_compare>>);
+static_assert(!probe_findable<tested::map<int, int>>);
+static_assert(probe_erasable<tested::map<int, int, transparent_compare>>);
+static_assert(!noexcept(tested::declval<tested::map<int, int, throwing_compare> &>() =
+                        tested::declval<tested::map<int, int, throwing_compare> &&>()));
 
 bool ftl_test() {
   tested::map<int, int> values{{3, 30}, {1, 10}, {2, 20}, {2, 99}};
