@@ -11,15 +11,14 @@ namespace tested = ftl;
 #endif
 
 template <class T>
-concept has_integer_to_chars =
-    requires(char* first, char* last, T value) {
+concept has_integer_to_chars = requires(char *first, char *last, T value) {
   tested::to_chars(first, last, value);
-    };
+};
 
 template <class T>
 concept has_integer_from_chars =
-    requires(const char* first, const char* last, T& value) {
-  tested::from_chars(first, last, value);
+    requires(const char *first, const char *last, T &value) {
+      tested::from_chars(first, last, value);
     };
 
 static_assert(has_integer_to_chars<char>);
@@ -237,4 +236,1078 @@ static_assert(tested::to_chars_result{nullptr, tested::errc{}} ==
 static_assert(tested::from_chars_result{nullptr, tested::errc{}} ==
               tested::from_chars_result{nullptr, tested::errc{}});
 
-bool ftl_test() { return true; }
+bool floating_from_chars_tests() {
+  /*
+   * General decimal conversion and partial
+   * consumption.
+   */
+  {
+    float value = 99.0f;
+
+    constexpr char text[] = "1.5xyz";
+
+    const auto result = tested::from_chars(text, text + 6, value);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 3 || value != 1.5f)
+      return false;
+  }
+
+  {
+    double value = 99.0;
+
+    constexpr char text[] = "-1.5e2tail";
+
+    const auto result = tested::from_chars(text, text + 10, value);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 6 ||
+        value != -150.0)
+      return false;
+  }
+
+  /*
+   * General mode accepts an exponent, but an
+   * incomplete exponent is not part of the
+   * matched sequence.
+   */
+  {
+    double value = 99.0;
+
+    constexpr char text[] = "1e+";
+
+    const auto result = tested::from_chars(text, text + 3, value,
+                                           tested::chars_format::general);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 1 || value != 1.0)
+      return false;
+  }
+
+  /*
+   * Fixed mode prohibits the exponent part.
+   */
+  {
+    double value = 99.0;
+
+    constexpr char text[] = "1.25e3";
+
+    const auto result =
+        tested::from_chars(text, text + 6, value, tested::chars_format::fixed);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 4 || value != 1.25)
+      return false;
+  }
+
+  /*
+   * Scientific-only mode requires the exponent.
+   */
+  {
+    double value = 99.0;
+
+    constexpr char text[] = "1.25";
+
+    const auto result = tested::from_chars(text, text + 4, value,
+                                           tested::chars_format::scientific);
+
+    if (result.ec != tested::errc::invalid_argument || result.ptr != text ||
+        value != 99.0)
+      return false;
+  }
+
+  {
+    double value = 99.0;
+
+    constexpr char text[] = "1.25e3x";
+
+    const auto result = tested::from_chars(text, text + 7, value,
+                                           tested::chars_format::scientific);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 6 ||
+        value != 1250.0)
+      return false;
+  }
+
+  /*
+   * Leading '+' is forbidden.
+   */
+  {
+    float value = 99.0f;
+
+    constexpr char text[] = "+1.0";
+
+    const auto result = tested::from_chars(text, text + 4, value);
+
+    if (result.ec != tested::errc::invalid_argument || result.ptr != text ||
+        value != 99.0f)
+      return false;
+  }
+
+  /*
+   * No whitespace skipping.
+   */
+  {
+    float value = 99.0f;
+
+    constexpr char text[] = " 1.0";
+
+    const auto result = tested::from_chars(text, text + 4, value);
+
+    if (result.ec != tested::errc::invalid_argument || result.ptr != text ||
+        value != 99.0f)
+      return false;
+  }
+
+  /*
+   * Numeric overflow consumes the entire matched
+   * sequence and leaves the destination unchanged.
+   */
+  {
+    double value = 99.0;
+
+    constexpr char text[] = "1e309";
+
+    const auto result = tested::from_chars(text, text + 5, value);
+
+    if (result.ec != tested::errc::result_out_of_range ||
+        result.ptr != text + 5 || value != 99.0)
+      return false;
+  }
+
+  /*
+   * Same contract for underflow.
+   */
+  {
+    double value = 99.0;
+
+    constexpr char text[] = "1e-400";
+
+    const auto result = tested::from_chars(text, text + 6, value);
+
+    if (result.ec != tested::errc::result_out_of_range ||
+        result.ptr != text + 6 || value != 99.0)
+      return false;
+  }
+
+  /*
+   * Exercise a non-exact decimal through the
+   * public binary32 path.
+   */
+  {
+    float value = 0.0f;
+
+    constexpr char text[] = "0.1";
+
+    const auto result = tested::from_chars(text, text + 3, value);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 3 || value != 0.1f)
+      return false;
+  }
+
+  /*
+   * Hexadecimal input does not consume a 0x
+   * prefix. The prefix is assumed by the format.
+   *
+   * Therefore "0x123" successfully converts only
+   * the initial zero and stops at 'x'.
+   */
+  {
+    double value = 99.0;
+
+    constexpr char text[] = "0x123";
+
+    const auto result =
+        tested::from_chars(text, text + 5, value, tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 1 || value != 0.0)
+      return false;
+  }
+
+  /*
+   * 0x1.8p+1 == 3.0, with the 0x omitted from
+   * the actual character sequence.
+   */
+  {
+    double value = 99.0;
+
+    constexpr char text[] = "1.8p+1";
+
+    const auto result =
+        tested::from_chars(text, text + 6, value, tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 6 || value != 3.0)
+      return false;
+  }
+
+  {
+    float value = 99.0f;
+
+    constexpr char text[] = "-1.8p+1x";
+
+    const auto result =
+        tested::from_chars(text, text + 8, value, tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 7 || value != -3.0f)
+      return false;
+  }
+
+  /*
+   * The binary exponent is optional for
+   * chars_format::hex.
+   *
+   * 1.8 hexadecimal == 1.5 decimal.
+   */
+  {
+    double value = 99.0;
+
+    constexpr char text[] = "1.8";
+
+    const auto result =
+        tested::from_chars(text, text + 3, value, tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 3 || value != 1.5)
+      return false;
+  }
+
+  /*
+   * An incomplete optional binary exponent is
+   * excluded from the matched sequence.
+   */
+  {
+    double value = 99.0;
+
+    constexpr char text[] = "1p+";
+
+    const auto result =
+        tested::from_chars(text, text + 3, value, tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 1 || value != 1.0)
+      return false;
+  }
+
+  /*
+   * Exact minimum binary32 subnormal.
+   */
+  {
+    float value = 99.0f;
+
+    constexpr char text[] = "1p-149";
+
+    const auto result =
+        tested::from_chars(text, text + 6, value, tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 6)
+      return false;
+
+    if (value != tested::numeric_limits<float>::denorm_min())
+      return false;
+  }
+
+  /*
+   * Exactly halfway between zero and the
+   * minimum subnormal rounds to zero, which is
+   * outside the representable nonzero range and
+   * therefore reported as result_out_of_range.
+   *
+   * The destination remains unchanged.
+   */
+  {
+    float value = 99.0f;
+
+    constexpr char text[] = "1p-150";
+
+    const auto result =
+        tested::from_chars(text, text + 6, value, tested::chars_format::hex);
+
+    if (result.ec != tested::errc::result_out_of_range ||
+        result.ptr != text + 6 || value != 99.0f)
+      return false;
+  }
+
+  /*
+   * Exact halfway rounding at 1.0f:
+   *
+   *   0x1.000001p0
+   *
+   * is halfway between 1.0f and the next float.
+   * 1.0 has the even significand.
+   */
+  {
+    float value = 99.0f;
+
+    constexpr char text[] = "1.000001p0";
+
+    const auto result =
+        tested::from_chars(text, text + 10, value, tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 10 || value != 1.0f)
+      return false;
+  }
+
+  /*
+   * Leading '+' and whitespace remain invalid
+   * in hexadecimal mode too.
+   */
+  {
+    double value = 99.0;
+
+    constexpr char text[] = "+1";
+
+    const auto result =
+        tested::from_chars(text, text + 2, value, tested::chars_format::hex);
+
+    if (result.ec != tested::errc::invalid_argument || result.ptr != text ||
+        value != 99.0)
+      return false;
+  }
+
+  {
+    double value = 99.0;
+
+    constexpr char text[] = " 1";
+
+    const auto result =
+        tested::from_chars(text, text + 2, value, tested::chars_format::hex);
+
+    if (result.ec != tested::errc::invalid_argument || result.ptr != text ||
+        value != 99.0)
+      return false;
+  }
+
+  {
+    float value = 0.0f;
+
+    constexpr char text[] = "INFtail";
+
+    const auto result = tested::from_chars(text, text + 7, value);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 3 ||
+        value != tested::numeric_limits<float>::infinity())
+      return false;
+  }
+
+  {
+    double value = 0.0;
+
+    constexpr char text[] = "-infinity!";
+
+    const auto result = tested::from_chars(text, text + 10, value);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 9 ||
+        value != -tested::numeric_limits<double>::infinity())
+      return false;
+  }
+
+  {
+    double value = 0.0;
+
+    constexpr char text[] = "NaN(payload_123)x";
+
+    const auto result = tested::from_chars(text, text + 17, value);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 16)
+      return false;
+
+    /*
+     * NaN is the only floating value unequal to
+     * itself.
+     */
+    if (value == value)
+      return false;
+  }
+
+  /*
+   * Malformed optional payload still leaves the
+   * shorter valid "nan" subject sequence.
+   */
+  {
+    double value = 0.0;
+
+    constexpr char text[] = "nan(payload";
+
+    const auto result = tested::from_chars(text, text + 11, value);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 3 || value == value)
+      return false;
+  }
+
+  /*
+   * Special forms remain valid regardless of the
+   * requested numeric notation.
+   */
+  {
+    double value = 0.0;
+
+    constexpr char text[] = "inf";
+
+    const auto result = tested::from_chars(text, text + 3, value,
+                                           tested::chars_format::scientific);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 3 ||
+        value != tested::numeric_limits<double>::infinity())
+      return false;
+  }
+
+  {
+    double value = 0.0;
+
+    constexpr char text[] = "nan";
+
+    const auto result =
+        tested::from_chars(text, text + 3, value, tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 3 || value == value)
+      return false;
+  }
+
+  {
+    double value = 123.0;
+
+    constexpr char text[] = "+inf";
+
+    const auto result = tested::from_chars(text, text + 4, value);
+
+    if (result.ec != tested::errc::invalid_argument || result.ptr != text ||
+        value != 123.0)
+      return false;
+  }
+
+  {
+    long double value = 99.0L;
+
+    constexpr char text[] = "1.5tail";
+
+    const auto result = tested::from_chars(text, text + 7, value);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 3 || value != 1.5L)
+      return false;
+  }
+
+  {
+    long double value = 99.0L;
+
+    constexpr char text[] = "0.1";
+
+    const auto result = tested::from_chars(text, text + 3, value);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 3 || value != 0.1L)
+      return false;
+  }
+
+  {
+    long double value = 99.0L;
+
+    constexpr char text[] = "-1.25e3x";
+
+    const auto result = tested::from_chars(text, text + 8, value,
+                                           tested::chars_format::scientific);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 7 ||
+        value != -1250.0L)
+      return false;
+  }
+
+  {
+    long double value = 99.0L;
+
+    constexpr char text[] = "1.25e3";
+
+    const auto result =
+        tested::from_chars(text, text + 6, value, tested::chars_format::fixed);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 4 || value != 1.25L)
+      return false;
+  }
+
+  {
+    long double value = 99.0L;
+
+    constexpr char text[] = "1.8p+1x";
+
+    const auto result =
+        tested::from_chars(text, text + 7, value, tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 6 || value != 3.0L)
+      return false;
+  }
+
+  {
+    long double value = 99.0L;
+
+    char text[32]{};
+
+    /*
+     * Construct:
+     *
+     *   1p<minimum_significand_exponent>
+     *
+     * without relying on formatting facilities.
+     */
+    char *current = text;
+
+    *current++ = '1';
+    *current++ = 'p';
+
+    int exponent = tested::numeric_limits<long double>::min_exponent -
+                   tested::numeric_limits<long double>::digits;
+
+    if (exponent < 0) {
+      *current++ = '-';
+      exponent = -exponent;
+    }
+
+    char reversed[16]{};
+    unsigned count = 0;
+
+    do {
+      reversed[count++] = static_cast<char>('0' + exponent % 10);
+
+      exponent /= 10;
+    } while (exponent != 0);
+
+    while (count != 0)
+      *current++ = reversed[--count];
+
+    const auto result =
+        tested::from_chars(text, current, value, tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} || result.ptr != current ||
+        value != tested::numeric_limits<long double>::denorm_min())
+      return false;
+  }
+
+  {
+    long double value = 0.0L;
+
+    constexpr char text[] = "-INFINITY!";
+
+    const auto result = tested::from_chars(text, text + 10, value);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 9 ||
+        value != -tested::numeric_limits<long double>::infinity())
+      return false;
+  }
+
+  {
+    long double value = 0.0L;
+
+    constexpr char text[] = "nan(payload)x";
+
+    const auto result = tested::from_chars(text, text + 13, value);
+
+    if (result.ec != tested::errc{} || result.ptr != text + 12)
+      return false;
+
+    if (value == value)
+      return false;
+  }
+
+  {
+    long double value = 99.0L;
+
+    constexpr char text[] = "1e100000";
+
+    const auto result = tested::from_chars(text, text + 8, value);
+
+    if (result.ec != tested::errc::result_out_of_range ||
+        result.ptr != text + 8 || value != 99.0L)
+      return false;
+  }
+
+  {
+    long double value = 99.0L;
+
+    constexpr char text[] = "1e-100000";
+
+    const auto result = tested::from_chars(text, text + 9, value);
+
+    if (result.ec != tested::errc::result_out_of_range ||
+        result.ptr != text + 9 || value != 99.0L)
+      return false;
+  }
+
+  return true;
+}
+
+bool floating_to_chars_precision_tests() {
+  char buffer[256]{};
+
+  {
+    auto result = tested::to_chars(buffer, buffer + 256, 1.25,
+                                   tested::chars_format::fixed, 2);
+
+    if (result.ec != tested::errc{} || !equal_text(buffer, result.ptr, "1.25"))
+      return false;
+  }
+
+  {
+    auto result = tested::to_chars(buffer, buffer + 256, -1.5f,
+                                   tested::chars_format::fixed, 3);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "-1.500"))
+      return false;
+  }
+
+  {
+    auto result = tested::to_chars(buffer, buffer + 256, 1.5,
+                                   tested::chars_format::scientific, 3);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1.500e+00"))
+      return false;
+  }
+
+  {
+    auto result = tested::to_chars(buffer, buffer + 256, 12345.0,
+                                   tested::chars_format::general, 3);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1.23e+04"))
+      return false;
+  }
+
+  {
+    auto result = tested::to_chars(buffer, buffer + 256, 0.1,
+                                   tested::chars_format::hex, 3);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1.99ap-4"))
+      return false;
+  }
+
+  {
+    auto result = tested::to_chars(buffer, buffer + 256, 1.5L,
+                                   tested::chars_format::hex, 4);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1.8000p+0"))
+      return false;
+  }
+
+  /*
+   * General precision zero means one significant digit.
+   */
+  {
+    auto result = tested::to_chars(buffer, buffer + 256, 12.5,
+                                   tested::chars_format::general, 0);
+
+    if (result.ec != tested::errc{} || !equal_text(buffer, result.ptr, "1e+01"))
+      return false;
+  }
+
+  /*
+   * Negative precision is treated as omitted.
+   */
+  {
+    auto result = tested::to_chars(buffer, buffer + 256, 1.25,
+                                   tested::chars_format::fixed, -1);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1.250000"))
+      return false;
+  }
+
+  {
+    auto result = tested::to_chars(buffer, buffer + 256, 1.5,
+                                   tested::chars_format::scientific, -1);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1.500000e+00"))
+      return false;
+  }
+
+  {
+    auto result = tested::to_chars(buffer, buffer + 256, 1.25,
+                                   tested::chars_format::general, -1);
+
+    if (result.ec != tested::errc{} || !equal_text(buffer, result.ptr, "1.25"))
+      return false;
+  }
+
+  /*
+   * Omitted hexadecimal precision is exact but does not retain redundant
+   * trailing fractional zeroes.
+   */
+  {
+    auto result = tested::to_chars(buffer, buffer + 256, 1.5,
+                                   tested::chars_format::hex, -1);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1.8p+0"))
+      return false;
+  }
+
+  /*
+   * This also verifies the omitted-hex implementation checks capacity
+   * against the trimmed output, not its full scratch representation.
+   */
+  {
+    char exact[6]{};
+
+    auto result =
+        tested::to_chars(exact, exact + 6, 1.5, tested::chars_format::hex, -1);
+
+    if (result.ec != tested::errc{} || result.ptr != exact + 6 ||
+        !equal_text(exact, result.ptr, "1.8p+0"))
+      return false;
+  }
+
+  /*
+   * Standard failure contract: ptr == last and value_too_large.
+   */
+  {
+    char tiny[3]{};
+
+    auto result =
+        tested::to_chars(tiny, tiny + 3, 1.25, tested::chars_format::fixed, 2);
+
+    if (result.ptr != tiny + 3 || result.ec != tested::errc::value_too_large)
+      return false;
+  }
+
+  return true;
+}
+
+bool floating_to_chars_shortest_tests() {
+  char buffer[1024]{};
+
+  /*
+   * Ordinary shortest decimal.
+   */
+  {
+    auto result = tested::to_chars(buffer, buffer + 1024, 0.1);
+
+    if (result.ec != tested::errc{} || !equal_text(buffer, result.ptr, "0.1"))
+      return false;
+
+    double parsed = 0.0;
+    auto round_trip = tested::from_chars(buffer, result.ptr, parsed);
+
+    if (round_trip.ec != tested::errc{} || round_trip.ptr != result.ptr ||
+        parsed != 0.1)
+      return false;
+  }
+
+  /*
+   * Fixed and scientific shortest formatting use the
+   * same shortest decimal significand.
+   */
+  {
+    auto result = tested::to_chars(buffer, buffer + 1024, 1.5,
+                                   tested::chars_format::fixed);
+
+    if (result.ec != tested::errc{} || !equal_text(buffer, result.ptr, "1.5"))
+      return false;
+  }
+
+  {
+    auto result = tested::to_chars(buffer, buffer + 1024, 1.5,
+                                   tested::chars_format::scientific);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1.5e+00"))
+      return false;
+  }
+
+  /*
+   * General without explicit precision uses the
+   * default %g selection precision of six.
+   */
+  {
+    auto result = tested::to_chars(buffer, buffer + 1024, 100000.0,
+                                   tested::chars_format::general);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "100000"))
+      return false;
+  }
+
+  {
+    auto result = tested::to_chars(buffer, buffer + 1024, 1000000.0,
+                                   tested::chars_format::general);
+
+    if (result.ec != tested::errc{} || !equal_text(buffer, result.ptr, "1e+06"))
+      return false;
+  }
+
+  /*
+   * The no-format overload is deliberately different
+   * from chars_format::general: it chooses the shorter
+   * of the shortest fixed and scientific forms.
+   */
+  {
+    auto result = tested::to_chars(buffer, buffer + 1024, 100000.0);
+
+    if (result.ec != tested::errc{} || !equal_text(buffer, result.ptr, "1e+05"))
+      return false;
+  }
+
+  /*
+   * Here fixed beats scientific even though %g chooses
+   * scientific because the exponent is well above six.
+   */
+  {
+    constexpr double value = 123456789012345680.0;
+
+    auto result = tested::to_chars(buffer, buffer + 1024, value);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "123456789012345680"))
+      return false;
+  }
+
+  {
+    constexpr double value = 123456789012345680.0;
+
+    auto result = tested::to_chars(buffer, buffer + 1024, value,
+                                   tested::chars_format::general);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1.2345678901234568e+17"))
+      return false;
+  }
+
+  /*
+   * Classic shortest-roundtrip anomaly.
+   *
+   * 2^-44 exactly is:
+   *
+   *   5.684341886080801486968994140625e-14
+   *
+   * The nearest 16-digit decimal ends in ...801 and
+   * does NOT round-trip. The next decimal, ...802, does.
+   */
+  {
+    constexpr double value = 0x1p-44;
+
+    auto result = tested::to_chars(buffer, buffer + 1024, value,
+                                   tested::chars_format::scientific);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "5.684341886080802e-14"))
+      return false;
+
+    double parsed = 0.0;
+
+    auto round_trip = tested::from_chars(buffer, result.ptr, parsed,
+                                         tested::chars_format::scientific);
+
+    if (round_trip.ec != tested::errc{} || round_trip.ptr != result.ptr ||
+        parsed != value)
+      return false;
+  }
+
+  {
+    constexpr double value = 0x1p-44;
+
+    auto result = tested::to_chars(buffer, buffer + 1024, value,
+                                   tested::chars_format::fixed);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "0.00000000000005684341886080802"))
+      return false;
+  }
+
+  /*
+   * Smallest binary64 subnormal.
+   */
+  {
+    const double value = tested::numeric_limits<double>::denorm_min();
+
+    auto result = tested::to_chars(buffer, buffer + 1024, value);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "5e-324"))
+      return false;
+
+    double parsed = 0.0;
+
+    auto round_trip = tested::from_chars(buffer, result.ptr, parsed);
+
+    if (round_trip.ec != tested::errc{} || round_trip.ptr != result.ptr ||
+        parsed != value)
+      return false;
+  }
+
+  /*
+   * Shortest hexadecimal is normalized even for
+   * subnormals. It is not the anchored precision form
+   * used by format_hexadecimal_precision().
+   */
+  {
+    const double value = tested::numeric_limits<double>::denorm_min();
+
+    auto result = tested::to_chars(buffer, buffer + 1024, value,
+                                   tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1p-1074"))
+      return false;
+
+    double parsed = 0.0;
+
+    auto round_trip = tested::from_chars(buffer, result.ptr, parsed,
+                                         tested::chars_format::hex);
+
+    if (round_trip.ec != tested::errc{} || round_trip.ptr != result.ptr ||
+        parsed != value)
+      return false;
+  }
+
+  {
+    const float value = tested::numeric_limits<float>::denorm_min();
+
+    auto result = tested::to_chars(buffer, buffer + 1024, value,
+                                   tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1p-149"))
+      return false;
+  }
+
+  {
+    auto result =
+        tested::to_chars(buffer, buffer + 1024, 1.5, tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1.8p+0"))
+      return false;
+  }
+
+  {
+    auto result =
+        tested::to_chars(buffer, buffer + 1024, 0.1, tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1.999999999999ap-4"))
+      return false;
+  }
+
+  {
+    auto result = tested::to_chars(buffer, buffer + 1024,
+                                   tested::numeric_limits<double>::max(),
+                                   tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1.fffffffffffffp+1023"))
+      return false;
+  }
+
+  /*
+   * Signed zero must remain signed through the shortest
+   * representation.
+   */
+  {
+    auto result = tested::to_chars(buffer, buffer + 1024, -0.0);
+
+    if (result.ec != tested::errc{} || !equal_text(buffer, result.ptr, "-0"))
+      return false;
+
+    double parsed = 1.0;
+
+    auto round_trip = tested::from_chars(buffer, result.ptr, parsed);
+
+    if (round_trip.ec != tested::errc{} || round_trip.ptr != result.ptr)
+      return false;
+
+    /*
+     * IEEE signed zero: division distinguishes the sign
+     * without pulling an internal FTL implementation header
+     * into this public-header test.
+     */
+    if (1.0 / parsed != -tested::numeric_limits<double>::infinity())
+      return false;
+  }
+
+  {
+    auto result = tested::to_chars(buffer, buffer + 1024, -0.0,
+                                   tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} || !equal_text(buffer, result.ptr, "-0p+0"))
+      return false;
+  }
+
+  /*
+   * Long double goes through the same generic shortest
+   * decimal engine on binary64, x87, and binary128.
+   */
+  {
+    auto result = tested::to_chars(buffer, buffer + 1024, 1.5L);
+
+    if (result.ec != tested::errc{} || !equal_text(buffer, result.ptr, "1.5"))
+      return false;
+  }
+
+  {
+    auto result = tested::to_chars(buffer, buffer + 1024, 1.5L,
+                                   tested::chars_format::scientific);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1.5e+00"))
+      return false;
+  }
+
+  {
+    auto result = tested::to_chars(buffer, buffer + 1024, 1.5L,
+                                   tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} ||
+        !equal_text(buffer, result.ptr, "1.8p+0"))
+      return false;
+  }
+
+  /*
+   * Specials remain canonical and format-independent.
+   */
+  {
+    auto result = tested::to_chars(buffer, buffer + 1024,
+                                   tested::numeric_limits<double>::infinity());
+
+    if (result.ec != tested::errc{} || !equal_text(buffer, result.ptr, "inf"))
+      return false;
+  }
+
+  {
+    auto result = tested::to_chars(buffer, buffer + 1024,
+                                   -tested::numeric_limits<double>::infinity(),
+                                   tested::chars_format::hex);
+
+    if (result.ec != tested::errc{} || !equal_text(buffer, result.ptr, "-inf"))
+      return false;
+  }
+
+  {
+    auto result = tested::to_chars(buffer, buffer + 1024,
+                                   tested::numeric_limits<double>::quiet_NaN());
+
+    if (result.ec != tested::errc{} || !equal_text(buffer, result.ptr, "nan"))
+      return false;
+  }
+
+  /*
+   * Buffer failure contract.
+   */
+  {
+    char tiny[2]{};
+
+    auto result = tested::to_chars(tiny, tiny + 2, 0.1);
+
+    if (result.ptr != tiny + 2 || result.ec != tested::errc::value_too_large)
+      return false;
+  }
+
+  {
+    char tiny[5]{};
+
+    auto result =
+        tested::to_chars(tiny, tiny + 5, 1.5, tested::chars_format::scientific);
+
+    if (result.ptr != tiny + 5 || result.ec != tested::errc::value_too_large)
+      return false;
+  }
+
+  return true;
+}
+
+bool ftl_test() {
+  return floating_from_chars_tests() && floating_to_chars_precision_tests() &&
+         floating_to_chars_shortest_tests();
+}

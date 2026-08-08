@@ -16,6 +16,22 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+#if __cpp_lib_string_view < 201803L
+#error <string_view> must advertise string_view
+#endif
+
+#if __cpp_lib_constexpr_string_view < 201811L
+#error <string_view> must advertise constexpr string_view
+#endif
+
+#if __cpp_lib_starts_ends_with < 201711L
+#error <string_view> must advertise starts_with and ends_with
+#endif
+
+#if __cpp_lib_string_contains < 202011L
+#error <string_view> must advertise contains
+#endif
+
 using namespace tested::literals::string_view_literals;
 
 template <class T, class U> inline constexpr bool same_as_v = false;
@@ -39,6 +55,14 @@ static_assert(tested::ranges::contiguous_range<tested::string_view>);
 static_assert(tested::ranges::sized_range<tested::string_view>);
 
 static_assert(tested::ranges::borrowed_range<tested::string_view>);
+
+static_assert(
+    same_as_v<decltype(tested::string_view{} <=> tested::string_view{}),
+              tested::strong_ordering>);
+
+static_assert(tested::string_view{}.starts_with(tested::string_view{}));
+static_assert(tested::string_view{}.ends_with(tested::string_view{}));
+static_assert(tested::string_view{}.contains(tested::string_view{}));
 
 constexpr bool constructor_tests() {
   tested::string_view empty;

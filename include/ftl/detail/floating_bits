@@ -1,0 +1,696 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_DETAIL_FLOATING_BITS_HEADER
+#define FTL_DETAIL_FLOATING_BITS_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <bit>
+#include <cstdint>
+#define FTL_FLOATING_BITS_STD std
+#else
+#include <ftl/bit>
+#include <ftl/cstdint>
+#define FTL_FLOATING_BITS_STD ftl
+#endif
+
+#if defined(_MSC_VER) && !defined(__clang__)
+
+#define FTL_LONG_DOUBLE_BINARY64 1
+
+#elif defined(__LDBL_MANT_DIG__) && defined(__LDBL_MAX_EXP__) &&               \
+    __LDBL_MANT_DIG__ == 53 && __LDBL_MAX_EXP__ == 1024
+
+#define FTL_LONG_DOUBLE_BINARY64 1
+
+#elif defined(__LDBL_MANT_DIG__) && defined(__LDBL_MAX_EXP__) &&               \
+    __LDBL_MANT_DIG__ == 64 && __LDBL_MAX_EXP__ == 16384
+
+#define FTL_LONG_DOUBLE_X87 1
+
+#elif defined(__LDBL_MANT_DIG__) && defined(__LDBL_MAX_EXP__) &&               \
+    __LDBL_MANT_DIG__ == 113 && __LDBL_MAX_EXP__ == 16384
+
+#define FTL_LONG_DOUBLE_BINARY128 1
+
+#else
+
+#error "FTL floating conversion does not recognize this long double format"
+
+#endif
+
+namespace ftl_float_conversion {
+
+enum class floating_kind { zero, finite, infinity, nan };
+enum class long_double_format { binary64, x87_extended80, binary128 };
+
+struct uint128 {
+  FTL_FLOATING_BITS_STD::uint64_t low = 0;
+  FTL_FLOATING_BITS_STD::uint64_t high = 0;
+
+  [[nodiscard]]
+  constexpr bool is_zero() const noexcept {
+    return low == 0 && high == 0;
+  }
+
+  friend constexpr bool operator==(const uint128 &,
+                                   const uint128 &) noexcept = default;
+};
+
+/*
+ * For finite values:
+ *
+ *   value = (-1)^negative * significand * 2^exponent
+ *
+ * The significand is kept in the canonical precision of
+ * the source floating-point format rather than reduced by
+ * removing trailing zero bits.
+ *
+ * For NaNs, significand stores the raw fraction/payload bits
+ * so decomposition followed by composition preserves the
+ * representation.
+ */
+template <class Float> struct binary_parts {
+  floating_kind kind = floating_kind::zero;
+  bool negative = false;
+  uint128 significand{};
+  int exponent = 0;
+};
+
+namespace floating_bits_detail {
+
+template <class Float, class Storage, int FractionBits, int ExponentBits,
+          int ExponentBias>
+struct ieee_binary_format {
+  using float_type = Float;
+  using storage_type = Storage;
+
+  static constexpr int fraction_bits = FractionBits;
+  static constexpr int exponent_bits = ExponentBits;
+  static constexpr int exponent_bias = ExponentBias;
+
+  static constexpr int significand_bits = fraction_bits + 1;
+
+  static constexpr int total_bits = 1 + exponent_bits + fraction_bits;
+
+  static constexpr storage_type hidden_bit = storage_type{1} << fraction_bits;
+
+  static constexpr storage_type fraction_mask = hidden_bit - storage_type{1};
+
+  static constexpr storage_type exponent_field_max =
+      (storage_type{1} << exponent_bits) - storage_type{1};
+
+  static constexpr storage_type exponent_mask = exponent_field_max
+                                                << fraction_bits;
+
+  static constexpr storage_type sign_mask = storage_type{1}
+                                            << (fraction_bits + exponent_bits);
+
+  /*
+   * The exponent paired with the canonical integer
+   * significand.
+   *
+   * For the smallest normal binary32 value:
+   *
+   *   0x800000 * 2^-149 == 2^-126
+   *
+   * Subnormals use the same exponent with a smaller
+   * significand.
+   */
+  static constexpr int minimum_significand_exponent =
+      1 - exponent_bias - fraction_bits;
+
+  static constexpr int maximum_significand_exponent =
+      static_cast<int>(exponent_field_max) - 1 - exponent_bias - fraction_bits;
+};
+
+#if defined(FTL_LONG_DOUBLE_X87)
+
+static_assert(
+    FTL_FLOATING_BITS_STD::endian::native ==
+        FTL_FLOATING_BITS_STD::endian::little,
+    "FTL currently supports x87 long double only on little-endian targets");
+
+struct x87_storage {
+  FTL_FLOATING_BITS_STD::uint64_t significand;
+  FTL_FLOATING_BITS_STD::uint16_t sign_exponent;
+  unsigned char padding[sizeof(long double) - 10];
+};
+
+static_assert(sizeof(x87_storage) == sizeof(long double));
+
+#elif defined(FTL_LONG_DOUBLE_BINARY128)
+
+struct binary128_storage {
+  FTL_FLOATING_BITS_STD::uint64_t first;
+  FTL_FLOATING_BITS_STD::uint64_t second;
+};
+
+static_assert(sizeof(binary128_storage) == sizeof(long double));
+
+[[nodiscard]]
+constexpr FTL_FLOATING_BITS_STD::uint64_t
+binary128_low(binary128_storage value) noexcept {
+  if constexpr (FTL_FLOATING_BITS_STD::endian::native ==
+                FTL_FLOATING_BITS_STD::endian::little) {
+    return value.first;
+  } else {
+    return value.second;
+  }
+}
+
+[[nodiscard]]
+constexpr FTL_FLOATING_BITS_STD::uint64_t
+binary128_high(binary128_storage value) noexcept {
+  if constexpr (FTL_FLOATING_BITS_STD::endian::native ==
+                FTL_FLOATING_BITS_STD::endian::little) {
+    return value.second;
+  } else {
+    return value.first;
+  }
+}
+
+[[nodiscard]]
+constexpr binary128_storage
+make_binary128_storage(FTL_FLOATING_BITS_STD::uint64_t low,
+                       FTL_FLOATING_BITS_STD::uint64_t high) noexcept {
+  if constexpr (FTL_FLOATING_BITS_STD::endian::native ==
+                FTL_FLOATING_BITS_STD::endian::little) {
+    return {low, high};
+  } else {
+    return {high, low};
+  }
+}
+
+#endif
+
+} // namespace floating_bits_detail
+
+template <class Float> struct floating_format_traits;
+
+template <>
+struct floating_format_traits<float>
+    : floating_bits_detail::ieee_binary_format<
+          float, FTL_FLOATING_BITS_STD::uint32_t, 23, 8, 127> {};
+
+template <>
+struct floating_format_traits<double>
+    : floating_bits_detail::ieee_binary_format<
+          double, FTL_FLOATING_BITS_STD::uint64_t, 52, 11, 1023> {};
+
+template <> struct floating_format_traits<long double> {
+#if defined(FTL_LONG_DOUBLE_BINARY64)
+
+  static constexpr long_double_format format = long_double_format::binary64;
+
+  static constexpr int fraction_bits = 52;
+  static constexpr int exponent_bits = 11;
+  static constexpr int exponent_bias = 1023;
+  static constexpr int significand_bits = 53;
+
+#elif defined(FTL_LONG_DOUBLE_X87)
+
+  static constexpr long_double_format format =
+      long_double_format::x87_extended80;
+
+  /*
+   * x87 has a 64-bit explicit significand:
+   *
+   *   1 integer bit + 63 fraction bits
+   */
+  static constexpr int fraction_bits = 63;
+  static constexpr int exponent_bits = 15;
+  static constexpr int exponent_bias = 16383;
+  static constexpr int significand_bits = 64;
+
+#elif defined(FTL_LONG_DOUBLE_BINARY128)
+
+  static constexpr long_double_format format = long_double_format::binary128;
+
+  static constexpr int fraction_bits = 112;
+  static constexpr int exponent_bits = 15;
+  static constexpr int exponent_bias = 16383;
+  static constexpr int significand_bits = 113;
+
+#endif
+
+  static constexpr int exponent_field_max = (1 << exponent_bits) - 1;
+
+  static constexpr int minimum_significand_exponent =
+      1 - exponent_bias - fraction_bits;
+
+  static constexpr int maximum_significand_exponent =
+      exponent_field_max - 1 - exponent_bias - fraction_bits;
+};
+
+template <class Float>
+[[nodiscard]]
+constexpr typename floating_format_traits<Float>::storage_type
+floating_to_bits(Float value) noexcept {
+  using format = floating_format_traits<Float>;
+  using storage_type = typename format::storage_type;
+
+  return FTL_FLOATING_BITS_STD::bit_cast<storage_type>(value);
+}
+
+template <class Float>
+[[nodiscard]]
+constexpr Float floating_from_bits(
+    typename floating_format_traits<Float>::storage_type bits) noexcept {
+  return FTL_FLOATING_BITS_STD::bit_cast<Float>(bits);
+}
+
+template <class Float>
+[[nodiscard]]
+constexpr binary_parts<Float> decompose(Float value) noexcept {
+  using format = floating_format_traits<Float>;
+  using storage_type = typename format::storage_type;
+
+  const storage_type bits = floating_to_bits(value);
+
+  const bool negative = (bits & format::sign_mask) != 0;
+
+  const storage_type exponent_field =
+      (bits & format::exponent_mask) >> format::fraction_bits;
+
+  const storage_type fraction = bits & format::fraction_mask;
+
+  if (exponent_field == 0) {
+    if (fraction == 0) {
+      return {floating_kind::zero, negative, {}, 0};
+    }
+
+    return {floating_kind::finite,
+            negative,
+            {static_cast<FTL_FLOATING_BITS_STD::uint64_t>(fraction), 0},
+            format::minimum_significand_exponent};
+  }
+
+  if (exponent_field == format::exponent_field_max) {
+    if (fraction == 0) {
+      return {floating_kind::infinity, negative, {}, 0};
+    }
+
+    return {floating_kind::nan,
+            negative,
+            {static_cast<FTL_FLOATING_BITS_STD::uint64_t>(fraction), 0},
+            0};
+  }
+
+  const storage_type significand = format::hidden_bit | fraction;
+
+  const int exponent = static_cast<int>(exponent_field) -
+                       format::exponent_bias - format::fraction_bits;
+
+  return {floating_kind::finite,
+          negative,
+          {static_cast<FTL_FLOATING_BITS_STD::uint64_t>(significand), 0},
+          exponent};
+}
+
+template <class Float>
+[[nodiscard]]
+constexpr Float compose(const binary_parts<Float> &parts) noexcept {
+  using format = floating_format_traits<Float>;
+  using storage_type = typename format::storage_type;
+
+  storage_type bits = parts.negative ? format::sign_mask : storage_type{0};
+
+  switch (parts.kind) {
+  case floating_kind::zero:
+    return floating_from_bits<Float>(bits);
+
+  case floating_kind::infinity:
+    bits |= format::exponent_mask;
+    return floating_from_bits<Float>(bits);
+
+  case floating_kind::nan: {
+    storage_type payload = static_cast<storage_type>(parts.significand.low) &
+                           format::fraction_mask;
+
+    /*
+     * A zero NaN payload is an infinity encoding.
+     * This cannot occur from decompose(), but keep
+     * compose() from accidentally manufacturing one.
+     */
+    if (payload == 0)
+      payload = storage_type{1};
+
+    bits |= format::exponent_mask | payload;
+    return floating_from_bits<Float>(bits);
+  }
+
+  case floating_kind::finite:
+    break;
+  }
+
+  const storage_type significand =
+      static_cast<storage_type>(parts.significand.low);
+
+  /*
+   * A canonical subnormal has no implicit leading bit.
+   * Normal values have it present.
+   */
+  if (significand < format::hidden_bit) {
+    bits |= significand & format::fraction_mask;
+
+    return floating_from_bits<Float>(bits);
+  }
+
+  const int exponent_field =
+      parts.exponent + format::exponent_bias + format::fraction_bits;
+
+  bits |= static_cast<storage_type>(exponent_field) << format::fraction_bits;
+
+  bits |= significand & format::fraction_mask;
+
+  return floating_from_bits<Float>(bits);
+}
+
+[[nodiscard]]
+constexpr binary_parts<long double> decompose(long double value) noexcept {
+  using format = floating_format_traits<long double>;
+  using uint64_t = FTL_FLOATING_BITS_STD::uint64_t;
+
+#if defined(FTL_LONG_DOUBLE_BINARY64)
+
+  constexpr uint64_t sign_mask = 0x8000000000000000ull;
+
+  constexpr uint64_t fraction_mask = 0x000fffffffffffffull;
+
+  constexpr uint64_t exponent_mask = 0x7ff0000000000000ull;
+
+  const uint64_t bits = FTL_FLOATING_BITS_STD::bit_cast<uint64_t>(value);
+
+  const bool negative = (bits & sign_mask) != 0;
+
+  const uint64_t exponent_field = (bits & exponent_mask) >> 52;
+
+  const uint64_t fraction = bits & fraction_mask;
+
+  if (exponent_field == 0) {
+    if (fraction == 0) {
+      return {floating_kind::zero, negative, {}, 0};
+    }
+
+    return {floating_kind::finite,
+            negative,
+            {fraction, 0},
+            format::minimum_significand_exponent};
+  }
+
+  if (exponent_field == 0x7ffu) {
+    if (fraction == 0) {
+      return {floating_kind::infinity, negative, {}, 0};
+    }
+
+    return {floating_kind::nan, negative, {fraction, 0}, 0};
+  }
+
+  return {floating_kind::finite,
+          negative,
+          {(uint64_t{1} << 52) | fraction, 0},
+          static_cast<int>(exponent_field) - format::exponent_bias -
+              format::fraction_bits};
+
+#elif defined(FTL_LONG_DOUBLE_X87)
+
+  const auto raw =
+      FTL_FLOATING_BITS_STD::bit_cast<floating_bits_detail::x87_storage>(value);
+
+  const bool negative = (raw.sign_exponent & 0x8000u) != 0;
+
+  const unsigned exponent_field = raw.sign_exponent & 0x7fffu;
+
+  const uint64_t significand = raw.significand;
+
+  if (exponent_field == 0) {
+    if (significand == 0) {
+      return {floating_kind::zero, negative, {}, 0};
+    }
+
+    return {floating_kind::finite,
+            negative,
+            {significand, 0},
+            format::minimum_significand_exponent};
+  }
+
+  if (exponent_field == 0x7fffu) {
+    /*
+     * x87 infinity has its explicit integer bit set
+     * and all fraction bits clear.
+     */
+    if (significand == 0x8000000000000000ull) {
+      return {floating_kind::infinity, negative, {}, 0};
+    }
+
+    /*
+     * Preserve the complete explicit x87
+     * significand for NaNs.
+     */
+    return {floating_kind::nan, negative, {significand, 0}, 0};
+  }
+
+  return {floating_kind::finite,
+          negative,
+          {significand, 0},
+          static_cast<int>(exponent_field) - format::exponent_bias -
+              format::fraction_bits};
+
+#elif defined(FTL_LONG_DOUBLE_BINARY128)
+
+  const auto raw =
+      FTL_FLOATING_BITS_STD::bit_cast<floating_bits_detail::binary128_storage>(
+          value);
+
+  const uint64_t low = floating_bits_detail::binary128_low(raw);
+
+  const uint64_t high = floating_bits_detail::binary128_high(raw);
+
+  constexpr uint64_t sign_mask = 0x8000000000000000ull;
+
+  constexpr uint64_t fraction_high_mask = 0x0000ffffffffffffull;
+
+  constexpr uint64_t hidden_high_bit = 0x0001000000000000ull;
+
+  const bool negative = (high & sign_mask) != 0;
+
+  const uint64_t exponent_field = (high >> 48) & 0x7fffu;
+
+  const uint64_t fraction_high = high & fraction_high_mask;
+
+  if (exponent_field == 0) {
+    if (fraction_high == 0 && low == 0) {
+      return {floating_kind::zero, negative, {}, 0};
+    }
+
+    return {floating_kind::finite,
+            negative,
+            {low, fraction_high},
+            format::minimum_significand_exponent};
+  }
+
+  if (exponent_field == 0x7fffu) {
+    if (fraction_high == 0 && low == 0) {
+      return {floating_kind::infinity, negative, {}, 0};
+    }
+
+    return {floating_kind::nan, negative, {low, fraction_high}, 0};
+  }
+
+  return {floating_kind::finite,
+          negative,
+          {low, fraction_high | hidden_high_bit},
+          static_cast<int>(exponent_field) - format::exponent_bias -
+              format::fraction_bits};
+
+#endif
+}
+
+[[nodiscard]]
+constexpr long double compose(const binary_parts<long double> &parts) noexcept {
+  using format = floating_format_traits<long double>;
+  using uint64_t = FTL_FLOATING_BITS_STD::uint64_t;
+
+#if defined(FTL_LONG_DOUBLE_BINARY64)
+
+  constexpr uint64_t sign_mask = 0x8000000000000000ull;
+
+  constexpr uint64_t fraction_mask = 0x000fffffffffffffull;
+
+  constexpr uint64_t exponent_mask = 0x7ff0000000000000ull;
+
+  constexpr uint64_t hidden_bit = uint64_t{1} << 52;
+
+  uint64_t bits = parts.negative ? sign_mask : uint64_t{0};
+
+  switch (parts.kind) {
+  case floating_kind::zero:
+    break;
+
+  case floating_kind::infinity:
+    bits |= exponent_mask;
+    break;
+
+  case floating_kind::nan: {
+    uint64_t payload = parts.significand.low & fraction_mask;
+
+    if (payload == 0)
+      payload = 1;
+
+    bits |= exponent_mask | payload;
+    break;
+  }
+
+  case floating_kind::finite: {
+    const uint64_t significand = parts.significand.low;
+
+    if (significand < hidden_bit) {
+      bits |= significand & fraction_mask;
+      break;
+    }
+
+    const int exponent_field =
+        parts.exponent + format::exponent_bias + format::fraction_bits;
+
+    bits |= static_cast<uint64_t>(exponent_field) << 52;
+
+    bits |= significand & fraction_mask;
+
+    break;
+  }
+  }
+
+  return FTL_FLOATING_BITS_STD::bit_cast<long double>(bits);
+
+#elif defined(FTL_LONG_DOUBLE_X87)
+
+  using storage = floating_bits_detail::x87_storage;
+
+  storage raw{};
+
+  constexpr uint64_t integer_bit = 0x8000000000000000ull;
+
+  constexpr uint64_t fraction_mask = 0x7fffffffffffffffull;
+
+  const FTL_FLOATING_BITS_STD::uint16_t sign = parts.negative ? 0x8000u : 0u;
+
+  switch (parts.kind) {
+  case floating_kind::zero:
+    raw.significand = 0;
+    raw.sign_exponent = sign;
+    break;
+
+  case floating_kind::infinity:
+    raw.significand = integer_bit;
+    raw.sign_exponent =
+        static_cast<FTL_FLOATING_BITS_STD::uint16_t>(sign | 0x7fffu);
+    break;
+
+  case floating_kind::nan: {
+    uint64_t significand = parts.significand.low | integer_bit;
+
+    if ((significand & fraction_mask) == 0)
+      significand |= 1;
+
+    raw.significand = significand;
+
+    raw.sign_exponent =
+        static_cast<FTL_FLOATING_BITS_STD::uint16_t>(sign | 0x7fffu);
+
+    break;
+  }
+
+  case floating_kind::finite: {
+    const uint64_t significand = parts.significand.low;
+
+    raw.significand = significand;
+
+    if (significand < integer_bit) {
+      raw.sign_exponent = sign;
+      break;
+    }
+
+    const int exponent_field =
+        parts.exponent + format::exponent_bias + format::fraction_bits;
+
+    raw.sign_exponent = static_cast<FTL_FLOATING_BITS_STD::uint16_t>(
+        sign | static_cast<FTL_FLOATING_BITS_STD::uint16_t>(exponent_field));
+
+    break;
+  }
+  }
+
+  return FTL_FLOATING_BITS_STD::bit_cast<long double>(raw);
+
+#elif defined(FTL_LONG_DOUBLE_BINARY128)
+
+  constexpr uint64_t sign_mask = 0x8000000000000000ull;
+
+  constexpr uint64_t exponent_mask = 0x7fff000000000000ull;
+
+  constexpr uint64_t fraction_high_mask = 0x0000ffffffffffffull;
+
+  constexpr uint64_t hidden_high_bit = 0x0001000000000000ull;
+
+  uint64_t low = 0;
+
+  uint64_t high = parts.negative ? sign_mask : uint64_t{0};
+
+  switch (parts.kind) {
+  case floating_kind::zero:
+    break;
+
+  case floating_kind::infinity:
+    high |= exponent_mask;
+    break;
+
+  case floating_kind::nan: {
+    low = parts.significand.low;
+
+    uint64_t fraction_high = parts.significand.high & fraction_high_mask;
+
+    if (low == 0 && fraction_high == 0)
+      low = 1;
+
+    high |= exponent_mask | fraction_high;
+
+    break;
+  }
+
+  case floating_kind::finite: {
+    low = parts.significand.low;
+
+    const uint64_t significand_high = parts.significand.high;
+
+    if (significand_high < hidden_high_bit) {
+      high |= significand_high & fraction_high_mask;
+
+      break;
+    }
+
+    const int exponent_field =
+        parts.exponent + format::exponent_bias + format::fraction_bits;
+
+    high |= static_cast<uint64_t>(exponent_field) << 48;
+
+    high |= significand_high & fraction_high_mask;
+
+    break;
+  }
+  }
+
+  const auto raw = floating_bits_detail::make_binary128_storage(low, high);
+
+  return FTL_FLOATING_BITS_STD::bit_cast<long double>(raw);
+
+#endif
+}
+
+} // namespace ftl_float_conversion
+
+#undef FTL_FLOATING_BITS_STD
+#undef FTL_LONG_DOUBLE_BINARY64
+#undef FTL_LONG_DOUBLE_X87
+#undef FTL_LONG_DOUBLE_BINARY128
+
+#endif // FTL_DETAIL_FLOATING_BITS_HEADER

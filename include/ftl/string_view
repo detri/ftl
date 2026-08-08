@@ -335,12 +335,20 @@ public:
     return starts_with(basic_string_view(value));
   }
 
-  [[nodiscard]]
-  constexpr bool ends_with(basic_string_view value) const noexcept {
-    return size_ >= value.size_ &&
-           Traits::compare(data_ + size_ - value.size_, value.data_,
-                           value.size_) == 0;
-  }
+    [[nodiscard]]
+    constexpr bool
+    ends_with(basic_string_view value) const noexcept {
+      if (value.empty())
+        return true;
+
+      if (value.size_ > size_)
+        return false;
+
+      return Traits::compare(
+                 data_ + (size_ - value.size_),
+                 value.data_,
+                 value.size_) == 0;
+    }
 
   [[nodiscard]]
   constexpr bool ends_with(Character value) const noexcept {
@@ -648,9 +656,11 @@ private:
 };
 
 template <class Iterator, class End>
+  requires(contiguous_iterator<Iterator> && sized_sentinel_for<End, Iterator>)
 basic_string_view(Iterator, End) -> basic_string_view<iter_value_t<Iterator>>;
 
 template <class Range>
+  requires ranges::contiguous_range<Range>
 basic_string_view(Range &&) -> basic_string_view<ranges::range_value_t<Range>>;
 
 namespace ranges {
@@ -777,12 +787,20 @@ FTL_END_NAMESPACE
 #define __cpp_lib_string_view 201803L
 #endif
 
-#if !defined(__cpp_lib_starts_ends_with) || __cpp_lib_starts_ends_with < 201711L
+#if !defined(__cpp_lib_constexpr_string_view) ||                         \
+    __cpp_lib_constexpr_string_view < 201811L
+#undef __cpp_lib_constexpr_string_view
+#define __cpp_lib_constexpr_string_view 201811L
+#endif
+
+#if !defined(__cpp_lib_starts_ends_with) ||                              \
+    __cpp_lib_starts_ends_with < 201711L
 #undef __cpp_lib_starts_ends_with
 #define __cpp_lib_starts_ends_with 201711L
 #endif
 
-#if !defined(__cpp_lib_string_contains) || __cpp_lib_string_contains < 202011L
+#if !defined(__cpp_lib_string_contains) ||                               \
+    __cpp_lib_string_contains < 202011L
 #undef __cpp_lib_string_contains
 #define __cpp_lib_string_contains 202011L
 #endif

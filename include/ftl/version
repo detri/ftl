@@ -630,4 +630,27 @@
 #define __cpp_lib_ranges_iota 202202L
 #endif
 
+#if !defined(__cpp_lib_string_view) || __cpp_lib_string_view < 201803L
+#undef __cpp_lib_string_view
+#define __cpp_lib_string_view 201803L
+#endif
+
+#if !defined(__cpp_lib_constexpr_string_view) ||                         \
+    __cpp_lib_constexpr_string_view < 201811L
+#undef __cpp_lib_constexpr_string_view
+#define __cpp_lib_constexpr_string_view 201811L
+#endif
+
+#if !defined(__cpp_lib_starts_ends_with) ||                              \
+    __cpp_lib_starts_ends_with < 201711L
+#undef __cpp_lib_starts_ends_with
+#define __cpp_lib_starts_ends_with 201711L
+#endif
+
+#if !defined(__cpp_lib_string_contains) ||                               \
+    __cpp_lib_string_contains < 202011L
+#undef __cpp_lib_string_contains
+#define __cpp_lib_string_contains 202011L
+#endif
+
 #endif

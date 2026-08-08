@@ -5,10 +5,12 @@
 
 #ifdef FTL_REPLACE_STL
 #include <__system_error/errc.hpp>
+#include <detail/floating_conversion>
 #include <limits>
 #include <type_traits>
 #else
 #include <ftl/__system_error/errc.hpp>
+#include <ftl/detail/floating_conversion>
 #include <ftl/limits>
 #include <ftl/type_traits>
 #endif
@@ -99,13 +101,9 @@ constexpr char digit_character(unsigned value) noexcept {
 
 template <class T>
 concept charconv_integer =
-    is_integral_v<T> &&
-    is_same_v<T, remove_cv_t<T>> &&
-    !is_same_v<T, bool> &&
-    !is_same_v<T, wchar_t> &&
-    !is_same_v<T, char8_t> &&
-    !is_same_v<T, char16_t> &&
-    !is_same_v<T, char32_t>;
+    is_integral_v<T> && is_same_v<T, remove_cv_t<T>> && !is_same_v<T, bool> &&
+    !is_same_v<T, wchar_t> && !is_same_v<T, char8_t> &&
+    !is_same_v<T, char16_t> && !is_same_v<T, char32_t>;
 
 template <class Integer>
 using unsigned_integer_t = make_unsigned_t<remove_cv_t<Integer>>;
@@ -253,6 +251,147 @@ integer_from_chars(const char *first, const char *last, Integer &destination,
   return {current, errc{}};
 }
 
+[[nodiscard]]
+constexpr ::ftl_float_conversion::decimal_exponent_mode
+floating_decimal_exponent_mode(chars_format format) noexcept {
+  if (format == chars_format::scientific) {
+    return ::ftl_float_conversion::decimal_exponent_mode::required;
+  }
+
+  if (format == chars_format::fixed) {
+    return ::ftl_float_conversion::decimal_exponent_mode::forbidden;
+  }
+
+  return ::ftl_float_conversion::decimal_exponent_mode::optional;
+}
+
+template <class Float>
+[[nodiscard]]
+inline from_chars_result
+floating_from_chars(const char *first, const char *last, Float &destination,
+                    chars_format format) noexcept {
+  /*
+   * Special values are part of the inherited
+   * strtod subject-sequence grammar and are
+   * independent of decimal/hex formatting mode.
+   */
+  {
+    const auto special =
+        ::ftl_float_conversion::scan_floating_special<Float>(first, last);
+
+    if (special.status ==
+        ::ftl_float_conversion::floating_special_scan_status::success) {
+      destination = special.value;
+
+      return {special.ptr, errc{}};
+    }
+  }
+
+  if (format == chars_format::hex) {
+    const auto scanned =
+        ::ftl_float_conversion::scan_hexadecimal<Float>(first, last);
+
+    if (scanned.status ==
+        ::ftl_float_conversion::hexadecimal_scan_status::no_match) {
+      return {first, errc::invalid_argument};
+    }
+
+    const auto converted =
+        ::ftl_float_conversion::hexadecimal_to_binary<Float>(scanned.number);
+
+    if (converted.status !=
+        ::ftl_float_conversion::conversion_status::success) {
+      return {scanned.ptr, errc::result_out_of_range};
+    }
+
+    destination = converted.value;
+
+    return {scanned.ptr, errc{}};
+  }
+
+  const auto scanned = ::ftl_float_conversion::scan_decimal<Float>(
+      first, last, floating_decimal_exponent_mode(format));
+
+  if (scanned.status == ::ftl_float_conversion::decimal_scan_status::no_match) {
+    return {first, errc::invalid_argument};
+  }
+
+  const auto converted =
+      ::ftl_float_conversion::decimal_to_binary<Float>(scanned.number);
+
+  if (converted.status != ::ftl_float_conversion::conversion_status::success) {
+    return {scanned.ptr, errc::result_out_of_range};
+  }
+
+  destination = converted.value;
+
+  return {scanned.ptr, errc{}};
+}
+
+template <class Float>
+[[nodiscard]]
+inline to_chars_result floating_to_chars_precision(
+    char* first, char* last, Float value,
+    chars_format format, int precision) noexcept {
+  namespace conversion = ::ftl_float_conversion;
+
+  const auto result = [&]() -> conversion::floating_format_result {
+    if (precision < 0) {
+      /*
+       * A negative printf precision is treated as omitted.
+       *
+       * f/e/g use their default precision of 6.
+       * a uses enough hexadecimal digits for an exact representation.
+       */
+      switch (format) {
+      case chars_format::fixed:
+        return conversion::format_fixed_precision(first, last, value, 6);
+
+      case chars_format::scientific:
+        return conversion::format_scientific_precision(first, last, value, 6);
+
+      case chars_format::general:
+        return conversion::format_general_precision(first, last, value, 6);
+
+      case chars_format::hex:
+        return conversion::format_hexadecimal_default_precision(
+            first, last, value);
+      }
+    }
+
+    const auto converted_precision = static_cast<unsigned>(precision);
+
+    switch (format) {
+    case chars_format::fixed:
+      return conversion::format_fixed_precision(
+          first, last, value, converted_precision);
+
+    case chars_format::scientific:
+      return conversion::format_scientific_precision(
+          first, last, value, converted_precision);
+
+    case chars_format::general:
+      return conversion::format_general_precision(
+          first, last, value, converted_precision);
+
+    case chars_format::hex:
+      return conversion::format_hexadecimal_precision(
+          first, last, value, converted_precision);
+    }
+
+    /*
+     * N4950 requires format to be one of the chars_format enumerators,
+     * so reaching this point means the caller violated the precondition.
+     */
+    return {last, conversion::floating_format_status::value_too_large};
+  }();
+
+  if (result.status == conversion::floating_format_status::success)
+    return {result.ptr, errc{}};
+
+  return {last, errc::value_too_large};
+}
+
 } // namespace charconv_detail
 
 template <charconv_detail::charconv_integer Integer>
@@ -283,14 +422,23 @@ to_chars_result to_chars(char *first, char *last, double value,
 to_chars_result to_chars(char *first, char *last, long double value,
                          chars_format format);
 
-to_chars_result to_chars(char *first, char *last, float value,
-                         chars_format format, int precision);
+inline to_chars_result to_chars(char* first, char* last, float value,
+                                chars_format format, int precision) {
+  return charconv_detail::floating_to_chars_precision(
+      first, last, value, format, precision);
+}
 
-to_chars_result to_chars(char *first, char *last, double value,
-                         chars_format format, int precision);
+inline to_chars_result to_chars(char* first, char* last, double value,
+                                chars_format format, int precision) {
+  return charconv_detail::floating_to_chars_precision(
+      first, last, value, format, precision);
+}
 
-to_chars_result to_chars(char *first, char *last, long double value,
-                         chars_format format, int precision);
+inline to_chars_result to_chars(char* first, char* last, long double value,
+                                chars_format format, int precision) {
+  return charconv_detail::floating_to_chars_precision(
+      first, last, value, format, precision);
+}
 
 template <charconv_detail::charconv_integer Integer>
 constexpr from_chars_result from_chars(const char *first, const char *last,
@@ -298,15 +446,589 @@ constexpr from_chars_result from_chars(const char *first, const char *last,
   return charconv_detail::integer_from_chars(first, last, value, base);
 }
 
-from_chars_result from_chars(const char *first, const char *last, float &value,
-                             chars_format format = chars_format::general);
+inline from_chars_result
+from_chars(const char *first, const char *last, float &value,
+           chars_format format = chars_format::general) {
+  return charconv_detail::floating_from_chars(first, last, value, format);
+}
 
-from_chars_result from_chars(const char *first, const char *last, double &value,
-                             chars_format format = chars_format::general);
+inline from_chars_result
+from_chars(const char *first, const char *last, double &value,
+           chars_format format = chars_format::general) {
+  return charconv_detail::floating_from_chars(first, last, value, format);
+}
 
-from_chars_result from_chars(const char *first, const char *last,
-                             long double &value,
-                             chars_format format = chars_format::general);
+inline from_chars_result
+from_chars(const char *first, const char *last, long double &value,
+           chars_format format = chars_format::general) {
+  return charconv_detail::floating_from_chars(first, last, value, format);
+}
+
+namespace charconv_detail {
+
+namespace floating_conversion = ::ftl_float_conversion;
+namespace floating_detail =
+    ::ftl_float_conversion::floating_conversion_detail;
+
+template <class Float>
+[[nodiscard]]
+inline bool same_floating_value(Float left, Float right) {
+  const auto left_parts = floating_conversion::decompose(left);
+  const auto right_parts = floating_conversion::decompose(right);
+
+  return left_parts.kind == right_parts.kind &&
+         left_parts.negative == right_parts.negative &&
+         left_parts.significand == right_parts.significand &&
+         left_parts.exponent == right_parts.exponent;
+}
+
+template <class Emit>
+inline void emit_shortest_scientific(
+    const floating_detail::shortest_decimal_representation& value,
+    bool negative,
+    Emit&& emit) {
+  if (negative)
+    emit('-');
+
+  emit(value.digits[0]);
+
+  if (value.digit_count > 1) {
+    emit('.');
+
+    for (unsigned index = 1; index < value.digit_count; ++index)
+      emit(value.digits[index]);
+  }
+
+  const long long scientific_exponent =
+      value.exponent +
+      static_cast<long long>(value.digit_count) - 1;
+
+  floating_detail::emit_scientific_exponent(
+      scientific_exponent,
+      static_cast<Emit&&>(emit));
+}
+
+template <class Emit>
+inline void emit_shortest_fixed(
+    const floating_detail::shortest_decimal_representation& value,
+    bool negative,
+    Emit&& emit) {
+  if (negative)
+    emit('-');
+
+  const long long point =
+      static_cast<long long>(value.digit_count) + value.exponent;
+
+  if (point <= 0) {
+    emit('0');
+    emit('.');
+
+    for (long long index = 0; index < -point; ++index)
+      emit('0');
+
+    for (unsigned index = 0; index < value.digit_count; ++index)
+      emit(value.digits[index]);
+
+    return;
+  }
+
+  if (point >= static_cast<long long>(value.digit_count)) {
+    for (unsigned index = 0; index < value.digit_count; ++index)
+      emit(value.digits[index]);
+
+    for (long long index = value.digit_count; index < point; ++index)
+      emit('0');
+
+    return;
+  }
+
+  for (long long index = 0; index < point; ++index)
+    emit(value.digits[index]);
+
+  emit('.');
+
+  for (unsigned index = static_cast<unsigned>(point);
+       index < value.digit_count;
+       ++index)
+    emit(value.digits[index]);
+}
+
+[[nodiscard]]
+inline size_t shortest_scientific_length(
+    const floating_detail::shortest_decimal_representation& value,
+    bool negative) {
+  const long long scientific_exponent =
+      value.exponent +
+      static_cast<long long>(value.digit_count) - 1;
+
+  return static_cast<size_t>(negative) +
+         value.digit_count +
+         static_cast<size_t>(value.digit_count > 1) +
+         2 +
+         floating_detail::decimal_exponent_digits(scientific_exponent);
+}
+
+[[nodiscard]]
+inline size_t shortest_fixed_length(
+    const floating_detail::shortest_decimal_representation& value,
+    bool negative) {
+  const long long point =
+      static_cast<long long>(value.digit_count) + value.exponent;
+
+  const size_t sign = static_cast<size_t>(negative);
+
+  if (point <= 0) {
+    return sign +
+           2 +
+           static_cast<size_t>(-point) +
+           value.digit_count;
+  }
+
+  if (point >= static_cast<long long>(value.digit_count))
+    return sign + static_cast<size_t>(point);
+
+  return sign + value.digit_count + 1;
+}
+
+template <class Float>
+[[nodiscard]]
+inline bool decimal_representation_round_trips(
+    const floating_detail::shortest_decimal_representation& candidate,
+    bool negative,
+    Float original) {
+  char text[
+      floating_detail::shortest_decimal_digit_capacity + 16]{};
+
+  char* output = text;
+
+  emit_shortest_scientific(
+      candidate,
+      negative,
+      [&](char character) {
+        *output++ = character;
+      });
+
+  Float parsed{};
+
+  const auto result =
+      from_chars(
+          text,
+          output,
+          parsed,
+          chars_format::scientific);
+
+  return result.ec == errc{} &&
+         result.ptr == output &&
+         same_floating_value(parsed, original);
+}
+
+template <class Float>
+[[nodiscard]]
+inline bool find_shortest_decimal(
+    Float value,
+    floating_detail::shortest_decimal_representation& result) {
+  const auto parts = floating_conversion::decompose(value);
+
+  if (parts.kind == floating_conversion::floating_kind::zero) {
+    result = {};
+    result.digits[0] = '0';
+    result.digit_count = 1;
+    result.exponent = 0;
+    return true;
+  }
+
+  if (parts.kind != floating_conversion::floating_kind::finite)
+    return false;
+
+  floating_detail::exact_decimal_digits exact{};
+
+  if (!floating_detail::build_exact_decimal_digits(parts, exact))
+    return false;
+
+  unsigned maximum_digits =
+      static_cast<unsigned>(numeric_limits<Float>::max_digits10);
+
+  if (exact.count < maximum_digits)
+    maximum_digits = static_cast<unsigned>(exact.count);
+
+  for (unsigned digits = 1; digits <= maximum_digits; ++digits) {
+    floating_conversion::uint128 nearest{};
+    long long exponent = 0;
+
+    if (!floating_detail::rounded_decimal_significand(
+            exact, digits, nearest, exponent))
+      return false;
+
+    /*
+     * First try the numerically nearest decimal at this
+     * precision. If it round-trips, it is necessarily the
+     * standard's preferred candidate.
+     */
+    {
+      floating_detail::shortest_decimal_representation candidate{};
+
+      if (!floating_detail::make_shortest_decimal_representation(
+              nearest, exponent, candidate))
+        return false;
+
+      if (decimal_representation_round_trips(
+              candidate, parts.negative, value)) {
+        result = candidate;
+        return true;
+      }
+    }
+
+    /*
+     * At a power-of-two boundary the round-trip interval is
+     * asymmetric. Rarely, the nearest decimal lies outside
+     * that interval while the adjacent decimal on the wider
+     * side lies inside it.
+     *
+     * Testing both immediate neighbours is sufficient because
+     * the round-trip interval is contiguous. If both neighbours
+     * were inside, the nearer candidate between them would also
+     * be inside.
+     */
+    {
+      auto lower = nearest;
+
+      if (floating_detail::decrement_uint128(lower)) {
+        floating_detail::shortest_decimal_representation candidate{};
+
+        if (!floating_detail::make_shortest_decimal_representation(
+                lower, exponent, candidate))
+          return false;
+
+        if (decimal_representation_round_trips(
+                candidate, parts.negative, value)) {
+          result = candidate;
+          return true;
+        }
+      }
+    }
+
+    {
+      auto upper = nearest;
+      floating_detail::increment_uint128(upper);
+
+      floating_detail::shortest_decimal_representation candidate{};
+
+      if (!floating_detail::make_shortest_decimal_representation(
+              upper, exponent, candidate))
+        return false;
+
+      if (decimal_representation_round_trips(
+              candidate, parts.negative, value)) {
+        result = candidate;
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+template <class Float>
+[[nodiscard]]
+inline to_chars_result write_shortest_fixed(
+    char* first,
+    char* last,
+    Float value,
+    const floating_detail::shortest_decimal_representation& decimal) {
+  const auto parts = floating_conversion::decompose(value);
+
+  const size_t required =
+      shortest_fixed_length(decimal, parts.negative);
+
+  if (static_cast<size_t>(last - first) < required)
+    return {last, errc::value_too_large};
+
+  char* output = first;
+
+  emit_shortest_fixed(
+      decimal,
+      parts.negative,
+      [&](char character) {
+        *output++ = character;
+      });
+
+  return {output, errc{}};
+}
+
+template <class Float>
+[[nodiscard]]
+inline to_chars_result write_shortest_scientific(
+    char* first,
+    char* last,
+    Float value,
+    const floating_detail::shortest_decimal_representation& decimal) {
+  const auto parts = floating_conversion::decompose(value);
+
+  const size_t required =
+      shortest_scientific_length(decimal, parts.negative);
+
+  if (static_cast<size_t>(last - first) < required)
+    return {last, errc::value_too_large};
+
+  char* output = first;
+
+  emit_shortest_scientific(
+      decimal,
+      parts.negative,
+      [&](char character) {
+        *output++ = character;
+      });
+
+  return {output, errc{}};
+}
+
+template <class Float>
+[[nodiscard]]
+inline to_chars_result floating_to_chars_shortest_hexadecimal(
+    char* first,
+    char* last,
+    Float value) {
+  const auto parts = floating_conversion::decompose(value);
+
+  if (parts.kind == floating_conversion::floating_kind::infinity ||
+      parts.kind == floating_conversion::floating_kind::nan) {
+    return floating_to_chars_precision(
+        first, last, value, chars_format::fixed, 0);
+  }
+
+  if (parts.kind == floating_conversion::floating_kind::zero) {
+    const size_t required =
+        static_cast<size_t>(parts.negative) + 4;
+
+    if (static_cast<size_t>(last - first) < required)
+      return {last, errc::value_too_large};
+
+    char* output = first;
+
+    if (parts.negative)
+      *output++ = '-';
+
+    *output++ = '0';
+    *output++ = 'p';
+    *output++ = '+';
+    *output++ = '0';
+
+    return {output, errc{}};
+  }
+
+  const unsigned width =
+      floating_detail::bit_width_uint128(parts.significand);
+
+  /*
+   * Normalize every finite nonzero value to 1.x * 2^e.
+   * This also gives subnormals their shortest useful %a
+   * representation, e.g. binary64 denorm_min -> 1p-1074.
+   */
+  const unsigned fractional_bits = width - 1;
+  const unsigned hexadecimal_digits =
+      (fractional_bits + 3) / 4;
+
+  const unsigned padded_width =
+      1 + hexadecimal_digits * 4;
+
+  const unsigned padding = padded_width - width;
+
+  const auto scaled =
+      floating_detail::shift_left_uint128(
+          parts.significand,
+          padding);
+
+  unsigned first_fractional_digit = 0;
+
+  while (first_fractional_digit < hexadecimal_digits &&
+         floating_detail::uint128_hexadecimal_digit(
+             scaled, first_fractional_digit) == 0) {
+    ++first_fractional_digit;
+  }
+
+  const unsigned emitted_fractional_digits =
+      hexadecimal_digits - first_fractional_digit;
+
+  const long long exponent =
+      static_cast<long long>(parts.exponent) +
+      static_cast<long long>(width - 1);
+
+  const size_t required =
+      static_cast<size_t>(parts.negative) +
+      1 +
+      (emitted_fractional_digits != 0
+           ? 1 + emitted_fractional_digits
+           : 0) +
+      2 +
+      floating_detail::hexadecimal_exponent_digits(exponent);
+
+  if (static_cast<size_t>(last - first) < required)
+    return {last, errc::value_too_large};
+
+  char* output = first;
+
+  if (parts.negative)
+    *output++ = '-';
+
+  *output++ =
+      floating_detail::hexadecimal_digit_character(
+          floating_detail::uint128_hexadecimal_digit(
+              scaled, hexadecimal_digits));
+
+  if (emitted_fractional_digits != 0) {
+    *output++ = '.';
+
+    for (unsigned index = hexadecimal_digits;
+         index > first_fractional_digit;
+         --index) {
+      *output++ =
+          floating_detail::hexadecimal_digit_character(
+              floating_detail::uint128_hexadecimal_digit(
+                  scaled, index - 1));
+    }
+  }
+
+  floating_detail::emit_hexadecimal_exponent(
+      exponent,
+      [&](char character) {
+        *output++ = character;
+      });
+
+  return {output, errc{}};
+}
+
+template <class Float>
+[[nodiscard]]
+inline to_chars_result floating_to_chars_shortest(
+    char* first,
+    char* last,
+    Float value,
+    chars_format format) {
+  const auto parts = floating_conversion::decompose(value);
+
+  if (parts.kind == floating_conversion::floating_kind::infinity ||
+      parts.kind == floating_conversion::floating_kind::nan) {
+    return floating_to_chars_precision(
+        first, last, value, chars_format::fixed, 0);
+  }
+
+  if (format == chars_format::hex)
+    return floating_to_chars_shortest_hexadecimal(
+        first, last, value);
+
+  floating_detail::shortest_decimal_representation decimal{};
+
+  if (!find_shortest_decimal(value, decimal))
+    return {last, errc::value_too_large};
+
+  switch (format) {
+  case chars_format::fixed:
+    return write_shortest_fixed(
+        first, last, value, decimal);
+
+  case chars_format::scientific:
+    return write_shortest_scientific(
+        first, last, value, decimal);
+
+  case chars_format::general: {
+    /*
+     * With no explicit precision, printf's %g uses P=6
+     * solely to select fixed versus scientific notation.
+     * The significand itself remains the shortest
+     * round-tripping decimal we found above.
+     */
+    const long long exponent =
+        decimal.exponent +
+        static_cast<long long>(decimal.digit_count) - 1;
+
+    if (exponent >= -4 && exponent < 6) {
+      return write_shortest_fixed(
+          first, last, value, decimal);
+    }
+
+    return write_shortest_scientific(
+        first, last, value, decimal);
+  }
+
+  case chars_format::hex:
+    break;
+  }
+
+  return {last, errc::value_too_large};
+}
+
+template <class Float>
+[[nodiscard]]
+inline to_chars_result floating_to_chars_shortest(
+    char* first,
+    char* last,
+    Float value) {
+  const auto parts = floating_conversion::decompose(value);
+
+  if (parts.kind == floating_conversion::floating_kind::infinity ||
+      parts.kind == floating_conversion::floating_kind::nan) {
+    return floating_to_chars_precision(
+        first, last, value, chars_format::fixed, 0);
+  }
+
+  floating_detail::shortest_decimal_representation decimal{};
+
+  if (!find_shortest_decimal(value, decimal))
+    return {last, errc::value_too_large};
+
+  const size_t fixed_length =
+      shortest_fixed_length(decimal, parts.negative);
+
+  const size_t scientific_length =
+      shortest_scientific_length(decimal, parts.negative);
+
+  /*
+   * The no-format overload chooses whichever of %f and
+   * %e is shorter. Fixed wins an equal-length tie.
+   */
+  if (fixed_length <= scientific_length) {
+    return write_shortest_fixed(
+        first, last, value, decimal);
+  }
+
+  return write_shortest_scientific(
+      first, last, value, decimal);
+}
+
+} // namespace charconv_detail
+
+inline to_chars_result to_chars(char* first, char* last, float value) {
+  return charconv_detail::floating_to_chars_shortest(
+      first, last, value);
+}
+
+inline to_chars_result to_chars(char* first, char* last, double value) {
+  return charconv_detail::floating_to_chars_shortest(
+      first, last, value);
+}
+
+inline to_chars_result to_chars(char* first, char* last, long double value) {
+  return charconv_detail::floating_to_chars_shortest(
+      first, last, value);
+}
+
+inline to_chars_result to_chars(
+    char* first, char* last, float value, chars_format format) {
+  return charconv_detail::floating_to_chars_shortest(
+      first, last, value, format);
+}
+
+inline to_chars_result to_chars(
+    char* first, char* last, double value, chars_format format) {
+  return charconv_detail::floating_to_chars_shortest(
+      first, last, value, format);
+}
+
+inline to_chars_result to_chars(
+    char* first, char* last, long double value, chars_format format) {
+  return charconv_detail::floating_to_chars_shortest(
+      first, last, value, format);
+}
 
 FTL_END_NAMESPACE
 

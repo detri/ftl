@@ -300,6 +300,9 @@ foreach (header IN ITEMS
         cuchar
         cuchar_synopsis
         charconv
+        big_uint
+        floating_bits
+        floating_conversion
 )
     add_ftl_test(${header})
 endforeach ()
