@@ -265,6 +265,11 @@
 #define __cpp_lib_byteswap 202110L
 #endif
 
+#if !defined(__cpp_lib_constexpr_bitset) || __cpp_lib_constexpr_bitset < 202207L
+#undef __cpp_lib_constexpr_bitset
+#define __cpp_lib_constexpr_bitset 202207L
+#endif
+
 #if !defined(__cpp_lib_source_location) || \
     __cpp_lib_source_location < 201907L
 #undef __cpp_lib_source_location
