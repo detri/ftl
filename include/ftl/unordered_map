@@ -1,0 +1,194 @@
+#ifndef FTL_UNORDERED_MAP_HEADER
+#define FTL_UNORDERED_MAP_HEADER
+#ifdef FTL_REPLACE_STL
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+#include <iterator>
+#include <memory>
+#include <memory_resource>
+#include <ranges>
+#include <stdexcept>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+#include <vector>
+#define FTL_ASSOCIATIVE_NAMESPACE std
+#include <__associative/unordered.hpp>
+#else
+#include <ftl/algorithm>
+#include <ftl/functional>
+#include <ftl/initializer_list>
+#include <ftl/iterator>
+#include <ftl/memory>
+#include <ftl/memory_resource>
+#include <ftl/ranges>
+#include <ftl/stdexcept>
+#include <ftl/tuple>
+#include <ftl/type_traits>
+#include <ftl/utility>
+#include <ftl/vector>
+#define FTL_ASSOCIATIVE_NAMESPACE ftl
+#include <ftl/__associative/unordered.hpp>
+#endif
+#if defined(_MSC_VER)
+#if !defined(__clang__)
+extern "C" void __cdecl __fastfail(unsigned int);
+#endif
+#ifndef FTL_ASSOCIATIVE_FLTUSED_DEFINED
+#define FTL_ASSOCIATIVE_FLTUSED_DEFINED
+extern "C" __declspec(selectany) int _fltused = 1;
+#endif
+#if !defined(__clang__)
+#pragma intrinsic(__fastfail)
+#define FTL_UNORDERED_MAP_TRAP() __fastfail(7)
+#else
+#define FTL_UNORDERED_MAP_TRAP() __builtin_trap()
+#endif
+#else
+#define FTL_UNORDERED_MAP_TRAP() __builtin_trap()
+#endif
+FTL_BEGIN_NAMESPACE
+namespace detail {
+[[noreturn]] inline void unordered_map_range_failure() {
+#if FTL_HAS_EXCEPTIONS
+  throw out_of_range("unordered_map");
+#else
+  FTL_UNORDERED_MAP_TRAP();
+#endif
+}
+} // namespace detail
+
+template <class Key, class T, class Hash = hash<Key>,
+          class Predicate = equal_to<Key>,
+          class Allocator = allocator<pair<const Key, T>>>
+class unordered_map : public detail::unordered_map_base<Key, T, Hash, Predicate,
+                                                        Allocator, false> {
+  using base =
+      detail::unordered_map_base<Key, T, Hash, Predicate, Allocator, false>;
+
+public:
+  using base::base;
+  using base::operator=;
+  using typename base::key_type;
+  using typename base::mapped_type;
+  mapped_type &operator[](const key_type &key) {
+    return this->try_emplace(key).first->second;
+  }
+  mapped_type &operator[](key_type &&key) {
+    return this->try_emplace(move(key)).first->second;
+  }
+  mapped_type &at(const key_type &key) {
+    auto found = this->find(key);
+    if (found == this->end())
+      detail::unordered_map_range_failure();
+    return found->second;
+  }
+  const mapped_type &at(const key_type &key) const {
+    auto found = this->find(key);
+    if (found == this->end())
+      detail::unordered_map_range_failure();
+    return found->second;
+  }
+};
+
+template <class Key, class T, class Hash = hash<Key>,
+          class Predicate = equal_to<Key>,
+          class Allocator = allocator<pair<const Key, T>>>
+class unordered_multimap
+    : public detail::unordered_map_base<Key, T, Hash, Predicate, Allocator,
+                                        true> {
+  using base =
+      detail::unordered_map_base<Key, T, Hash, Predicate, Allocator, true>;
+
+public:
+  using base::base;
+  using base::operator=;
+};
+
+template <class Container>
+bool unordered_map_equal(const Container &left, const Container &right) {
+  if (left.size() != right.size())
+    return false;
+  for (const auto &value : left) {
+    auto range = right.equal_range(value.first);
+    bool found = false;
+    for (auto current = range.first; current != range.second; ++current)
+      if (*current == value) {
+        found = true;
+        break;
+      }
+    if (!found)
+      return false;
+  }
+  return true;
+}
+template <class Key, class T, class Hash, class Predicate, class Allocator>
+bool operator==(
+    const unordered_map<Key, T, Hash, Predicate, Allocator> &left,
+    const unordered_map<Key, T, Hash, Predicate, Allocator> &right) {
+  return unordered_map_equal(left, right);
+}
+template <class Key, class T, class Hash, class Predicate, class Allocator>
+bool operator==(
+    const unordered_multimap<Key, T, Hash, Predicate, Allocator> &left,
+    const unordered_multimap<Key, T, Hash, Predicate, Allocator> &right) {
+  return unordered_map_equal(left, right);
+}
+template <class Container>
+void unordered_swap(Container &left,
+                    Container &right) noexcept(noexcept(left.swap(right))) {
+  left.swap(right);
+}
+template <class Key, class T, class Hash, class Predicate, class Allocator>
+void swap(unordered_map<Key, T, Hash, Predicate, Allocator> &left,
+          unordered_map<Key, T, Hash, Predicate, Allocator>
+              &right) noexcept(noexcept(left.swap(right))) {
+  left.swap(right);
+}
+template <class Key, class T, class Hash, class Predicate, class Allocator>
+void swap(unordered_multimap<Key, T, Hash, Predicate, Allocator> &left,
+          unordered_multimap<Key, T, Hash, Predicate, Allocator>
+              &right) noexcept(noexcept(left.swap(right))) {
+  left.swap(right);
+}
+template <class Container, class Predicate>
+typename Container::size_type unordered_map_erase_if(Container &values,
+                                                     Predicate predicate) {
+  typename Container::size_type count{};
+  for (auto current = values.begin(); current != values.end();)
+    if (predicate(*current)) {
+      current = values.erase(current);
+      ++count;
+    } else
+      ++current;
+  return count;
+}
+template <class Key, class T, class Hash, class Equal, class Allocator,
+          class Predicate>
+typename unordered_map<Key, T, Hash, Equal, Allocator>::size_type
+erase_if(unordered_map<Key, T, Hash, Equal, Allocator> &values,
+         Predicate predicate) {
+  return unordered_map_erase_if(values, move(predicate));
+}
+template <class Key, class T, class Hash, class Equal, class Allocator,
+          class Predicate>
+typename unordered_multimap<Key, T, Hash, Equal, Allocator>::size_type
+erase_if(unordered_multimap<Key, T, Hash, Equal, Allocator> &values,
+         Predicate predicate) {
+  return unordered_map_erase_if(values, move(predicate));
+}
+namespace pmr {
+template <class Key, class T, class Hash = hash<Key>,
+          class Predicate = equal_to<Key>>
+using unordered_map = FTL_ASSOCIATIVE_NAMESPACE::unordered_map<
+    Key, T, Hash, Predicate, polymorphic_allocator<pair<const Key, T>>>;
+template <class Key, class T, class Hash = hash<Key>,
+          class Predicate = equal_to<Key>>
+using unordered_multimap = FTL_ASSOCIATIVE_NAMESPACE::unordered_multimap<
+    Key, T, Hash, Predicate, polymorphic_allocator<pair<const Key, T>>>;
+} // namespace pmr
+FTL_END_NAMESPACE
+#undef FTL_ASSOCIATIVE_NAMESPACE
+#undef FTL_UNORDERED_MAP_TRAP
+#endif

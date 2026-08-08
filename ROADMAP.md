@@ -144,6 +144,14 @@ dependency order, not hundreds of individual overloads.
 | `<deque>`            | Stage 4.2         |
 | `<queue>`            | Stage 4.2         |
 | `<stack>`            | Stage 4.2         |
+| `<forward_list>`     | Stage 4.3         |
+| `<list>`             | Stage 4.3         |
+| `<set>`              | Stage 4.3         |
+| `<map>`              | Stage 4.3         |
+| `<unordered_set>`    | Stage 4.3         |
+| `<unordered_map>`    | Stage 4.3         |
+| `<flat_set>`         | Stage 4.3         |
+| `<flat_map>`         | Stage 4.3         |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -179,7 +187,6 @@ remain required when C++23 still specifies them; they are not silently dropped.
 |---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Concepts/types/vocabulary | `<ratio>`                                                                                                                                                          |
 | Algorithms/numerics       | `<numbers>`, `<random>`, `<valarray>`                                                                                                                              |
-| Containers                | `<flat_map>`, `<flat_set>`, `<forward_list>`, `<list>`, `<map>`, `<set>`, `<unordered_map>`, `<unordered_set>`                                                                         |
 | Text/encoding             | `<codecvt>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                               |
 | Errors/time/localization  | `<chrono>`, `<system_error>`, `<stacktrace>`, `<locale>`, `<clocale>`, `<ctime>`                                                                                   |
 | C numerics/text           | `<cfenv>`, `<cmath>`, `<complex>`                                                                                                                                  |
@@ -383,14 +390,16 @@ and usable as dependencies by containers and diagnostics.
 
 ### Stage 4 — Containers
 
+**Status: complete.**
+
 Take these closures in order:
 
 1. `<vector>` — **complete**
 2. `<deque>` + `<queue>` + `<stack>` — **complete**
-3. `<forward_list>` + `<list>`
-4. `<map>` + `<set>`
-5. `<unordered_map>` + `<unordered_set>`
-6. `<flat_map>` + `<flat_set>`
+3. `<forward_list>` + `<list>` — **complete**
+4. `<map>` + `<set>` — **complete**
+5. `<unordered_map>` + `<unordered_set>` — **complete**
+6. `<flat_map>` + `<flat_set>` — **complete**
 
 Adaptors ship with their first complete underlying containers; ordered and
 unordered families each share one internal tree/hash-table implementation,

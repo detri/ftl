@@ -1,0 +1,127 @@
+#ifndef FTL_UNORDERED_SET_HEADER
+#define FTL_UNORDERED_SET_HEADER
+#ifdef FTL_REPLACE_STL
+#include <algorithm>
+#include <functional>
+#include <initializer_list>
+#include <iterator>
+#include <memory>
+#include <memory_resource>
+#include <ranges>
+#include <type_traits>
+#include <utility>
+#include <vector>
+#define FTL_ASSOCIATIVE_NAMESPACE std
+#include <__associative/unordered.hpp>
+#else
+#include <ftl/algorithm>
+#include <ftl/functional>
+#include <ftl/initializer_list>
+#include <ftl/iterator>
+#include <ftl/memory>
+#include <ftl/memory_resource>
+#include <ftl/ranges>
+#include <ftl/type_traits>
+#include <ftl/utility>
+#include <ftl/vector>
+#define FTL_ASSOCIATIVE_NAMESPACE ftl
+#include <ftl/__associative/unordered.hpp>
+#endif
+#if defined(_MSC_VER)
+#ifndef FTL_ASSOCIATIVE_FLTUSED_DEFINED
+#define FTL_ASSOCIATIVE_FLTUSED_DEFINED
+extern "C" __declspec(selectany) int _fltused = 1;
+#endif
+#endif
+FTL_BEGIN_NAMESPACE
+template <class Key, class Hash = hash<Key>, class Predicate = equal_to<Key>,
+          class Allocator = allocator<Key>>
+class unordered_set : public detail::unordered_set_base<Key, Hash, Predicate,
+                                                        Allocator, false> {
+  using base =
+      detail::unordered_set_base<Key, Hash, Predicate, Allocator, false>;
+
+public:
+  using base::base;
+  using base::operator=;
+};
+template <class Key, class Hash = hash<Key>, class Predicate = equal_to<Key>,
+          class Allocator = allocator<Key>>
+class unordered_multiset
+    : public detail::unordered_set_base<Key, Hash, Predicate, Allocator, true> {
+  using base =
+      detail::unordered_set_base<Key, Hash, Predicate, Allocator, true>;
+
+public:
+  using base::base;
+  using base::operator=;
+};
+template <class Container>
+bool unordered_set_equal(const Container &left, const Container &right) {
+  if (left.size() != right.size())
+    return false;
+  for (const auto &value : left)
+    if (left.count(value) != right.count(value))
+      return false;
+  return true;
+}
+template <class Key, class Hash, class Predicate, class Allocator>
+bool operator==(const unordered_set<Key, Hash, Predicate, Allocator> &left,
+                const unordered_set<Key, Hash, Predicate, Allocator> &right) {
+  return unordered_set_equal(left, right);
+}
+template <class Key, class Hash, class Predicate, class Allocator>
+bool operator==(
+    const unordered_multiset<Key, Hash, Predicate, Allocator> &left,
+    const unordered_multiset<Key, Hash, Predicate, Allocator> &right) {
+  return unordered_set_equal(left, right);
+}
+template <class Key, class Hash, class Predicate, class Allocator>
+void swap(unordered_set<Key, Hash, Predicate, Allocator> &left,
+          unordered_set<Key, Hash, Predicate, Allocator>
+              &right) noexcept(noexcept(left.swap(right))) {
+  left.swap(right);
+}
+template <class Key, class Hash, class Predicate, class Allocator>
+void swap(unordered_multiset<Key, Hash, Predicate, Allocator> &left,
+          unordered_multiset<Key, Hash, Predicate, Allocator>
+              &right) noexcept(noexcept(left.swap(right))) {
+  left.swap(right);
+}
+template <class Container, class Predicate>
+typename Container::size_type unordered_set_erase_if(Container &values,
+                                                     Predicate predicate) {
+  typename Container::size_type count{};
+  for (auto current = values.begin(); current != values.end();)
+    if (predicate(*current)) {
+      current = values.erase(current);
+      ++count;
+    } else
+      ++current;
+  return count;
+}
+template <class Key, class Hash, class Equal, class Allocator, class Predicate>
+typename unordered_set<Key, Hash, Equal, Allocator>::size_type
+erase_if(unordered_set<Key, Hash, Equal, Allocator> &values,
+         Predicate predicate) {
+  return unordered_set_erase_if(values, move(predicate));
+}
+template <class Key, class Hash, class Equal, class Allocator, class Predicate>
+typename unordered_multiset<Key, Hash, Equal, Allocator>::size_type
+erase_if(unordered_multiset<Key, Hash, Equal, Allocator> &values,
+         Predicate predicate) {
+  return unordered_set_erase_if(values, move(predicate));
+}
+namespace pmr {
+template <class Key, class Hash = hash<Key>, class Predicate = equal_to<Key>>
+using unordered_set =
+    FTL_ASSOCIATIVE_NAMESPACE::unordered_set<Key, Hash, Predicate,
+                                             polymorphic_allocator<Key>>;
+template <class Key, class Hash = hash<Key>, class Predicate = equal_to<Key>>
+using unordered_multiset =
+    FTL_ASSOCIATIVE_NAMESPACE::unordered_multiset<Key, Hash, Predicate,
+                                                  polymorphic_allocator<Key>>;
+} // namespace pmr
+FTL_END_NAMESPACE
+#undef FTL_ASSOCIATIVE_NAMESPACE
+#endif

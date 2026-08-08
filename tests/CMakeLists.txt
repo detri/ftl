@@ -39,7 +39,8 @@ function(add_ftl_test header)
         endif ()
 
         set(target ftl_${mode}_${header})
-        if (mode STREQUAL replace AND (header STREQUAL string OR header STREQUAL vector))
+        if (mode STREQUAL replace AND
+                header MATCHES "^(string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set)$")
             add_executable(${target} standalone_driver.cpp $<TARGET_OBJECTS:${object}>)
         else ()
             add_executable(${target} gtest_driver.cpp $<TARGET_OBJECTS:${object}>)
@@ -145,6 +146,18 @@ add_ftl_compile_fail_check(vector_rejects_mismatched_allocator
         checks/vector_mismatched_allocator_compile_fail.cpp)
 add_ftl_compile_fail_check(deque_rejects_mismatched_allocator
         checks/deque_mismatched_allocator_compile_fail.cpp)
+add_ftl_compile_fail_check(forward_list_rejects_mismatched_allocator
+        checks/forward_list_mismatched_allocator_compile_fail.cpp)
+add_ftl_compile_fail_check(list_rejects_mismatched_allocator
+        checks/list_mismatched_allocator_compile_fail.cpp)
+add_ftl_compile_fail_check(map_rejects_mismatched_allocator
+        checks/map_mismatched_allocator_compile_fail.cpp)
+add_ftl_compile_fail_check(set_rejects_mismatched_allocator
+        checks/set_mismatched_allocator_compile_fail.cpp)
+add_ftl_compile_fail_check(unordered_map_rejects_mismatched_allocator
+        checks/unordered_map_mismatched_allocator_compile_fail.cpp)
+add_ftl_compile_fail_check(unordered_set_rejects_mismatched_allocator
+        checks/unordered_set_mismatched_allocator_compile_fail.cpp)
 add_ftl_standalone_check(feature_macros checks/feature_macros.cpp)
 add_ftl_standalone_check(no_allocation checks/no_allocation.cpp)
 add_ftl_freestanding_link_check(freestanding_link checks/freestanding_link.cpp)
@@ -167,6 +180,37 @@ add_ftl_freestanding_link_check(deque_freestanding_link
 target_compile_definitions(ftl_check_deque_freestanding_link PRIVATE FTL_NO_EXCEPTIONS)
 if (MSVC)
     target_compile_options(ftl_check_deque_freestanding_link PRIVATE /O2 /GS- /EHs-c-)
+endif ()
+add_ftl_freestanding_link_check(forward_list_freestanding_link
+        checks/forward_list_freestanding_link.cpp)
+target_compile_definitions(ftl_check_forward_list_freestanding_link PRIVATE FTL_NO_EXCEPTIONS)
+add_ftl_freestanding_link_check(list_freestanding_link
+        checks/list_freestanding_link.cpp)
+target_compile_definitions(ftl_check_list_freestanding_link PRIVATE FTL_NO_EXCEPTIONS)
+if (MSVC)
+    target_compile_options(ftl_check_forward_list_freestanding_link PRIVATE /O2 /GS- /EHs-c-)
+    target_compile_options(ftl_check_list_freestanding_link PRIVATE /O2 /GS- /EHs-c-)
+else ()
+    target_compile_options(ftl_check_forward_list_freestanding_link PRIVATE -fno-exceptions -fno-stack-protector)
+    target_compile_options(ftl_check_list_freestanding_link PRIVATE -fno-exceptions -fno-stack-protector)
+endif ()
+add_ftl_freestanding_link_check(ordered_associative_freestanding_link
+        checks/ordered_associative_freestanding_link.cpp)
+add_ftl_freestanding_link_check(unordered_associative_freestanding_link
+        checks/unordered_associative_freestanding_link.cpp)
+add_ftl_freestanding_link_check(flat_associative_freestanding_link
+        checks/flat_associative_freestanding_link.cpp)
+foreach (target IN ITEMS ordered_associative unordered_associative flat_associative)
+    target_compile_definitions(ftl_check_${target}_freestanding_link PRIVATE FTL_NO_EXCEPTIONS)
+    if (MSVC)
+        target_compile_options(ftl_check_${target}_freestanding_link PRIVATE /O2 /GS- /EHs-c-)
+    else ()
+        target_compile_options(ftl_check_${target}_freestanding_link PRIVATE -fno-exceptions -fno-stack-protector)
+    endif ()
+endforeach ()
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(ftl_check_unordered_associative_freestanding_link
+            PRIVATE -fno-builtin-memset)
 endif ()
 add_ftl_freestanding_link_check(
         bitset_freestanding_link
@@ -250,6 +294,14 @@ foreach (header IN ITEMS
         string
         vector
         deque
+        forward_list
+        list
+        map
+        set
+        unordered_map
+        unordered_set
+        flat_map
+        flat_set
         queue
         stack
         iterator

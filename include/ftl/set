@@ -1,0 +1,146 @@
+#ifndef FTL_SET_HEADER
+#define FTL_SET_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <algorithm>
+#include <compare>
+#include <functional>
+#include <initializer_list>
+#include <iterator>
+#include <memory>
+#include <memory_resource>
+#include <ranges>
+#include <type_traits>
+#include <utility>
+#define FTL_ASSOCIATIVE_NAMESPACE std
+#include <__associative/ordered.hpp>
+#else
+#include <ftl/algorithm>
+#include <ftl/compare>
+#include <ftl/functional>
+#include <ftl/initializer_list>
+#include <ftl/iterator>
+#include <ftl/memory>
+#include <ftl/memory_resource>
+#include <ftl/ranges>
+#include <ftl/type_traits>
+#include <ftl/utility>
+#define FTL_ASSOCIATIVE_NAMESPACE ftl
+#include <ftl/__associative/ordered.hpp>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+template <class Key, class Compare = less<Key>,
+          class Allocator = allocator<Key>>
+class set : public detail::ordered_set_base<Key, Compare, Allocator, false> {
+  using base = detail::ordered_set_base<Key, Compare, Allocator, false>;
+
+public:
+  using base::base;
+  using base::operator=;
+};
+
+template <class Key, class Compare = less<Key>,
+          class Allocator = allocator<Key>>
+class multiset
+    : public detail::ordered_set_base<Key, Compare, Allocator, true> {
+  using base = detail::ordered_set_base<Key, Compare, Allocator, true>;
+
+public:
+  using base::base;
+  using base::operator=;
+};
+
+template <
+    class InputIterator,
+    class Compare = less<typename iterator_traits<InputIterator>::value_type>,
+    class Allocator =
+        allocator<typename iterator_traits<InputIterator>::value_type>>
+set(InputIterator, InputIterator, Compare = Compare(), Allocator = Allocator())
+    -> set<typename iterator_traits<InputIterator>::value_type, Compare,
+           Allocator>;
+template <ranges::input_range Range,
+          class Compare = less<ranges::range_value_t<Range>>,
+          class Allocator = allocator<ranges::range_value_t<Range>>>
+set(from_range_t, Range &&, Compare = Compare(), Allocator = Allocator())
+    -> set<ranges::range_value_t<Range>, Compare, Allocator>;
+
+template <class Container>
+bool ordered_set_equal(const Container &left, const Container &right) {
+  return left.size() == right.size() &&
+         equal(left.begin(), left.end(), right.begin());
+}
+template <class Key, class Compare, class Allocator>
+bool operator==(const set<Key, Compare, Allocator> &left,
+                const set<Key, Compare, Allocator> &right) {
+  return ordered_set_equal(left, right);
+}
+template <class Key, class Compare, class Allocator>
+bool operator==(const multiset<Key, Compare, Allocator> &left,
+                const multiset<Key, Compare, Allocator> &right) {
+  return ordered_set_equal(left, right);
+}
+template <class Container>
+auto ordered_set_compare(const Container &left, const Container &right) {
+  return lexicographical_compare_three_way(left.begin(), left.end(),
+                                           right.begin(), right.end(),
+                                           compare_three_way{});
+}
+template <class Key, class Compare, class Allocator>
+auto operator<=>(const set<Key, Compare, Allocator> &left,
+                 const set<Key, Compare, Allocator> &right) {
+  return ordered_set_compare(left, right);
+}
+template <class Key, class Compare, class Allocator>
+auto operator<=>(const multiset<Key, Compare, Allocator> &left,
+                 const multiset<Key, Compare, Allocator> &right) {
+  return ordered_set_compare(left, right);
+}
+template <class Key, class Compare, class Allocator>
+void swap(
+    set<Key, Compare, Allocator> &left,
+    set<Key, Compare, Allocator> &right) noexcept(noexcept(left.swap(right))) {
+  left.swap(right);
+}
+template <class Key, class Compare, class Allocator>
+void swap(multiset<Key, Compare, Allocator> &left,
+          multiset<Key, Compare, Allocator>
+              &right) noexcept(noexcept(left.swap(right))) {
+  left.swap(right);
+}
+template <class Container, class Predicate>
+typename Container::size_type ordered_set_erase_if(Container &values,
+                                                   Predicate predicate) {
+  typename Container::size_type count{};
+  for (auto current = values.begin(); current != values.end();)
+    if (predicate(*current)) {
+      current = values.erase(current);
+      ++count;
+    } else
+      ++current;
+  return count;
+}
+template <class Key, class Compare, class Allocator, class Predicate>
+typename set<Key, Compare, Allocator>::size_type
+erase_if(set<Key, Compare, Allocator> &values, Predicate predicate) {
+  return ordered_set_erase_if(values, move(predicate));
+}
+template <class Key, class Compare, class Allocator, class Predicate>
+typename multiset<Key, Compare, Allocator>::size_type
+erase_if(multiset<Key, Compare, Allocator> &values, Predicate predicate) {
+  return ordered_set_erase_if(values, move(predicate));
+}
+namespace pmr {
+template <class Key, class Compare = less<Key>>
+using set =
+    FTL_ASSOCIATIVE_NAMESPACE::set<Key, Compare, polymorphic_allocator<Key>>;
+template <class Key, class Compare = less<Key>>
+using multiset =
+    FTL_ASSOCIATIVE_NAMESPACE::multiset<Key, Compare,
+                                        polymorphic_allocator<Key>>;
+} // namespace pmr
+
+FTL_END_NAMESPACE
+#undef FTL_ASSOCIATIVE_NAMESPACE
+#endif

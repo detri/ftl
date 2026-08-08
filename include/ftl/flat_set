@@ -1,0 +1,292 @@
+#ifndef FTL_FLAT_SET_HEADER
+#define FTL_FLAT_SET_HEADER
+#ifdef FTL_REPLACE_STL
+#include <algorithm>
+#include <compare>
+#include <functional>
+#include <initializer_list>
+#include <iterator>
+#include <memory>
+#include <ranges>
+#include <type_traits>
+#include <utility>
+#include <vector>
+#define FTL_FLAT_NAMESPACE std
+#include <__associative/flat_tags.hpp>
+#else
+#include <ftl/algorithm>
+#include <ftl/compare>
+#include <ftl/functional>
+#include <ftl/initializer_list>
+#include <ftl/iterator>
+#include <ftl/memory>
+#include <ftl/ranges>
+#include <ftl/type_traits>
+#include <ftl/utility>
+#include <ftl/vector>
+#define FTL_FLAT_NAMESPACE ftl
+#include <ftl/__associative/flat_tags.hpp>
+#endif
+FTL_BEGIN_NAMESPACE
+namespace detail {
+template <class Key, class Compare, class Container, bool Multi>
+class flat_set_base {
+public:
+  using key_type = Key;
+  using value_type = Key;
+  using key_compare = Compare;
+  using value_compare = Compare;
+  using reference = const value_type &;
+  using const_reference = const value_type &;
+  using size_type = typename Container::size_type;
+  using difference_type = typename Container::difference_type;
+  using iterator = typename Container::const_iterator;
+  using const_iterator = iterator;
+  using reverse_iterator = typename Container::const_reverse_iterator;
+  using const_reverse_iterator = reverse_iterator;
+  using container_type = Container;
+  flat_set_base() = default;
+  explicit flat_set_base(const Compare &compare) : compare_(compare) {}
+  template <input_iterator I>
+  flat_set_base(I first, I last, const Compare &compare = Compare())
+      : compare_(compare) {
+    insert(first, last);
+  }
+  template <ranges::input_range R>
+  flat_set_base(from_range_t, R &&range, const Compare &compare = Compare())
+      : compare_(compare) {
+    insert_range(static_cast<R &&>(range));
+  }
+  flat_set_base(initializer_list<Key> values,
+                const Compare &compare = Compare())
+      : flat_set_base(values.begin(), values.end(), compare) {}
+  flat_set_base(sorted_unique_t, Container container,
+                const Compare &compare = Compare())
+    requires(!Multi)
+      : container_(move(container)), compare_(compare) {}
+  flat_set_base(sorted_equivalent_t, Container container,
+                const Compare &compare = Compare())
+    requires(Multi)
+      : container_(move(container)), compare_(compare) {}
+  flat_set_base(Container container, const Compare &compare = Compare())
+      : container_(move(container)), compare_(compare) {
+    normalize();
+  }
+  flat_set_base &operator=(initializer_list<Key> values) {
+    clear();
+    insert(values);
+    return *this;
+  }
+  iterator begin() const noexcept { return container_.begin(); }
+  iterator end() const noexcept { return container_.end(); }
+  reverse_iterator rbegin() const noexcept { return container_.rbegin(); }
+  reverse_iterator rend() const noexcept { return container_.rend(); }
+  const_iterator cbegin() const noexcept { return begin(); }
+  const_iterator cend() const noexcept { return end(); }
+  const_reverse_iterator crbegin() const noexcept { return rbegin(); }
+  const_reverse_iterator crend() const noexcept { return rend(); }
+  [[nodiscard]] bool empty() const noexcept { return container_.empty(); }
+  size_type size() const noexcept { return container_.size(); }
+  size_type max_size() const noexcept { return container_.max_size(); }
+  template <class... Args> auto emplace(Args &&...args) {
+    Key value(forward<Args>(args)...);
+    return insert(move(value));
+  }
+  template <class... Args>
+  iterator emplace_hint(const_iterator, Args &&...args) {
+    if constexpr (Multi)
+      return emplace(forward<Args>(args)...);
+    else
+      return emplace(forward<Args>(args)...).first;
+  }
+  auto insert(const Key &value) { return insert_value(value); }
+  auto insert(Key &&value) { return insert_value(move(value)); }
+  iterator insert(const_iterator, const Key &value) {
+    if constexpr (Multi)
+      return insert(value);
+    else
+      return insert(value).first;
+  }
+  iterator insert(const_iterator, Key &&value) {
+    if constexpr (Multi)
+      return insert(move(value));
+    else
+      return insert(move(value)).first;
+  }
+  template <input_iterator I> void insert(I first, I last) {
+    for (; first != last; ++first)
+      insert(*first);
+  }
+  template <ranges::input_range R> void insert_range(R &&range) {
+    for (auto &&value : range)
+      insert(static_cast<decltype(value) &&>(value));
+  }
+  void insert(initializer_list<Key> values) {
+    insert(values.begin(), values.end());
+  }
+  iterator erase(const_iterator position) { return container_.erase(position); }
+  iterator erase(const_iterator first, const_iterator last) {
+    return container_.erase(first, last);
+  }
+  size_type erase(const Key &key) {
+    auto range = equal_range(key);
+    auto count = static_cast<size_type>(range.second - range.first);
+    erase(range.first, range.second);
+    return count;
+  }
+  template <class K>
+  size_type erase(K &&key)
+    requires requires { typename Compare::is_transparent; }
+  {
+    auto range = equal_range(key);
+    auto count = static_cast<size_type>(range.second - range.first);
+    erase(range.first, range.second);
+    return count;
+  }
+  void swap(flat_set_base &other) noexcept(
+      noexcept(container_.swap(other.container_))) {
+    container_.swap(other.container_);
+    FTL_FLAT_NAMESPACE::swap(compare_, other.compare_);
+  }
+  void clear() noexcept { container_.clear(); }
+  template <class K> iterator find(const K &key) const {
+    auto found = lower_bound(key);
+    return found != end() && equivalent(*found, key) ? found : end();
+  }
+  template <class K> size_type count(const K &key) const {
+    auto range = equal_range(key);
+    return static_cast<size_type>(range.second - range.first);
+  }
+  template <class K> bool contains(const K &key) const {
+    return find(key) != end();
+  }
+  template <class K> iterator lower_bound(const K &key) const {
+    return FTL_FLAT_NAMESPACE::lower_bound(begin(), end(), key, compare_);
+  }
+  template <class K> iterator upper_bound(const K &key) const {
+    return FTL_FLAT_NAMESPACE::upper_bound(begin(), end(), key, compare_);
+  }
+  template <class K> pair<iterator, iterator> equal_range(const K &key) const {
+    return {lower_bound(key), upper_bound(key)};
+  }
+  key_compare key_comp() const { return compare_; }
+  value_compare value_comp() const { return compare_; }
+  container_type extract() && { return move(container_); }
+  void replace(container_type &&container) { container_ = move(container); }
+
+protected:
+  template <class V> auto insert_value(V &&value) {
+    auto position = Multi ? upper_bound(value) : lower_bound(value);
+    if constexpr (!Multi) {
+      if (position != end() && equivalent(*position, value))
+        return pair<iterator, bool>{position, false};
+      auto inserted = container_.insert(position, static_cast<V &&>(value));
+      return pair<iterator, bool>{inserted, true};
+    } else
+      return container_.insert(position, static_cast<V &&>(value));
+  }
+  template <class Left, class Right>
+  bool equivalent(const Left &left, const Right &right) const {
+    return !compare_(left, right) && !compare_(right, left);
+  }
+  void normalize() {
+    FTL_FLAT_NAMESPACE::sort(container_.begin(), container_.end(), compare_);
+    if constexpr (!Multi)
+      container_.erase(
+          FTL_FLAT_NAMESPACE::unique(container_.begin(), container_.end(),
+                                     [this](const Key &left, const Key &right) {
+                                       return equivalent(left, right);
+                                     }),
+          container_.end());
+  }
+  Container container_{};
+  FTL_NO_UNIQUE_ADDRESS Compare compare_{};
+};
+} // namespace detail
+template <class Key, class Compare = less<Key>,
+          class KeyContainer = vector<Key>>
+class flat_set
+    : public detail::flat_set_base<Key, Compare, KeyContainer, false> {
+  using base = detail::flat_set_base<Key, Compare, KeyContainer, false>;
+
+public:
+  using base::base;
+  using base::operator=;
+};
+template <class Key, class Compare = less<Key>,
+          class KeyContainer = vector<Key>>
+class flat_multiset
+    : public detail::flat_set_base<Key, Compare, KeyContainer, true> {
+  using base = detail::flat_set_base<Key, Compare, KeyContainer, true>;
+
+public:
+  using base::base;
+  using base::operator=;
+};
+template <class Container>
+bool flat_set_equal(const Container &left, const Container &right) {
+  return left.size() == right.size() &&
+         equal(left.begin(), left.end(), right.begin());
+}
+template <class Key, class Compare, class Container>
+bool operator==(const flat_set<Key, Compare, Container> &left,
+                const flat_set<Key, Compare, Container> &right) {
+  return flat_set_equal(left, right);
+}
+template <class Key, class Compare, class Container>
+bool operator==(const flat_multiset<Key, Compare, Container> &left,
+                const flat_multiset<Key, Compare, Container> &right) {
+  return flat_set_equal(left, right);
+}
+template <class Container>
+auto flat_set_compare(const Container &left, const Container &right) {
+  return lexicographical_compare_three_way(left.begin(), left.end(),
+                                           right.begin(), right.end(),
+                                           compare_three_way{});
+}
+template <class Key, class Compare, class Container>
+auto operator<=>(const flat_set<Key, Compare, Container> &left,
+                 const flat_set<Key, Compare, Container> &right) {
+  return flat_set_compare(left, right);
+}
+template <class Key, class Compare, class Container>
+auto operator<=>(const flat_multiset<Key, Compare, Container> &left,
+                 const flat_multiset<Key, Compare, Container> &right) {
+  return flat_set_compare(left, right);
+}
+template <class Key, class Compare, class Container>
+void swap(flat_set<Key, Compare, Container> &left,
+          flat_set<Key, Compare, Container>
+              &right) noexcept(noexcept(left.swap(right))) {
+  left.swap(right);
+}
+template <class Key, class Compare, class Container>
+void swap(flat_multiset<Key, Compare, Container> &left,
+          flat_multiset<Key, Compare, Container>
+              &right) noexcept(noexcept(left.swap(right))) {
+  left.swap(right);
+}
+template <class C, class P>
+typename C::size_type flat_set_erase_if(C &values, P predicate) {
+  typename C::size_type count{};
+  for (auto current = values.begin(); current != values.end();)
+    if (predicate(*current)) {
+      current = values.erase(current);
+      ++count;
+    } else
+      ++current;
+  return count;
+}
+template <class Key, class Compare, class Container, class Predicate>
+typename flat_set<Key, Compare, Container>::size_type
+erase_if(flat_set<Key, Compare, Container> &values, Predicate predicate) {
+  return flat_set_erase_if(values, move(predicate));
+}
+template <class Key, class Compare, class Container, class Predicate>
+typename flat_multiset<Key, Compare, Container>::size_type
+erase_if(flat_multiset<Key, Compare, Container> &values, Predicate predicate) {
+  return flat_set_erase_if(values, move(predicate));
+}
+FTL_END_NAMESPACE
+#undef FTL_FLAT_NAMESPACE
+#endif
