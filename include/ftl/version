@@ -687,4 +687,16 @@
 #define __cpp_lib_containers_ranges 202202L
 #endif
 
+#if !defined(__cpp_lib_constexpr_vector) ||                            \
+    __cpp_lib_constexpr_vector < 201907L
+#undef __cpp_lib_constexpr_vector
+#define __cpp_lib_constexpr_vector 201907L
+#endif
+
+#if !defined(__cpp_lib_incomplete_container_elements) ||               \
+    __cpp_lib_incomplete_container_elements < 201505L
+#undef __cpp_lib_incomplete_container_elements
+#define __cpp_lib_incomplete_container_elements 201505L
+#endif
+
 #endif
