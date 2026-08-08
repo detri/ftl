@@ -664,4 +664,22 @@
 #define __cpp_lib_constexpr_charconv 202207L
 #endif
 
+#if !defined(__cpp_lib_constexpr_string) ||                             \
+    __cpp_lib_constexpr_string < 201907L
+#undef __cpp_lib_constexpr_string
+#define __cpp_lib_constexpr_string 201907L
+#endif
+
+#if !defined(__cpp_lib_string_resize_and_overwrite) ||                  \
+    __cpp_lib_string_resize_and_overwrite < 202110L
+#undef __cpp_lib_string_resize_and_overwrite
+#define __cpp_lib_string_resize_and_overwrite 202110L
+#endif
+
+#if !defined(__cpp_lib_containers_ranges) ||                            \
+    __cpp_lib_containers_ranges < 202202L
+#undef __cpp_lib_containers_ranges
+#define __cpp_lib_containers_ranges 202202L
+#endif
+
 #endif

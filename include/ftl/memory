@@ -1065,6 +1065,10 @@ public:
             terminate();
 #endif
         }
+        if consteval {
+            if constexpr (is_trivially_default_constructible_v<T>)
+                return new T[count];
+        }
         const size_t bytes = count * sizeof(T);
 #if defined(__STDCPP_DEFAULT_NEW_ALIGNMENT__)
         if constexpr (alignof(T) > __STDCPP_DEFAULT_NEW_ALIGNMENT__)
@@ -1080,6 +1084,12 @@ public:
     }
 
     constexpr void deallocate(T* pointer, size_t) noexcept {
+        if consteval {
+            if constexpr (is_trivially_default_constructible_v<T>) {
+                delete[] pointer;
+                return;
+            }
+        }
 #if defined(__STDCPP_DEFAULT_NEW_ALIGNMENT__)
         if constexpr (alignof(T) > __STDCPP_DEFAULT_NEW_ALIGNMENT__) {
             ::operator delete(pointer, align_val_t{alignof(T)});
