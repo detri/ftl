@@ -1,0 +1,88 @@
+#ifndef FTL_STACK_HEADER
+#define FTL_STACK_HEADER
+#ifdef FTL_REPLACE_STL
+#include <compare>
+#include <deque>
+#include <iterator>
+#include <ranges>
+#include <type_traits>
+#include <utility>
+#define FTL_STACK_NAMESPACE std
+#else
+#include <ftl/compare>
+#include <ftl/deque>
+#include <ftl/iterator>
+#include <ftl/ranges>
+#include <ftl/type_traits>
+#include <ftl/utility>
+#define FTL_STACK_NAMESPACE ftl
+#endif
+FTL_BEGIN_NAMESPACE
+namespace detail {
+template<class A> concept stack_allocator = requires(A& a, size_t n) {
+  typename A::value_type;
+  { a.allocate(n) };
+};
+}
+template<class T, class Container = deque<T>> class stack {
+  static_assert(is_same_v<T, typename Container::value_type>);
+public:
+  using value_type = typename Container::value_type;
+  using reference = typename Container::reference;
+  using const_reference = typename Container::const_reference;
+  using size_type = typename Container::size_type;
+  using container_type = Container;
+protected:
+  Container c;
+public:
+  stack() : stack(Container()) {}
+  explicit stack(const Container& cont) : c(cont) {}
+  explicit stack(Container&& cont) : c(move(cont)) {}
+  template<input_iterator I> stack(I first, I last) : c(first, last) {}
+  template<detail::deque_compatible_range<T> R> stack(from_range_t, R&& range) : c(from_range, static_cast<R&&>(range)) {}
+  template<class Alloc> requires uses_allocator_v<Container, Alloc> explicit stack(const Alloc& a) : c(a) {}
+  template<class Alloc> requires uses_allocator_v<Container, Alloc> stack(const Container& cont, const Alloc& a) : c(cont, a) {}
+  template<class Alloc> requires uses_allocator_v<Container, Alloc> stack(Container&& cont, const Alloc& a) : c(move(cont), a) {}
+  template<class Alloc> requires uses_allocator_v<Container, Alloc> stack(const stack& other, const Alloc& a) : c(other.c, a) {}
+  template<class Alloc> requires uses_allocator_v<Container, Alloc> stack(stack&& other, const Alloc& a) : c(move(other.c), a) {}
+  template<input_iterator I, class Alloc> requires uses_allocator_v<Container, Alloc> stack(I first, I last, const Alloc& a) : c(first, last, a) {}
+  template<detail::deque_compatible_range<T> R, class Alloc> requires uses_allocator_v<Container, Alloc> stack(from_range_t, R&& range, const Alloc& a) : c(from_range, static_cast<R&&>(range), a) {}
+  [[nodiscard]] bool empty() const { return c.empty(); }
+  size_type size() const { return c.size(); }
+  reference top() { return c.back(); }
+  const_reference top() const { return c.back(); }
+  void push(const value_type& value) { c.push_back(value); }
+  void push(value_type&& value) { c.push_back(move(value)); }
+  template<detail::deque_compatible_range<T> R> void push_range(R&& range) {
+    if constexpr (requires { c.append_range(static_cast<R&&>(range)); }) c.append_range(static_cast<R&&>(range));
+    else for (auto&& value : range) c.push_back(static_cast<decltype(value)&&>(value));
+  }
+  template<class... Args> decltype(auto) emplace(Args&&... args) { return c.emplace_back(forward<Args>(args)...); }
+  void pop() { c.pop_back(); }
+  void swap(stack& other) noexcept(is_nothrow_swappable_v<Container>) { using FTL_STACK_NAMESPACE::swap; swap(c, other.c); }
+  template<class U, class C> friend bool operator==(const stack<U, C>&, const stack<U, C>&);
+  template<class U, class C> friend bool operator!=(const stack<U, C>&, const stack<U, C>&);
+  template<class U, class C> friend bool operator<(const stack<U, C>&, const stack<U, C>&);
+  template<class U, class C> friend bool operator>(const stack<U, C>&, const stack<U, C>&);
+  template<class U, class C> friend bool operator<=(const stack<U, C>&, const stack<U, C>&);
+  template<class U, class C> friend bool operator>=(const stack<U, C>&, const stack<U, C>&);
+  template<class U, three_way_comparable C> friend compare_three_way_result_t<C> operator<=>(const stack<U, C>&, const stack<U, C>&);
+};
+template<class C> requires (!detail::stack_allocator<C>) stack(C) -> stack<typename C::value_type, C>;
+template<input_iterator I> stack(I, I) -> stack<typename iterator_traits<I>::value_type>;
+template<ranges::input_range R> stack(from_range_t, R&&) -> stack<ranges::range_value_t<R>>;
+template<class C, detail::stack_allocator A> requires (!detail::stack_allocator<C> && uses_allocator_v<C, A>) stack(C, A) -> stack<typename C::value_type, C>;
+template<input_iterator I, detail::stack_allocator A> stack(I, I, A) -> stack<typename iterator_traits<I>::value_type, deque<typename iterator_traits<I>::value_type, A>>;
+template<ranges::input_range R, detail::stack_allocator A> stack(from_range_t, R&&, A) -> stack<ranges::range_value_t<R>, deque<ranges::range_value_t<R>, A>>;
+template<class T, class C, class A> struct uses_allocator<stack<T, C>, A> : uses_allocator<C, A>::type {};
+template<class T, class C> bool operator==(const stack<T, C>& x, const stack<T, C>& y) { return x.c == y.c; }
+template<class T, class C> bool operator!=(const stack<T, C>& x, const stack<T, C>& y) { return x.c != y.c; }
+template<class T, class C> bool operator<(const stack<T, C>& x, const stack<T, C>& y) { return x.c < y.c; }
+template<class T, class C> bool operator>(const stack<T, C>& x, const stack<T, C>& y) { return x.c > y.c; }
+template<class T, class C> bool operator<=(const stack<T, C>& x, const stack<T, C>& y) { return x.c <= y.c; }
+template<class T, class C> bool operator>=(const stack<T, C>& x, const stack<T, C>& y) { return x.c >= y.c; }
+template<class T, three_way_comparable C> compare_three_way_result_t<C> operator<=>(const stack<T, C>& x, const stack<T, C>& y) { return x.c <=> y.c; }
+template<class T, class C> void swap(stack<T, C>& x, stack<T, C>& y) noexcept(noexcept(x.swap(y))) { x.swap(y); }
+FTL_END_NAMESPACE
+#undef FTL_STACK_NAMESPACE
+#endif

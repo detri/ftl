@@ -141,6 +141,9 @@ dependency order, not hundreds of individual overloads.
 | `<string>`           | Stage 3.4         |
 | `<bitset>`           | Stage 3.5         |
 | `<vector>`           | Stage 4.1         |
+| `<deque>`            | Stage 4.2         |
+| `<queue>`            | Stage 4.2         |
+| `<stack>`            | Stage 4.2         |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -176,7 +179,7 @@ remain required when C++23 still specifies them; they are not silently dropped.
 |---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Concepts/types/vocabulary | `<ratio>`                                                                                                                                                          |
 | Algorithms/numerics       | `<numbers>`, `<random>`, `<valarray>`                                                                                                                              |
-| Containers                | `<deque>`, `<flat_map>`, `<flat_set>`, `<forward_list>`, `<list>`, `<map>`, `<queue>`, `<set>`, `<stack>`, `<unordered_map>`, `<unordered_set>`                     |
+| Containers                | `<flat_map>`, `<flat_set>`, `<forward_list>`, `<list>`, `<map>`, `<set>`, `<unordered_map>`, `<unordered_set>`                                                                         |
 | Text/encoding             | `<codecvt>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                               |
 | Errors/time/localization  | `<chrono>`, `<system_error>`, `<stacktrace>`, `<locale>`, `<clocale>`, `<ctime>`                                                                                   |
 | C numerics/text           | `<cfenv>`, `<cmath>`, `<complex>`                                                                                                                                  |
@@ -383,7 +386,7 @@ and usable as dependencies by containers and diagnostics.
 Take these closures in order:
 
 1. `<vector>` — **complete**
-2. `<deque>` + `<queue>` + `<stack>`
+2. `<deque>` + `<queue>` + `<stack>` — **complete**
 3. `<forward_list>` + `<list>`
 4. `<map>` + `<set>`
 5. `<unordered_map>` + `<unordered_set>`

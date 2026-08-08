@@ -1,0 +1,352 @@
+#ifndef FTL_DEQUE_HEADER
+#define FTL_DEQUE_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <algorithm>
+#include <compare>
+#include <initializer_list>
+#include <iterator>
+#include <limits>
+#include <memory>
+#include <memory_resource>
+#include <ranges>
+#include <stdexcept>
+#include <type_traits>
+#include <utility>
+#include <vector>
+#define FTL_DEQUE_NAMESPACE std
+#else
+#include <ftl/algorithm>
+#include <ftl/compare>
+#include <ftl/initializer_list>
+#include <ftl/iterator>
+#include <ftl/limits>
+#include <ftl/memory>
+#include <ftl/memory_resource>
+#include <ftl/ranges>
+#include <ftl/stdexcept>
+#include <ftl/type_traits>
+#include <ftl/utility>
+#include <ftl/vector>
+#define FTL_DEQUE_NAMESPACE ftl
+#endif
+
+#if defined(_MSC_VER) && !defined(__clang__)
+extern "C" void __cdecl __fastfail(unsigned int);
+#pragma intrinsic(__fastfail)
+#define FTL_DEQUE_TRAP() __fastfail(7)
+#else
+#define FTL_DEQUE_TRAP() __builtin_trap()
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+namespace detail {
+[[noreturn]] inline void deque_length_failure() {
+#if FTL_HAS_EXCEPTIONS
+  throw length_error("deque");
+#else
+  FTL_DEQUE_TRAP();
+#endif
+}
+[[noreturn]] inline void deque_range_failure() {
+#if FTL_HAS_EXCEPTIONS
+  throw out_of_range("deque");
+#else
+  FTL_DEQUE_TRAP();
+#endif
+}
+template<class R, class T>
+concept deque_compatible_range = ranges::input_range<R> &&
+    convertible_to<ranges::range_reference_t<R>, T>;
+template<class T> struct deque_compare {
+  constexpr auto operator()(const T& a, const T& b) const {
+    if constexpr (three_way_comparable<T>) return a <=> b;
+    else {
+      if (a < b) return weak_ordering::less;
+      if (b < a) return weak_ordering::greater;
+      return weak_ordering::equivalent;
+    }
+  }
+};
+}
+
+template<class T, class Allocator = allocator<T>> class deque {
+  using traits = allocator_traits<Allocator>;
+  using block_pointer = typename traits::pointer;
+  using map_allocator = typename traits::template rebind_alloc<block_pointer>;
+  static constexpr size_t block_size() { return sizeof(T) < 512 ? 512 / sizeof(T) : 1; }
+
+public:
+  static_assert(is_same_v<typename traits::value_type, T>);
+  static_assert(is_object_v<T>);
+  using value_type = T;
+  using allocator_type = Allocator;
+  using pointer = typename traits::pointer;
+  using const_pointer = typename traits::const_pointer;
+  using reference = T&;
+  using const_reference = const T&;
+  using size_type = typename traits::size_type;
+  using difference_type = typename traits::difference_type;
+
+  template<bool Const> class basic_iterator {
+    using owner_type = conditional_t<Const, const deque, deque>;
+    owner_type* owner_{};
+    size_type position_{};
+    basic_iterator(owner_type* owner, size_type position)
+        : owner_(owner), position_(position) {}
+    friend class deque;
+    template<bool> friend class basic_iterator;
+  public:
+    using iterator_concept = random_access_iterator_tag;
+    using iterator_category = random_access_iterator_tag;
+    using value_type = T;
+    using difference_type = typename deque::difference_type;
+    using reference = conditional_t<Const, const T&, T&>;
+    using pointer = conditional_t<Const, const T*, T*>;
+    basic_iterator() = default;
+    template<bool Other> requires(Const && !Other)
+    basic_iterator(const basic_iterator<Other>& other)
+        : owner_(other.owner_), position_(other.position_) {}
+    reference operator*() const { return owner_->element(position_ - owner_->origin_); }
+    pointer operator->() const { return addressof(operator*()); }
+    basic_iterator& operator++() { ++position_; return *this; }
+    basic_iterator operator++(int) { auto copy = *this; ++*this; return copy; }
+    basic_iterator& operator--() { --position_; return *this; }
+    basic_iterator operator--(int) { auto copy = *this; --*this; return copy; }
+    basic_iterator& operator+=(difference_type n) { position_ += static_cast<size_type>(n); return *this; }
+    basic_iterator& operator-=(difference_type n) { position_ -= static_cast<size_type>(n); return *this; }
+    basic_iterator operator+(difference_type n) const { auto copy = *this; return copy += n; }
+    basic_iterator operator-(difference_type n) const { auto copy = *this; return copy -= n; }
+    reference operator[](difference_type n) const { return *(*this + n); }
+    template<bool Other> difference_type operator-(const basic_iterator<Other>& other) const {
+      const auto left = position_ - owner_->origin_;
+      const auto right = other.position_ - other.owner_->origin_;
+      return left >= right ? static_cast<difference_type>(left - right)
+                           : -static_cast<difference_type>(right - left);
+    }
+    template<bool Other> bool operator==(const basic_iterator<Other>& other) const {
+      return owner_ == other.owner_ && position_ == other.position_;
+    }
+    template<bool Other> strong_ordering operator<=>(const basic_iterator<Other>& other) const {
+      const auto left = position_ - owner_->origin_;
+      const auto right = other.position_ - other.owner_->origin_;
+      return left <=> right;
+    }
+    friend basic_iterator operator+(difference_type n, basic_iterator it) { return it += n; }
+  };
+
+  using iterator = basic_iterator<false>;
+  using const_iterator = basic_iterator<true>;
+  using reverse_iterator = FTL_DEQUE_NAMESPACE::reverse_iterator<iterator>;
+  using const_reverse_iterator = FTL_DEQUE_NAMESPACE::reverse_iterator<const_iterator>;
+
+  deque() : deque(Allocator()) {}
+  explicit deque(const Allocator& a) : allocator_(a), blocks_(map_allocator(a)) {}
+  explicit deque(size_type n, const Allocator& a = Allocator()) : deque(a) { append_default(n); }
+  deque(size_type n, const T& value, const Allocator& a = Allocator()) : deque(a) { append_fill(n, value); }
+  template<input_iterator I> deque(I first, I last, const Allocator& a = Allocator()) : deque(a) { append_iterators(first, last); }
+  template<detail::deque_compatible_range<T> R>
+  deque(from_range_t, R&& range, const Allocator& a = Allocator()) : deque(a) { append_range(static_cast<R&&>(range)); }
+  deque(const deque& other) : deque(traits::select_on_container_copy_construction(other.allocator_)) { append_iterators(other.begin(), other.end()); }
+  deque(deque&& other) noexcept : allocator_(move(other.allocator_)), blocks_(move(other.blocks_)), front_slot_(exchange(other.front_slot_, 0)), size_(exchange(other.size_, 0)), origin_(exchange(other.origin_, 0)) {}
+  deque(const deque& other, const type_identity_t<Allocator>& a) : deque(other.begin(), other.end(), a) {}
+  deque(deque&& other, const type_identity_t<Allocator>& a) : deque(a) {
+    if (allocator_ == other.allocator_) steal(other);
+    else { append_iterators(make_move_iterator(other.begin()), make_move_iterator(other.end())); other.clear(); }
+  }
+  deque(initializer_list<T> values, const Allocator& a = Allocator()) : deque(values.begin(), values.end(), a) {}
+  ~deque() { release(); }
+
+  deque& operator=(const deque& other) {
+    if (this == &other) return *this;
+    if constexpr (traits::propagate_on_container_copy_assignment::value)
+      if (!(allocator_ == other.allocator_)) { release(); allocator_ = other.allocator_; blocks_ = decltype(blocks_)(map_allocator(allocator_)); }
+    assign(other.begin(), other.end()); return *this;
+  }
+  deque& operator=(deque&& other) noexcept(traits::is_always_equal::value) {
+    if (this == &other) return *this;
+    if constexpr (traits::propagate_on_container_move_assignment::value) {
+      release(); allocator_ = move(other.allocator_); blocks_ = move(other.blocks_);
+      front_slot_ = exchange(other.front_slot_, 0); size_ = exchange(other.size_, 0); origin_ = exchange(other.origin_, 0);
+    } else if (allocator_ == other.allocator_) { release(); steal(other); }
+    else { assign(make_move_iterator(other.begin()), make_move_iterator(other.end())); other.clear(); }
+    return *this;
+  }
+  deque& operator=(initializer_list<T> values) { assign(values); return *this; }
+  template<input_iterator I> void assign(I first, I last) { deque replacement(first, last, allocator_); swap_storage(replacement); }
+  template<detail::deque_compatible_range<T> R> void assign_range(R&& range) { deque replacement(from_range, static_cast<R&&>(range), allocator_); swap_storage(replacement); }
+  void assign(size_type n, const T& value) { deque replacement(n, value, allocator_); swap_storage(replacement); }
+  void assign(initializer_list<T> values) { assign(values.begin(), values.end()); }
+  allocator_type get_allocator() const noexcept { return allocator_; }
+
+  iterator begin() noexcept { return iterator(this, origin_); }
+  const_iterator begin() const noexcept { return const_iterator(this, origin_); }
+  iterator end() noexcept { return iterator(this, origin_ + size_); }
+  const_iterator end() const noexcept { return const_iterator(this, origin_ + size_); }
+  reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
+  const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
+  reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
+  const_reverse_iterator rend() const noexcept { return const_reverse_iterator(begin()); }
+  const_iterator cbegin() const noexcept { return begin(); }
+  const_iterator cend() const noexcept { return end(); }
+  const_reverse_iterator crbegin() const noexcept { return rbegin(); }
+  const_reverse_iterator crend() const noexcept { return rend(); }
+
+  [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
+  size_type size() const noexcept { return size_; }
+  size_type max_size() const noexcept {
+    const auto a = traits::max_size(allocator_);
+    const auto d = static_cast<size_type>((numeric_limits<difference_type>::max)());
+    return a < d ? a : d;
+  }
+  void resize(size_type n) { while (size_ > n) pop_back(); append_default(n - size_); }
+  void resize(size_type n, const T& value) { while (size_ > n) pop_back(); append_fill(n - size_, value); }
+  void shrink_to_fit() {}
+  reference operator[](size_type n) { return element(n); }
+  const_reference operator[](size_type n) const { return element(n); }
+  reference at(size_type n) { if (n >= size_) detail::deque_range_failure(); return element(n); }
+  const_reference at(size_type n) const { if (n >= size_) detail::deque_range_failure(); return element(n); }
+  reference front() { return element(0); }
+  const_reference front() const { return element(0); }
+  reference back() { return element(size_ - 1); }
+  const_reference back() const { return element(size_ - 1); }
+
+  template<class... Args> reference emplace_front(Args&&... args) {
+    check_add(1); ensure_front(); --front_slot_; --origin_;
+    auto* place = address(front_slot_);
+#if FTL_HAS_EXCEPTIONS
+    try { traits::construct(allocator_, place, forward<Args>(args)...); }
+    catch (...) { ++front_slot_; ++origin_; throw; }
+#else
+    traits::construct(allocator_, place, forward<Args>(args)...);
+#endif
+    ++size_; return *place;
+  }
+  template<class... Args> reference emplace_back(Args&&... args) {
+    check_add(1); ensure_back(); auto* place = address(front_slot_ + size_);
+    traits::construct(allocator_, place, forward<Args>(args)...); ++size_; return *place;
+  }
+  template<class... Args> iterator emplace(const_iterator position, Args&&... args) {
+    const auto index = static_cast<size_type>(position - cbegin());
+    if (index == 0) { emplace_front(forward<Args>(args)...); return begin(); }
+    if (index == size_) { emplace_back(forward<Args>(args)...); return end() - 1; }
+    T value(forward<Args>(args)...); deque replacement(allocator_);
+    replacement.append_iterators(make_move_iterator(begin()), make_move_iterator(begin() + static_cast<difference_type>(index)));
+    replacement.emplace_back(move(value));
+    replacement.append_iterators(make_move_iterator(begin() + static_cast<difference_type>(index)), make_move_iterator(end()));
+    swap_storage(replacement); return begin() + static_cast<difference_type>(index);
+  }
+  void push_front(const T& value) { emplace_front(value); }
+  void push_front(T&& value) { emplace_front(move(value)); }
+  template<detail::deque_compatible_range<T> R> void prepend_range(R&& range) {
+    deque values(from_range, static_cast<R&&>(range), allocator_);
+    for (auto it = values.rbegin(); it != values.rend(); ++it) emplace_front(move(*it));
+  }
+  void push_back(const T& value) { emplace_back(value); }
+  void push_back(T&& value) { emplace_back(move(value)); }
+  template<detail::deque_compatible_range<T> R> void append_range(R&& range) { for (auto&& value : range) emplace_back(static_cast<decltype(value)&&>(value)); }
+  iterator insert(const_iterator p, const T& value) { return emplace(p, value); }
+  iterator insert(const_iterator p, T&& value) { return emplace(p, move(value)); }
+  iterator insert(const_iterator p, size_type n, const T& value) {
+    const auto index = static_cast<size_type>(p - cbegin()); deque inserted(n, value, allocator_); return insert_values(index, inserted);
+  }
+  template<input_iterator I> iterator insert(const_iterator p, I first, I last) {
+    const auto index = static_cast<size_type>(p - cbegin()); deque inserted(first, last, allocator_); return insert_values(index, inserted);
+  }
+  template<detail::deque_compatible_range<T> R> iterator insert_range(const_iterator p, R&& range) {
+    const auto index = static_cast<size_type>(p - cbegin()); deque inserted(from_range, static_cast<R&&>(range), allocator_); return insert_values(index, inserted);
+  }
+  iterator insert(const_iterator p, initializer_list<T> values) { return insert(p, values.begin(), values.end()); }
+  void pop_front() { traits::destroy(allocator_, address(front_slot_)); ++front_slot_; --size_; ++origin_; }
+  void pop_back() { --size_; traits::destroy(allocator_, address(front_slot_ + size_)); }
+  iterator erase(const_iterator p) { return erase(p, p + 1); }
+  iterator erase(const_iterator first, const_iterator last) {
+    const auto index = static_cast<size_type>(first - cbegin());
+    const auto count = static_cast<size_type>(last - first);
+    if (!index) { for (size_type i = 0; i < count; ++i) pop_front(); return begin(); }
+    if (index + count == size_) { for (size_type i = 0; i < count; ++i) pop_back(); return end(); }
+    deque replacement(allocator_);
+    replacement.append_iterators(make_move_iterator(begin()), make_move_iterator(begin() + static_cast<difference_type>(index)));
+    replacement.append_iterators(make_move_iterator(begin() + static_cast<difference_type>(index + count)), make_move_iterator(end()));
+    swap_storage(replacement); return begin() + static_cast<difference_type>(index);
+  }
+  void swap(deque& other) noexcept(traits::is_always_equal::value) {
+    if constexpr (traits::propagate_on_container_swap::value) FTL_DEQUE_NAMESPACE::swap(allocator_, other.allocator_);
+    swap_storage(other);
+  }
+  void clear() noexcept { while (size_) pop_back(); }
+
+private:
+  T* address(size_type slot) { return to_address(blocks_[slot / block_size()]) + slot % block_size(); }
+  const T* address(size_type slot) const { return to_address(blocks_[slot / block_size()]) + slot % block_size(); }
+  reference element(size_type n) { return *address(front_slot_ + n); }
+  const_reference element(size_type n) const { return *address(front_slot_ + n); }
+  void check_add(size_type n) const { if (n > max_size() - size_) detail::deque_length_failure(); }
+  void ensure_back() {
+    const auto slot = front_slot_ + size_;
+    if (slot / block_size() == blocks_.size()) blocks_.push_back(traits::allocate(allocator_, block_size()));
+  }
+  void ensure_front() {
+    if (front_slot_) return;
+    block_pointer block = traits::allocate(allocator_, block_size());
+#if FTL_HAS_EXCEPTIONS
+    try { blocks_.insert(blocks_.begin(), block); }
+    catch (...) { traits::deallocate(allocator_, block, block_size()); throw; }
+#else
+    blocks_.insert(blocks_.begin(), block);
+#endif
+    front_slot_ = block_size();
+  }
+  template<input_iterator I> void append_iterators(I first, I last) { for (; first != last; ++first) emplace_back(*first); }
+  void append_default(size_type n) { check_add(n); while (n--) emplace_back(); }
+  void append_fill(size_type n, const T& value) { check_add(n); while (n--) emplace_back(value); }
+  iterator insert_values(size_type index, deque& inserted) {
+    if (inserted.empty()) return begin() + static_cast<difference_type>(index);
+    if (index == size_) { for (auto& value : inserted) emplace_back(move(value)); return begin() + static_cast<difference_type>(index); }
+    if (index == 0) { for (auto it = inserted.rbegin(); it != inserted.rend(); ++it) emplace_front(move(*it)); return begin(); }
+    deque replacement(allocator_);
+    replacement.append_iterators(make_move_iterator(begin()), make_move_iterator(begin() + static_cast<difference_type>(index)));
+    replacement.append_iterators(make_move_iterator(inserted.begin()), make_move_iterator(inserted.end()));
+    replacement.append_iterators(make_move_iterator(begin() + static_cast<difference_type>(index)), make_move_iterator(end()));
+    swap_storage(replacement); return begin() + static_cast<difference_type>(index);
+  }
+  void release() noexcept {
+    clear(); for (auto block : blocks_) traits::deallocate(allocator_, block, block_size());
+    blocks_.clear(); front_slot_ = 0;
+  }
+  void steal(deque& other) {
+    blocks_ = move(other.blocks_); front_slot_ = exchange(other.front_slot_, 0);
+    size_ = exchange(other.size_, 0); origin_ = exchange(other.origin_, 0);
+  }
+  void swap_storage(deque& other) noexcept {
+    blocks_.swap(other.blocks_); FTL_DEQUE_NAMESPACE::swap(front_slot_, other.front_slot_);
+    FTL_DEQUE_NAMESPACE::swap(size_, other.size_); FTL_DEQUE_NAMESPACE::swap(origin_, other.origin_);
+  }
+
+  FTL_NO_UNIQUE_ADDRESS Allocator allocator_;
+  vector<block_pointer, map_allocator> blocks_;
+  size_type front_slot_{};
+  size_type size_{};
+  size_type origin_{};
+};
+
+template<class I, class A = allocator<typename iterator_traits<I>::value_type>>
+deque(I, I, A = A()) -> deque<typename iterator_traits<I>::value_type, A>;
+template<ranges::input_range R, class A = allocator<ranges::range_value_t<R>>>
+deque(from_range_t, R&&, A = A()) -> deque<ranges::range_value_t<R>, A>;
+template<class T, class A> bool operator==(const deque<T, A>& x, const deque<T, A>& y) { return x.size() == y.size() && equal(x.begin(), x.end(), y.begin()); }
+template<class T, class A> auto operator<=>(const deque<T, A>& x, const deque<T, A>& y) { return lexicographical_compare_three_way(x.begin(), x.end(), y.begin(), y.end(), detail::deque_compare<T>{}); }
+template<class T, class A> void swap(deque<T, A>& x, deque<T, A>& y) noexcept(noexcept(x.swap(y))) { x.swap(y); }
+template<class T, class A, class U> typename deque<T, A>::size_type erase(deque<T, A>& c, const U& value) {
+  auto it = remove(c.begin(), c.end(), value); auto count = static_cast<typename deque<T, A>::size_type>(c.end() - it); c.erase(it, c.end()); return count;
+}
+template<class T, class A, class P> typename deque<T, A>::size_type erase_if(deque<T, A>& c, P pred) {
+  auto it = remove_if(c.begin(), c.end(), pred); auto count = static_cast<typename deque<T, A>::size_type>(c.end() - it); c.erase(it, c.end()); return count;
+}
+namespace pmr { template<class T> using deque = FTL_DEQUE_NAMESPACE::deque<T, polymorphic_allocator<T>>; }
+
+FTL_END_NAMESPACE
+#undef FTL_DEQUE_NAMESPACE
+#undef FTL_DEQUE_TRAP
+#endif
