@@ -1,0 +1,495 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_DETAIL_BIG_UINT_HEADER
+#define FTL_DETAIL_BIG_UINT_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <cstddef>
+#include <cstdint>
+#define FTL_BIG_UINT_STD std
+#else
+#include <ftl/cstddef>
+#include <ftl/cstdint>
+#define FTL_BIG_UINT_STD ftl
+#endif
+
+namespace ftl_float_conversion {
+
+namespace big_uint_detail {
+
+struct wide_product {
+  FTL_BIG_UINT_STD::uint64_t low;
+  FTL_BIG_UINT_STD::uint64_t high;
+};
+
+[[nodiscard]]
+constexpr wide_product multiply_64(FTL_BIG_UINT_STD::uint64_t left,
+                                   FTL_BIG_UINT_STD::uint64_t right) noexcept {
+  using uint32_t = FTL_BIG_UINT_STD::uint32_t;
+  using uint64_t = FTL_BIG_UINT_STD::uint64_t;
+
+  const uint64_t left_low = static_cast<uint32_t>(left);
+  const uint64_t left_high = left >> 32;
+
+  const uint64_t right_low = static_cast<uint32_t>(right);
+  const uint64_t right_high = right >> 32;
+
+  const uint64_t low_low = left_low * right_low;
+  const uint64_t low_high = left_low * right_high;
+  const uint64_t high_low = left_high * right_low;
+  const uint64_t high_high = left_high * right_high;
+
+  const uint64_t middle = (low_low >> 32) + static_cast<uint32_t>(low_high) +
+                          static_cast<uint32_t>(high_low);
+
+  const uint64_t low = (low_low & uint64_t{0xffffffffu}) | (middle << 32);
+
+  const uint64_t high =
+      high_high + (low_high >> 32) + (high_low >> 32) + (middle >> 32);
+
+  return {low, high};
+}
+
+inline constexpr unsigned power_of_five_chunk_exponent = 27;
+
+inline constexpr FTL_BIG_UINT_STD::uint64_t power_of_five_chunk =
+    7450580596923828125ull; // 5^27
+
+[[nodiscard]]
+constexpr FTL_BIG_UINT_STD::uint64_t power_of_five(unsigned exponent) noexcept {
+  FTL_BIG_UINT_STD::uint64_t result = 1;
+
+  while (exponent != 0) {
+    result *= 5;
+    --exponent;
+  }
+
+  return result;
+}
+
+static_assert(power_of_five(power_of_five_chunk_exponent) ==
+              power_of_five_chunk);
+
+} // namespace big_uint_detail
+
+template <FTL_BIG_UINT_STD::size_t Limbs> class big_uint {
+  static_assert(Limbs != 0);
+
+public:
+  using size_type = FTL_BIG_UINT_STD::size_t;
+  using limb_type = FTL_BIG_UINT_STD::uint64_t;
+  struct division_result {
+    bool success;
+    limb_type remainder;
+  };
+
+  static constexpr size_type limb_bits = 64;
+  static constexpr size_type limb_capacity = Limbs;
+  static constexpr size_type bit_capacity = Limbs * limb_bits;
+
+  constexpr big_uint() noexcept = default;
+
+  constexpr explicit big_uint(limb_type value) noexcept {
+    if (value != 0) {
+      limbs_[0] = value;
+      size_ = 1;
+    }
+  }
+
+  [[nodiscard]]
+  constexpr bool is_zero() const noexcept {
+    return size_ == 0;
+  }
+
+  [[nodiscard]]
+  constexpr size_type limb_count() const noexcept {
+    return size_;
+  }
+
+  [[nodiscard]]
+  constexpr limb_type limb(size_type index) const noexcept {
+    return index < size_ ? limbs_[index] : limb_type{};
+  }
+
+  [[nodiscard]]
+  constexpr size_type bit_width() const noexcept {
+    if (size_ == 0)
+      return 0;
+
+    limb_type value = limbs_[size_ - 1];
+    size_type high_bits = 0;
+
+    while (value != 0) {
+      ++high_bits;
+      value >>= 1;
+    }
+
+    return (size_ - 1) * limb_bits + high_bits;
+  }
+
+  [[nodiscard]]
+  constexpr bool test_bit(size_type index) const noexcept {
+    const size_type limb_index = index / limb_bits;
+
+    if (limb_index >= size_)
+      return false;
+
+    const size_type bit_index = index % limb_bits;
+
+    return ((limbs_[limb_index] >> bit_index) & limb_type{1}) != 0;
+  }
+
+  [[nodiscard]]
+  constexpr bool any_low_bits(size_type count) const noexcept {
+    if (count == 0 || is_zero())
+      return false;
+
+    for (size_type index = 0; index < size_; ++index) {
+      const size_type first_bit = index * limb_bits;
+
+      if (first_bit >= count)
+        break;
+
+      const size_type remaining = count - first_bit;
+
+      if (remaining >= limb_bits) {
+        if (limbs_[index] != 0)
+          return true;
+
+        continue;
+      }
+
+      const limb_type mask = (limb_type{1} << remaining) - limb_type{1};
+
+      if ((limbs_[index] & mask) != 0)
+        return true;
+    }
+
+    return false;
+  }
+
+  constexpr void shift_right(size_type amount) noexcept {
+    if (amount == 0 || is_zero())
+      return;
+
+    if (amount >= bit_width()) {
+      clear();
+      return;
+    }
+
+    limb_type result[Limbs]{};
+
+    const size_type limb_shift = amount / limb_bits;
+
+    const size_type bit_shift = amount % limb_bits;
+
+    size_type destination = 0;
+
+    for (size_type source = limb_shift; source < size_; ++source) {
+      limb_type value = limbs_[source] >> bit_shift;
+
+      if (bit_shift != 0 && source + 1 < size_) {
+        value |= limbs_[source + 1] << (limb_bits - bit_shift);
+      }
+
+      result[destination++] = value;
+    }
+
+    assign_result(result);
+  }
+
+  [[nodiscard]]
+  constexpr int compare(const big_uint &other) const noexcept {
+    if (size_ < other.size_)
+      return -1;
+
+    if (size_ > other.size_)
+      return 1;
+
+    size_type index = size_;
+
+    while (index != 0) {
+      --index;
+
+      if (limbs_[index] < other.limbs_[index])
+        return -1;
+
+      if (limbs_[index] > other.limbs_[index])
+        return 1;
+    }
+
+    return 0;
+  }
+
+  [[nodiscard]]
+  friend constexpr bool operator==(const big_uint &left,
+                                   const big_uint &right) noexcept {
+    return left.compare(right) == 0;
+  }
+
+  constexpr void clear() noexcept {
+    for (size_type index = 0; index < Limbs; ++index)
+      limbs_[index] = 0;
+
+    size_ = 0;
+  }
+
+  [[nodiscard]]
+  constexpr bool shift_left(size_type amount) noexcept {
+    if (amount == 0 || is_zero())
+      return true;
+
+    const size_type width = bit_width();
+
+    if (amount > bit_capacity - width)
+      return false;
+
+    limb_type result[Limbs]{};
+
+    const size_type limb_shift = amount / limb_bits;
+    const size_type bit_shift = amount % limb_bits;
+
+    for (size_type index = 0; index < size_; ++index) {
+      const size_type destination = index + limb_shift;
+
+      result[destination] |= limbs_[index] << bit_shift;
+
+      if (bit_shift != 0 && destination + 1 < Limbs) {
+        result[destination + 1] |= limbs_[index] >> (limb_bits - bit_shift);
+      }
+    }
+
+    assign_result(result);
+    return true;
+  }
+
+  [[nodiscard]]
+  constexpr bool add(limb_type value) noexcept {
+    if (value == 0)
+      return true;
+
+    limb_type result[Limbs]{};
+
+    for (size_type index = 0; index < Limbs; ++index)
+      result[index] = limbs_[index];
+
+    limb_type carry = value;
+    size_type index = 0;
+
+    while (carry != 0 && index < Limbs) {
+      const limb_type old = result[index];
+      result[index] = old + carry;
+
+      carry = result[index] < old ? limb_type{1} : limb_type{0};
+
+      ++index;
+    }
+
+    if (carry != 0)
+      return false;
+
+    assign_result(result);
+    return true;
+  }
+
+  [[nodiscard]]
+  constexpr bool add(const big_uint &other) noexcept {
+    limb_type result[Limbs]{};
+
+    limb_type carry = 0;
+
+    for (size_type index = 0; index < Limbs; ++index) {
+      const limb_type left = limbs_[index];
+      const limb_type right = other.limbs_[index];
+
+      const limb_type partial = left + right;
+      const bool first_carry = partial < left;
+
+      const limb_type sum = partial + carry;
+      const bool second_carry = sum < partial;
+
+      result[index] = sum;
+      carry = first_carry || second_carry ? limb_type{1} : limb_type{0};
+    }
+
+    if (carry != 0)
+      return false;
+
+    assign_result(result);
+    return true;
+  }
+
+  [[nodiscard]]
+  constexpr bool subtract(const big_uint &other) noexcept {
+    if (compare(other) < 0)
+      return false;
+
+    limb_type result[Limbs]{};
+
+    limb_type borrow = 0;
+
+    for (size_type index = 0; index < Limbs; ++index) {
+      const limb_type left = limbs_[index];
+      const limb_type right = other.limbs_[index];
+
+      const limb_type partial = left - right;
+      const bool first_borrow = left < right;
+
+      const limb_type difference = partial - borrow;
+      const bool second_borrow = partial < borrow;
+
+      result[index] = difference;
+      borrow = first_borrow || second_borrow ? limb_type{1} : limb_type{0};
+    }
+
+    assign_result(result);
+    return true;
+  }
+
+  [[nodiscard]]
+  constexpr bool multiply(limb_type factor) noexcept {
+    if (factor == 0) {
+      clear();
+      return true;
+    }
+
+    if (factor == 1 || is_zero())
+      return true;
+
+    limb_type result[Limbs]{};
+
+    limb_type carry = 0;
+
+    for (size_type index = 0; index < size_; ++index) {
+      const auto product = big_uint_detail::multiply_64(limbs_[index], factor);
+
+      const limb_type low = product.low + carry;
+      const bool carry_from_low = low < product.low;
+
+      result[index] = low;
+
+      /*
+       * product.high + carry_from_low cannot overflow:
+       * the complete value being represented is
+       *
+       *   limb * factor + previous_carry
+       *
+       * whose maximum is strictly less than 2^128.
+       */
+      carry = product.high + static_cast<limb_type>(carry_from_low);
+    }
+
+    if (carry != 0) {
+      if (size_ == Limbs)
+        return false;
+
+      result[size_] = carry;
+    }
+
+    assign_result(result);
+    return true;
+  }
+
+  [[nodiscard]]
+  constexpr bool multiply_pow5(unsigned exponent) noexcept {
+    if (exponent == 0 || is_zero())
+      return true;
+
+    /*
+     * Work on a copy so capacity failure leaves the
+     * original value unchanged.
+     */
+    big_uint result = *this;
+
+    while (exponent >= big_uint_detail::power_of_five_chunk_exponent) {
+      if (!result.multiply(big_uint_detail::power_of_five_chunk)) {
+        return false;
+      }
+
+      exponent -= big_uint_detail::power_of_five_chunk_exponent;
+    }
+
+    if (exponent != 0) {
+      if (!result.multiply(big_uint_detail::power_of_five(exponent))) {
+        return false;
+      }
+    }
+
+    *this = result;
+    return true;
+  }
+
+  [[nodiscard]]
+  constexpr division_result divide(limb_type divisor) noexcept {
+    /*
+     * Keep divide-by-zero explicit rather than turning
+     * it into an unchecked internal precondition.
+     */
+    if (divisor == 0)
+      return {false, 0};
+
+    if (is_zero())
+      return {true, 0};
+
+    limb_type result[Limbs]{};
+    limb_type remainder = 0;
+
+    /*
+     * Binary long division.
+     *
+     * At every step remainder < divisor. Conceptually:
+     *
+     *   next = remainder * 2 + incoming_bit
+     *
+     * next can require 65 bits. If the top bit of
+     * remainder was set, the left shift wraps modulo
+     * 2^64, but next is necessarily >= divisor.
+     *
+     * Subtracting divisor modulo 2^64 then produces the
+     * correct remainder because next < 2 * divisor.
+     */
+    for (size_type source = size_; source != 0; --source) {
+      const size_type index = source - 1;
+
+      for (size_type bit = limb_bits; bit != 0; --bit) {
+        const size_type shift = bit - 1;
+
+        const bool carried = (remainder >> (limb_bits - 1)) != 0;
+
+        remainder =
+            (remainder << 1) | ((limbs_[index] >> shift) & limb_type{1});
+
+        if (carried || remainder >= divisor) {
+          remainder -= divisor;
+
+          result[index] |= limb_type{1} << shift;
+        }
+      }
+    }
+
+    assign_result(result);
+
+    return {true, remainder};
+  }
+
+private:
+  constexpr void assign_result(const limb_type (&result)[Limbs]) noexcept {
+    for (size_type index = 0; index < Limbs; ++index)
+      limbs_[index] = result[index];
+
+    size_ = Limbs;
+
+    while (size_ != 0 && limbs_[size_ - 1] == 0) {
+      --size_;
+    }
+  }
+
+  limb_type limbs_[Limbs]{};
+  size_type size_ = 0;
+};
+
+} // namespace ftl_float_conversion
+
+#undef FTL_BIG_UINT_STD
+
+#endif // FTL_DETAIL_BIG_UINT_HEADER

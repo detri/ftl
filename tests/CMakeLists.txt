@@ -129,6 +129,10 @@ add_ftl_compile_fail_check(span_rejects_mismatched_static_extent checks/span_rej
 add_ftl_compile_fail_check(mdspan_rejects_character_index checks/mdspan_character_index_compile_fail.cpp)
 add_ftl_compile_fail_check(mdspan_rejects_void_element checks/mdspan_void_element_compile_fail.cpp)
 add_ftl_compile_fail_check(numeric_reduce checks/numeric_reduce_compile_fail.cpp)
+add_ftl_compile_fail_check(
+        string_view_rejects_nullptr
+        checks/string_view_nullptr_compile_fail.cpp
+)
 add_ftl_standalone_check(feature_macros checks/feature_macros.cpp)
 add_ftl_standalone_check(no_allocation checks/no_allocation.cpp)
 add_ftl_freestanding_link_check(freestanding_link checks/freestanding_link.cpp)
@@ -295,6 +299,10 @@ foreach (header IN ITEMS
         cwctype_synopsis
         cuchar
         cuchar_synopsis
+        charconv
+        big_uint
+        floating_bits
+        floating_conversion
 )
     add_ftl_test(${header})
 endforeach ()

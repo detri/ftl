@@ -97,4 +97,16 @@
 #error <mdspan> must advertise the C++23 mdspan facility
 #endif
 
+#if __cpp_lib_string_view < 201803L ||                                   \
+    __cpp_lib_constexpr_string_view < 201811L ||                         \
+    __cpp_lib_starts_ends_with < 201711L ||                              \
+    __cpp_lib_string_contains < 202011L
+#error Stage 3.3 string_view feature macros are incomplete
+#endif
+
+#if __cpp_lib_to_chars < 201611L ||                                     \
+    __cpp_lib_constexpr_charconv < 202207L
+#error Stage 3.3 charconv feature macros are incomplete
+#endif
+
 int main() {}

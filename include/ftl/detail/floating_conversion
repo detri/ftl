@@ -1,0 +1,3142 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_DETAIL_FLOATING_CONVERSION_HEADER
+#define FTL_DETAIL_FLOATING_CONVERSION_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <detail/big_uint>
+#include <detail/floating_bits>
+#define FTL_FLOATING_CONVERSION_STD std
+#else
+#include <ftl/detail/big_uint>
+#include <ftl/detail/floating_bits>
+#define FTL_FLOATING_CONVERSION_STD ftl
+#endif
+
+namespace ftl_float_conversion {
+
+enum class conversion_status {
+  success,
+  overflow,
+  underflow,
+  capacity_exceeded
+};
+
+template <class Float> struct conversion_result {
+  Float value{};
+  conversion_status status = conversion_status::success;
+};
+
+/*
+ * Represents exactly:
+ *
+ *   (-1)^negative *
+ *   significand *
+ *   10^exponent
+ *
+ * The scanner will eventually produce this type.
+ */
+template <decltype(sizeof(0)) Limbs> struct decimal_number {
+  using integer_type = big_uint<Limbs>;
+  using limb_type = typename integer_type::limb_type;
+
+  bool negative = false;
+  integer_type significand{};
+  int exponent = 0;
+
+  /*
+   * True when decimal digits beyond the retained
+   * significand contained at least one nonzero digit.
+   *
+   * Numerically, the real magnitude is then strictly
+   * greater than:
+   *
+   *   significand * 10^exponent
+   *
+   * but smaller than the next retained decimal unit.
+   */
+  bool discarded_nonzero = false;
+
+  constexpr decimal_number() noexcept = default;
+
+  constexpr decimal_number(limb_type value, int decimal_exponent,
+                           bool is_negative = false,
+                           bool has_discarded_nonzero = false) noexcept
+      : negative(is_negative), significand(value), exponent(decimal_exponent),
+        discarded_nonzero(has_discarded_nonzero) {}
+
+  constexpr decimal_number(const integer_type &value, int decimal_exponent,
+                           bool is_negative = false,
+                           bool has_discarded_nonzero = false) noexcept
+      : negative(is_negative), significand(value), exponent(decimal_exponent),
+        discarded_nonzero(has_discarded_nonzero) {}
+};
+
+struct hexadecimal_number {
+  bool negative = false;
+
+  /*
+   * Represents the retained magnitude exactly as:
+   *
+   *   significand * 2^exponent
+   *
+   * Up to 128 significant bits are retained, enough
+   * for binary128's 113-bit precision plus rounding
+   * information.
+   */
+  uint128 significand{};
+
+  int exponent = 0;
+
+  bool discarded_nonzero = false;
+};
+
+namespace floating_conversion_detail {
+
+template <class Float>
+inline constexpr bool decimal_binary_supported = false;
+
+template <>
+inline constexpr bool decimal_binary_supported<float> = true;
+
+template <>
+inline constexpr bool decimal_binary_supported<double> = true;
+
+template <>
+inline constexpr bool decimal_binary_supported<long double> = true;
+
+#ifdef __STDCPP_FLOAT16_T__
+template <>
+inline constexpr bool
+    decimal_binary_supported<decltype(0.0f16)> = true;
+#endif
+
+#ifdef __STDCPP_FLOAT32_T__
+template <>
+inline constexpr bool
+    decimal_binary_supported<decltype(0.0f32)> = true;
+#endif
+
+#ifdef __STDCPP_FLOAT64_T__
+template <>
+inline constexpr bool
+    decimal_binary_supported<decltype(0.0f64)> = true;
+#endif
+
+#ifdef __STDCPP_FLOAT128_T__
+template <>
+inline constexpr bool
+    decimal_binary_supported<decltype(0.0f128)> = true;
+#endif
+
+#ifdef __STDCPP_BFLOAT16_T__
+template <>
+inline constexpr bool
+    decimal_binary_supported<decltype(0.0bf16)> = true;
+#endif
+
+/*
+ * Conservative significant-digit retention bounds.
+ *
+ * Any binary32 rounding midpoint has an exact
+ * terminating decimal representation shorter than
+ * 128 significant digits.
+ *
+ * Any binary64 rounding midpoint has one shorter
+ * than 800 significant digits.
+ *
+ * Therefore, after retaining this many digits,
+ * discarded input cannot hide an unknown midpoint:
+ * a sticky nonzero bit is sufficient to determine
+ * which side of an exact retained midpoint the full
+ * input lies on.
+ */
+template <class Float> struct decimal_scan_traits;
+
+template <> struct decimal_scan_traits<float> {
+  static constexpr decltype(sizeof(0)) limb_capacity = 8;
+
+  static constexpr decltype(sizeof(0)) max_significant_digits = 128;
+};
+
+template <> struct decimal_scan_traits<double> {
+  static constexpr decltype(sizeof(0)) limb_capacity = 48;
+
+  static constexpr decltype(sizeof(0)) max_significant_digits = 800;
+};
+
+template <> struct decimal_scan_traits<long double> {
+  /*
+   * The worst supported representation is IEEE
+   * binary128.
+   *
+   * Its smallest rounding boundaries can require
+   * roughly 11,530 significant decimal digits for
+   * an exact terminating representation.
+   *
+   * Keep a conservative 12,000-digit prefix.
+   * 640 64-bit limbs provide 40,960 bits, enough
+   * for that decimal significand and the exact
+   * powers-of-five arithmetic around it.
+   */
+  static constexpr decltype(sizeof(0)) limb_capacity = 640;
+
+  static constexpr decltype(sizeof(0)) max_significant_digits = 12000;
+};
+
+#ifdef __STDCPP_FLOAT16_T__
+template <>
+struct decimal_scan_traits<decltype(0.0f16)>
+    : decimal_scan_traits<float> {};
+#endif
+
+#ifdef __STDCPP_FLOAT32_T__
+template <>
+struct decimal_scan_traits<decltype(0.0f32)>
+    : decimal_scan_traits<float> {};
+#endif
+
+#ifdef __STDCPP_FLOAT64_T__
+template <>
+struct decimal_scan_traits<decltype(0.0f64)>
+    : decimal_scan_traits<double> {};
+#endif
+
+#ifdef __STDCPP_FLOAT128_T__
+template <>
+struct decimal_scan_traits<decltype(0.0f128)>
+    : decimal_scan_traits<long double> {};
+#endif
+
+#ifdef __STDCPP_BFLOAT16_T__
+template <>
+struct decimal_scan_traits<decltype(0.0bf16)>
+    : decimal_scan_traits<float> {};
+#endif
+
+template <class Float>
+using scanned_decimal_number =
+    decimal_number<decimal_scan_traits<Float>::limb_capacity>;
+
+/*
+ * We only need a final exponent large enough to
+ * distinguish every representable floating value
+ * from obvious overflow/underflow.
+ */
+inline constexpr int scanned_exponent_limit = 1000000;
+
+[[nodiscard]]
+constexpr char ascii_lower(char value) noexcept {
+  if (value >= 'A' && value <= 'Z') {
+    return static_cast<char>(value - 'A' + 'a');
+  }
+
+  return value;
+}
+
+[[nodiscard]]
+constexpr bool
+matches_ascii_case_insensitive(const char *first, const char *last,
+                               const char *spelling,
+                               decltype(sizeof(0)) count) noexcept {
+  const char *current = first;
+
+  for (decltype(sizeof(0)) index = 0; index < count; ++index) {
+    if (current == last)
+      return false;
+
+    if (ascii_lower(*current) != spelling[index])
+      return false;
+
+    ++current;
+  }
+
+  return true;
+}
+
+[[nodiscard]]
+constexpr bool nan_sequence_character(char value) noexcept {
+  return (value >= '0' && value <= '9') || (value >= 'a' && value <= 'z') ||
+         (value >= 'A' && value <= 'Z') || value == '_';
+}
+
+/*
+ * A tiny unsigned 65-bit magnitude.
+ *
+ * Character-count adjustments are at most uint64_t
+ * wide on our supported targets. We retain one
+ * extra bit so a textual exponent can be combined
+ * with those counts without losing cancellation.
+ *
+ * high == 2 is a saturation sentinel meaning
+ * "larger than any character-count adjustment".
+ */
+struct decimal_wide_count {
+  FTL_FLOATING_CONVERSION_STD::uint64_t low = 0;
+  unsigned high = 0;
+
+  [[nodiscard]]
+  constexpr bool saturated() const noexcept {
+    return high >= 2;
+  }
+};
+
+constexpr void
+add_count(decimal_wide_count &value,
+          FTL_FLOATING_CONVERSION_STD::uint64_t amount) noexcept {
+  if (value.saturated())
+    return;
+
+  const auto old = value.low;
+
+  value.low += amount;
+
+  if (value.low < old)
+    ++value.high;
+
+  if (value.high >= 2) {
+    value.high = 2;
+    value.low = 0;
+  }
+}
+
+constexpr void append_decimal_digit(decimal_wide_count &value,
+                                    unsigned digit) noexcept {
+  if (value.saturated())
+    return;
+
+  const auto product = big_uint_detail::multiply_64(value.low, 10);
+
+  unsigned high = value.high * 10 + static_cast<unsigned>(product.high);
+
+  auto low = product.low;
+
+  const auto old = low;
+  low += static_cast<FTL_FLOATING_CONVERSION_STD::uint64_t>(digit);
+
+  if (low < old)
+    ++high;
+
+  if (high >= 2) {
+    value.high = 2;
+    value.low = 0;
+    return;
+  }
+
+  value.high = high;
+  value.low = low;
+}
+
+[[nodiscard]]
+constexpr int compare_count(decimal_wide_count left,
+                            decimal_wide_count right) noexcept {
+  if (left.high < right.high)
+    return -1;
+
+  if (left.high > right.high)
+    return 1;
+
+  if (left.low < right.low)
+    return -1;
+
+  if (left.low > right.low)
+    return 1;
+
+  return 0;
+}
+
+[[nodiscard]]
+constexpr decimal_wide_count subtract_count(decimal_wide_count left,
+                                            decimal_wide_count right) noexcept {
+  /*
+   * Precondition: left >= right and neither is
+   * saturated.
+   */
+  decimal_wide_count result{};
+
+  result.low = left.low - right.low;
+
+  const unsigned borrow = left.low < right.low ? 1u : 0u;
+
+  result.high = left.high - right.high - borrow;
+
+  return result;
+}
+
+[[nodiscard]]
+constexpr int clamp_exponent(bool negative,
+                             decimal_wide_count magnitude) noexcept {
+  if (magnitude.saturated() || magnitude.high != 0 ||
+      magnitude.low > static_cast<FTL_FLOATING_CONVERSION_STD::uint64_t>(
+                          scanned_exponent_limit)) {
+    return negative ? -scanned_exponent_limit : scanned_exponent_limit;
+  }
+
+  const int value = static_cast<int>(magnitude.low);
+
+  return negative ? -value : value;
+}
+
+[[nodiscard]]
+constexpr int combine_decimal_exponent(
+    FTL_FLOATING_CONVERSION_STD::uint64_t positive_adjustment,
+    FTL_FLOATING_CONVERSION_STD::uint64_t negative_adjustment,
+    bool explicit_negative, decimal_wide_count explicit_magnitude) noexcept {
+  decimal_wide_count positive{};
+  decimal_wide_count negative{};
+
+  add_count(positive, positive_adjustment);
+
+  add_count(negative, negative_adjustment);
+
+  if (explicit_negative) {
+    if (explicit_magnitude.saturated())
+      return -scanned_exponent_limit;
+
+    add_count(negative, explicit_magnitude.low);
+
+    /*
+     * explicit_magnitude.high can only be 0 or 1
+     * here. Add its 2^64 contribution directly.
+     */
+    if (explicit_magnitude.high != 0) {
+      if (negative.high >= 1)
+        return -scanned_exponent_limit;
+
+      ++negative.high;
+    }
+  } else {
+    if (explicit_magnitude.saturated())
+      return scanned_exponent_limit;
+
+    add_count(positive, explicit_magnitude.low);
+
+    if (explicit_magnitude.high != 0) {
+      if (positive.high >= 1)
+        return scanned_exponent_limit;
+
+      ++positive.high;
+    }
+  }
+
+  const int ordering = compare_count(positive, negative);
+
+  if (ordering == 0)
+    return 0;
+
+  if (ordering > 0) {
+    if (positive.saturated())
+      return scanned_exponent_limit;
+
+    return clamp_exponent(false, subtract_count(positive, negative));
+  }
+
+  if (negative.saturated())
+    return -scanned_exponent_limit;
+
+  return clamp_exponent(true, subtract_count(negative, positive));
+}
+
+inline constexpr decltype(sizeof(0)) hexadecimal_retained_digits = 32;
+
+[[nodiscard]]
+constexpr unsigned hexadecimal_digit_value(char value) noexcept {
+  if (value >= '0' && value <= '9')
+    return static_cast<unsigned>(value - '0');
+
+  if (value >= 'a' && value <= 'f')
+    return static_cast<unsigned>(value - 'a') + 10;
+
+  if (value >= 'A' && value <= 'F')
+    return static_cast<unsigned>(value - 'A') + 10;
+
+  return 255;
+}
+
+constexpr void add_scaled_count(decimal_wide_count &value,
+                                FTL_FLOATING_CONVERSION_STD::uint64_t amount,
+                                unsigned scale) noexcept {
+  if (value.saturated())
+    return;
+
+  const auto product = big_uint_detail::multiply_64(
+      amount, static_cast<FTL_FLOATING_CONVERSION_STD::uint64_t>(scale));
+
+  if (product.high >= 2) {
+    value.high = 2;
+    value.low = 0;
+    return;
+  }
+
+  add_count(value, product.low);
+
+  if (value.saturated())
+    return;
+
+  value.high += static_cast<unsigned>(product.high);
+
+  if (value.high >= 2) {
+    value.high = 2;
+    value.low = 0;
+  }
+}
+
+[[nodiscard]]
+constexpr int combine_hexadecimal_exponent(
+    FTL_FLOATING_CONVERSION_STD::uint64_t positive_digit_adjustment,
+    FTL_FLOATING_CONVERSION_STD::uint64_t negative_digit_adjustment,
+    bool explicit_negative, decimal_wide_count explicit_magnitude) noexcept {
+  decimal_wide_count positive{};
+  decimal_wide_count negative{};
+
+  /*
+   * Each hexadecimal digit changes the binary
+   * exponent by four.
+   */
+  add_scaled_count(positive, positive_digit_adjustment, 4);
+
+  add_scaled_count(negative, negative_digit_adjustment, 4);
+
+  if (explicit_negative) {
+    if (explicit_magnitude.saturated())
+      return -scanned_exponent_limit;
+
+    add_count(negative, explicit_magnitude.low);
+
+    if (explicit_magnitude.high != 0) {
+      if (negative.high >= 1)
+        return -scanned_exponent_limit;
+
+      ++negative.high;
+    }
+  } else {
+    if (explicit_magnitude.saturated())
+      return scanned_exponent_limit;
+
+    add_count(positive, explicit_magnitude.low);
+
+    if (explicit_magnitude.high != 0) {
+      if (positive.high >= 1)
+        return scanned_exponent_limit;
+
+      ++positive.high;
+    }
+  }
+
+  const int ordering = compare_count(positive, negative);
+
+  if (ordering == 0)
+    return 0;
+
+  if (ordering > 0) {
+    if (positive.saturated())
+      return scanned_exponent_limit;
+
+    return clamp_exponent(false, subtract_count(positive, negative));
+  }
+
+  if (negative.saturated())
+    return -scanned_exponent_limit;
+
+  return clamp_exponent(true, subtract_count(negative, positive));
+}
+
+[[nodiscard]]
+constexpr unsigned
+bit_width_64(FTL_FLOATING_CONVERSION_STD::uint64_t value) noexcept {
+  unsigned result = 0;
+
+  while (value != 0) {
+    ++result;
+    value >>= 1;
+  }
+
+  return result;
+}
+
+[[nodiscard]]
+constexpr unsigned bit_width_uint128(uint128 value) noexcept {
+  if (value.high != 0) {
+    return 64 + bit_width_64(value.high);
+  }
+
+  return bit_width_64(value.low);
+}
+
+[[nodiscard]]
+constexpr uint128 shift_left_four(uint128 value) noexcept {
+  return {value.low << 4, (value.high << 4) | (value.low >> 60)};
+}
+
+[[nodiscard]]
+constexpr uint128 shift_left_uint128(uint128 value,
+                                     unsigned long long shift) noexcept {
+  if (shift == 0)
+    return value;
+
+  if (shift >= 128)
+    return {};
+
+  if (shift >= 64) {
+    return {0, value.low << (shift - 64)};
+  }
+
+  return {value.low << shift,
+          (value.high << shift) | (value.low >> (64 - shift))};
+}
+
+[[nodiscard]]
+constexpr uint128 shift_right_uint128(uint128 value,
+                                      unsigned long long shift) noexcept {
+  if (shift == 0)
+    return value;
+
+  if (shift >= 128)
+    return {};
+
+  if (shift >= 64) {
+    return {value.high >> (shift - 64), 0};
+  }
+
+  return {(value.low >> shift) | (value.high << (64 - shift)),
+          value.high >> shift};
+}
+
+[[nodiscard]]
+constexpr bool uint128_bit_is_set(uint128 value, unsigned bit) noexcept {
+  if (bit < 64) {
+    return ((value.low >> bit) & 1u) != 0;
+  }
+
+  if (bit < 128) {
+    return ((value.high >> (bit - 64)) & 1u) != 0;
+  }
+
+  return false;
+}
+
+/*
+ * Test whether any of bits [0, count) are set.
+ */
+[[nodiscard]]
+constexpr bool uint128_has_low_bits(uint128 value, unsigned count) noexcept {
+  using uint64_t = FTL_FLOATING_CONVERSION_STD::uint64_t;
+
+  if (count == 0)
+    return false;
+
+  if (count >= 128)
+    return !value.is_zero();
+
+  if (count <= 64) {
+    if (count == 64)
+      return value.low != 0;
+
+    const uint64_t mask = (uint64_t{1} << count) - 1;
+
+    return (value.low & mask) != 0;
+  }
+
+  if (value.low != 0)
+    return true;
+
+  const unsigned high_count = count - 64;
+
+  if (high_count == 64)
+    return value.high != 0;
+
+  const uint64_t mask = (uint64_t{1} << high_count) - 1;
+
+  return (value.high & mask) != 0;
+}
+
+constexpr void increment_uint128(uint128 &value) noexcept;
+
+[[nodiscard]]
+constexpr bool uint128_is_odd(uint128 value) noexcept;
+
+/*
+ * Exact nearest-even division by a power of two.
+ *
+ * discarded_nonzero represents bits strictly below
+ * the retained 128-bit significand.
+ */
+[[nodiscard]]
+constexpr uint128 round_shift_right(uint128 value, unsigned long long shift,
+                                    bool discarded_nonzero) noexcept {
+  if (shift == 0)
+    return value;
+
+  /*
+   * Even the largest 128-bit retained value is
+   * strictly below the halfway point once the
+   * divisor exceeds 2^128.
+   */
+  if (shift > 128)
+    return {};
+
+  const uint128 quotient = shift_right_uint128(value, shift);
+
+  const unsigned guard_bit = static_cast<unsigned>(shift - 1);
+
+  if (!uint128_bit_is_set(value, guard_bit)) {
+    return quotient;
+  }
+
+  const bool below_guard = uint128_has_low_bits(value, guard_bit);
+
+  uint128 rounded = quotient;
+
+  if (below_guard || discarded_nonzero || uint128_is_odd(quotient)) {
+    increment_uint128(rounded);
+  }
+
+  return rounded;
+}
+
+/*
+ * Return one limb from:
+ *
+ *   value << shift
+ *
+ * without actually constructing the shifted bigint.
+ */
+template <decltype(sizeof(0)) Limbs>
+[[nodiscard]]
+constexpr typename big_uint<Limbs>::limb_type
+shifted_limb(const big_uint<Limbs> &value, decltype(sizeof(0)) index,
+             decltype(sizeof(0)) shift) noexcept {
+  using integer_type = big_uint<Limbs>;
+  using size_type = typename integer_type::size_type;
+  using limb_type = typename integer_type::limb_type;
+
+  constexpr size_type limb_bits = integer_type::limb_bits;
+
+  const size_type limb_shift = shift / limb_bits;
+
+  const size_type bit_shift = shift % limb_bits;
+
+  if (index < limb_shift)
+    return 0;
+
+  const size_type source = index - limb_shift;
+
+  limb_type result = value.limb(source) << bit_shift;
+
+  if (bit_shift != 0 && source != 0) {
+    result |= value.limb(source - 1) >> (limb_bits - bit_shift);
+  }
+
+  return result;
+}
+
+/*
+ * Compare:
+ *
+ *   left  << left_shift
+ *
+ * against:
+ *
+ *   right << right_shift
+ *
+ * without requiring either shifted value to fit in
+ * its fixed bigint capacity.
+ */
+template <decltype(sizeof(0)) Limbs>
+[[nodiscard]]
+constexpr int compare_shifted(const big_uint<Limbs> &left,
+                              decltype(sizeof(0)) left_shift,
+                              const big_uint<Limbs> &right,
+                              decltype(sizeof(0)) right_shift) noexcept {
+  using integer_type = big_uint<Limbs>;
+  using size_type = typename integer_type::size_type;
+
+  if (left.is_zero())
+    return right.is_zero() ? 0 : -1;
+
+  if (right.is_zero())
+    return 1;
+
+  /*
+   * A common factor of two has no effect on ordering.
+   * Cancelling it also keeps the virtual shifts small.
+   */
+  const size_type common_shift =
+      left_shift < right_shift ? left_shift : right_shift;
+
+  left_shift -= common_shift;
+  right_shift -= common_shift;
+
+  const size_type left_width = left.bit_width() + left_shift;
+
+  const size_type right_width = right.bit_width() + right_shift;
+
+  if (left_width < right_width)
+    return -1;
+
+  if (left_width > right_width)
+    return 1;
+
+  const size_type limb_count =
+      (left_width + integer_type::limb_bits - 1) / integer_type::limb_bits;
+
+  size_type index = limb_count;
+
+  while (index != 0) {
+    --index;
+
+    const auto left_value = shifted_limb(left, index, left_shift);
+
+    const auto right_value = shifted_limb(right, index, right_shift);
+
+    if (left_value < right_value)
+      return -1;
+
+    if (left_value > right_value)
+      return 1;
+  }
+
+  return 0;
+}
+
+/*
+ * Exact:
+ *
+ *   floor(log2(numerator / denominator))
+ */
+template <decltype(sizeof(0)) Limbs>
+[[nodiscard]]
+constexpr long long
+floor_log2_ratio(const big_uint<Limbs> &numerator,
+                 const big_uint<Limbs> &denominator) noexcept {
+  long long exponent = static_cast<long long>(numerator.bit_width()) -
+                       static_cast<long long>(denominator.bit_width());
+
+  if (exponent >= 0) {
+    if (compare_shifted(numerator, 0, denominator,
+                        static_cast<decltype(sizeof(0))>(exponent)) < 0) {
+      --exponent;
+    }
+  } else {
+    if (compare_shifted(numerator, static_cast<decltype(sizeof(0))>(-exponent),
+                        denominator, 0) < 0) {
+      --exponent;
+    }
+  }
+
+  return exponent;
+}
+
+[[nodiscard]]
+constexpr bool uint128_less(uint128 left, uint128 right) noexcept {
+  if (left.high < right.high)
+    return true;
+
+  if (left.high > right.high)
+    return false;
+
+  return left.low < right.low;
+}
+
+[[nodiscard]]
+constexpr uint128 uint128_bit(unsigned bit) noexcept {
+  using uint64_t = FTL_FLOATING_CONVERSION_STD::uint64_t;
+
+  if (bit < 64) {
+    return {uint64_t{1} << bit, 0};
+  }
+
+  return {0, uint64_t{1} << (bit - 64)};
+}
+
+constexpr void set_uint128_bit(uint128 &value, unsigned bit) noexcept {
+  using uint64_t = FTL_FLOATING_CONVERSION_STD::uint64_t;
+
+  if (bit < 64) {
+    value.low |= uint64_t{1} << bit;
+  } else {
+    value.high |= uint64_t{1} << (bit - 64);
+  }
+}
+
+constexpr void increment_uint128(uint128 &value) noexcept {
+  ++value.low;
+
+  if (value.low == 0)
+    ++value.high;
+}
+
+inline constexpr decltype(sizeof(0)) formatting_bigint_limbs = 640;
+
+inline constexpr decltype(sizeof(0)) decimal_chunk_capacity = 660;
+
+inline constexpr FTL_FLOATING_CONVERSION_STD::uint64_t decimal_chunk_base =
+    10000000000000000000ull;
+
+inline constexpr unsigned decimal_chunk_digits = 19;
+
+using formatting_bigint = big_uint<formatting_bigint_limbs>;
+
+struct decimal_chunk_buffer {
+  FTL_FLOATING_CONVERSION_STD::uint64_t chunks[decimal_chunk_capacity]{};
+
+  decltype(sizeof(0)) count = 0;
+  decltype(sizeof(0)) digit_count = 0;
+};
+
+inline constexpr decltype(sizeof(0)) exact_decimal_digit_capacity =
+    decimal_chunk_capacity * decimal_chunk_digits;
+
+struct exact_decimal_digits {
+  char digits[exact_decimal_digit_capacity]{};
+  decltype(sizeof(0)) count = 0;
+  long long exponent = 0;
+};
+
+[[nodiscard]]
+constexpr bool assign_uint128(formatting_bigint &destination,
+                              uint128 value) noexcept {
+  formatting_bigint result(value.low);
+
+  if (value.high != 0) {
+    formatting_bigint high(value.high);
+
+    if (!high.shift_left(64))
+      return false;
+
+    if (!result.add(high))
+      return false;
+  }
+
+  destination = result;
+  return true;
+}
+
+/*
+ * Exact nearest-even division by 2^shift.
+ */
+[[nodiscard]]
+constexpr bool round_big_uint_shift_right(formatting_bigint &value,
+                                          decltype(sizeof(0)) shift) noexcept {
+  if (shift == 0)
+    return true;
+
+  const bool guard = value.test_bit(shift - 1);
+
+  const bool sticky = value.any_low_bits(shift - 1);
+
+  value.shift_right(shift);
+
+  if (guard && (sticky || (value.limb(0) & 1u) != 0)) {
+    return value.add(1);
+  }
+
+  return true;
+}
+
+[[nodiscard]]
+constexpr unsigned
+decimal_digit_count(FTL_FLOATING_CONVERSION_STD::uint64_t value) noexcept {
+  unsigned count = 1;
+
+  while (value >= 10) {
+    value /= 10;
+    ++count;
+  }
+
+  return count;
+}
+
+[[nodiscard]]
+constexpr bool extract_decimal_chunks(formatting_bigint value,
+                                      decimal_chunk_buffer &output) noexcept {
+  if (value.is_zero()) {
+    output.chunks[0] = 0;
+    output.count = 1;
+    output.digit_count = 1;
+
+    return true;
+  }
+
+  while (!value.is_zero()) {
+    if (output.count == decimal_chunk_capacity) {
+      return false;
+    }
+
+    const auto division = value.divide(decimal_chunk_base);
+
+    if (!division.success)
+      return false;
+
+    output.chunks[output.count++] = division.remainder;
+  }
+
+  output.digit_count = (output.count - 1) * decimal_chunk_digits +
+                       decimal_digit_count(output.chunks[output.count - 1]);
+
+  return true;
+}
+
+template <class Emit>
+constexpr void emit_uint64_decimal(FTL_FLOATING_CONVERSION_STD::uint64_t value,
+                                   bool leading_zeroes, Emit &&emit) {
+  char reversed[decimal_chunk_digits]{};
+
+  unsigned count = 0;
+
+  do {
+    reversed[count++] = static_cast<char>('0' + value % 10);
+
+    value /= 10;
+  } while (value != 0);
+
+  if (leading_zeroes) {
+    while (count < decimal_chunk_digits) {
+      reversed[count++] = '0';
+    }
+  }
+
+  while (count != 0)
+    emit(reversed[--count]);
+}
+
+template <class Emit>
+constexpr void emit_decimal_chunks(const decimal_chunk_buffer &chunks,
+                                   Emit &&emit) {
+  decltype(sizeof(0)) index = chunks.count;
+
+  while (index != 0) {
+    --index;
+
+    emit_uint64_decimal(chunks.chunks[index], index != chunks.count - 1, emit);
+  }
+}
+
+template <class Float>
+[[nodiscard]]
+constexpr bool build_exact_decimal_digits(
+    const binary_parts<Float>& parts,
+    exact_decimal_digits& output) noexcept {
+  using size_type = decltype(sizeof(0));
+
+  formatting_bigint exact{};
+
+  if (!assign_uint128(exact, parts.significand))
+    return false;
+
+  size_type decimal_scale = 0;
+
+  if (parts.exponent >= 0) {
+    if (!exact.shift_left(static_cast<size_type>(parts.exponent)))
+      return false;
+  } else {
+    decimal_scale =
+        static_cast<size_type>(-static_cast<long long>(parts.exponent));
+
+    if (!exact.multiply_pow5(static_cast<unsigned>(decimal_scale)))
+      return false;
+  }
+
+  decimal_chunk_buffer chunks{};
+
+  if (!extract_decimal_chunks(exact, chunks))
+    return false;
+
+  if (chunks.digit_count > exact_decimal_digit_capacity)
+    return false;
+
+  size_type index = 0;
+
+  emit_decimal_chunks(chunks, [&](char digit) {
+    output.digits[index++] = digit;
+  });
+
+  output.count = index;
+  output.exponent =
+      static_cast<long long>(output.count) -
+      static_cast<long long>(decimal_scale) - 1;
+
+  return true;
+}
+
+constexpr void round_decimal_significant_digits(
+    exact_decimal_digits& value,
+    decltype(sizeof(0)) keep) noexcept {
+  if (keep >= value.count)
+    return;
+
+  const char first_discarded = value.digits[keep];
+
+  bool discarded_nonzero = false;
+
+  for (decltype(sizeof(0)) index = keep + 1;
+       index < value.count;
+       ++index) {
+    if (value.digits[index] != '0') {
+      discarded_nonzero = true;
+      break;
+    }
+  }
+
+  bool round_up = false;
+
+  if (first_discarded > '5') {
+    round_up = true;
+  } else if (first_discarded == '5') {
+    if (discarded_nonzero ||
+        ((value.digits[keep - 1] - '0') & 1) != 0) {
+      round_up = true;
+    }
+  }
+
+  if (!round_up)
+    return;
+
+  decltype(sizeof(0)) index = keep;
+
+  while (index != 0) {
+    --index;
+
+    if (value.digits[index] != '9') {
+      ++value.digits[index];
+      return;
+    }
+
+    value.digits[index] = '0';
+  }
+
+  /*
+   * 9.99... rounded upward becomes 1.00... with a
+   * decimal exponent one larger.
+   */
+  value.digits[0] = '1';
+
+  for (decltype(sizeof(0)) digit = 1; digit < keep; ++digit)
+    value.digits[digit] = '0';
+
+  ++value.exponent;
+}
+
+[[nodiscard]]
+constexpr unsigned long long decimal_exponent_magnitude(
+    long long exponent) noexcept {
+  return exponent < 0
+      ? static_cast<unsigned long long>(-exponent)
+      : static_cast<unsigned long long>(exponent);
+}
+
+[[nodiscard]]
+constexpr unsigned decimal_exponent_digits(
+    long long exponent) noexcept {
+  unsigned long long magnitude = decimal_exponent_magnitude(exponent);
+  unsigned digits = 1;
+
+  while (magnitude >= 10) {
+    magnitude /= 10;
+    ++digits;
+  }
+
+  return digits < 2 ? 2 : digits;
+}
+
+template <class Emit>
+constexpr void emit_scientific_exponent(long long exponent, Emit&& emit) {
+  unsigned long long magnitude = decimal_exponent_magnitude(exponent);
+
+  emit('e');
+  emit(exponent < 0 ? '-' : '+');
+
+  char reversed[32]{};
+  unsigned count = 0;
+
+  do {
+    reversed[count++] =
+        static_cast<char>('0' + magnitude % 10);
+    magnitude /= 10;
+  } while (magnitude != 0);
+
+  while (count < 2)
+    reversed[count++] = '0';
+
+  while (count != 0)
+    emit(reversed[--count]);
+}
+
+inline constexpr unsigned shortest_decimal_digit_capacity = 40;
+
+struct shortest_decimal_representation {
+  char digits[shortest_decimal_digit_capacity]{};
+  unsigned digit_count = 0;
+
+  /*
+   * The represented magnitude is:
+   *
+   *   integer(digits) * 10^exponent
+   *
+   * digits contains no leading or trailing zeroes except
+   * for the representation of zero itself.
+   */
+  long long exponent = 0;
+};
+
+[[nodiscard]]
+constexpr bool decrement_uint128(uint128& value) noexcept {
+  using uint64_t = FTL_FLOATING_CONVERSION_STD::uint64_t;
+
+  if (value.is_zero())
+    return false;
+
+  if (value.low != 0) {
+    --value.low;
+    return true;
+  }
+
+  value.low = ~uint64_t{0};
+  --value.high;
+  return true;
+}
+
+[[nodiscard]]
+constexpr bool rounded_decimal_significand(
+    const exact_decimal_digits& exact,
+    unsigned significant_digits,
+    uint128& significand,
+    long long& exponent) noexcept {
+  if (significant_digits == 0 ||
+      significant_digits > exact.count ||
+      significant_digits > shortest_decimal_digit_capacity)
+    return false;
+
+  big_uint<2> integer{};
+
+  for (unsigned index = 0; index < significant_digits; ++index) {
+    if (!integer.multiply(10))
+      return false;
+
+    if (!integer.add(
+            static_cast<FTL_FLOATING_CONVERSION_STD::uint64_t>(
+                exact.digits[index] - '0')))
+      return false;
+  }
+
+  significand.low =
+      integer.limb_count() > 0 ? integer.limb(0) : 0;
+
+  significand.high =
+      integer.limb_count() > 1 ? integer.limb(1) : 0;
+
+  exponent =
+      exact.exponent -
+      static_cast<long long>(significant_digits - 1);
+
+  if (significant_digits == exact.count)
+    return true;
+
+  const char first_discarded = exact.digits[significant_digits];
+
+  bool discarded_nonzero = false;
+
+  for (decltype(exact.count) index = significant_digits + 1;
+       index < exact.count;
+       ++index) {
+    if (exact.digits[index] != '0') {
+      discarded_nonzero = true;
+      break;
+    }
+  }
+
+  bool round_up = false;
+
+  if (first_discarded > '5') {
+    round_up = true;
+  } else if (first_discarded == '5') {
+    if (discarded_nonzero ||
+        ((exact.digits[significant_digits - 1] - '0') & 1) != 0) {
+      round_up = true;
+    }
+  }
+
+  if (round_up)
+    increment_uint128(significand);
+
+  return true;
+}
+
+[[nodiscard]]
+constexpr bool make_shortest_decimal_representation(
+    uint128 significand,
+    long long exponent,
+    shortest_decimal_representation& output) noexcept {
+  output = {};
+
+  if (significand.is_zero()) {
+    output.digits[0] = '0';
+    output.digit_count = 1;
+    output.exponent = 0;
+    return true;
+  }
+
+  big_uint<2> integer(significand.low);
+
+  if (significand.high != 0) {
+    big_uint<2> high(significand.high);
+
+    if (!high.shift_left(64))
+      return false;
+
+    if (!integer.add(high))
+      return false;
+  }
+
+  char reversed[shortest_decimal_digit_capacity]{};
+  unsigned count = 0;
+
+  while (!integer.is_zero()) {
+    if (count == shortest_decimal_digit_capacity)
+      return false;
+
+    const auto division = integer.divide(10);
+
+    if (!division.success)
+      return false;
+
+    reversed[count++] =
+        static_cast<char>('0' + division.remainder);
+  }
+
+  for (unsigned index = 0; index < count; ++index)
+    output.digits[index] = reversed[count - index - 1];
+
+  /*
+   * Decimal trailing zeroes are part of the scale, not
+   * the shortest significand.
+   */
+  while (count > 1 && output.digits[count - 1] == '0') {
+    --count;
+    ++exponent;
+  }
+
+  output.digit_count = count;
+  output.exponent = exponent;
+  return true;
+}
+
+[[nodiscard]]
+constexpr char hexadecimal_digit_character(unsigned value) noexcept {
+  return value < 10
+      ? static_cast<char>('0' + value)
+      : static_cast<char>('a' + value - 10);
+}
+
+[[nodiscard]]
+constexpr unsigned uint128_hexadecimal_digit(uint128 value,
+                                             unsigned index) noexcept {
+  const unsigned shift = index * 4;
+
+  if (shift < 64)
+    return static_cast<unsigned>((value.low >> shift) & 0xfu);
+
+  return static_cast<unsigned>((value.high >> (shift - 64)) & 0xfu);
+}
+
+[[nodiscard]]
+constexpr unsigned hexadecimal_exponent_digits(long long exponent) noexcept {
+  unsigned long long magnitude = decimal_exponent_magnitude(exponent);
+  unsigned digits = 1;
+
+  while (magnitude >= 10) {
+    magnitude /= 10;
+    ++digits;
+  }
+
+  return digits;
+}
+
+template <class Emit>
+constexpr void emit_hexadecimal_exponent(long long exponent, Emit&& emit) {
+  unsigned long long magnitude = decimal_exponent_magnitude(exponent);
+
+  emit('p');
+  emit(exponent < 0 ? '-' : '+');
+
+  char reversed[32]{};
+  unsigned count = 0;
+
+  do {
+    reversed[count++] = static_cast<char>('0' + magnitude % 10);
+    magnitude /= 10;
+  } while (magnitude != 0);
+
+  while (count != 0)
+    emit(reversed[--count]);
+}
+
+[[nodiscard]]
+constexpr char* trim_general_fixed(char* first, char* last) noexcept {
+  char* point = first;
+
+  while (point != last && *point != '.')
+    ++point;
+
+  if (point == last)
+    return last;
+
+  char* end = last;
+
+  while (end != point + 1 && end[-1] == '0')
+    --end;
+
+  if (end == point + 1)
+    --end;
+
+  return end;
+}
+
+[[nodiscard]]
+constexpr char* trim_general_scientific(char* first, char* last) noexcept {
+  char* exponent = first;
+
+  while (exponent != last && *exponent != 'e')
+    ++exponent;
+
+  if (exponent == last)
+    return last;
+
+  char* point = first;
+
+  while (point != exponent && *point != '.')
+    ++point;
+
+  if (point == exponent)
+    return last;
+
+  char* mantissa_end = exponent;
+
+  while (mantissa_end != point + 1 && mantissa_end[-1] == '0')
+    --mantissa_end;
+
+  if (mantissa_end == point + 1)
+    --mantissa_end;
+
+  char* output = mantissa_end;
+
+  for (char* source = exponent; source != last; ++source)
+    *output++ = *source;
+
+  return output;
+}
+
+template <class Float>
+[[nodiscard]]
+constexpr bool rounded_decimal_exponent(
+    const binary_parts<Float>& parts,
+    unsigned significant_digits,
+    long long& exponent) noexcept {
+  if (parts.kind == floating_kind::zero) {
+    exponent = 0;
+    return true;
+  }
+
+  exact_decimal_digits decimal{};
+
+  if (!build_exact_decimal_digits(parts, decimal))
+    return false;
+
+  if (static_cast<decltype(sizeof(0))>(significant_digits) < decimal.count) {
+    round_decimal_significant_digits(
+        decimal,
+        static_cast<decltype(sizeof(0))>(significant_digits));
+  }
+
+  exponent = decimal.exponent;
+  return true;
+}
+
+[[nodiscard]]
+constexpr uint128 shift_left_one(uint128 value) noexcept {
+  return {value.low << 1, (value.high << 1) | (value.low >> 63)};
+}
+
+[[nodiscard]]
+constexpr uint128 shift_right_one(uint128 value) noexcept {
+  return {(value.low >> 1) | (value.high << 63), value.high >> 1};
+}
+
+[[nodiscard]]
+constexpr bool uint128_is_odd(uint128 value) noexcept {
+  return (value.low & 1u) != 0;
+}
+
+/*
+ * Transactionally multiply a fixed bigint by a
+ * portable 128-bit integer:
+ *
+ *   value * (high * 2^64 + low)
+ */
+template <decltype(sizeof(0)) Limbs>
+[[nodiscard]]
+constexpr bool multiply_uint128(big_uint<Limbs> &value,
+                                uint128 factor) noexcept {
+  big_uint<Limbs> low_part = value;
+  big_uint<Limbs> high_part = value;
+
+  if (!low_part.multiply(factor.low))
+    return false;
+
+  if (!high_part.multiply(factor.high))
+    return false;
+
+  if (!high_part.shift_left(64))
+    return false;
+
+  if (!low_part.add(high_part))
+    return false;
+
+  value = low_part;
+  return true;
+}
+
+struct scaled_compare_result {
+  bool success;
+  int ordering;
+};
+
+/*
+ * Compare:
+ *
+ *   numerator / denominator * 2^binary_shift
+ *
+ * against an unsigned integer factor.
+ */
+template <decltype(sizeof(0)) Limbs>
+[[nodiscard]]
+constexpr scaled_compare_result
+compare_scaled_to_integer(const big_uint<Limbs> &numerator,
+                          const big_uint<Limbs> &denominator,
+                          long long binary_shift, uint128 factor) noexcept {
+  using integer_type = big_uint<Limbs>;
+  using size_type = typename integer_type::size_type;
+
+  integer_type scaled_denominator = denominator;
+
+  if (!multiply_uint128(scaled_denominator, factor)) {
+    return {false, 0};
+  }
+
+  if (binary_shift >= 0) {
+    return {true,
+            compare_shifted(numerator, static_cast<size_type>(binary_shift),
+                            scaled_denominator, 0)};
+  }
+
+  return {true, compare_shifted(numerator, 0, scaled_denominator,
+                                static_cast<size_type>(-binary_shift))};
+}
+
+struct rounded_quotient_result {
+  bool success;
+  uint128 value;
+};
+
+/*
+ * Compute exactly:
+ *
+ *   round_to_nearest_even(
+ *       numerator / denominator *
+ *       2^binary_shift)
+ *
+ * The caller guarantees that the exact quotient is
+ * less than 2^Precision.
+ *
+ * No bigint / bigint division is required. Since the
+ * final quotient has at most 53 bits for the formats
+ * handled by this slice, a binary search over the
+ * integer result is both simple and exact.
+ */
+template <int Precision, decltype(sizeof(0)) Limbs>
+[[nodiscard]]
+constexpr rounded_quotient_result rounded_scaled_quotient(
+    const big_uint<Limbs> &numerator, const big_uint<Limbs> &denominator,
+    long long binary_shift, bool discarded_nonzero = false) noexcept {
+  static_assert(Precision > 0);
+
+  /*
+   * binary128 requires 113 significant bits.
+   * The midpoint comparison needs one additional
+   * bit, so both comfortably fit uint128.
+   */
+  static_assert(Precision <= 113);
+
+  uint128 quotient{};
+
+  /*
+   * Build floor(A / B) one quotient bit at a
+   * time, most-significant first.
+   *
+   * The caller guarantees the exact result is
+   * below 2^Precision.
+   */
+  for (int bit = Precision - 1; bit >= 0; --bit) {
+    uint128 candidate = quotient;
+
+    set_uint128_bit(candidate, static_cast<unsigned>(bit));
+
+    const auto comparison = compare_scaled_to_integer(numerator, denominator,
+                                                      binary_shift, candidate);
+
+    if (!comparison.success)
+      return {false, {}};
+
+    if (comparison.ordering >= 0)
+      quotient = candidate;
+  }
+
+  /*
+   * Compare against:
+   *
+   *   quotient + 1/2
+   *
+   * exactly by comparing:
+   *
+   *   2A ? B * (2*quotient + 1)
+   */
+  uint128 midpoint = shift_left_one(quotient);
+
+  increment_uint128(midpoint);
+
+  const auto midpoint_comparison = compare_scaled_to_integer(
+      numerator, denominator, binary_shift + 1, midpoint);
+
+  if (!midpoint_comparison.success)
+    return {false, {}};
+
+  if (midpoint_comparison.ordering > 0) {
+    increment_uint128(quotient);
+  } else if (midpoint_comparison.ordering == 0) {
+    /*
+     * A discarded nonzero decimal tail means the
+     * complete input lies strictly above the
+     * retained midpoint.
+     */
+    if (discarded_nonzero || uint128_is_odd(quotient)) {
+      increment_uint128(quotient);
+    }
+  }
+
+  return {true, quotient};
+}
+
+} // namespace floating_conversion_detail
+
+enum class decimal_exponent_mode { optional, required, forbidden };
+
+enum class decimal_scan_status { success, no_match };
+
+enum class hexadecimal_scan_status { success, no_match };
+
+struct hexadecimal_scan_result {
+  const char *ptr = nullptr;
+
+  hexadecimal_number number{};
+
+  hexadecimal_scan_status status = hexadecimal_scan_status::no_match;
+};
+
+template <class Float> struct decimal_scan_result {
+  using number_type = floating_conversion_detail::scanned_decimal_number<Float>;
+
+  const char *ptr = nullptr;
+  number_type number{};
+  decimal_scan_status status = decimal_scan_status::no_match;
+};
+
+enum class floating_special_scan_status { success, no_match };
+
+template <class Float> struct floating_special_scan_result {
+  const char *ptr = nullptr;
+
+  Float value{};
+
+  floating_special_scan_status status = floating_special_scan_status::no_match;
+};
+
+enum class floating_format_status { success, value_too_large };
+
+struct floating_format_result {
+  char *ptr = nullptr;
+
+  floating_format_status status = floating_format_status::success;
+};
+
+template <class Float, decltype(sizeof(0)) Limbs>
+[[nodiscard]]
+constexpr conversion_result<Float>
+decimal_to_binary(const decimal_number<Limbs> &number) noexcept {
+  using format = floating_format_traits<Float>;
+
+  using integer_type = big_uint<Limbs>;
+
+  static_assert(floating_conversion_detail::decimal_binary_supported<Float>);
+
+  constexpr int precision = format::significand_bits;
+
+  constexpr long long minimum_significand_exponent =
+      format::minimum_significand_exponent;
+
+  constexpr long long maximum_significand_exponent =
+      format::maximum_significand_exponent;
+
+  constexpr long long minimum_normal_value_exponent =
+      minimum_significand_exponent + precision - 1;
+
+  constexpr long long maximum_value_exponent =
+      maximum_significand_exponent + precision - 1;
+
+  if (number.significand.is_zero()) {
+    binary_parts<Float> parts{floating_kind::zero, number.negative, {}, 0};
+
+    return {compose(parts), conversion_status::success};
+  }
+
+  integer_type numerator = number.significand;
+
+  integer_type denominator(1);
+
+  /*
+   * Convert:
+   *
+   *   S * 10^e
+   *
+   * into:
+   *
+   *   N / D * 2^q
+   *
+   * using 10^e = 5^e * 2^e.
+   */
+  const long long decimal_exponent = number.exponent;
+
+  const unsigned long long power_of_five_exponent =
+      decimal_exponent < 0 ? static_cast<unsigned long long>(-decimal_exponent)
+                           : static_cast<unsigned long long>(decimal_exponent);
+
+  /*
+   * 5^n > 2^(2n), so beyond this point the
+   * required power cannot fit this working
+   * bigint at all.
+   *
+   * Before reporting capacity failure, classify
+   * obvious format overflow/underflow cases.
+   */
+  if (decimal_exponent > 0) {
+    const long long lower_binary_bound =
+        static_cast<long long>(numerator.bit_width()) - 1 +
+        decimal_exponent * 3;
+
+    if (lower_binary_bound > maximum_value_exponent) {
+      return {{}, conversion_status::overflow};
+    }
+  } else if (decimal_exponent < 0) {
+    const long long magnitude = -decimal_exponent;
+
+    const long long upper_binary_bound =
+        static_cast<long long>(numerator.bit_width()) - magnitude * 3;
+
+    if (upper_binary_bound <= minimum_significand_exponent - 1) {
+      return {{}, conversion_status::underflow};
+    }
+  }
+
+  if (power_of_five_exponent > integer_type::bit_capacity / 2) {
+    return {{}, conversion_status::capacity_exceeded};
+  }
+
+  if (decimal_exponent >= 0) {
+    if (!numerator.multiply_pow5(
+            static_cast<unsigned>(power_of_five_exponent))) {
+      return {{}, conversion_status::capacity_exceeded};
+    }
+  } else {
+    if (!denominator.multiply_pow5(
+            static_cast<unsigned>(power_of_five_exponent))) {
+      return {{}, conversion_status::capacity_exceeded};
+    }
+  }
+
+  const long long binary_factor = decimal_exponent;
+
+  const long long ratio_exponent =
+      floating_conversion_detail::floor_log2_ratio(numerator, denominator);
+
+  const long long value_exponent = ratio_exponent + binary_factor;
+
+  /*
+   * Above the largest finite binade means there
+   * is no possible finite result.
+   *
+   * Values in the largest binade are allowed to
+   * proceed because rounding may still either
+   * produce max() or overflow.
+   */
+  if (value_exponent > maximum_value_exponent) {
+    return {{}, conversion_status::overflow};
+  }
+
+  /*
+   * Anything strictly below half of the minimum
+   * subnormal necessarily rounds to zero.
+   *
+   * The exact halfway binade is retained so ties
+   * can be resolved correctly below.
+   */
+  if (value_exponent < minimum_significand_exponent - 1) {
+    return {{}, conversion_status::underflow};
+  }
+
+  long long target_exponent;
+
+  if (value_exponent >= minimum_normal_value_exponent) {
+    target_exponent = value_exponent - (precision - 1);
+  } else {
+    /*
+     * Subnormals all use the same canonical
+     * significand exponent.
+     */
+    target_exponent = minimum_significand_exponent;
+  }
+
+  const long long quotient_shift = binary_factor - target_exponent;
+
+  const auto rounded =
+      floating_conversion_detail::rounded_scaled_quotient<precision>(
+          numerator, denominator, quotient_shift, number.discarded_nonzero);
+
+  if (!rounded.success) {
+    return {{}, conversion_status::capacity_exceeded};
+  }
+
+  uint128 significand = rounded.value;
+
+  if (significand.is_zero()) {
+    return {{}, conversion_status::underflow};
+  }
+
+  const uint128 carry_limit =
+      floating_conversion_detail::uint128_bit(static_cast<unsigned>(precision));
+
+  /*
+   * Rounding 1.111... upward can produce
+   * 10.000..., which renormalizes by one bit.
+   */
+  if (significand == carry_limit) {
+    significand = floating_conversion_detail::shift_right_one(significand);
+
+    ++target_exponent;
+
+    if (target_exponent > maximum_significand_exponent) {
+      return {{}, conversion_status::overflow};
+    }
+  }
+
+  binary_parts<Float> parts{floating_kind::finite, number.negative, significand,
+                            static_cast<int>(target_exponent)};
+
+  return {compose(parts), conversion_status::success};
+}
+
+template <class Float>
+[[nodiscard]]
+constexpr conversion_result<Float>
+hexadecimal_to_binary(const hexadecimal_number &number) noexcept {
+  using format = floating_format_traits<Float>;
+
+  static_assert(floating_conversion_detail::decimal_binary_supported<Float>);
+
+  constexpr int precision = format::significand_bits;
+
+  static_assert(precision <= 113);
+
+  constexpr long long minimum_significand_exponent =
+      format::minimum_significand_exponent;
+
+  constexpr long long maximum_significand_exponent =
+      format::maximum_significand_exponent;
+
+  constexpr long long minimum_normal_value_exponent =
+      minimum_significand_exponent + precision - 1;
+
+  constexpr long long maximum_value_exponent =
+      maximum_significand_exponent + precision - 1;
+
+  if (number.significand.is_zero()) {
+    binary_parts<Float> parts{floating_kind::zero, number.negative, {}, 0};
+
+    return {compose(parts), conversion_status::success};
+  }
+
+  const unsigned source_width =
+      floating_conversion_detail::bit_width_uint128(number.significand);
+
+  const long long value_exponent = static_cast<long long>(number.exponent) +
+                                   static_cast<long long>(source_width) - 1;
+
+  if (value_exponent > maximum_value_exponent) {
+    return {{}, conversion_status::overflow};
+  }
+
+  if (value_exponent < minimum_significand_exponent - 1) {
+    return {{}, conversion_status::underflow};
+  }
+
+  long long target_exponent;
+
+  if (value_exponent >= minimum_normal_value_exponent) {
+    target_exponent = value_exponent - (precision - 1);
+  } else {
+    target_exponent = minimum_significand_exponent;
+  }
+
+  const long long right_shift =
+      target_exponent - static_cast<long long>(number.exponent);
+
+  uint128 significand{};
+
+  if (right_shift > 0) {
+    significand = floating_conversion_detail::round_shift_right(
+        number.significand, static_cast<unsigned long long>(right_shift),
+        number.discarded_nonzero);
+  } else {
+    /*
+     * Sticky input has already filled all 128
+     * retained bits. Since every supported target
+     * has <=113 bits of precision, such a value
+     * necessarily takes the right-shift path.
+     */
+    if (number.discarded_nonzero) {
+      return {{}, conversion_status::capacity_exceeded};
+    }
+
+    const unsigned long long left_shift =
+        static_cast<unsigned long long>(-right_shift);
+
+    if (left_shift >= 128 ||
+        static_cast<unsigned long long>(source_width) + left_shift >
+            static_cast<unsigned long long>(precision)) {
+      return {{}, conversion_status::capacity_exceeded};
+    }
+
+    significand = floating_conversion_detail::shift_left_uint128(
+        number.significand, left_shift);
+  }
+
+  if (significand.is_zero()) {
+    return {{}, conversion_status::underflow};
+  }
+
+  const uint128 carry_limit =
+      floating_conversion_detail::uint128_bit(static_cast<unsigned>(precision));
+
+  if (significand == carry_limit) {
+    significand = floating_conversion_detail::shift_right_one(significand);
+
+    ++target_exponent;
+
+    if (target_exponent > maximum_significand_exponent) {
+      return {{}, conversion_status::overflow};
+    }
+  }
+
+  binary_parts<Float> parts{floating_kind::finite, number.negative, significand,
+                            static_cast<int>(target_exponent)};
+
+  return {compose(parts), conversion_status::success};
+}
+
+template <class Float>
+[[nodiscard]]
+constexpr floating_special_scan_result<Float>
+scan_floating_special(const char *first, const char *last) noexcept {
+  using format = floating_format_traits<Float>;
+
+  static_assert(floating_conversion_detail::decimal_binary_supported<Float>);
+
+  floating_special_scan_result<Float> result{};
+  result.ptr = first;
+
+  const char *current = first;
+
+  bool negative = false;
+
+  if (current != last && *current == '-') {
+    negative = true;
+    ++current;
+  } else if (current != last && *current == '+') {
+    /*
+     * from_chars permits '+' only in an exponent,
+     * never as the leading sign.
+     */
+    return result;
+  }
+
+  /*
+   * INF / INFINITY, case-insensitive.
+   *
+   * If the complete "inity" suffix is not present,
+   * the shorter valid spelling "inf" still matches.
+   */
+  if (floating_conversion_detail::matches_ascii_case_insensitive(current, last,
+                                                                 "inf", 3)) {
+    current += 3;
+
+    if (floating_conversion_detail::matches_ascii_case_insensitive(
+            current, last, "inity", 5)) {
+      current += 5;
+    }
+
+    binary_parts<Float> parts{floating_kind::infinity, negative, {}, 0};
+
+    result.ptr = current;
+    result.value = compose(parts);
+
+    result.status = floating_special_scan_status::success;
+
+    return result;
+  }
+
+  /*
+   * NAN / NAN(n-char-sequence), case-insensitive
+   * in the "nan" portion.
+   *
+   * The payload syntax is accepted but its
+   * interpretation is implementation-defined.
+   * FTL currently canonicalizes every accepted
+   * payload to one quiet NaN representation.
+   */
+  if (floating_conversion_detail::matches_ascii_case_insensitive(current, last,
+                                                                 "nan", 3)) {
+    current += 3;
+
+    const char *suffix_begin = current;
+
+    if (current != last && *current == '(') {
+      const char *payload = current + 1;
+
+      while (payload != last &&
+             floating_conversion_detail::nan_sequence_character(*payload)) {
+        ++payload;
+      }
+
+      /*
+       * The optional parenthesized suffix only
+       * participates if it is complete.
+       *
+       * nan()
+       * nan(foo)
+       * nan(payload_123)
+       *
+       * are accepted, while:
+       *
+       * nan(foo
+       * nan(foo!)
+       *
+       * simply match the shorter "nan" form.
+       */
+      if (payload != last && *payload == ')') {
+        current = payload + 1;
+      } else {
+        current = suffix_begin;
+      }
+    }
+
+    /*
+     * Manufacture a canonical quiet NaN.
+     *
+     * For IEEE binary32/binary64 the most
+     * significant fraction bit is the quiet bit.
+     */
+    const uint128 quiet_bit = floating_conversion_detail::uint128_bit(
+        static_cast<unsigned>(format::fraction_bits - 1));
+
+    binary_parts<Float> parts{floating_kind::nan, negative, quiet_bit, 0};
+
+    result.ptr = current;
+    result.value = compose(parts);
+
+    result.status = floating_special_scan_status::success;
+
+    return result;
+  }
+
+  return result;
+}
+
+template <class Float>
+[[nodiscard]]
+constexpr decimal_scan_result<Float>
+scan_decimal(const char *first, const char *last,
+             decimal_exponent_mode exponent_mode =
+                 decimal_exponent_mode::optional) noexcept {
+  using traits = floating_conversion_detail::decimal_scan_traits<Float>;
+
+  using result_type = decimal_scan_result<Float>;
+
+  using number_type = typename result_type::number_type;
+
+  using uint64_t = FTL_FLOATING_CONVERSION_STD::uint64_t;
+
+  static_assert(floating_conversion_detail::decimal_binary_supported<Float>);
+
+  result_type result{};
+  result.ptr = first;
+
+  const char *current = first;
+
+  bool negative = false;
+
+  if (current != last && *current == '-') {
+    negative = true;
+    ++current;
+  } else if (current != last && *current == '+') {
+    /*
+     * Leading '+' is never accepted by floating
+     * from_chars.
+     */
+    return result;
+  }
+
+  number_type number{};
+  number.negative = negative;
+
+  bool have_digit = false;
+  bool have_nonzero = false;
+  bool after_point = false;
+
+  decltype(sizeof(0)) retained_digits = 0;
+
+  uint64_t positive_adjustment = 0;
+  uint64_t negative_adjustment = 0;
+
+  bool count_overflow = false;
+
+  const auto increment_count = [&](uint64_t &value) constexpr {
+    if (value == static_cast<uint64_t>(-1)) {
+      count_overflow = true;
+    } else {
+      ++value;
+    }
+  };
+
+  while (current != last) {
+    const char character = *current;
+
+    if (character >= '0' && character <= '9') {
+      have_digit = true;
+
+      const unsigned digit = static_cast<unsigned>(character - '0');
+
+      bool discarded = false;
+
+      /*
+       * Leading zeroes do not consume significant
+       * digit storage, but they still matter to
+       * decimal-point positioning.
+       */
+      if (have_nonzero || digit != 0) {
+        have_nonzero = true;
+
+        if (retained_digits < traits::max_significant_digits) {
+          if (!number.significand.multiply(10))
+            return result;
+
+          if (!number.significand.add(
+                  static_cast<typename number_type::limb_type>(digit)))
+            return result;
+
+          ++retained_digits;
+        } else {
+          discarded = true;
+
+          if (digit != 0)
+            number.discarded_nonzero = true;
+        }
+      }
+
+      /*
+       * Full normalized exponent:
+       *
+       *   - digits after decimal point
+       *   + digits discarded from the retained
+       *     integer significand
+       *
+       * A discarded fractional digit contributes
+       * both terms, so they cancel exactly.
+       */
+      if (after_point) {
+        if (!discarded)
+          increment_count(negative_adjustment);
+      } else if (discarded) {
+        increment_count(positive_adjustment);
+      }
+
+      ++current;
+      continue;
+    }
+
+    if (!after_point && character == '.') {
+      after_point = true;
+      ++current;
+      continue;
+    }
+
+    break;
+  }
+
+  if (!have_digit)
+    return result;
+
+  const char *exponent_marker = current;
+
+  bool exponent_present = false;
+  bool explicit_negative = false;
+
+  floating_conversion_detail::decimal_wide_count explicit_magnitude{};
+
+  if (exponent_mode != decimal_exponent_mode::forbidden && current != last &&
+      (*current == 'e' || *current == 'E')) {
+    const char *exponent_current = current + 1;
+
+    if (exponent_current != last &&
+        (*exponent_current == '+' || *exponent_current == '-')) {
+      explicit_negative = *exponent_current == '-';
+
+      ++exponent_current;
+    }
+
+    const char *exponent_digits = exponent_current;
+
+    while (exponent_current != last && *exponent_current >= '0' &&
+           *exponent_current <= '9') {
+      floating_conversion_detail::append_decimal_digit(
+          explicit_magnitude, static_cast<unsigned>(*exponent_current - '0'));
+
+      ++exponent_current;
+    }
+
+    if (exponent_current != exponent_digits) {
+      exponent_present = true;
+      current = exponent_current;
+    } else {
+      /*
+       * An optional malformed exponent is not
+       * part of the matched subject sequence.
+       */
+      current = exponent_marker;
+    }
+  }
+
+  if (exponent_mode == decimal_exponent_mode::required && !exponent_present) {
+    /*
+     * Scientific-only from_chars requires the
+     * exponent part. In its absence, the entire
+     * pattern fails rather than accepting only the
+     * significand.
+     */
+    return result;
+  }
+
+  if (count_overflow) {
+    /*
+     * A valid object range this large is beyond
+     * uint64_t counting on the platforms FTL
+     * currently targets. Its decimal displacement
+     * is necessarily far outside every binary32/64
+     * exponent range.
+     */
+    number.exponent = positive_adjustment != 0
+                          ? floating_conversion_detail::scanned_exponent_limit
+                          : -floating_conversion_detail::scanned_exponent_limit;
+  } else {
+    number.exponent = floating_conversion_detail::combine_decimal_exponent(
+        positive_adjustment, negative_adjustment, explicit_negative,
+        explicit_magnitude);
+  }
+
+  result.ptr = current;
+  result.number = number;
+  result.status = decimal_scan_status::success;
+
+  return result;
+}
+
+template <class Float>
+[[nodiscard]]
+constexpr hexadecimal_scan_result scan_hexadecimal(const char *first,
+                                                   const char *last) noexcept {
+  using uint64_t = FTL_FLOATING_CONVERSION_STD::uint64_t;
+
+  static_assert(floating_conversion_detail::decimal_binary_supported<Float>);
+
+  hexadecimal_scan_result result{};
+  result.ptr = first;
+
+  const char *current = first;
+
+  hexadecimal_number number{};
+
+  if (current != last && *current == '-') {
+    number.negative = true;
+    ++current;
+  } else if (current != last && *current == '+') {
+    return result;
+  }
+
+  bool have_digit = false;
+  bool have_nonzero = false;
+  bool after_point = false;
+
+  decltype(sizeof(0)) retained_digits = 0;
+
+  uint64_t positive_adjustment = 0;
+  uint64_t negative_adjustment = 0;
+
+  bool count_overflow = false;
+
+  const auto increment_count = [&](uint64_t &value) constexpr {
+    if (value == static_cast<uint64_t>(-1)) {
+      count_overflow = true;
+    } else {
+      ++value;
+    }
+  };
+
+  while (current != last) {
+    const unsigned digit =
+        floating_conversion_detail::hexadecimal_digit_value(*current);
+
+    if (digit < 16) {
+      have_digit = true;
+
+      bool discarded = false;
+
+      if (have_nonzero || digit != 0) {
+        have_nonzero = true;
+
+        if (retained_digits <
+            floating_conversion_detail::hexadecimal_retained_digits) {
+          number.significand =
+              floating_conversion_detail::shift_left_four(number.significand);
+
+          number.significand.low |=
+              static_cast<FTL_FLOATING_CONVERSION_STD::uint64_t>(digit);
+
+          ++retained_digits;
+        } else {
+          discarded = true;
+
+          if (digit != 0)
+            number.discarded_nonzero = true;
+        }
+      }
+
+      /*
+       * Same normalization principle as decimal:
+       *
+       * retained fractional hex digit -> -4 bits
+       * discarded integer hex digit  -> +4 bits
+       * discarded fractional digit   -> cancels
+       */
+      if (after_point) {
+        if (!discarded)
+          increment_count(negative_adjustment);
+      } else if (discarded) {
+        increment_count(positive_adjustment);
+      }
+
+      ++current;
+      continue;
+    }
+
+    if (!after_point && *current == '.') {
+      after_point = true;
+      ++current;
+      continue;
+    }
+
+    break;
+  }
+
+  if (!have_digit)
+    return result;
+
+  const char *exponent_marker = current;
+
+  bool explicit_negative = false;
+  bool exponent_present = false;
+
+  floating_conversion_detail::decimal_wide_count explicit_magnitude{};
+
+  if (current != last && (*current == 'p' || *current == 'P')) {
+    const char *exponent_current = current + 1;
+
+    if (exponent_current != last &&
+        (*exponent_current == '+' || *exponent_current == '-')) {
+      explicit_negative = *exponent_current == '-';
+
+      ++exponent_current;
+    }
+
+    const char *exponent_digits = exponent_current;
+
+    while (exponent_current != last && *exponent_current >= '0' &&
+           *exponent_current <= '9') {
+      floating_conversion_detail::append_decimal_digit(
+          explicit_magnitude, static_cast<unsigned>(*exponent_current - '0'));
+
+      ++exponent_current;
+    }
+
+    if (exponent_current != exponent_digits) {
+      exponent_present = true;
+      current = exponent_current;
+    } else {
+      /*
+       * Malformed optional exponent is not part
+       * of the matched subject sequence.
+       */
+      current = exponent_marker;
+    }
+  }
+
+  if (!exponent_present) {
+    explicit_negative = false;
+    explicit_magnitude = {};
+  }
+
+  if (count_overflow) {
+    number.exponent = positive_adjustment != 0
+                          ? floating_conversion_detail::scanned_exponent_limit
+                          : -floating_conversion_detail::scanned_exponent_limit;
+  } else {
+    number.exponent = floating_conversion_detail::combine_hexadecimal_exponent(
+        positive_adjustment, negative_adjustment, explicit_negative,
+        explicit_magnitude);
+  }
+
+  result.ptr = current;
+  result.number = number;
+
+  result.status = hexadecimal_scan_status::success;
+
+  return result;
+}
+
+template <class Float>
+[[nodiscard]]
+inline floating_format_result
+format_fixed_precision(char *first, char *last, Float value,
+                       unsigned precision) noexcept {
+  using size_type = decltype(sizeof(0));
+
+  namespace detail = floating_conversion_detail;
+
+  static_assert(detail::decimal_binary_supported<Float>);
+
+  const auto parts = decompose(value);
+
+  /*
+   * Canonical special spellings.
+   */
+  if (parts.kind == floating_kind::infinity) {
+    const size_type required = parts.negative ? 4 : 3;
+
+    if (static_cast<size_type>(last - first) < required) {
+      return {last, floating_format_status::value_too_large};
+    }
+
+    char *output = first;
+
+    if (parts.negative)
+      *output++ = '-';
+
+    *output++ = 'i';
+    *output++ = 'n';
+    *output++ = 'f';
+
+    return {output, floating_format_status::success};
+  }
+
+  if (parts.kind == floating_kind::nan) {
+    const size_type required = parts.negative ? 4 : 3;
+
+    if (static_cast<size_type>(last - first) < required) {
+      return {last, floating_format_status::value_too_large};
+    }
+
+    char *output = first;
+
+    if (parts.negative)
+      *output++ = '-';
+
+    *output++ = 'n';
+    *output++ = 'a';
+    *output++ = 'n';
+
+    return {output, floating_format_status::success};
+  }
+
+  detail::formatting_bigint scaled{};
+
+  if (!parts.significand.is_zero()) {
+    if (!detail::assign_uint128(scaled, parts.significand)) {
+      return {last, floating_format_status::value_too_large};
+    }
+  }
+
+  /*
+   * We only need powers of five while the binary
+   * denominator still exists.
+   *
+   * Once precision >= -exponent:
+   *
+   *   value * 10^precision
+   *
+   * is already an integer followed by additional
+   * decimal zeroes, so those zeroes can be emitted
+   * directly instead of materialized in the bigint.
+   */
+  unsigned scaled_precision = 0;
+
+  if (parts.kind == floating_kind::finite && parts.exponent < 0) {
+    const unsigned exact_precision = static_cast<unsigned>(-parts.exponent);
+
+    scaled_precision =
+        precision < exact_precision ? precision : exact_precision;
+  }
+
+  if (!scaled.is_zero() && scaled_precision != 0) {
+    if (!scaled.multiply_pow5(scaled_precision)) {
+      return {last, floating_format_status::value_too_large};
+    }
+  }
+
+  const long long binary_shift =
+      parts.kind == floating_kind::finite
+          ? static_cast<long long>(parts.exponent) + scaled_precision
+          : 0;
+
+  if (!scaled.is_zero()) {
+    if (binary_shift >= 0) {
+      if (!scaled.shift_left(static_cast<size_type>(binary_shift))) {
+        return {last, floating_format_status::value_too_large};
+      }
+    } else {
+      if (!detail::round_big_uint_shift_right(
+              scaled, static_cast<size_type>(-binary_shift))) {
+        return {last, floating_format_status::value_too_large};
+      }
+    }
+  }
+
+  detail::decimal_chunk_buffer chunks{};
+
+  if (!detail::extract_decimal_chunks(scaled, chunks)) {
+    return {last, floating_format_status::value_too_large};
+  }
+
+  const size_type scaled_digits = chunks.digit_count;
+
+  const size_type scaled_fraction_digits =
+      static_cast<size_type>(scaled_precision);
+
+  const size_type integer_digits = scaled_digits > scaled_fraction_digits
+                                       ? scaled_digits - scaled_fraction_digits
+                                       : 1;
+
+  /*
+   * Public precision is an int, so this arithmetic
+   * comfortably fits unsigned long long on every
+   * supported target.
+   */
+  const unsigned long long required =
+      static_cast<unsigned long long>(parts.negative) +
+      static_cast<unsigned long long>(integer_digits) +
+      (precision != 0 ? 1ull + static_cast<unsigned long long>(precision)
+                      : 0ull);
+
+  if (static_cast<unsigned long long>(last - first) < required) {
+    return {last, floating_format_status::value_too_large};
+  }
+
+  char *output = first;
+
+  if (parts.negative)
+    *output++ = '-';
+
+  const size_type extra_zeroes =
+      static_cast<size_type>(precision - scaled_precision);
+
+  /*
+   * The retained scaled integer already has
+   * integer digits before the radix point.
+   */
+  if (scaled_digits > scaled_fraction_digits) {
+    const size_type split = scaled_digits - scaled_fraction_digits;
+
+    size_type emitted = 0;
+
+    detail::emit_decimal_chunks(chunks, [&](char digit) {
+      *output++ = digit;
+
+      ++emitted;
+
+      if (precision != 0 && emitted == split) {
+        *output++ = '.';
+      }
+    });
+
+    for (size_type index = 0; index < extra_zeroes; ++index) {
+      *output++ = '0';
+    }
+
+    return {output, floating_format_status::success};
+  }
+
+  /*
+   * Magnitude < 1 after rounding at this
+   * precision.
+   */
+  *output++ = '0';
+
+  if (precision != 0)
+    *output++ = '.';
+
+  const size_type leading_zeroes = scaled_fraction_digits - scaled_digits;
+
+  for (size_type index = 0; index < leading_zeroes; ++index) {
+    *output++ = '0';
+  }
+
+  detail::emit_decimal_chunks(chunks, [&](char digit) { *output++ = digit; });
+
+  for (size_type index = 0; index < extra_zeroes; ++index) {
+    *output++ = '0';
+  }
+
+  return {output, floating_format_status::success};
+}
+
+template <class Float>
+[[nodiscard]]
+inline floating_format_result format_scientific_precision(
+    char* first,
+    char* last,
+    Float value,
+    unsigned precision) noexcept {
+  using size_type = decltype(sizeof(0));
+
+  namespace detail = floating_conversion_detail;
+
+  static_assert(detail::decimal_binary_supported<Float>);
+
+  const auto parts = decompose(value);
+
+  if (parts.kind == floating_kind::infinity) {
+    const size_type required = parts.negative ? 4 : 3;
+
+    if (static_cast<size_type>(last - first) < required)
+      return {last, floating_format_status::value_too_large};
+
+    char* output = first;
+
+    if (parts.negative)
+      *output++ = '-';
+
+    *output++ = 'i';
+    *output++ = 'n';
+    *output++ = 'f';
+
+    return {output, floating_format_status::success};
+  }
+
+  if (parts.kind == floating_kind::nan) {
+    const size_type required = parts.negative ? 4 : 3;
+
+    if (static_cast<size_type>(last - first) < required)
+      return {last, floating_format_status::value_too_large};
+
+    char* output = first;
+
+    if (parts.negative)
+      *output++ = '-';
+
+    *output++ = 'n';
+    *output++ = 'a';
+    *output++ = 'n';
+
+    return {output, floating_format_status::success};
+  }
+
+  detail::exact_decimal_digits decimal{};
+
+  if (parts.kind == floating_kind::zero) {
+    decimal.digits[0] = '0';
+    decimal.count = 1;
+    decimal.exponent = 0;
+  } else {
+    if (!detail::build_exact_decimal_digits(parts, decimal))
+      return {last, floating_format_status::value_too_large};
+  }
+
+  const unsigned long long significant_digits =
+      static_cast<unsigned long long>(precision) + 1;
+
+  if (significant_digits < decimal.count) {
+    detail::round_decimal_significant_digits(
+        decimal,
+        static_cast<size_type>(significant_digits));
+  }
+
+  const unsigned exponent_digits =
+      detail::decimal_exponent_digits(decimal.exponent);
+
+  const unsigned long long required =
+      static_cast<unsigned long long>(parts.negative) +
+      1ull +
+      (precision != 0
+           ? 1ull + static_cast<unsigned long long>(precision)
+           : 0ull) +
+      2ull +
+      exponent_digits;
+
+  if (static_cast<unsigned long long>(last - first) < required)
+    return {last, floating_format_status::value_too_large};
+
+  char* output = first;
+
+  if (parts.negative)
+    *output++ = '-';
+
+  *output++ = decimal.digits[0];
+
+  if (precision != 0)
+    *output++ = '.';
+
+  for (unsigned long long index = 1;
+       index < significant_digits;
+       ++index) {
+    if (index < decimal.count)
+      *output++ = decimal.digits[static_cast<size_type>(index)];
+    else
+      *output++ = '0';
+  }
+
+  detail::emit_scientific_exponent(decimal.exponent, [&](char character) {
+    *output++ = character;
+  });
+
+  return {output, floating_format_status::success};
+}
+
+template <class Float>
+[[nodiscard]]
+inline floating_format_result format_general_precision(
+    char* first,
+    char* last,
+    Float value,
+    unsigned precision) noexcept {
+  using size_type = decltype(sizeof(0));
+
+  namespace detail = floating_conversion_detail;
+
+  static_assert(detail::decimal_binary_supported<Float>);
+
+  const auto parts = decompose(value);
+
+  /*
+   * %g applies no precision-dependent formatting to
+   * infinity or NaN.
+   */
+  if (parts.kind == floating_kind::infinity ||
+      parts.kind == floating_kind::nan) {
+    return format_scientific_precision(first, last, value, 0);
+  }
+
+  /*
+   * printf-style %g treats precision zero as one
+   * significant digit.
+   */
+  const unsigned significant_digits =
+      precision == 0 ? 1 : precision;
+
+  /*
+   * Build the exact decimal once, round it to the
+   * requested significant-digit precision, then emit
+   * the final %g representation directly.
+   *
+   * This is important for the to_chars capacity
+   * contract: trailing zeroes removed by %g must not
+   * count against [first, last).
+   */
+  detail::exact_decimal_digits decimal{};
+
+  if (parts.kind == floating_kind::zero) {
+    decimal.digits[0] = '0';
+    decimal.count = 1;
+    decimal.exponent = 0;
+  } else {
+    if (!detail::build_exact_decimal_digits(parts, decimal))
+      return {last, floating_format_status::value_too_large};
+  }
+
+  const size_type requested_digits =
+      static_cast<size_type>(significant_digits);
+
+  if (requested_digits < decimal.count) {
+    detail::round_decimal_significant_digits(
+        decimal, requested_digits);
+  }
+
+  size_type digit_count =
+      requested_digits < decimal.count
+          ? requested_digits
+          : decimal.count;
+
+  /*
+   * %g removes trailing zeroes from the significand.
+   *
+   * The decimal exponent remains unchanged, so this is
+   * also correct for integer zeroes:
+   *
+   *   digits = "12", exponent = 2
+   *
+   * still emits 120 in fixed notation.
+   */
+  while (digit_count > 1 &&
+         decimal.digits[digit_count - 1] == '0') {
+    --digit_count;
+  }
+
+  const long long exponent = decimal.exponent;
+
+  const bool use_fixed =
+      exponent >= -4 &&
+      exponent < static_cast<long long>(significant_digits);
+
+  unsigned long long required =
+      static_cast<unsigned long long>(parts.negative);
+
+  if (use_fixed) {
+    const long long point = exponent + 1;
+
+    if (point <= 0) {
+      required +=
+          2ull +
+          static_cast<unsigned long long>(-point) +
+          static_cast<unsigned long long>(digit_count);
+    } else if (point >= static_cast<long long>(digit_count)) {
+      required += static_cast<unsigned long long>(point);
+    } else {
+      required +=
+          static_cast<unsigned long long>(digit_count) + 1ull;
+    }
+  } else {
+    required +=
+        static_cast<unsigned long long>(digit_count) +
+        static_cast<unsigned long long>(digit_count > 1) +
+        2ull +
+        detail::decimal_exponent_digits(exponent);
+  }
+
+  if (static_cast<unsigned long long>(last - first) < required)
+    return {last, floating_format_status::value_too_large};
+
+  char* output = first;
+
+  if (parts.negative)
+    *output++ = '-';
+
+  if (use_fixed) {
+    const long long point = exponent + 1;
+
+    if (point <= 0) {
+      *output++ = '0';
+      *output++ = '.';
+
+      for (long long index = 0; index < -point; ++index)
+        *output++ = '0';
+
+      for (size_type index = 0; index < digit_count; ++index)
+        *output++ = decimal.digits[index];
+
+      return {output, floating_format_status::success};
+    }
+
+    if (point >= static_cast<long long>(digit_count)) {
+      for (size_type index = 0; index < digit_count; ++index)
+        *output++ = decimal.digits[index];
+
+      for (long long index = static_cast<long long>(digit_count);
+           index < point;
+           ++index) {
+        *output++ = '0';
+      }
+
+      return {output, floating_format_status::success};
+    }
+
+    const size_type split = static_cast<size_type>(point);
+
+    for (size_type index = 0; index < split; ++index)
+      *output++ = decimal.digits[index];
+
+    *output++ = '.';
+
+    for (size_type index = split; index < digit_count; ++index)
+      *output++ = decimal.digits[index];
+
+    return {output, floating_format_status::success};
+  }
+
+  *output++ = decimal.digits[0];
+
+  if (digit_count > 1) {
+    *output++ = '.';
+
+    for (size_type index = 1; index < digit_count; ++index)
+      *output++ = decimal.digits[index];
+  }
+
+  detail::emit_scientific_exponent(
+      exponent,
+      [&](char character) {
+        *output++ = character;
+      });
+
+  return {output, floating_format_status::success};
+}
+
+template <class Float>
+[[nodiscard]]
+inline floating_format_result format_hexadecimal_precision(
+    char* first, char* last, Float value, unsigned precision) noexcept {
+  using size_type = decltype(sizeof(0));
+
+  namespace detail = floating_conversion_detail;
+
+  static_assert(detail::decimal_binary_supported<Float>);
+
+  const auto parts = decompose(value);
+
+  if (parts.kind == floating_kind::infinity) {
+    const size_type required = parts.negative ? 4 : 3;
+
+    if (static_cast<size_type>(last - first) < required)
+      return {last, floating_format_status::value_too_large};
+
+    char* output = first;
+
+    if (parts.negative)
+      *output++ = '-';
+
+    *output++ = 'i';
+    *output++ = 'n';
+    *output++ = 'f';
+
+    return {output, floating_format_status::success};
+  }
+
+  if (parts.kind == floating_kind::nan) {
+    const size_type required = parts.negative ? 4 : 3;
+
+    if (static_cast<size_type>(last - first) < required)
+      return {last, floating_format_status::value_too_large};
+
+    char* output = first;
+
+    if (parts.negative)
+      *output++ = '-';
+
+    *output++ = 'n';
+    *output++ = 'a';
+    *output++ = 'n';
+
+    return {output, floating_format_status::success};
+  }
+
+  constexpr unsigned source_precision =
+      static_cast<unsigned>(floating_format_traits<Float>::significand_bits);
+
+  constexpr unsigned source_fraction_bits = source_precision - 1;
+
+  /*
+   * Number of hexadecimal fractional digits needed
+   * to represent every source significand bit exactly.
+   *
+   * binary32  -> 6
+   * binary64  -> 13
+   * x87       -> 16
+   * binary128 -> 28
+   */
+  constexpr unsigned exact_hexadecimal_precision =
+      (source_fraction_bits + 3) / 4;
+
+  const unsigned materialized_precision =
+      precision < exact_hexadecimal_precision
+          ? precision
+          : exact_hexadecimal_precision;
+
+  uint128 scaled{};
+
+  long long exponent = 0;
+
+  if (parts.kind == floating_kind::zero) {
+    scaled = {};
+    exponent = 0;
+  } else {
+    scaled = parts.significand;
+
+    /*
+     * The %a exponent is anchored so that the
+     * significand is interpreted relative to the
+     * format's canonical leading-bit position.
+     *
+     * For normal values this gives the ordinary
+     * unbiased exponent. For subnormals it naturally
+     * remains at the minimum normal exponent.
+     */
+    exponent =
+        static_cast<long long>(parts.exponent) +
+        static_cast<long long>(source_fraction_bits);
+
+    const long long scale_shift =
+        static_cast<long long>(materialized_precision) * 4 -
+        static_cast<long long>(source_fraction_bits);
+
+    if (scale_shift >= 0) {
+      scaled = detail::shift_left_uint128(
+          scaled, static_cast<unsigned long long>(scale_shift));
+    } else {
+      scaled = detail::round_shift_right(
+          scaled, static_cast<unsigned long long>(-scale_shift), false);
+    }
+  }
+
+  const unsigned exponent_digits = detail::hexadecimal_exponent_digits(exponent);
+
+  const unsigned long long required =
+      static_cast<unsigned long long>(parts.negative) +
+      1ull +
+      (precision != 0
+           ? 1ull + static_cast<unsigned long long>(precision)
+           : 0ull) +
+      2ull +
+      exponent_digits;
+
+  if (static_cast<unsigned long long>(last - first) < required)
+    return {last, floating_format_status::value_too_large};
+
+  char* output = first;
+
+  if (parts.negative)
+    *output++ = '-';
+
+  /*
+   * scaled contains exactly:
+   *
+   *   one leading hex digit
+   *   + materialized_precision fractional digits
+   *
+   * with digit zero at the least-significant end.
+   */
+  *output++ = detail::hexadecimal_digit_character(
+      detail::uint128_hexadecimal_digit(scaled, materialized_precision));
+
+  if (precision != 0)
+    *output++ = '.';
+
+  for (unsigned index = materialized_precision; index != 0; --index) {
+    *output++ = detail::hexadecimal_digit_character(
+        detail::uint128_hexadecimal_digit(scaled, index - 1));
+  }
+
+  for (unsigned index = materialized_precision; index < precision; ++index)
+    *output++ = '0';
+
+  detail::emit_hexadecimal_exponent(exponent, [&](char character) {
+    *output++ = character;
+  });
+
+  return {output, floating_format_status::success};
+}
+
+template <class Float>
+[[nodiscard]]
+inline floating_format_result format_hexadecimal_default_precision(
+    char* first, char* last, Float value) noexcept {
+  constexpr unsigned fraction_bits =
+      static_cast<unsigned>(floating_format_traits<Float>::significand_bits - 1);
+  constexpr unsigned exact_precision = (fraction_bits + 3) / 4;
+
+  /*
+   * Omitted %a precision means enough digits for an exact representation,
+   * but trailing fractional zeroes are not required. Format into scratch
+   * first so a caller buffer only needs to fit the final trimmed result.
+   */
+  char scratch[64]{};
+
+  auto result = format_hexadecimal_precision(
+      scratch, scratch + sizeof(scratch), value, exact_precision);
+
+  if (result.status != floating_format_status::success)
+    return {last, floating_format_status::value_too_large};
+
+  char* end = result.ptr;
+  char* exponent = scratch;
+
+  while (exponent != end && *exponent != 'p')
+    ++exponent;
+
+  /*
+   * inf / nan have no exponent and need no trimming.
+   */
+  if (exponent != end) {
+    char* point = scratch;
+
+    while (point != exponent && *point != '.')
+      ++point;
+
+    if (point != exponent) {
+      char* mantissa_end = exponent;
+
+      while (mantissa_end != point + 1 && mantissa_end[-1] == '0')
+        --mantissa_end;
+
+      if (mantissa_end == point + 1)
+        --mantissa_end;
+
+      char* output = mantissa_end;
+
+      for (char* source = exponent; source != end; ++source)
+        *output++ = *source;
+
+      end = output;
+    }
+  }
+
+  const auto required = static_cast<decltype(sizeof(0))>(end - scratch);
+
+  if (static_cast<decltype(sizeof(0))>(last - first) < required)
+    return {last, floating_format_status::value_too_large};
+
+  char* output = first;
+
+  for (char* source = scratch; source != end; ++source)
+    *output++ = *source;
+
+  return {output, floating_format_status::success};
+}
+
+} // namespace ftl_float_conversion
+
+#undef FTL_FLOATING_CONVERSION_STD
+
+#endif // FTL_DETAIL_FLOATING_CONVERSION_HEADER

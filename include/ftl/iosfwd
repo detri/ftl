@@ -18,7 +18,10 @@ using streamsize = ptrdiff_t;
 
 template <class State> class fpos;
 
+class strong_ordering;
+
 template <class Character> struct char_traits {
+  using comparison_category = strong_ordering;
   using char_type = Character;
   using int_type = unsigned long long;
   using off_type = streamoff;
@@ -36,7 +39,12 @@ template <class Character> struct char_traits {
 
   [[nodiscard]]
   static constexpr bool lt(char_type left, char_type right) noexcept {
-    return left < right;
+    if constexpr (is_same_v<char_type, char>) {
+      return static_cast<unsigned char>(left) <
+             static_cast<unsigned char>(right);
+    } else {
+      return left < right;
+    }
   }
 
   [[nodiscard]]
