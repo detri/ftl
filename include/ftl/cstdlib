@@ -14,12 +14,22 @@
 #endif
 
 extern "C" {
+#if defined(__APPLE__)
+void abort() __attribute__((__noreturn__));
+#else
 [[noreturn]] void abort() noexcept;
+#endif
 int atexit(void (*)());
 int at_quick_exit(void (*)());
+#if defined(__APPLE__)
+void exit(int) __attribute__((__noreturn__));
+void _Exit(int) __attribute__((__noreturn__));
+void quick_exit(int) __attribute__((__noreturn__));
+#else
 [[noreturn]] void exit(int);
 [[noreturn]] void _Exit(int) noexcept;
 [[noreturn]] void quick_exit(int) noexcept;
+#endif
 char* getenv(const char*);
 int system(const char*);
 void* calloc(decltype(sizeof(0)), decltype(sizeof(0)));
