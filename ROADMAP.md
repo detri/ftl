@@ -139,6 +139,7 @@ dependency order, not hundreds of individual overloads.
 | `<charconv>`         | Stage 3.3         |
 | `<string_view>`      | Stage 3.3         |
 | `<string>`           | Stage 3.4         |
+| `<bitset>`           | Stage 3.5         |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -172,7 +173,7 @@ remain required when C++23 still specifies them; they are not silently dropped.
 
 | Area                      | Absent headers                                                                                                                                                     |
 |---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Concepts/types/vocabulary | `<bitset>`, `<ratio>`                                                                                                                                              |
+| Concepts/types/vocabulary | `<ratio>`                                                                                                                                                          |
 | Algorithms/numerics       | `<numbers>`, `<random>`, `<valarray>`                                                                                                                              |
 | Containers                | `<deque>`, `<flat_map>`, `<flat_set>`, `<forward_list>`, `<list>`, `<map>`, `<queue>`, `<set>`, `<stack>`, `<unordered_map>`, `<unordered_set>`, `<vector>`        |
 | Text/encoding             | `<codecvt>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                               |
@@ -327,7 +328,7 @@ without depending on a container or I/O subsystem.
 
 ### Stage 3 — Algorithms and text core
 
-**Status: active. Closures 1–4 complete.**
+**Status: complete.**
 
 Take these closures in order:
 
@@ -335,7 +336,7 @@ Take these closures in order:
 2. `<cstring>` + `<cwchar>` + `<cwctype>` + `<cuchar>` — **complete**
 3. `<string_view>` + `<charconv>` — **complete**
 4. `<string>` — **complete**
-5. `<bitset>`
+5. `<bitset>` — **complete**
 
 Stage 3.1 completes the C++23 algorithm and numeric surfaces together with the
 execution-policy vocabulary required by their policy overloads. Standard
@@ -365,6 +366,13 @@ optimization, C++23 range construction and mutation, comparisons,
 concatenation, hashing, literals, numeric conversions, and the applicable
 stream declarations. It is constexpr-capable and validated in both normal and
 `FTL_REPLACE_STL` modes while preserving freestanding linkage.
+
+Stage 3.5 completes the C++23 fixed-size bit sequence surface. `<bitset>`
+includes constexpr construction and operations, proxy references, checked
+integer conversions, string and string-view conversion, hashing, and the
+specified non-member and stream operators. It covers zero-sized and partial
+storage, oversized shifts, parsing and conversion errors, and both namespace
+modes while preserving freestanding linkage.
 
 **Exit:** algorithms and owning/non-owning text are complete, allocation-aware,
 and usable as dependencies by containers and diagnostics.

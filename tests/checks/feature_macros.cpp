@@ -1,5 +1,6 @@
 #include <ftl/any>
 #include <ftl/bit>
+#include <ftl/bitset>
 #include <ftl/cstddef>
 #include <ftl/expected>
 #include <ftl/optional>
@@ -52,6 +53,9 @@
 #if __cpp_lib_bit_cast < 201806L || __cpp_lib_bitops < 201907L ||            \
     __cpp_lib_byteswap < 202110L
 #error <bit> must advertise its facilities
+#endif
+#if __cpp_lib_constexpr_bitset < 202207L
+#error <bitset> must advertise constexpr bitset
 #endif
 #if __cpp_lib_source_location < 201907L
 #error <source_location> must advertise source locations

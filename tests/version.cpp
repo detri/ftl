@@ -28,6 +28,9 @@
 #ifndef __cpp_lib_execution
 #error "__cpp_lib_execution must be defined"
 #endif
+#if __cpp_lib_constexpr_bitset < 202207L
+#error "__cpp_lib_constexpr_bitset must be defined"
+#endif
 
 static_assert(__cpp_lib_execution >= 201902L);
 

@@ -143,8 +143,12 @@ public:
     }
     template<class U, class... Args> [[nodiscard]] U* new_object(Args&&... args) {
         U* p = allocate_object<U>();
+#if FTL_HAS_EXCEPTIONS
         try { construct(p, forward<Args>(args)...); }
         catch (...) { deallocate_object(p); throw; }
+#else
+        construct(p, forward<Args>(args)...);
+#endif
         return p;
     }
     template<class U> void delete_object(U* p) {
@@ -190,12 +194,16 @@ protected:
     void* acquire(size_t bytes, size_t alignment) {
         void* p = upstream_value->allocate(bytes, alignment);
         resource_block* node;
+#if FTL_HAS_EXCEPTIONS
         try {
+#endif
             node = static_cast<resource_block*>(upstream_value->allocate(
                 sizeof(resource_block), alignof(resource_block)));
+#if FTL_HAS_EXCEPTIONS
         } catch (...) {
             upstream_value->deallocate(p, bytes, alignment); throw;
         }
+#endif
         construct_at(node, resource_block{blocks, p, bytes, alignment, false});
         blocks = node;
         return p;
