@@ -152,6 +152,10 @@ add_ftl_freestanding_link_check(
         string_freestanding_link
         checks/string_freestanding_link.cpp
 )
+add_ftl_freestanding_link_check(
+        bitset_freestanding_link
+        checks/bitset_freestanding_link.cpp
+)
 
 if (MSVC)
     target_compile_options(
@@ -211,6 +215,7 @@ foreach (header IN ITEMS
         cstdint
         cstring
         bit
+        bitset
         limits
         version
         source_location

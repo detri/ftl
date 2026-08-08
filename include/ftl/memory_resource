@@ -120,7 +120,12 @@ public:
     polymorphic_allocator& operator=(const polymorphic_allocator&) = delete;
 
     [[nodiscard]] T* allocate(size_t count) {
-        if (count > size_t(-1) / sizeof(T)) throw bad_array_new_length{};
+        if (count > size_t(-1) / sizeof(T))
+#if FTL_HAS_EXCEPTIONS
+          throw bad_array_new_length{};
+#else
+          terminate();
+#endif
         return static_cast<T*>(resource_value->allocate(count * sizeof(T), alignof(T)));
     }
     void deallocate(T* p, size_t count) {
@@ -135,7 +140,12 @@ public:
         resource_value->deallocate(p, bytes, alignment);
     }
     template<class U> [[nodiscard]] U* allocate_object(size_t count = 1) {
-        if (count > size_t(-1) / sizeof(U)) throw bad_array_new_length{};
+        if (count > size_t(-1) / sizeof(U))
+#if FTL_HAS_EXCEPTIONS
+          throw bad_array_new_length{};
+#else
+          terminate();
+#endif
         return static_cast<U*>(allocate_bytes(count * sizeof(U), alignof(U)));
     }
     template<class U> void deallocate_object(U* p, size_t count = 1) {
@@ -143,8 +153,12 @@ public:
     }
     template<class U, class... Args> [[nodiscard]] U* new_object(Args&&... args) {
         U* p = allocate_object<U>();
+#if FTL_HAS_EXCEPTIONS
         try { construct(p, forward<Args>(args)...); }
         catch (...) { deallocate_object(p); throw; }
+#else
+        construct(p, forward<Args>(args)...);
+#endif
         return p;
     }
     template<class U> void delete_object(U* p) {
@@ -190,12 +204,16 @@ protected:
     void* acquire(size_t bytes, size_t alignment) {
         void* p = upstream_value->allocate(bytes, alignment);
         resource_block* node;
+#if FTL_HAS_EXCEPTIONS
         try {
+#endif
             node = static_cast<resource_block*>(upstream_value->allocate(
                 sizeof(resource_block), alignof(resource_block)));
+#if FTL_HAS_EXCEPTIONS
         } catch (...) {
             upstream_value->deallocate(p, bytes, alignment); throw;
         }
+#endif
         construct_at(node, resource_block{blocks, p, bytes, alignment, false});
         blocks = node;
         return p;

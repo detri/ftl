@@ -1,0 +1,465 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_BITSET_HEADER
+#define FTL_BITSET_HEADER
+
+#if defined(_MSC_VER) && !defined(__clang__)
+extern "C" void __cdecl __fastfail(unsigned int);
+#pragma intrinsic(__fastfail)
+#define FTL_BITSET_TRAP() __fastfail(7)
+#else
+#define FTL_BITSET_TRAP() __builtin_trap()
+#endif
+
+#ifdef FTL_REPLACE_STL
+#include <cstddef>
+#include <detail/rapidhash>
+#include <iosfwd>
+#include <limits>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <type_traits>
+#else
+#include <ftl/cstddef>
+#include <ftl/detail/rapidhash>
+#include <ftl/iosfwd>
+#include <ftl/limits>
+#include <ftl/stdexcept>
+#include <ftl/string>
+#include <ftl/string_view>
+#include <ftl/type_traits>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+namespace detail {
+[[noreturn]] inline void bitset_invalid_argument() {
+#if FTL_HAS_EXCEPTIONS
+  throw invalid_argument("bitset");
+#else
+  FTL_BITSET_TRAP();
+#endif
+}
+
+[[noreturn]] inline void bitset_out_of_range() {
+#if FTL_HAS_EXCEPTIONS
+  throw out_of_range("bitset");
+#else
+  FTL_BITSET_TRAP();
+#endif
+}
+
+[[noreturn]] inline void bitset_overflow() {
+#if FTL_HAS_EXCEPTIONS
+  throw overflow_error("bitset");
+#else
+  FTL_BITSET_TRAP();
+#endif
+}
+} // namespace detail
+
+template <size_t N> class bitset {
+  using word_type = unsigned long long;
+  static constexpr size_t word_bits = numeric_limits<word_type>::digits;
+  static constexpr size_t word_count = N / word_bits + (N % word_bits != 0);
+
+public:
+  class reference {
+    friend class bitset;
+
+    constexpr reference(bitset &owner, size_t position) noexcept
+        : owner_(&owner), position_(position) {}
+
+  public:
+    constexpr reference(const reference &) noexcept = default;
+    constexpr ~reference() = default;
+
+    constexpr reference &operator=(bool value) noexcept {
+      owner_->store(position_, value);
+      return *this;
+    }
+
+    constexpr reference &operator=(const reference &other) noexcept {
+      return *this = static_cast<bool>(other);
+    }
+
+    constexpr const reference &operator=(bool value) const noexcept {
+      owner_->store(position_, value);
+      return *this;
+    }
+
+    constexpr operator bool() const noexcept { return owner_->load(position_); }
+    constexpr bool operator~() const noexcept { return !static_cast<bool>(*this); }
+
+    constexpr reference &flip() noexcept {
+      owner_->toggle(position_);
+      return *this;
+    }
+
+    friend constexpr void swap(reference left, reference right) noexcept {
+      const bool value = left;
+      left = right;
+      right = value;
+    }
+
+    friend constexpr void swap(reference left, bool &right) noexcept {
+      const bool value = left;
+      left = right;
+      right = value;
+    }
+
+    friend constexpr void swap(bool &left, reference right) noexcept {
+      swap(right, left);
+    }
+
+  private:
+    bitset *owner_;
+    size_t position_;
+  };
+
+  constexpr bitset() noexcept = default;
+
+  constexpr bitset(unsigned long long value) noexcept {
+    if constexpr (word_count != 0) {
+      words_[0] = value;
+      trim();
+    }
+  }
+
+  template <class Character, class Traits, class Allocator>
+  constexpr explicit bitset(
+      const basic_string<Character, Traits, Allocator> &value,
+      typename basic_string<Character, Traits, Allocator>::size_type position = 0,
+      typename basic_string<Character, Traits, Allocator>::size_type count =
+          basic_string<Character, Traits, Allocator>::npos,
+      Character zero = Character('0'), Character one = Character('1'))
+      : bitset(basic_string_view<Character, Traits>(value.data(), value.size()),
+               position, count, zero, one) {}
+
+  template <class Character, class Traits>
+  constexpr explicit bitset(
+      basic_string_view<Character, Traits> value,
+      typename basic_string_view<Character, Traits>::size_type position = 0,
+      typename basic_string_view<Character, Traits>::size_type count =
+          basic_string_view<Character, Traits>::npos,
+      Character zero = Character('0'), Character one = Character('1')) {
+    if (position > value.size())
+      detail::bitset_out_of_range();
+
+    const size_t available = value.size() - position;
+    const size_t length = count < available ? count : available;
+    for (size_t index = 0; index < length; ++index)
+      if (!Traits::eq(value[position + index], zero) &&
+          !Traits::eq(value[position + index], one))
+        detail::bitset_invalid_argument();
+
+    const size_t used = N < length ? N : length;
+    for (size_t index = 0; index < used; ++index)
+      if (!Traits::eq(value[position + used - 1 - index], zero))
+        store(index, true);
+  }
+
+  template <class Character>
+    requires(!is_array_v<Character> && is_trivially_copyable_v<Character> &&
+             is_standard_layout_v<Character> &&
+             is_trivially_default_constructible_v<Character>)
+  constexpr explicit bitset(
+      const Character *value,
+      typename basic_string_view<Character>::size_type count =
+          basic_string_view<Character>::npos,
+      Character zero = Character('0'), Character one = Character('1'))
+      : bitset(count == basic_string_view<Character>::npos
+                   ? basic_string_view<Character>(value)
+                   : basic_string_view<Character>(value, count),
+               0, count, zero, one) {}
+
+  constexpr bitset &operator&=(const bitset &other) noexcept {
+    for (size_t index = 0; index < word_count; ++index)
+      words_[index] &= other.words_[index];
+    return *this;
+  }
+
+  constexpr bitset &operator|=(const bitset &other) noexcept {
+    for (size_t index = 0; index < word_count; ++index)
+      words_[index] |= other.words_[index];
+    return *this;
+  }
+
+  constexpr bitset &operator^=(const bitset &other) noexcept {
+    for (size_t index = 0; index < word_count; ++index)
+      words_[index] ^= other.words_[index];
+    return *this;
+  }
+
+  constexpr bitset &operator<<=(size_t position) noexcept {
+    if (position >= N)
+      return reset();
+    if (position == 0)
+      return *this;
+
+    const size_t whole = position / word_bits;
+    const size_t part = position % word_bits;
+    for (size_t destination = word_count; destination-- != 0;) {
+      word_type value = 0;
+      if (destination >= whole) {
+        const size_t source = destination - whole;
+        value = words_[source] << part;
+        if (part != 0 && source != 0)
+          value |= words_[source - 1] >> (word_bits - part);
+      }
+      words_[destination] = value;
+    }
+    trim();
+    return *this;
+  }
+
+  constexpr bitset &operator>>=(size_t position) noexcept {
+    if (position >= N)
+      return reset();
+    if (position == 0)
+      return *this;
+
+    const size_t whole = position / word_bits;
+    const size_t part = position % word_bits;
+    for (size_t destination = 0; destination < word_count; ++destination) {
+      const size_t source = destination + whole;
+      word_type value = source < word_count ? words_[source] >> part : 0;
+      if (source < word_count && part != 0 && source + 1 < word_count)
+        value |= words_[source + 1] << (word_bits - part);
+      words_[destination] = value;
+    }
+    return *this;
+  }
+
+  constexpr bitset operator<<(size_t position) const noexcept {
+    return bitset(*this) <<= position;
+  }
+  constexpr bitset operator>>(size_t position) const noexcept {
+    return bitset(*this) >>= position;
+  }
+
+  constexpr bitset &set() noexcept {
+    for (size_t index = 0; index < word_count; ++index)
+      words_[index] = ~word_type{};
+    trim();
+    return *this;
+  }
+
+  constexpr bitset &set(size_t position, bool value = true) {
+    check(position);
+    store(position, value);
+    return *this;
+  }
+
+  constexpr bitset &reset() noexcept {
+    for (size_t index = 0; index < word_count; ++index)
+      words_[index] = 0;
+    return *this;
+  }
+
+  constexpr bitset &reset(size_t position) {
+    check(position);
+    store(position, false);
+    return *this;
+  }
+
+  constexpr bitset operator~() const noexcept {
+    bitset result(*this);
+    return result.flip();
+  }
+
+  constexpr bitset &flip() noexcept {
+    for (size_t index = 0; index < word_count; ++index)
+      words_[index] = ~words_[index];
+    trim();
+    return *this;
+  }
+
+  constexpr bitset &flip(size_t position) {
+    check(position);
+    toggle(position);
+    return *this;
+  }
+
+  constexpr bool operator[](size_t position) const { return load(position); }
+  constexpr reference operator[](size_t position) {
+    return reference(*this, position);
+  }
+
+  constexpr unsigned long to_ulong() const {
+    return to_integer<unsigned long>();
+  }
+  constexpr unsigned long long to_ullong() const {
+    return to_integer<unsigned long long>();
+  }
+
+  template <class Character = char, class Traits = char_traits<Character>,
+            class Allocator = allocator<Character>>
+  constexpr basic_string<Character, Traits, Allocator>
+  to_string(Character zero = Character('0'),
+            Character one = Character('1')) const {
+    basic_string<Character, Traits, Allocator> result(N, zero);
+    for (size_t index = 0; index < N; ++index)
+      if (load(index))
+        result[N - 1 - index] = one;
+    return result;
+  }
+
+  constexpr size_t count() const noexcept {
+    size_t result = 0;
+    for (size_t index = 0; index < word_count; ++index) {
+      word_type value = words_[index];
+      while (value != 0) {
+        value &= value - 1;
+        ++result;
+      }
+    }
+    return result;
+  }
+
+  constexpr size_t size() const noexcept { return N; }
+
+  constexpr bool operator==(const bitset &other) const noexcept {
+    for (size_t index = 0; index < word_count; ++index)
+      if (words_[index] != other.words_[index])
+        return false;
+    return true;
+  }
+
+  constexpr bool test(size_t position) const {
+    check(position);
+    return load(position);
+  }
+
+  constexpr bool all() const noexcept { return count() == N; }
+  constexpr bool any() const noexcept { return count() != 0; }
+  constexpr bool none() const noexcept { return count() == 0; }
+
+private:
+  static constexpr word_type mask(size_t position) noexcept {
+    return word_type{1} << (position % word_bits);
+  }
+
+  constexpr bool load(size_t position) const noexcept {
+    return (words_[position / word_bits] & mask(position)) != 0;
+  }
+
+  constexpr void store(size_t position, bool value) noexcept {
+    word_type &word = words_[position / word_bits];
+    if (value)
+      word |= mask(position);
+    else
+      word &= ~mask(position);
+  }
+
+  constexpr void toggle(size_t position) noexcept {
+    words_[position / word_bits] ^= mask(position);
+  }
+
+  static constexpr void check(size_t position) {
+    if (position >= N)
+      detail::bitset_out_of_range();
+  }
+
+  constexpr void trim() noexcept {
+    if constexpr (word_count != 0 && N % word_bits != 0)
+      words_[word_count - 1] &= (word_type{1} << (N % word_bits)) - 1;
+  }
+
+  template <class Integer> constexpr Integer to_integer() const {
+    constexpr size_t digits = numeric_limits<Integer>::digits;
+    for (size_t position = digits; position < N; ++position)
+      if (load(position))
+        detail::bitset_overflow();
+
+    Integer result = 0;
+    const size_t used = N < digits ? N : digits;
+    for (size_t position = 0; position < used; ++position)
+      if (load(position))
+        result |= Integer{1} << position;
+    return result;
+  }
+
+  word_type words_[word_count == 0 ? 1 : word_count]{};
+
+  friend struct hash<bitset<N>>;
+};
+
+template <size_t N>
+constexpr bitset<N> operator&(const bitset<N> &left,
+                              const bitset<N> &right) noexcept {
+  return bitset<N>(left) &= right;
+}
+
+template <size_t N>
+constexpr bitset<N> operator|(const bitset<N> &left,
+                              const bitset<N> &right) noexcept {
+  return bitset<N>(left) |= right;
+}
+
+template <size_t N>
+constexpr bitset<N> operator^(const bitset<N> &left,
+                              const bitset<N> &right) noexcept {
+  return bitset<N>(left) ^= right;
+}
+
+template <class Character, class Traits, size_t N>
+basic_istream<Character, Traits> &operator>>(basic_istream<Character, Traits> &input,
+                                             bitset<N> &value) {
+  typename basic_istream<Character, Traits>::sentry guard(input);
+  if (!guard)
+    return input;
+
+  basic_string<Character, Traits> characters;
+  auto *buffer = input.rdbuf();
+  const Character zero = input.widen('0');
+  const Character one = input.widen('1');
+  typename basic_istream<Character, Traits>::iostate state =
+      basic_istream<Character, Traits>::goodbit;
+  while (characters.size() < N) {
+    const typename Traits::int_type current = buffer->sgetc();
+    if (Traits::eq_int_type(current, Traits::eof())) {
+      state |= basic_istream<Character, Traits>::eofbit;
+      break;
+    }
+    const Character character = Traits::to_char_type(current);
+    if (!Traits::eq(character, zero) && !Traits::eq(character, one))
+      break;
+    characters.push_back(character);
+    static_cast<void>(buffer->sbumpc());
+  }
+
+  if constexpr (N != 0)
+    if (characters.empty())
+      state |= basic_istream<Character, Traits>::failbit;
+  value = bitset<N>(characters);
+  if (state != basic_istream<Character, Traits>::goodbit)
+    input.setstate(state);
+  return input;
+}
+
+template <class Character, class Traits, size_t N>
+basic_ostream<Character, Traits> &operator<<(basic_ostream<Character, Traits> &output,
+                                             const bitset<N> &value) {
+  return output << value.template to_string<Character, Traits,
+                                             allocator<Character>>(
+                       output.widen('0'), output.widen('1'));
+}
+
+template <size_t N> struct hash<bitset<N>> {
+  size_t operator()(const bitset<N> &value) const noexcept {
+    return static_cast<size_t>(ftl_rapidhash::rapidhash(
+        value.words_, bitset<N>::word_count * sizeof(unsigned long long)));
+  }
+};
+
+FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_constexpr_bitset) || __cpp_lib_constexpr_bitset < 202207L
+#undef __cpp_lib_constexpr_bitset
+#define __cpp_lib_constexpr_bitset 202207L
+#endif
+
+#undef FTL_BITSET_TRAP
+#endif // FTL_BITSET_HEADER
