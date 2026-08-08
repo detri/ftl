@@ -687,6 +687,16 @@
 #define __cpp_lib_containers_ranges 202202L
 #endif
 
+#if !defined(__cpp_lib_flat_map) || __cpp_lib_flat_map < 202207L
+#undef __cpp_lib_flat_map
+#define __cpp_lib_flat_map 202207L
+#endif
+
+#if !defined(__cpp_lib_flat_set) || __cpp_lib_flat_set < 202207L
+#undef __cpp_lib_flat_set
+#define __cpp_lib_flat_set 202207L
+#endif
+
 #if !defined(__cpp_lib_constexpr_vector) ||                            \
     __cpp_lib_constexpr_vector < 201907L
 #undef __cpp_lib_constexpr_vector

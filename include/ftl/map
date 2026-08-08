@@ -1,0 +1,188 @@
+#ifndef FTL_MAP_HEADER
+#define FTL_MAP_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <algorithm>
+#include <compare>
+#include <functional>
+#include <initializer_list>
+#include <iterator>
+#include <memory>
+#include <memory_resource>
+#include <ranges>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+#define FTL_ASSOCIATIVE_NAMESPACE std
+#include <__associative/ordered.hpp>
+#else
+#include <ftl/algorithm>
+#include <ftl/compare>
+#include <ftl/functional>
+#include <ftl/initializer_list>
+#include <ftl/iterator>
+#include <ftl/memory>
+#include <ftl/memory_resource>
+#include <ftl/ranges>
+#include <ftl/tuple>
+#include <ftl/type_traits>
+#include <ftl/utility>
+#define FTL_ASSOCIATIVE_NAMESPACE ftl
+#include <ftl/__associative/ordered.hpp>
+#endif
+
+#if defined(_MSC_VER) && !defined(__clang__)
+extern "C" void __cdecl __fastfail(unsigned int);
+#pragma intrinsic(__fastfail)
+#define FTL_MAP_TRAP() __fastfail(7)
+#else
+#define FTL_MAP_TRAP() __builtin_trap()
+#endif
+
+FTL_BEGIN_NAMESPACE
+namespace detail {
+[[noreturn]] inline void map_range_failure() {
+#if FTL_HAS_EXCEPTIONS
+  throw out_of_range("map");
+#else
+  FTL_MAP_TRAP();
+#endif
+}
+} // namespace detail
+
+template <class Key, class T, class Compare = less<Key>,
+          class Allocator = allocator<pair<const Key, T>>>
+class map : public detail::ordered_map_base<Key, T, Compare, Allocator, false> {
+  using base = detail::ordered_map_base<Key, T, Compare, Allocator, false>;
+
+public:
+  using base::base;
+  using base::operator=;
+  using typename base::key_type;
+  using typename base::mapped_type;
+
+  mapped_type &operator[](const key_type &key) {
+    return this->try_emplace(key).first->second;
+  }
+  mapped_type &operator[](key_type &&key) {
+    return this->try_emplace(move(key)).first->second;
+  }
+  mapped_type &at(const key_type &key) {
+    auto found = this->find(key);
+    if (found == this->end())
+      detail::map_range_failure();
+    return found->second;
+  }
+  const mapped_type &at(const key_type &key) const {
+    auto found = this->find(key);
+    if (found == this->end())
+      detail::map_range_failure();
+    return found->second;
+  }
+};
+
+template <class Key, class T, class Compare = less<Key>,
+          class Allocator = allocator<pair<const Key, T>>>
+class multimap
+    : public detail::ordered_map_base<Key, T, Compare, Allocator, true> {
+  using base = detail::ordered_map_base<Key, T, Compare, Allocator, true>;
+
+public:
+  using base::base;
+  using base::operator=;
+};
+
+template <class InputIterator,
+          class Compare = less<
+              typename iterator_traits<InputIterator>::value_type::first_type>,
+          class Allocator =
+              allocator<typename iterator_traits<InputIterator>::value_type>>
+map(InputIterator, InputIterator, Compare = Compare(), Allocator = Allocator())
+    -> map<remove_const_t<
+               typename iterator_traits<InputIterator>::value_type::first_type>,
+           typename iterator_traits<InputIterator>::value_type::second_type,
+           Compare, Allocator>;
+template <
+    ranges::input_range Range,
+    class Compare =
+        less<remove_const_t<typename ranges::range_value_t<Range>::first_type>>,
+    class Allocator = allocator<ranges::range_value_t<Range>>>
+map(from_range_t, Range &&, Compare = Compare(), Allocator = Allocator())
+    -> map<remove_const_t<typename ranges::range_value_t<Range>::first_type>,
+           typename ranges::range_value_t<Range>::second_type, Compare,
+           Allocator>;
+
+template <class Key, class T, class Compare, class Allocator>
+bool operator==(const map<Key, T, Compare, Allocator> &left,
+                const map<Key, T, Compare, Allocator> &right) {
+  return left.size() == right.size() &&
+         equal(left.begin(), left.end(), right.begin());
+}
+template <class Key, class T, class Compare, class Allocator>
+auto operator<=>(const map<Key, T, Compare, Allocator> &left,
+                 const map<Key, T, Compare, Allocator> &right) {
+  return lexicographical_compare_three_way(left.begin(), left.end(),
+                                           right.begin(), right.end(),
+                                           compare_three_way{});
+}
+template <class Key, class T, class Compare, class Allocator>
+bool operator==(const multimap<Key, T, Compare, Allocator> &left,
+                const multimap<Key, T, Compare, Allocator> &right) {
+  return left.size() == right.size() &&
+         equal(left.begin(), left.end(), right.begin());
+}
+template <class Key, class T, class Compare, class Allocator>
+auto operator<=>(const multimap<Key, T, Compare, Allocator> &left,
+                 const multimap<Key, T, Compare, Allocator> &right) {
+  return lexicographical_compare_three_way(left.begin(), left.end(),
+                                           right.begin(), right.end(),
+                                           compare_three_way{});
+}
+template <class Container>
+void swap(Container &left,
+          Container &right) noexcept(noexcept(left.swap(right)))
+  requires requires {
+    typename Container::mapped_type;
+    left.swap(right);
+  }
+{
+  left.swap(right);
+}
+template <class Key, class T, class Compare, class Allocator, class Predicate>
+typename map<Key, T, Compare, Allocator>::size_type
+erase_if(map<Key, T, Compare, Allocator> &values, Predicate predicate) {
+  typename map<Key, T, Compare, Allocator>::size_type count{};
+  for (auto current = values.begin(); current != values.end();)
+    if (predicate(*current)) {
+      current = values.erase(current);
+      ++count;
+    } else
+      ++current;
+  return count;
+}
+template <class Key, class T, class Compare, class Allocator, class Predicate>
+typename multimap<Key, T, Compare, Allocator>::size_type
+erase_if(multimap<Key, T, Compare, Allocator> &values, Predicate predicate) {
+  typename multimap<Key, T, Compare, Allocator>::size_type count{};
+  for (auto current = values.begin(); current != values.end();)
+    if (predicate(*current)) {
+      current = values.erase(current);
+      ++count;
+    } else
+      ++current;
+  return count;
+}
+namespace pmr {
+template <class Key, class T, class Compare = less<Key>>
+using map =
+    FTL_ASSOCIATIVE_NAMESPACE::map<Key, T, Compare,
+                                   polymorphic_allocator<pair<const Key, T>>>;
+template <class Key, class T, class Compare = less<Key>>
+using multimap = FTL_ASSOCIATIVE_NAMESPACE::multimap<
+    Key, T, Compare, polymorphic_allocator<pair<const Key, T>>>;
+} // namespace pmr
+
+FTL_END_NAMESPACE
+#undef FTL_ASSOCIATIVE_NAMESPACE
+#undef FTL_MAP_TRAP
+#endif
