@@ -158,6 +158,10 @@ add_ftl_compile_fail_check(unordered_map_rejects_mismatched_allocator
         checks/unordered_map_mismatched_allocator_compile_fail.cpp)
 add_ftl_compile_fail_check(unordered_set_rejects_mismatched_allocator
         checks/unordered_set_mismatched_allocator_compile_fail.cpp)
+add_ftl_compile_fail_check(flat_map_rejects_mismatched_container
+        checks/flat_map_mismatched_container_compile_fail.cpp)
+add_ftl_compile_fail_check(flat_set_rejects_mismatched_container
+        checks/flat_set_mismatched_container_compile_fail.cpp)
 add_ftl_standalone_check(feature_macros checks/feature_macros.cpp)
 add_ftl_standalone_check(no_allocation checks/no_allocation.cpp)
 add_ftl_freestanding_link_check(freestanding_link checks/freestanding_link.cpp)

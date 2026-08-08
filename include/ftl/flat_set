@@ -7,6 +7,7 @@
 #include <initializer_list>
 #include <iterator>
 #include <memory>
+#include <memory>
 #include <ranges>
 #include <type_traits>
 #include <utility>
@@ -20,6 +21,7 @@
 #include <ftl/initializer_list>
 #include <ftl/iterator>
 #include <ftl/memory>
+#include <ftl/memory>
 #include <ftl/ranges>
 #include <ftl/type_traits>
 #include <ftl/utility>
@@ -27,10 +29,21 @@
 #define FTL_FLAT_NAMESPACE ftl
 #include <ftl/__associative/flat_tags.hpp>
 #endif
+#if !defined(__cpp_lib_flat_set) || __cpp_lib_flat_set < 202207L
+#undef __cpp_lib_flat_set
+#define __cpp_lib_flat_set 202207L
+#endif
 FTL_BEGIN_NAMESPACE
 namespace detail {
+template <class Compare>
+concept flat_set_transparent_compare = requires {
+  typename Compare::is_transparent;
+};
+template <class Allocator>
+concept flat_set_allocator_like = requires { typename Allocator::value_type; };
 template <class Key, class Compare, class Container, bool Multi>
 class flat_set_base {
+  static_assert(is_same_v<Key, typename Container::value_type>);
 public:
   using key_type = Key;
   using value_type = Key;
@@ -47,19 +60,57 @@ public:
   using container_type = Container;
   flat_set_base() = default;
   explicit flat_set_base(const Compare &compare) : compare_(compare) {}
+  template <class Allocator>
+    requires uses_allocator_v<Container, Allocator>
+  explicit flat_set_base(const Allocator &allocator) : container_(allocator) {}
+  template <class Allocator>
+    requires uses_allocator_v<Container, Allocator>
+  flat_set_base(const Compare &compare, const Allocator &allocator)
+      : container_(allocator), compare_(compare) {}
   template <input_iterator I>
   flat_set_base(I first, I last, const Compare &compare = Compare())
       : compare_(compare) {
     insert(first, last);
   }
+  template <input_iterator I, class Allocator>
+    requires uses_allocator_v<Container, Allocator>
+  flat_set_base(I first, I last, const Compare &compare,
+                const Allocator &allocator)
+      : container_(allocator), compare_(compare) {
+    insert(first, last);
+  }
+  template <input_iterator I, class Allocator>
+    requires uses_allocator_v<Container, Allocator>
+  flat_set_base(I first, I last, const Allocator &allocator)
+      : flat_set_base(first, last, Compare(), allocator) {}
   template <ranges::input_range R>
   flat_set_base(from_range_t, R &&range, const Compare &compare = Compare())
       : compare_(compare) {
     insert_range(static_cast<R &&>(range));
   }
+  template <ranges::input_range R, class Allocator>
+    requires uses_allocator_v<Container, Allocator>
+  flat_set_base(from_range_t, R &&range, const Compare &compare,
+                const Allocator &allocator)
+      : container_(allocator), compare_(compare) {
+    insert_range(static_cast<R &&>(range));
+  }
+  template <ranges::input_range R, class Allocator>
+    requires uses_allocator_v<Container, Allocator>
+  flat_set_base(from_range_t tag, R &&range, const Allocator &allocator)
+      : flat_set_base(tag, static_cast<R &&>(range), Compare(), allocator) {}
   flat_set_base(initializer_list<Key> values,
                 const Compare &compare = Compare())
       : flat_set_base(values.begin(), values.end(), compare) {}
+  template <class Allocator>
+    requires uses_allocator_v<Container, Allocator>
+  flat_set_base(initializer_list<Key> values, const Compare &compare,
+                const Allocator &allocator)
+      : flat_set_base(values.begin(), values.end(), compare, allocator) {}
+  template <class Allocator>
+    requires uses_allocator_v<Container, Allocator>
+  flat_set_base(initializer_list<Key> values, const Allocator &allocator)
+      : flat_set_base(values, Compare(), allocator) {}
   flat_set_base(sorted_unique_t, Container container,
                 const Compare &compare = Compare())
     requires(!Multi)
@@ -68,9 +119,108 @@ public:
                 const Compare &compare = Compare())
     requires(Multi)
       : container_(move(container)), compare_(compare) {}
+  template <class Tag, class Allocator>
+    requires(uses_allocator_v<Container, Allocator> &&
+             ((is_same_v<Tag, sorted_unique_t> && !Multi) ||
+              (is_same_v<Tag, sorted_equivalent_t> && Multi)))
+  flat_set_base(Tag, const Container &container, const Compare &compare,
+                const Allocator &allocator)
+      : container_(container, allocator), compare_(compare) {}
+  template <class Tag, class Allocator>
+    requires(uses_allocator_v<Container, Allocator> &&
+             ((is_same_v<Tag, sorted_unique_t> && !Multi) ||
+              (is_same_v<Tag, sorted_equivalent_t> && Multi)))
+  flat_set_base(Tag tag, const Container &container,
+                const Allocator &allocator)
+      : flat_set_base(tag, container, Compare(), allocator) {}
+  template <class Tag, input_iterator I>
+    requires((is_same_v<Tag, sorted_unique_t> && !Multi) ||
+             (is_same_v<Tag, sorted_equivalent_t> && Multi))
+  flat_set_base(Tag, I first, I last, const Compare &compare = Compare())
+      : container_(first, last), compare_(compare) {}
+  template <class Tag, input_iterator I, class Allocator>
+    requires(uses_allocator_v<Container, Allocator> &&
+             ((is_same_v<Tag, sorted_unique_t> && !Multi) ||
+              (is_same_v<Tag, sorted_equivalent_t> && Multi)))
+  flat_set_base(Tag, I first, I last, const Compare &compare,
+                const Allocator &allocator)
+      : container_(first, last, allocator), compare_(compare) {}
+  template <class Tag, input_iterator I, class Allocator>
+    requires(uses_allocator_v<Container, Allocator> &&
+             ((is_same_v<Tag, sorted_unique_t> && !Multi) ||
+              (is_same_v<Tag, sorted_equivalent_t> && Multi)))
+  flat_set_base(Tag tag, I first, I last, const Allocator &allocator)
+      : flat_set_base(tag, first, last, Compare(), allocator) {}
+  template <class Tag>
+    requires((is_same_v<Tag, sorted_unique_t> && !Multi) ||
+             (is_same_v<Tag, sorted_equivalent_t> && Multi))
+  flat_set_base(Tag tag, initializer_list<Key> values,
+                const Compare &compare = Compare())
+      : flat_set_base(tag, values.begin(), values.end(), compare) {}
+  template <class Tag, class Allocator>
+    requires(uses_allocator_v<Container, Allocator> &&
+             ((is_same_v<Tag, sorted_unique_t> && !Multi) ||
+              (is_same_v<Tag, sorted_equivalent_t> && Multi)))
+  flat_set_base(Tag tag, initializer_list<Key> values, const Compare &compare,
+                const Allocator &allocator)
+      : flat_set_base(tag, values.begin(), values.end(), compare, allocator) {}
+  template <class Tag, class Allocator>
+    requires(uses_allocator_v<Container, Allocator> &&
+             ((is_same_v<Tag, sorted_unique_t> && !Multi) ||
+              (is_same_v<Tag, sorted_equivalent_t> && Multi)))
+  flat_set_base(Tag tag, initializer_list<Key> values,
+                const Allocator &allocator)
+      : flat_set_base(tag, values, Compare(), allocator) {}
   flat_set_base(Container container, const Compare &compare = Compare())
       : container_(move(container)), compare_(compare) {
     normalize();
+  }
+  template <class Allocator>
+    requires uses_allocator_v<Container, Allocator>
+  flat_set_base(const Container &container, const Compare &compare,
+                const Allocator &allocator)
+      : container_(container, allocator), compare_(compare) {
+    normalize();
+  }
+  template <class Allocator>
+    requires uses_allocator_v<Container, Allocator>
+  flat_set_base(const Container &container, const Allocator &allocator)
+      : flat_set_base(container, Compare(), allocator) {}
+  flat_set_base(const flat_set_base &) = default;
+  flat_set_base(flat_set_base &&) = default;
+  flat_set_base &operator=(const flat_set_base &other) {
+    if (this == &other)
+      return *this;
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      container_ = other.container_;
+      compare_ = other.compare_;
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      clear();
+      throw;
+    }
+#endif
+    return *this;
+  }
+  flat_set_base &operator=(flat_set_base &&other) noexcept(
+      is_nothrow_move_assignable_v<Container> &&
+      is_nothrow_move_assignable_v<Compare>) {
+    if (this == &other)
+      return *this;
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      container_ = move(other.container_);
+      compare_ = move(other.compare_);
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      clear();
+      throw;
+    }
+#endif
+    return *this;
   }
   flat_set_base &operator=(initializer_list<Key> values) {
     clear();
@@ -101,6 +251,12 @@ public:
   }
   auto insert(const Key &value) { return insert_value(value); }
   auto insert(Key &&value) { return insert_value(move(value)); }
+  template <class K>
+  auto insert(K &&value)
+    requires is_constructible_v<Key, K &&>
+  {
+    return insert_value(Key(static_cast<K &&>(value)));
+  }
   iterator insert(const_iterator, const Key &value) {
     if constexpr (Multi)
       return insert(value);
@@ -113,7 +269,23 @@ public:
     else
       return insert(move(value)).first;
   }
+  template <class K>
+  iterator insert(const_iterator hint, K &&value)
+    requires is_constructible_v<Key, K &&>
+  {
+    if constexpr (Multi)
+      return insert(static_cast<K &&>(value));
+    else
+      return insert(static_cast<K &&>(value)).first;
+  }
   template <input_iterator I> void insert(I first, I last) {
+    for (; first != last; ++first)
+      insert(*first);
+  }
+  template <class Tag, input_iterator I>
+    requires((is_same_v<Tag, sorted_unique_t> && !Multi) ||
+             (is_same_v<Tag, sorted_equivalent_t> && Multi))
+  void insert(Tag, I first, I last) {
     for (; first != last; ++first)
       insert(*first);
   }
@@ -123,6 +295,16 @@ public:
   }
   void insert(initializer_list<Key> values) {
     insert(values.begin(), values.end());
+  }
+  void insert(sorted_unique_t tag, initializer_list<Key> values)
+    requires(!Multi)
+  {
+    insert(tag, values.begin(), values.end());
+  }
+  void insert(sorted_equivalent_t tag, initializer_list<Key> values)
+    requires(Multi)
+  {
+    insert(tag, values.begin(), values.end());
   }
   iterator erase(const_iterator position) { return container_.erase(position); }
   iterator erase(const_iterator first, const_iterator last) {
@@ -136,43 +318,88 @@ public:
   }
   template <class K>
   size_type erase(K &&key)
-    requires requires { typename Compare::is_transparent; }
+    requires(flat_set_transparent_compare<Compare> &&
+             !is_convertible_v<K &&, iterator> &&
+             !is_convertible_v<K &&, const_iterator>)
   {
     auto range = equal_range(key);
     auto count = static_cast<size_type>(range.second - range.first);
     erase(range.first, range.second);
     return count;
   }
-  void swap(flat_set_base &other) noexcept(
-      noexcept(container_.swap(other.container_))) {
+  void swap(flat_set_base &other) noexcept {
     container_.swap(other.container_);
     FTL_FLAT_NAMESPACE::swap(compare_, other.compare_);
   }
   void clear() noexcept { container_.clear(); }
-  template <class K> iterator find(const K &key) const {
+  iterator find(const Key &key) const {
     auto found = lower_bound(key);
     return found != end() && equivalent(*found, key) ? found : end();
   }
-  template <class K> size_type count(const K &key) const {
+  template <class K> iterator find(const K &key) const requires flat_set_transparent_compare<Compare> {
+    auto found = lower_bound(key);
+    return found != end() && equivalent(*found, key) ? found : end();
+  }
+  size_type count(const Key &key) const {
     auto range = equal_range(key);
     return static_cast<size_type>(range.second - range.first);
   }
-  template <class K> bool contains(const K &key) const {
+  template <class K> size_type count(const K &key) const requires flat_set_transparent_compare<Compare> {
+    auto range = equal_range(key);
+    return static_cast<size_type>(range.second - range.first);
+  }
+  bool contains(const Key &key) const {
     return find(key) != end();
   }
-  template <class K> iterator lower_bound(const K &key) const {
+  template <class K> bool contains(const K &key) const requires flat_set_transparent_compare<Compare> {
+    return find(key) != end();
+  }
+  iterator lower_bound(const Key &key) const {
     return FTL_FLAT_NAMESPACE::lower_bound(begin(), end(), key, compare_);
   }
-  template <class K> iterator upper_bound(const K &key) const {
+  template <class K> iterator lower_bound(const K &key) const requires flat_set_transparent_compare<Compare> {
+    return FTL_FLAT_NAMESPACE::lower_bound(begin(), end(), key, compare_);
+  }
+  iterator upper_bound(const Key &key) const {
     return FTL_FLAT_NAMESPACE::upper_bound(begin(), end(), key, compare_);
   }
-  template <class K> pair<iterator, iterator> equal_range(const K &key) const {
+  template <class K> iterator upper_bound(const K &key) const requires flat_set_transparent_compare<Compare> {
+    return FTL_FLAT_NAMESPACE::upper_bound(begin(), end(), key, compare_);
+  }
+  pair<iterator, iterator> equal_range(const Key &key) const {
+    return {lower_bound(key), upper_bound(key)};
+  }
+  template <class K> pair<iterator, iterator> equal_range(const K &key) const requires flat_set_transparent_compare<Compare> {
     return {lower_bound(key), upper_bound(key)};
   }
   key_compare key_comp() const { return compare_; }
   value_compare value_comp() const { return compare_; }
-  container_type extract() && { return move(container_); }
-  void replace(container_type &&container) { container_ = move(container); }
+  container_type extract() && {
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      container_type result(move(container_));
+      container_.clear();
+      return result;
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      container_.clear();
+      throw;
+    }
+#endif
+  }
+  void replace(container_type &&container) {
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      container_ = move(container);
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      container_.clear();
+      throw;
+    }
+#endif
+  }
 
 protected:
   template <class V> auto insert_value(V &&value) {
@@ -190,7 +417,9 @@ protected:
     return !compare_(left, right) && !compare_(right, left);
   }
   void normalize() {
-    FTL_FLAT_NAMESPACE::sort(container_.begin(), container_.end(), compare_);
+    if (!FTL_FLAT_NAMESPACE::is_sorted(container_.begin(), container_.end(),
+                                       compare_))
+      FTL_FLAT_NAMESPACE::sort(container_.begin(), container_.end(), compare_);
     if constexpr (!Multi)
       container_.erase(
           FTL_FLAT_NAMESPACE::unique(container_.begin(), container_.end(),
@@ -223,6 +452,77 @@ public:
   using base::base;
   using base::operator=;
 };
+template <class KC, class C = less<typename KC::value_type>>
+  requires(!detail::flat_set_allocator_like<C>)
+flat_set(KC, C = C()) -> flat_set<typename KC::value_type, C, KC>;
+template <class KC, detail::flat_set_allocator_like A>
+flat_set(KC, A)
+    -> flat_set<typename KC::value_type, less<typename KC::value_type>, KC>;
+template <class KC, class C, detail::flat_set_allocator_like A>
+flat_set(KC, C, A) -> flat_set<typename KC::value_type, C, KC>;
+template <class KC, class C = less<typename KC::value_type>>
+  requires(!detail::flat_set_allocator_like<C>)
+flat_set(sorted_unique_t, KC, C = C())
+    -> flat_set<typename KC::value_type, C, KC>;
+template <class KC, detail::flat_set_allocator_like A>
+flat_set(sorted_unique_t, KC, A)
+    -> flat_set<typename KC::value_type, less<typename KC::value_type>, KC>;
+template <class KC, class C, detail::flat_set_allocator_like A>
+flat_set(sorted_unique_t, KC, C, A)
+    -> flat_set<typename KC::value_type, C, KC>;
+template <class I, class C = less<iter_value_t<I>>>
+flat_set(I, I, C = C()) -> flat_set<iter_value_t<I>, C>;
+template <class I, class C = less<iter_value_t<I>>>
+flat_set(sorted_unique_t, I, I, C = C()) -> flat_set<iter_value_t<I>, C>;
+template <ranges::input_range R,
+          class C = less<ranges::range_value_t<R>>>
+flat_set(from_range_t, R &&, C = C())
+    -> flat_set<ranges::range_value_t<R>, C>;
+template <class K, class C = less<K>>
+flat_set(initializer_list<K>, C = C()) -> flat_set<K, C>;
+template <class K, class C = less<K>>
+flat_set(sorted_unique_t, initializer_list<K>, C = C()) -> flat_set<K, C>;
+
+template <class KC, class C = less<typename KC::value_type>>
+  requires(!detail::flat_set_allocator_like<C>)
+flat_multiset(KC, C = C()) -> flat_multiset<typename KC::value_type, C, KC>;
+template <class KC, detail::flat_set_allocator_like A>
+flat_multiset(KC, A) -> flat_multiset<typename KC::value_type,
+                                      less<typename KC::value_type>, KC>;
+template <class KC, class C, detail::flat_set_allocator_like A>
+flat_multiset(KC, C, A) -> flat_multiset<typename KC::value_type, C, KC>;
+template <class KC, class C = less<typename KC::value_type>>
+  requires(!detail::flat_set_allocator_like<C>)
+flat_multiset(sorted_equivalent_t, KC, C = C())
+    -> flat_multiset<typename KC::value_type, C, KC>;
+template <class KC, detail::flat_set_allocator_like A>
+flat_multiset(sorted_equivalent_t, KC, A)
+    -> flat_multiset<typename KC::value_type, less<typename KC::value_type>,
+                     KC>;
+template <class KC, class C, detail::flat_set_allocator_like A>
+flat_multiset(sorted_equivalent_t, KC, C, A)
+    -> flat_multiset<typename KC::value_type, C, KC>;
+template <class I, class C = less<iter_value_t<I>>>
+flat_multiset(I, I, C = C()) -> flat_multiset<iter_value_t<I>, C>;
+template <class I, class C = less<iter_value_t<I>>>
+flat_multiset(sorted_equivalent_t, I, I, C = C())
+    -> flat_multiset<iter_value_t<I>, C>;
+template <ranges::input_range R,
+          class C = less<ranges::range_value_t<R>>>
+flat_multiset(from_range_t, R &&, C = C())
+    -> flat_multiset<ranges::range_value_t<R>, C>;
+template <class K, class C = less<K>>
+flat_multiset(initializer_list<K>, C = C()) -> flat_multiset<K, C>;
+template <class K, class C = less<K>>
+flat_multiset(sorted_equivalent_t, initializer_list<K>, C = C())
+    -> flat_multiset<K, C>;
+
+template <class K, class C, class KC, class A>
+struct uses_allocator<flat_set<K, C, KC>, A>
+    : bool_constant<uses_allocator_v<KC, A>> {};
+template <class K, class C, class KC, class A>
+struct uses_allocator<flat_multiset<K, C, KC>, A>
+    : bool_constant<uses_allocator_v<KC, A>> {};
 template <class Container>
 bool flat_set_equal(const Container &left, const Container &right) {
   return left.size() == right.size() &&
