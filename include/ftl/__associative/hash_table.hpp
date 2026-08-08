@@ -225,7 +225,10 @@ public:
     return *this;
   }
   hash_table &
-  operator=(hash_table &&other) noexcept(value_traits::is_always_equal::value) {
+  operator=(hash_table &&other) noexcept(
+      value_traits::is_always_equal::value &&
+      is_nothrow_move_assignable_v<Hash> &&
+      is_nothrow_move_assignable_v<Equal>) {
     if (this == &other)
       return *this;
     if constexpr (value_traits::propagate_on_container_move_assignment::value) {
@@ -344,7 +347,9 @@ public:
     while (first_)
       destroy_node(detach(first_));
   }
-  void swap(hash_table &other) noexcept(value_traits::is_always_equal::value) {
+  void swap(hash_table &other) noexcept(
+      value_traits::is_always_equal::value && is_nothrow_swappable_v<Hash> &&
+      is_nothrow_swappable_v<Equal>) {
     if constexpr (value_traits::propagate_on_container_swap::value)
       FTL_ASSOCIATIVE_NAMESPACE::swap(allocator_, other.allocator_);
     buckets_.swap(other.buckets_);

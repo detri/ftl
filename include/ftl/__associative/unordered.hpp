@@ -9,6 +9,11 @@
 
 FTL_BEGIN_NAMESPACE
 namespace detail {
+template <class Hash, class Equal>
+concept transparent_hash_equal = requires {
+  typename Hash::is_transparent;
+  typename Equal::is_transparent;
+};
 template <class Key> struct unordered_set_key {
   const Key &operator()(const Key &value) const noexcept { return value; }
 };
@@ -209,10 +214,9 @@ public:
   size_type erase(const Key &key) { return table_.erase_key(key); }
   template <class K>
   size_type erase(K &&key)
-    requires requires {
-      typename Hash::is_transparent;
-      typename Equal::is_transparent;
-    }
+    requires(transparent_hash_equal<Hash, Equal> &&
+             !is_convertible_v<K &&, iterator> &&
+             !is_convertible_v<K &&, const_iterator>)
   {
     return table_.erase_key(key);
   }
@@ -227,29 +231,34 @@ public:
   node_type extract(const Key &key) { return table_.extract(key); }
   template <class K>
   node_type extract(K &&key)
-    requires requires {
-      typename Hash::is_transparent;
-      typename Equal::is_transparent;
-    }
+    requires(transparent_hash_equal<Hash, Equal> &&
+             !is_convertible_v<K &&, iterator> &&
+             !is_convertible_v<K &&, const_iterator>)
   {
     return table_.extract(key);
   }
   void merge(unordered_map_base &other) { table_.merge(other.table_); }
   void merge(unordered_map_base &&other) { merge(other); }
-  template <class K> iterator find(const K &key) { return table_.find(key); }
-  template <class K> const_iterator find(const K &key) const {
+  iterator find(const Key &key) { return table_.find(key); }
+  const_iterator find(const Key &key) const { return table_.find(key); }
+  template <class K> iterator find(const K &key) requires transparent_hash_equal<Hash, Equal> { return table_.find(key); }
+  template <class K> const_iterator find(const K &key) const requires transparent_hash_equal<Hash, Equal> {
     return table_.find(key);
   }
-  template <class K> size_type count(const K &key) const {
+  size_type count(const Key &key) const { return table_.count(key); }
+  template <class K> size_type count(const K &key) const requires transparent_hash_equal<Hash, Equal> {
     return table_.count(key);
   }
-  template <class K> bool contains(const K &key) const {
+  bool contains(const Key &key) const { return table_.contains(key); }
+  template <class K> bool contains(const K &key) const requires transparent_hash_equal<Hash, Equal> {
     return table_.contains(key);
   }
-  template <class K> auto equal_range(const K &key) {
+  auto equal_range(const Key &key) { return table_.equal_range(key); }
+  auto equal_range(const Key &key) const { return table_.equal_range(key); }
+  template <class K> auto equal_range(const K &key) requires transparent_hash_equal<Hash, Equal> {
     return table_.equal_range(key);
   }
-  template <class K> auto equal_range(const K &key) const {
+  template <class K> auto equal_range(const K &key) const requires transparent_hash_equal<Hash, Equal> {
     return table_.equal_range(key);
   }
   local_iterator begin(size_type bucket) { return table_.begin(bucket); }
@@ -398,10 +407,9 @@ public:
   size_type erase(const Key &key) { return table_.erase_key(key); }
   template <class K>
   size_type erase(K &&key)
-    requires requires {
-      typename Hash::is_transparent;
-      typename Equal::is_transparent;
-    }
+    requires(transparent_hash_equal<Hash, Equal> &&
+             !is_convertible_v<K &&, iterator> &&
+             !is_convertible_v<K &&, const_iterator>)
   {
     return table_.erase_key(key);
   }
@@ -416,25 +424,28 @@ public:
   node_type extract(const Key &key) { return table_.extract(key); }
   template <class K>
   node_type extract(K &&key)
-    requires requires {
-      typename Hash::is_transparent;
-      typename Equal::is_transparent;
-    }
+    requires(transparent_hash_equal<Hash, Equal> &&
+             !is_convertible_v<K &&, iterator> &&
+             !is_convertible_v<K &&, const_iterator>)
   {
     return table_.extract(key);
   }
   void merge(unordered_set_base &other) { table_.merge(other.table_); }
   void merge(unordered_set_base &&other) { merge(other); }
-  template <class K> iterator find(const K &key) const {
+  iterator find(const Key &key) const { return table_.find(key); }
+  template <class K> iterator find(const K &key) const requires transparent_hash_equal<Hash, Equal> {
     return table_.find(key);
   }
-  template <class K> size_type count(const K &key) const {
+  size_type count(const Key &key) const { return table_.count(key); }
+  template <class K> size_type count(const K &key) const requires transparent_hash_equal<Hash, Equal> {
     return table_.count(key);
   }
-  template <class K> bool contains(const K &key) const {
+  bool contains(const Key &key) const { return table_.contains(key); }
+  template <class K> bool contains(const K &key) const requires transparent_hash_equal<Hash, Equal> {
     return table_.contains(key);
   }
-  template <class K> auto equal_range(const K &key) const {
+  auto equal_range(const Key &key) const { return table_.equal_range(key); }
+  template <class K> auto equal_range(const K &key) const requires transparent_hash_equal<Hash, Equal> {
     return table_.equal_range(key);
   }
   local_iterator begin(size_type bucket) const { return table_.begin(bucket); }

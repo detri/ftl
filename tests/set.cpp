@@ -16,6 +16,16 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+struct set_probe {};
+struct set_transparent_compare {
+  using is_transparent = void;
+  bool operator()(int left, int right) const { return left < right; }
+  bool operator()(int, set_probe) const { return true; }
+  bool operator()(set_probe, int) const { return false; }
+};
+template <class C>
+concept set_probe_findable = requires(C &c) { c.find(set_probe{}); };
+
 static_assert(tested::bidirectional_iterator<tested::set<int>::iterator>);
 static_assert(tested::ranges::bidirectional_range<tested::set<int>>);
 static_assert(tested::is_const_v<tested::remove_reference_t<
@@ -24,6 +34,10 @@ static_assert(
     tested::is_same_v<tested::pmr::set<int>,
                       tested::set<int, tested::less<int>,
                                   tested::pmr::polymorphic_allocator<int>>>);
+static_assert(set_probe_findable<tested::set<int, set_transparent_compare>>);
+static_assert(
+    set_probe_findable<tested::multiset<int, set_transparent_compare>>);
+static_assert(!set_probe_findable<tested::set<int>>);
 
 bool ftl_test() {
   tested::set<int> values{3, 1, 2, 2};

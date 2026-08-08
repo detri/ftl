@@ -15,6 +15,35 @@ namespace tested = std;
 #include <ftl/unordered_map>
 namespace tested = ftl;
 #endif
+struct hash_probe {};
+struct transparent_hash {
+  using is_transparent = void;
+  tested::size_t operator()(int value) const { return value; }
+  tested::size_t operator()(hash_probe) const { return 0; }
+};
+struct transparent_equal {
+  using is_transparent = void;
+  bool operator()(int left, int right) const { return left == right; }
+  bool operator()(int, hash_probe) const { return false; }
+  bool operator()(hash_probe, int) const { return false; }
+};
+struct throwing_hash : transparent_hash {
+  throwing_hash() = default;
+  throwing_hash(throwing_hash &&) = default;
+  throwing_hash &operator=(throwing_hash &&) noexcept(false) { return *this; }
+};
+struct throwing_equal : transparent_equal {
+  throwing_equal() = default;
+  throwing_equal(throwing_equal &&) = default;
+  throwing_equal &operator=(throwing_equal &&) noexcept(false) { return *this; }
+};
+template <class C> concept hash_probe_findable = requires(C &c) {
+  c.find(hash_probe{});
+  c.equal_range(hash_probe{});
+};
+template <class C> struct iterator_like {
+  operator typename C::iterator() const;
+};
 static_assert(
     tested::forward_iterator<tested::unordered_map<int, int>::iterator>);
 static_assert(tested::ranges::forward_range<tested::unordered_map<int, int>>);
@@ -24,6 +53,21 @@ static_assert(
         tested::unordered_map<
             int, int, tested::hash<int>, tested::equal_to<int>,
             tested::pmr::polymorphic_allocator<tested::pair<const int, int>>>>);
+using transparent_umap =
+    tested::unordered_map<int, int, transparent_hash, transparent_equal>;
+static_assert(hash_probe_findable<transparent_umap>);
+static_assert(hash_probe_findable<tested::unordered_multimap<
+                  int, int, transparent_hash, transparent_equal>>);
+static_assert(!hash_probe_findable<tested::unordered_map<int, int>>);
+static_assert(tested::is_same_v<
+              decltype(tested::declval<transparent_umap &>().erase(
+                  iterator_like<transparent_umap>{})),
+              transparent_umap::iterator>);
+static_assert(!noexcept(
+    tested::declval<tested::unordered_map<int, int, throwing_hash,
+                                         throwing_equal> &>() =
+    tested::declval<tested::unordered_map<int, int, throwing_hash,
+                                         throwing_equal> &&>()));
 bool ftl_test() {
   tested::unordered_map<int, int> values{{1, 10}, {2, 20}, {2, 99}};
   if (values.size() != 2 || values.at(1) != 10)

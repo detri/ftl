@@ -65,8 +65,10 @@ public:
   };
   using reference = pair<const Key &, T &>;
   using const_reference = pair<const Key &, const T &>;
-  using size_type = typename KeyContainer::size_type;
-  using difference_type = typename KeyContainer::difference_type;
+  using size_type = size_t;
+  using difference_type = ptrdiff_t;
+  using key_container_type = KeyContainer;
+  using mapped_container_type = MappedContainer;
   struct containers {
     KeyContainer keys;
     MappedContainer values;
@@ -309,15 +311,34 @@ public:
   iterator erase(const_iterator position) {
     auto index = position.index_;
     keys_.erase(keys_.begin() + static_cast<difference_type>(index));
+#if FTL_HAS_EXCEPTIONS
+    try {
+      values_.erase(values_.begin() + static_cast<difference_type>(index));
+    } catch (...) {
+      clear();
+      throw;
+    }
+#else
     values_.erase(values_.begin() + static_cast<difference_type>(index));
+#endif
     return iterator(this, index);
   }
   iterator erase(const_iterator first, const_iterator last) {
     auto index = first.index_;
     keys_.erase(keys_.begin() + static_cast<difference_type>(index),
                 keys_.begin() + static_cast<difference_type>(last.index_));
+#if FTL_HAS_EXCEPTIONS
+    try {
+      values_.erase(values_.begin() + static_cast<difference_type>(index),
+                    values_.begin() + static_cast<difference_type>(last.index_));
+    } catch (...) {
+      clear();
+      throw;
+    }
+#else
     values_.erase(values_.begin() + static_cast<difference_type>(index),
                   values_.begin() + static_cast<difference_type>(last.index_));
+#endif
     return iterator(this, index);
   }
   size_type erase(const Key &key) {
@@ -375,10 +396,32 @@ public:
   value_compare value_comp() const { return value_compare(compare_); }
   const KeyContainer &keys() const noexcept { return keys_; }
   const MappedContainer &values() const noexcept { return values_; }
-  containers extract() && { return {move(keys_), move(values_)}; }
+  containers extract() && {
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      containers result{move(keys_), move(values_)};
+      clear();
+      return result;
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      clear();
+      throw;
+    }
+#endif
+  }
   void replace(KeyContainer &&keys, MappedContainer &&values) {
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
     keys_ = move(keys);
     values_ = move(values);
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      clear();
+      throw;
+    }
+#endif
   }
 
 protected:
@@ -405,7 +448,11 @@ protected:
       values_.insert(values_.begin() + static_cast<difference_type>(index),
                      static_cast<M &&>(mapped));
     } catch (...) {
-      keys_.erase(keys_.begin() + static_cast<difference_type>(index));
+      try {
+        keys_.erase(keys_.begin() + static_cast<difference_type>(index));
+      } catch (...) {
+        clear();
+      }
       throw;
     }
 #else
@@ -432,10 +479,26 @@ protected:
   }
   void normalize() {
     containers source{move(keys_), move(values_)};
-    keys_.clear();
-    values_.clear();
+    vector<size_type> order;
+    order.reserve(source.keys.size());
     for (size_type i = 0; i < source.keys.size(); ++i)
-      insert(value_type(move(source.keys[i]), move(source.values[i])));
+      order.push_back(i);
+    FTL_FLAT_NAMESPACE::sort(order.begin(), order.end(),
+                             [&](size_type left, size_type right) {
+                               return compare_(source.keys[left],
+                                               source.keys[right]);
+                             });
+    if constexpr (requires { keys_.reserve(source.keys.size()); })
+      keys_.reserve(source.keys.size());
+    if constexpr (requires { values_.reserve(source.values.size()); })
+      values_.reserve(source.values.size());
+    for (size_type index : order) {
+      if constexpr (!Multi)
+        if (!keys_.empty() && equivalent(keys_.back(), source.keys[index]))
+          continue;
+      keys_.push_back(move(source.keys[index]));
+      values_.push_back(move(source.values[index]));
+    }
   }
   KeyContainer keys_{};
   MappedContainer values_{};

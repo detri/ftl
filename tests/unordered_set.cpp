@@ -15,11 +15,31 @@ namespace tested = std;
 #include <ftl/unordered_set>
 namespace tested = ftl;
 #endif
+struct set_hash_probe {};
+struct set_transparent_hash {
+  using is_transparent = void;
+  tested::size_t operator()(int value) const { return value; }
+  tested::size_t operator()(set_hash_probe) const { return 0; }
+};
+struct set_transparent_equal {
+  using is_transparent = void;
+  bool operator()(int left, int right) const { return left == right; }
+  bool operator()(int, set_hash_probe) const { return false; }
+  bool operator()(set_hash_probe, int) const { return false; }
+};
+template <class C> concept set_hash_probe_findable = requires(C &c) {
+  c.find(set_hash_probe{});
+};
 static_assert(tested::forward_iterator<tested::unordered_set<int>::iterator>);
 static_assert(tested::ranges::forward_range<tested::unordered_set<int>>);
 static_assert(
     tested::is_const_v<tested::remove_reference_t<
-        tested::iter_reference_t<tested::unordered_set<int>::iterator>>>);
+                  tested::iter_reference_t<tested::unordered_set<int>::iterator>>>);
+static_assert(set_hash_probe_findable<tested::unordered_set<
+                  int, set_transparent_hash, set_transparent_equal>>);
+static_assert(set_hash_probe_findable<tested::unordered_multiset<
+                  int, set_transparent_hash, set_transparent_equal>>);
+static_assert(!set_hash_probe_findable<tested::unordered_set<int>>);
 bool ftl_test() {
   tested::unordered_set<int> values{1, 2, 2};
   const int *stable = &*values.find(1);

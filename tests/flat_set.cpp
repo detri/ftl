@@ -15,6 +15,9 @@ namespace tested = ftl;
 #endif
 static_assert(tested::random_access_iterator<tested::flat_set<int>::iterator>);
 static_assert(tested::ranges::random_access_range<tested::flat_set<int>>);
+static_assert(tested::is_same_v<tested::flat_set<int>::container_type,
+                                tested::vector<int>>);
+static_assert(tested::is_same_v<tested::flat_set<int>::reference, int &>);
 static_assert(tested::is_const_v<tested::remove_reference_t<
                   tested::iter_reference_t<tested::flat_set<int>::iterator>>>);
 bool ftl_test() {

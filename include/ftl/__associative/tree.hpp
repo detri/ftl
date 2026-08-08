@@ -189,7 +189,8 @@ public:
     return *this;
   }
   associative_tree &operator=(associative_tree &&other) noexcept(
-      value_traits::is_always_equal::value) {
+      value_traits::is_always_equal::value &&
+      is_nothrow_move_assignable_v<Compare>) {
     if (this == &other)
       return *this;
     if constexpr (value_traits::propagate_on_container_move_assignment::value) {
@@ -307,7 +308,8 @@ public:
     size_ = 0;
   }
   void
-  swap(associative_tree &other) noexcept(value_traits::is_always_equal::value) {
+  swap(associative_tree &other) noexcept(value_traits::is_always_equal::value &&
+                                         is_nothrow_swappable_v<Compare>) {
     if constexpr (value_traits::propagate_on_container_swap::value)
       FTL_ASSOCIATIVE_NAMESPACE::swap(allocator_, other.allocator_);
     FTL_ASSOCIATIVE_NAMESPACE::swap(root_, other.root_);
