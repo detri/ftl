@@ -8,6 +8,10 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+#if __cpp_lib_complex_udls != 201309L || __cpp_lib_constexpr_complex != 201711L
+#error <complex> feature-test macros are incomplete
+#endif
+
 using tested::complex;
 using namespace tested::literals::complex_literals;
 

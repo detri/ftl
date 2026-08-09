@@ -16,6 +16,14 @@
 #if __cpp_lib_math_constants != 201907L
 #error wrong math constants feature-test macro
 #endif
+#if __cpp_lib_constexpr_cmath != 202202L || __cpp_lib_hypot != 201603L ||    \
+    __cpp_lib_interpolate != 201902L ||                                      \
+    __cpp_lib_math_special_functions != 201603L
+#error wrong cmath feature-test macro
+#endif
+#if __cpp_lib_complex_udls != 201309L || __cpp_lib_constexpr_complex != 201711L
+#error wrong complex feature-test macro
+#endif
 #if __cpp_lib_integral_constant_callable != 201304L || \
     __cpp_lib_integer_sequence != 201304L || \
     __cpp_lib_type_identity != 201806L || \

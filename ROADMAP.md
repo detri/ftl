@@ -157,8 +157,11 @@ dependency order, not hundreds of individual overloads.
 | `<stdexcept>`        | Stage 5.2         |
 | `<system_error>`     | Stage 5.2         |
 | `<cfenv>`            | Stage 5.3         |
+| `<numbers>`          | Stage 5.3         |
 | `<cmath>`            | Stage 5.3         |
 | `<complex>`          | Stage 5.3         |
+| `<random>`           | Stage 5.4         |
+| `<valarray>`         | Stage 5.4         |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -193,7 +196,6 @@ remain required when C++23 still specifies them; they are not silently dropped.
 
 | Area                      | Absent headers                                                                                                                                                     |
 |---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Algorithms/numerics       | `<numbers>`, `<random>`, `<valarray>`                                                                                                                              |
 | Text/encoding             | `<codecvt>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                               |
 | Errors/time/localization  | `<locale>`, `<clocale>`                                                                                                                                            |
 | I/O/formatting/files      | `<cstdio>`, `<fstream>`, `<iomanip>`, `<iostream>`, `<ostream>`, `<sstream>`, `<spanstream>`, `<strstream>`, `<syncstream>`, `<filesystem>`, `<format>`, `<print>` |
@@ -430,7 +432,9 @@ Take these closures in order:
    synopsis audit is complete, the local MSVC, ClangCL, GCC, and Clang matrix
    is green across all supported floating-point formats, and the Apple AArch64
    runtime core is CI-validated**
-4. `<random>` + `<valarray>`
+4. `<random>` + `<valarray>` — **computational closure complete; the N4950
+   synopsis audit and the local MSVC, ClangCL, GCC, and Clang matrix are green
+   in normal and `FTL_REPLACE_STL` modes, including freestanding linkage**
 
 **Exit:** numeric and time facilities have specified edge behavior and do not
 smuggle hosted runtime dependencies into supported freestanding builds.
@@ -504,6 +508,13 @@ The N4950 audit covers the complete `<numbers>` and `<cfenv>` synopses,
 mixed-arithmetic rules. The two `<complex>` stream operators remain staged with
 Stage 7's stream closure so this freestanding header does not import an
 incomplete I/O dependency.
+
+Stage 5.4 provides the complete N4950 computational `<random>` and `<valarray>`
+surfaces. Random engines match all nine mandated 10,000th values; distributions
+have range, state, and statistical checks; and `valarray` covers owning arrays,
+all four selector proxies, arithmetic, transcendental operations, and range
+access. Random engine, adaptor, and distribution stream operators remain staged
+with Stage 7's `<ostream>` closure, matching the existing `<complex>` boundary.
 
 ### Stage 6 — Concurrency
 
