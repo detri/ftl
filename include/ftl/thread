@@ -9,6 +9,7 @@
 #include <detail/thread.hpp>
 #include <exception>
 #include <functional>
+#include <stop_token>
 #include <system_error>
 #include <tuple>
 #include <type_traits>
@@ -21,6 +22,7 @@
 #include <ftl/detail/thread.hpp>
 #include <ftl/exception>
 #include <ftl/functional>
+#include <ftl/stop_token>
 #include <ftl/system_error>
 #include <ftl/tuple>
 #include <ftl/type_traits>
@@ -97,20 +99,14 @@ public:
   public:
     id() noexcept = default;
 
-    friend constexpr bool operator==(
-        id left,
-        id right) noexcept {
-        return left.value_ == right.value_;
+    friend constexpr bool operator==(id left, id right) noexcept {
+      return left.value_ == right.value_;
     }
 
-    friend constexpr strong_ordering operator<=>(
-        id left,
-        id right) noexcept {
-        return left.value_ < right.value_
-            ? strong_ordering::less
-            : left.value_ > right.value_
-                ? strong_ordering::greater
-                : strong_ordering::equal;
+    friend constexpr strong_ordering operator<=>(id left, id right) noexcept {
+      return left.value_ < right.value_   ? strong_ordering::less
+             : left.value_ > right.value_ ? strong_ordering::greater
+                                          : strong_ordering::equal;
     }
 
   private:
@@ -250,6 +246,115 @@ struct thread_id_access {
 } // namespace detail
 
 inline void swap(thread &left, thread &right) noexcept { left.swap(right); }
+
+class jthread {
+public:
+  using id = thread::id;
+  using native_handle_type = thread::native_handle_type;
+
+  jthread() noexcept : source_(nostopstate) {}
+
+  template <class F, class... Args>
+    requires(!is_same_v<remove_cvref_t<F>, jthread>)
+  explicit jthread(F &&function, Args &&...arguments)
+      : source_{}, thread_{make_thread(source_, forward<F>(function),
+                                       forward<Args>(arguments)...)} {}
+
+  ~jthread() {
+    if (joinable()) {
+      request_stop();
+      join();
+    }
+  }
+
+  jthread(const jthread &) = delete;
+
+  jthread &operator=(const jthread &) = delete;
+
+  jthread(jthread &&other) noexcept
+      : source_(move(other.source_)), thread_(move(other.thread_)) {}
+
+  jthread &operator=(jthread &&other) noexcept {
+    if (this == &other)
+      return *this;
+
+    if (joinable()) {
+      request_stop();
+      join();
+    }
+
+    source_ = move(other.source_);
+    thread_ = move(other.thread_);
+
+    return *this;
+  }
+
+  void swap(jthread &other) noexcept {
+    source_.swap(other.source_);
+    thread_.swap(other.thread_);
+  }
+
+  [[nodiscard]]
+  bool joinable() const noexcept {
+    return thread_.joinable();
+  }
+
+  void join() { thread_.join(); }
+
+  void detach() { thread_.detach(); }
+
+  [[nodiscard]]
+  id get_id() const noexcept {
+    return thread_.get_id();
+  }
+
+  [[nodiscard]]
+  native_handle_type native_handle() {
+    return thread_.native_handle();
+  }
+
+  [[nodiscard]]
+  stop_source get_stop_source() noexcept {
+    return source_;
+  }
+
+  [[nodiscard]]
+  stop_token get_stop_token() const noexcept {
+    return source_.get_token();
+  }
+
+  bool request_stop() noexcept { return source_.request_stop(); }
+
+  [[nodiscard]]
+  static unsigned int hardware_concurrency() noexcept {
+    return thread::hardware_concurrency();
+  }
+
+  friend void swap(jthread &left, jthread &right) noexcept { left.swap(right); }
+
+private:
+  template <class F, class... Args>
+  static thread make_thread(stop_source &source, F &&function,
+                            Args &&...arguments) {
+    using function_type = decay_t<F>;
+
+    static_assert(is_constructible_v<function_type, F>);
+
+    static_assert((is_constructible_v<decay_t<Args>, Args> && ...));
+
+    if constexpr (is_invocable_v<function_type, stop_token, decay_t<Args>...>) {
+      return thread{forward<F>(function), source.get_token(),
+                    forward<Args>(arguments)...};
+    } else {
+      static_assert(is_invocable_v<function_type, decay_t<Args>...>);
+
+      return thread{forward<F>(function), forward<Args>(arguments)...};
+    }
+  }
+
+  stop_source source_;
+  thread thread_;
+};
 
 namespace this_thread {
 

@@ -4,9 +4,11 @@
 #define FTL_DETAIL_THREAD_HEADER
 
 #ifdef FTL_REPLACE_STL
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #else
+#include <ftl/cerrno>
 #include <ftl/cstddef>
 #include <ftl/cstdint>
 #endif
@@ -173,15 +175,11 @@ extern "C" int nanosleep(
 
 #if defined(__APPLE__)
 
-extern "C" int* __error();
-
 inline int native_errno() noexcept {
     return *__error();
 }
 
 #else
-
-extern "C" int* __errno_location();
 
 inline int native_errno() noexcept {
     return *__errno_location();
