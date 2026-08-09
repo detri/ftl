@@ -152,6 +152,8 @@ dependency order, not hundreds of individual overloads.
 | `<unordered_map>`    | Stage 4.3         |
 | `<flat_set>`         | Stage 4.3         |
 | `<flat_map>`         | Stage 4.3         |
+| `<ratio>`            | Stage 5.1         |
+| `<ctime>`            | Stage 5.1         |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -170,6 +172,7 @@ synopses:
 | `<streambuf>` | input/get-area stream-buffer machinery needed by seeded input streams                                            | put area, positioning/seeking, locale, synchronization, putback, and complete synopsis                             |
 | `<ios>`       | stream state, buffer association, state observers, and boolean conversion                                        | full `ios_base`/`basic_ios` formatting, locales, callbacks, ties, exception masks, and synopsis                    |
 | `<istream>`   | core unformatted character input, bulk reads, stream-state propagation, and user-defined extraction integration  | sentry, formatted extraction, remaining unformatted overloads, positioning, synchronization, and complete synopsis |
+| `<chrono>`    | durations, time points, calendars, clocks, clock conversion, literals, and `hh_mm_ss`                               | tzdb; formatters, stream insertion, and `from_stream` after Stage 7                                                  |
 
 `include/ftl/detail/rapidhash` is an implementation detail, not a standard
 header or roadmap milestone.
@@ -185,10 +188,9 @@ remain required when C++23 still specifies them; they are not silently dropped.
 
 | Area                      | Absent headers                                                                                                                                                     |
 |---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Concepts/types/vocabulary | `<ratio>`                                                                                                                                                          |
 | Algorithms/numerics       | `<numbers>`, `<random>`, `<valarray>`                                                                                                                              |
 | Text/encoding             | `<codecvt>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                               |
-| Errors/time/localization  | `<chrono>`, `<system_error>`, `<stacktrace>`, `<locale>`, `<clocale>`, `<ctime>`                                                                                   |
+| Errors/time/localization  | `<system_error>`, `<stacktrace>`, `<locale>`, `<clocale>`                                                                                                         |
 | C numerics/text           | `<cfenv>`, `<cmath>`, `<complex>`                                                                                                                                  |
 | I/O/formatting/files      | `<cstdio>`, `<fstream>`, `<iomanip>`, `<iostream>`, `<ostream>`, `<sstream>`, `<spanstream>`, `<strstream>`, `<syncstream>`, `<filesystem>`, `<format>`, `<print>` |
 | Concurrency               | `<barrier>`, `<condition_variable>`, `<future>`, `<latch>`, `<mutex>`, `<semaphore>`, `<shared_mutex>`, `<stop_token>`, `<thread>`                                 |
@@ -411,15 +413,42 @@ where required, and complexity checks.
 
 ### Stage 5 — Numerics, clocks, and errors
 
+**Status: in progress.**
+
 Take these closures in order:
 
-1. `<ratio>` + `<chrono>` + `<ctime>`
+1. `<ratio>` + `<chrono>` + `<ctime>` — **computational closure seeded**;
+   `<ratio>` and `<ctime>` complete
 2. `<system_error>` + `<stdexcept>` + `<stacktrace>`
 3. `<cfenv>` + `<cmath>` + `<numbers>` + `<complex>`
 4. `<random>` + `<valarray>`
 
 **Exit:** numeric and time facilities have specified edge behavior and do not
 smuggle hosted runtime dependencies into supported freestanding builds.
+
+Stage 5.1 provides the complete C++23 `<ratio>` synopsis and an independently
+owned `<ctime>` surface, including FTL's own `tm`, UTC conversion, textual time
+storage, and platform-width `time_t`. Its runtime-only operations cross a small
+C runtime boundary instead of importing a vendor C++ standard-library ABI.
+
+The seeded `<chrono>` surface covers durations, time points, calendars,
+`hh_mm_ss`, system/steady/UTC/TAI/GPS/file clocks, clock conversions, and
+literals. It advertises `__cpp_lib_chrono == 201611L` until the later C++20
+surface is complete. Local MSVC and Clang-CL builds pass the normal and
+`FTL_REPLACE_STL` test suites; native GCC, Clang, and AppleClang coverage remains
+part of the final completion gate.
+
+Shared machinery is kept private: `detail/time_core.hpp` owns civil-calendar
+arithmetic, `detail/time_storage.hpp` owns `<ctime>`'s thread-local result
+storage, and `detail/clock_runtime.hpp` owns platform system/steady clock reads.
+Future concurrency headers should consume the detail clock boundary directly
+when they need timed waits, without including the full public `<chrono>` header.
+
+`<chrono>` timezone database support is deferred: tzdb is a separate, large
+hosted-data undertaking. After Stage 7 completes `<locale>`, `<format>`, and the
+stream headers, return to `<chrono>` to add its formatters, stream insertion,
+and `from_stream` interfaces. Only then, and after the separate tzdb closure,
+can `<chrono>` move from seeded to complete.
 
 ### Stage 6 — Concurrency
 
@@ -442,10 +471,11 @@ Take these closures in order:
 1. `<locale>` + `<clocale>` + deprecated `<codecvt>`
 2. `<format>` + `<print>`
 3. `<iosfwd>` + `<ios>` + `<streambuf>` + `<istream>` + `<ostream>`
-4. `<iostream>` + `<fstream>` + `<sstream>` + `<spanstream>` +
+4. Return to `<chrono>` for formatters, stream insertion, and `from_stream`.
+5. `<iostream>` + `<fstream>` + `<sstream>` + `<spanstream>` +
    `<syncstream>` + `<iomanip>` + `<cstdio>` + deprecated `<strstream>`
-5. `<filesystem>`
-6. `<regex>`
+6. `<filesystem>`
+7. `<regex>`
 
 This stage is deliberately late: it has the widest dependency surface and the
 largest hosted-runtime boundary.

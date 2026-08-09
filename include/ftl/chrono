@@ -1,0 +1,1367 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CHRONO_HEADER
+#define FTL_CHRONO_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <compare>
+#include <cstdint>
+#include <ctime>
+#include <detail/clock_runtime.hpp>
+#include <detail/time_core.hpp>
+#include <limits>
+#include <ratio>
+#include <type_traits>
+#else
+#include <ftl/compare>
+#include <ftl/cstdint>
+#include <ftl/ctime>
+#include <ftl/detail/clock_runtime.hpp>
+#include <ftl/detail/time_core.hpp>
+#include <ftl/limits>
+#include <ftl/ratio>
+#include <ftl/type_traits>
+#endif
+
+FTL_BEGIN_NAMESPACE
+namespace chrono {
+
+namespace chrono_detail {
+template <class T> constexpr auto compare_values(const T &a, const T &b) {
+  using category =
+      conditional_t<is_floating_point_v<T>, partial_ordering, strong_ordering>;
+  return a < b   ? category::less
+         : b < a ? category::greater
+                 : category::equivalent;
+}
+} // namespace chrono_detail
+
+template <class Rep> struct treat_as_floating_point : is_floating_point<Rep> {};
+template <class Rep>
+inline constexpr bool treat_as_floating_point_v =
+    treat_as_floating_point<Rep>::value;
+template <class Rep> struct duration_values {
+  static constexpr Rep zero() noexcept { return Rep(0); }
+  static constexpr Rep min() noexcept { return numeric_limits<Rep>::lowest(); }
+  static constexpr Rep max() noexcept { return numeric_limits<Rep>::max(); }
+};
+
+template <class Rep, class Period = ratio<1>> class duration;
+namespace chrono_detail {
+template <class> struct is_duration : false_type {};
+template <class Rep, class Period>
+struct is_duration<duration<Rep, Period>> : true_type {};
+template <class> struct is_ratio : false_type {};
+template <intmax_t Numerator, intmax_t Denominator>
+struct is_ratio<ratio<Numerator, Denominator>> : true_type {};
+} // namespace chrono_detail
+template <class To, class Rep, class Period>
+constexpr To duration_cast(const duration<Rep, Period> &value);
+
+template <class Rep, class Period> class duration {
+  static_assert(!chrono_detail::is_duration<Rep>::value);
+  static_assert(chrono_detail::is_ratio<Period>::value && Period::num > 0);
+  Rep value_{};
+
+public:
+  using rep = Rep;
+  using period = typename Period::type;
+  constexpr duration() = default;
+  template <class R>
+    requires is_convertible_v<const R &, Rep> &&
+             (treat_as_floating_point_v<Rep> || !treat_as_floating_point_v<R>)
+  explicit constexpr duration(const R &value) : value_(value) {}
+  template <class R, class P>
+    requires(treat_as_floating_point_v<Rep> ||
+             (ratio_divide_t<P, Period>::den == 1 &&
+              !treat_as_floating_point_v<R>))
+  constexpr duration(const duration<R, P> &other)
+      : value_(duration_cast<duration>(other).count()) {}
+  constexpr Rep count() const { return value_; }
+  constexpr duration operator+() const { return *this; }
+  constexpr duration operator-() const { return duration(-value_); }
+  constexpr duration &operator++() {
+    ++value_;
+    return *this;
+  }
+  constexpr duration operator++(int) {
+    auto copy = *this;
+    ++*this;
+    return copy;
+  }
+  constexpr duration &operator--() {
+    --value_;
+    return *this;
+  }
+  constexpr duration operator--(int) {
+    auto copy = *this;
+    --*this;
+    return copy;
+  }
+  constexpr duration &operator+=(const duration &other) {
+    value_ += other.value_;
+    return *this;
+  }
+  constexpr duration &operator-=(const duration &other) {
+    value_ -= other.value_;
+    return *this;
+  }
+  constexpr duration &operator*=(const Rep &value) {
+    value_ *= value;
+    return *this;
+  }
+  constexpr duration &operator/=(const Rep &value) {
+    value_ /= value;
+    return *this;
+  }
+  constexpr duration &operator%=(const Rep &value) {
+    value_ %= value;
+    return *this;
+  }
+  constexpr duration &operator%=(const duration &value) {
+    value_ %= value.value_;
+    return *this;
+  }
+  static constexpr duration zero() noexcept {
+    return duration(duration_values<Rep>::zero());
+  }
+  static constexpr duration min() noexcept {
+    return duration(duration_values<Rep>::min());
+  }
+  static constexpr duration max() noexcept {
+    return duration(duration_values<Rep>::max());
+  }
+};
+
+template <class To, class Rep, class Period>
+constexpr To duration_cast(const duration<Rep, Period> &value) {
+  using factor = ratio_divide_t<Period, typename To::period>;
+  using common = common_type_t<typename To::rep, Rep, intmax_t>;
+  if constexpr (factor::num == 1 && factor::den == 1)
+    return To(static_cast<typename To::rep>(value.count()));
+  else if constexpr (factor::den == 1)
+    return To(
+        static_cast<typename To::rep>(common(value.count()) * factor::num));
+  else if constexpr (factor::num == 1)
+    return To(
+        static_cast<typename To::rep>(common(value.count()) / factor::den));
+  else
+    return To(static_cast<typename To::rep>(common(value.count()) *
+                                            factor::num / factor::den));
+}
+
+template <class R1, class P1, class R2, class P2>
+using duration_common_t = duration<
+    common_type_t<R1, R2>,
+    ratio<detail::ratio_gcd(P1::num, P2::num),
+          intmax_t(P1::den / detail::ratio_gcd(P1::den, P2::den) * P2::den)>>;
+
+#define FTL_DURATION_BINARY(OP)                                                \
+  template <class R1, class P1, class R2, class P2>                            \
+  constexpr auto operator OP(duration<R1, P1> a, duration<R2, P2> b) {         \
+    using C = duration_common_t<R1, P1, R2, P2>;                               \
+    return C(C(a).count() OP C(b).count());                                    \
+  }
+FTL_DURATION_BINARY(+)
+FTL_DURATION_BINARY(-)
+#undef FTL_DURATION_BINARY
+template <class R1, class P, class R2>
+  requires is_convertible_v<const R2 &, common_type_t<R1, R2>>
+constexpr auto operator*(duration<R1, P> d, const R2 &value) {
+  using C = common_type_t<R1, R2>;
+  return duration<C, P>(C(d.count()) * C(value));
+}
+template <class R1, class P, class R2>
+  requires is_convertible_v<const R1 &, common_type_t<R1, R2>>
+constexpr auto operator*(const R1 &value, duration<R2, P> d) {
+  return d * value;
+}
+template <class R1, class P, class R2>
+  requires is_convertible_v<const R2 &, common_type_t<R1, R2>> &&
+           (!chrono_detail::is_duration<remove_cvref_t<R2>>::value)
+constexpr auto operator/(duration<R1, P> d, const R2 &value) {
+  using C = common_type_t<R1, R2>;
+  return duration<C, P>(C(d.count()) / C(value));
+}
+template <class R1, class P1, class R2, class P2>
+constexpr auto operator/(duration<R1, P1> a, duration<R2, P2> b) {
+  using C = duration_common_t<R1, P1, R2, P2>;
+  return C(a).count() / C(b).count();
+}
+template <class R1, class P, class R2>
+  requires(!treat_as_floating_point_v<common_type_t<R1, R2>>)
+constexpr auto operator%(duration<R1, P> d, const R2 &value) {
+  using C = common_type_t<R1, R2>;
+  return duration<C, P>(C(d.count()) % C(value));
+}
+template <class R1, class P1, class R2, class P2>
+constexpr auto operator%(duration<R1, P1> a, duration<R2, P2> b) {
+  using C = duration_common_t<R1, P1, R2, P2>;
+  return C(C(a).count() % C(b).count());
+}
+template <class R1, class P1, class R2, class P2>
+constexpr bool operator==(duration<R1, P1> a, duration<R2, P2> b) {
+  using C = duration_common_t<R1, P1, R2, P2>;
+  return C(a).count() == C(b).count();
+}
+template <class R1, class P1, class R2, class P2>
+constexpr auto operator<=>(duration<R1, P1> a, duration<R2, P2> b) {
+  using C = duration_common_t<R1, P1, R2, P2>;
+  return chrono_detail::compare_values(C(a).count(), C(b).count());
+}
+
+template <class To, class Rep, class Period>
+constexpr To floor(const duration<Rep, Period> &d) {
+  auto result = duration_cast<To>(d);
+  if (result > d)
+    --result;
+  return result;
+}
+template <class To, class Rep, class Period>
+constexpr To ceil(const duration<Rep, Period> &d) {
+  auto result = duration_cast<To>(d);
+  if (result < d)
+    ++result;
+  return result;
+}
+template <class To, class Rep, class Period>
+  requires(!treat_as_floating_point_v<typename To::rep>)
+constexpr To round(const duration<Rep, Period> &d) {
+  auto low = floor<To>(d), high = low + To{1};
+  auto dl = d - low, dh = high - d;
+  return dl < dh ? low : dh < dl ? high : low.count() % 2 ? high : low;
+}
+template <class Rep, class Period>
+  requires numeric_limits<Rep>::is_signed
+constexpr duration<Rep, Period> abs(duration<Rep, Period> d) {
+  return d < duration<Rep, Period>::zero() ? -d : d;
+}
+
+using nanoseconds = duration<long long, nano>;
+using microseconds = duration<long long, micro>;
+using milliseconds = duration<long long, milli>;
+using seconds = duration<long long>;
+using minutes = duration<long long, ratio<60>>;
+using hours = duration<long long, ratio<3600>>;
+using days = duration<int, ratio<86400>>;
+using weeks = duration<int, ratio<604800>>;
+using years = duration<int, ratio<31556952>>;
+using months = duration<int, ratio<2629746>>;
+
+template <class Clock, class Duration = typename Clock::duration>
+class time_point {
+  static_assert(chrono_detail::is_duration<Duration>::value);
+  Duration value_{};
+
+public:
+  using clock = Clock;
+  using duration = Duration;
+  using rep = typename Duration::rep;
+  using period = typename Duration::period;
+  constexpr time_point() = default;
+  explicit constexpr time_point(const Duration &d) : value_(d) {}
+  template <class D>
+    requires is_convertible_v<D, Duration>
+  constexpr time_point(const time_point<Clock, D> &p)
+      : value_(p.time_since_epoch()) {}
+  constexpr Duration time_since_epoch() const { return value_; }
+  constexpr time_point &operator++() {
+    ++value_;
+    return *this;
+  }
+  constexpr time_point operator++(int) { return time_point{value_++}; }
+  constexpr time_point &operator--() {
+    --value_;
+    return *this;
+  }
+  constexpr time_point operator--(int) { return time_point{value_--}; }
+  constexpr time_point &operator+=(const Duration &d) {
+    value_ += d;
+    return *this;
+  }
+  constexpr time_point &operator-=(const Duration &d) {
+    value_ -= d;
+    return *this;
+  }
+  static constexpr time_point min() noexcept {
+    return time_point(Duration::min());
+  }
+  static constexpr time_point max() noexcept {
+    return time_point(Duration::max());
+  }
+};
+template <class C, class D1, class R, class P>
+constexpr auto operator+(time_point<C, D1> p, duration<R, P> d) {
+  using D = duration_common_t<typename D1::rep, typename D1::period, R, P>;
+  return time_point<C, D>(D(p.time_since_epoch()) + D(d));
+}
+template <class R, class P, class C, class D>
+constexpr auto operator+(duration<R, P> d, time_point<C, D> p) {
+  return p + d;
+}
+template <class C, class D1, class R, class P>
+constexpr auto operator-(time_point<C, D1> p, duration<R, P> d) {
+  return p + (-d);
+}
+template <class C, class D1, class D2>
+constexpr auto operator-(time_point<C, D1> a, time_point<C, D2> b) {
+  return a.time_since_epoch() - b.time_since_epoch();
+}
+template <class C, class D1, class D2>
+constexpr bool operator==(time_point<C, D1> a, time_point<C, D2> b) {
+  return a.time_since_epoch() == b.time_since_epoch();
+}
+template <class C, class D1, class D2>
+constexpr auto operator<=>(time_point<C, D1> a, time_point<C, D2> b) {
+  return chrono_detail::compare_values(a.time_since_epoch(),
+                                       b.time_since_epoch());
+}
+template <class To, class C, class D>
+constexpr auto time_point_cast(const time_point<C, D> &p) {
+  return time_point<C, To>(duration_cast<To>(p.time_since_epoch()));
+}
+template <class To, class C, class D>
+constexpr auto floor(const time_point<C, D> &p) {
+  return time_point<C, To>(chrono::floor<To>(p.time_since_epoch()));
+}
+template <class To, class C, class D>
+constexpr auto ceil(const time_point<C, D> &p) {
+  return time_point<C, To>(chrono::ceil<To>(p.time_since_epoch()));
+}
+template <class To, class C, class D>
+constexpr auto round(const time_point<C, D> &p) {
+  return time_point<C, To>(chrono::round<To>(p.time_since_epoch()));
+}
+
+struct system_clock {
+  using rep = long long;
+  using period = nano;
+  using duration = nanoseconds;
+  using time_point = chrono::time_point<system_clock>;
+  static constexpr bool is_steady = false;
+  static time_point now() noexcept {
+    return time_point(duration(ftl_clock_runtime::system_nanoseconds()));
+  }
+  static time_t to_time_t(const time_point &t) noexcept {
+    return duration_cast<seconds>(t.time_since_epoch()).count();
+  }
+  static time_point from_time_t(time_t t) noexcept {
+    return time_point(seconds(t));
+  }
+};
+struct steady_clock {
+  using rep = long long;
+  using period = nano;
+  using duration = nanoseconds;
+  using time_point = chrono::time_point<steady_clock>;
+  static constexpr bool is_steady = true;
+  static time_point now() noexcept {
+    return time_point(duration(ftl_clock_runtime::steady_nanoseconds()));
+  }
+};
+using high_resolution_clock = steady_clock;
+template <class Clock, class = void> struct is_clock : false_type {};
+template <class Clock>
+struct is_clock<Clock,
+                void_t<typename Clock::rep, typename Clock::period,
+                       typename Clock::duration, typename Clock::time_point,
+                       decltype(Clock::is_steady), decltype(Clock::now())>>
+    : true_type {};
+template <class Clock>
+inline constexpr bool is_clock_v = is_clock<Clock>::value;
+template <class Duration> using sys_time = time_point<system_clock, Duration>;
+using sys_seconds = sys_time<seconds>;
+using sys_days = sys_time<days>;
+struct local_t {};
+template <class Duration> using local_time = time_point<local_t, Duration>;
+using local_seconds = local_time<seconds>;
+using local_days = local_time<days>;
+
+class day {
+  unsigned char value_{};
+
+public:
+  day() = default;
+  explicit constexpr day(unsigned v) noexcept
+      : value_(static_cast<unsigned char>(v)) {}
+  constexpr day &operator++() noexcept {
+    ++value_;
+    return *this;
+  }
+  constexpr day operator++(int) noexcept {
+    auto c = *this;
+    ++*this;
+    return c;
+  }
+  constexpr day &operator--() noexcept {
+    --value_;
+    return *this;
+  }
+  constexpr day operator--(int) noexcept {
+    auto c = *this;
+    --*this;
+    return c;
+  }
+  constexpr day &operator+=(const days &d) noexcept {
+    value_ = static_cast<unsigned char>(value_ + d.count());
+    return *this;
+  }
+  constexpr day &operator-=(const days &d) noexcept { return *this += -d; }
+  explicit constexpr operator unsigned() const noexcept { return value_; }
+  constexpr bool ok() const noexcept { return value_ >= 1 && value_ <= 31; }
+  friend constexpr bool operator==(day, day) = default;
+  friend constexpr strong_ordering operator<=>(day a, day b) {
+    return chrono_detail::compare_values(a.value_, b.value_);
+  }
+};
+class month {
+  unsigned char value_{};
+
+public:
+  month() = default;
+  explicit constexpr month(unsigned v) noexcept
+      : value_(static_cast<unsigned char>(v)) {}
+  constexpr month &operator++() noexcept { return *this += months{1}; }
+  constexpr month operator++(int) noexcept {
+    auto c = *this;
+    ++*this;
+    return c;
+  }
+  constexpr month &operator--() noexcept { return *this -= months{1}; }
+  constexpr month operator--(int) noexcept {
+    auto c = *this;
+    --*this;
+    return c;
+  }
+  constexpr month &operator+=(const months &m) noexcept {
+    auto n = (int(value_) - 1 + m.count()) % 12;
+    if (n < 0)
+      n += 12;
+    value_ = static_cast<unsigned char>(n + 1);
+    return *this;
+  }
+  constexpr month &operator-=(const months &m) noexcept { return *this += -m; }
+  explicit constexpr operator unsigned() const noexcept { return value_; }
+  constexpr bool ok() const noexcept { return value_ >= 1 && value_ <= 12; }
+  friend constexpr bool operator==(month, month) = default;
+  friend constexpr strong_ordering operator<=>(month a, month b) {
+    return chrono_detail::compare_values(a.value_, b.value_);
+  }
+};
+class year {
+  short value_{};
+
+public:
+  year() = default;
+  explicit constexpr year(int v) noexcept : value_(static_cast<short>(v)) {}
+  constexpr year &operator++() noexcept {
+    ++value_;
+    return *this;
+  }
+  constexpr year operator++(int) noexcept {
+    auto c = *this;
+    ++*this;
+    return c;
+  }
+  constexpr year &operator--() noexcept {
+    --value_;
+    return *this;
+  }
+  constexpr year operator--(int) noexcept {
+    auto c = *this;
+    --*this;
+    return c;
+  }
+  constexpr year &operator+=(const years &y) noexcept {
+    value_ = static_cast<short>(value_ + y.count());
+    return *this;
+  }
+  constexpr year &operator-=(const years &y) noexcept { return *this += -y; }
+  constexpr year operator+() const noexcept { return *this; }
+  constexpr year operator-() const noexcept { return year{-value_}; }
+  constexpr bool is_leap() const noexcept { return detail::is_leap(value_); }
+  explicit constexpr operator int() const noexcept { return value_; }
+  constexpr bool ok() const noexcept {
+    return value_ >= -32767 && value_ <= 32767;
+  }
+  static constexpr year min() noexcept { return year{-32767}; }
+  static constexpr year max() noexcept { return year{32767}; }
+  friend constexpr bool operator==(year, year) = default;
+  friend constexpr strong_ordering operator<=>(year a, year b) {
+    return chrono_detail::compare_values(a.value_, b.value_);
+  }
+};
+inline constexpr month January{1}, February{2}, March{3}, April{4}, May{5},
+    June{6}, July{7}, August{8}, September{9}, October{10}, November{11},
+    December{12};
+class weekday_indexed;
+class weekday_last;
+struct last_spec;
+class weekday {
+  unsigned char value_{};
+
+public:
+  weekday() = default;
+  explicit constexpr weekday(unsigned v)
+      : value_(static_cast<unsigned char>(v == 7 ? 0 : v)) {}
+  constexpr weekday(const sys_days &d)
+      : value_(static_cast<unsigned char>(
+            ((d.time_since_epoch().count() + 4) % 7 + 7) % 7)) {}
+  explicit constexpr weekday(const local_days &d)
+      : weekday(sys_days{d.time_since_epoch()}) {}
+  constexpr weekday &operator++() { return *this += days{1}; }
+  constexpr weekday operator++(int) {
+    auto copy = *this;
+    ++*this;
+    return copy;
+  }
+  constexpr weekday &operator--() { return *this -= days{1}; }
+  constexpr weekday operator--(int) {
+    auto copy = *this;
+    --*this;
+    return copy;
+  }
+  constexpr unsigned c_encoding() const { return value_; }
+  constexpr unsigned iso_encoding() const { return value_ == 0 ? 7 : value_; }
+  constexpr bool ok() const { return value_ <= 6; }
+  constexpr weekday &operator+=(const days &d) {
+    auto n = (int(value_) + d.count()) % 7;
+    if (n < 0)
+      n += 7;
+    value_ = static_cast<unsigned char>(n);
+    return *this;
+  }
+  constexpr weekday &operator-=(const days &d) { return *this += -d; }
+  constexpr weekday_indexed operator[](unsigned) const;
+  constexpr weekday_last operator[](last_spec) const;
+  friend constexpr bool operator==(weekday, weekday) = default;
+};
+inline constexpr weekday Sunday{0}, Monday{1}, Tuesday{2}, Wednesday{3},
+    Thursday{4}, Friday{5}, Saturday{6};
+struct last_spec {
+  explicit last_spec() = default;
+};
+inline constexpr last_spec last{};
+class weekday_indexed {
+  chrono::weekday weekday_;
+  unsigned char index_{};
+
+public:
+  constexpr weekday_indexed(chrono::weekday w, unsigned i)
+      : weekday_(w), index_(static_cast<unsigned char>(i)) {}
+  constexpr chrono::weekday weekday() const { return weekday_; }
+  constexpr unsigned index() const { return index_; }
+  constexpr bool ok() const {
+    return weekday_.ok() && index_ >= 1 && index_ <= 5;
+  }
+  friend constexpr bool operator==(weekday_indexed, weekday_indexed) = default;
+};
+class weekday_last {
+  chrono::weekday weekday_;
+
+public:
+  explicit constexpr weekday_last(chrono::weekday w) : weekday_(w) {}
+  constexpr chrono::weekday weekday() const { return weekday_; }
+  constexpr bool ok() const { return weekday_.ok(); }
+  friend constexpr bool operator==(weekday_last, weekday_last) = default;
+};
+constexpr weekday_indexed weekday::operator[](unsigned index) const {
+  return {*this, index};
+}
+constexpr weekday_last weekday::operator[](last_spec) const {
+  return weekday_last{*this};
+}
+constexpr weekday_indexed operator/(weekday w, unsigned index) {
+  return {w, index};
+}
+constexpr weekday_last operator/(weekday w, last_spec) {
+  return weekday_last{w};
+}
+class month_day {
+  chrono::month m_;
+  chrono::day d_;
+
+public:
+  month_day() = default;
+  constexpr month_day(chrono::month m, chrono::day d) : m_(m), d_(d) {}
+  constexpr chrono::month month() const { return m_; }
+  constexpr chrono::day day() const { return d_; }
+  constexpr bool ok() const {
+    return m_.ok() && d_.ok() &&
+           unsigned(d_) <= detail::last_day(2000, unsigned(m_));
+  }
+  friend constexpr bool operator==(month_day, month_day) = default;
+  friend constexpr strong_ordering operator<=>(month_day a, month_day b) {
+    if (auto order = a.m_ <=> b.m_; order != 0)
+      return order;
+    return a.d_ <=> b.d_;
+  }
+};
+class month_day_last {
+  chrono::month m_;
+
+public:
+  explicit constexpr month_day_last(chrono::month m) : m_(m) {}
+  constexpr chrono::month month() const { return m_; }
+  constexpr bool ok() const { return m_.ok(); }
+  friend constexpr bool operator==(month_day_last, month_day_last) = default;
+  friend constexpr strong_ordering operator<=>(month_day_last a,
+                                               month_day_last b) {
+    return a.m_ <=> b.m_;
+  }
+};
+class month_weekday {
+  chrono::month m_;
+  chrono::weekday_indexed w_;
+
+public:
+  constexpr month_weekday(chrono::month m, chrono::weekday_indexed w)
+      : m_(m), w_(w) {}
+  constexpr chrono::month month() const { return m_; }
+  constexpr chrono::weekday_indexed weekday_indexed() const { return w_; }
+  constexpr bool ok() const { return m_.ok() && w_.ok(); }
+  friend constexpr bool operator==(month_weekday, month_weekday) = default;
+};
+class month_weekday_last {
+  chrono::month m_;
+  chrono::weekday_last w_;
+
+public:
+  constexpr month_weekday_last(chrono::month m, chrono::weekday_last w)
+      : m_(m), w_(w) {}
+  constexpr chrono::month month() const { return m_; }
+  constexpr chrono::weekday_last weekday_last() const { return w_; }
+  constexpr bool ok() const { return m_.ok() && w_.ok(); }
+  friend constexpr bool operator==(month_weekday_last,
+                                   month_weekday_last) = default;
+};
+constexpr month_day operator/(month m, day d) { return {m, d}; }
+constexpr month_day operator/(month m, int d) { return m / day(unsigned(d)); }
+constexpr month_day_last operator/(month m, last_spec) {
+  return month_day_last{m};
+}
+constexpr month_weekday operator/(month m, weekday_indexed w) { return {m, w}; }
+constexpr month_weekday_last operator/(month m, weekday_last w) {
+  return {m, w};
+}
+constexpr day operator+(day d, days n) { return d += n; }
+constexpr day operator+(days n, day d) { return d + n; }
+constexpr day operator-(day d, days n) { return d -= n; }
+constexpr days operator-(day a, day b) {
+  return days{int(unsigned(a)) - int(unsigned(b))};
+}
+constexpr month operator+(month m, months n) { return m += n; }
+constexpr month operator+(months n, month m) { return m + n; }
+constexpr month operator-(month m, months n) { return m -= n; }
+constexpr months operator-(month a, month b) {
+  auto n = int(unsigned(a)) - int(unsigned(b));
+  return months{n < 0 ? n + 12 : n};
+}
+constexpr year operator+(year y, years n) { return y += n; }
+constexpr year operator+(years n, year y) { return y + n; }
+constexpr year operator-(year y, years n) { return y -= n; }
+constexpr years operator-(year a, year b) { return years{int(a) - int(b)}; }
+constexpr weekday operator+(weekday w, days n) { return w += n; }
+constexpr weekday operator+(days n, weekday w) { return w + n; }
+constexpr weekday operator-(weekday w, days n) { return w -= n; }
+constexpr days operator-(weekday a, weekday b) {
+  auto n = int(a.c_encoding()) - int(b.c_encoding());
+  return days{n < 0 ? n + 7 : n};
+}
+
+class year_month {
+  chrono::year y_;
+  chrono::month m_;
+
+public:
+  year_month() = default;
+  constexpr year_month(chrono::year y, chrono::month m) : y_(y), m_(m) {}
+  constexpr chrono::year year() const { return y_; }
+  constexpr chrono::month month() const { return m_; }
+  constexpr year_month &operator+=(const months &v) {
+    auto old = m_;
+    m_ += v;
+    y_ += years{(int(unsigned(old)) - 1 + v.count()) / 12 -
+                ((int(unsigned(old)) - 1 + v.count()) < 0 &&
+                 ((int(unsigned(old)) - 1 + v.count()) % 12 != 0))};
+    return *this;
+  }
+  constexpr year_month &operator-=(const months &v) { return *this += -v; }
+  constexpr year_month &operator+=(const years &v) {
+    y_ += v;
+    return *this;
+  }
+  constexpr year_month &operator-=(const years &v) {
+    y_ -= v;
+    return *this;
+  }
+  constexpr bool ok() const { return y_.ok() && m_.ok(); }
+  friend constexpr bool operator==(year_month, year_month) = default;
+  friend constexpr strong_ordering operator<=>(year_month a, year_month b) {
+    if (auto order = a.y_ <=> b.y_; order != 0)
+      return order;
+    return a.m_ <=> b.m_;
+  }
+};
+class year_month_day_last;
+class year_month_day {
+  chrono::year y_;
+  chrono::month m_;
+  chrono::day d_;
+
+public:
+  year_month_day() = default;
+  constexpr year_month_day(chrono::year y, chrono::month m, chrono::day d)
+      : y_(y), m_(m), d_(d) {}
+  constexpr year_month_day(const year_month_day_last &) noexcept;
+  constexpr year_month_day(const sys_days &v) {
+    auto c = detail::civil_from_days(v.time_since_epoch().count());
+    y_ = chrono::year{c.year};
+    m_ = chrono::month{c.month};
+    d_ = chrono::day{c.day};
+  }
+  explicit constexpr year_month_day(const local_days &v)
+      : year_month_day(sys_days{v.time_since_epoch()}) {}
+  explicit constexpr operator sys_days() const {
+    return sys_days{
+        days{detail::days_from_civil(int(y_), unsigned(m_), unsigned(d_))}};
+  }
+  explicit constexpr operator local_days() const {
+    return local_days{
+        days{detail::days_from_civil(int(y_), unsigned(m_), unsigned(d_))}};
+  }
+  constexpr chrono::year year() const { return y_; }
+  constexpr chrono::month month() const { return m_; }
+  constexpr chrono::day day() const { return d_; }
+  constexpr year_month_day &operator+=(const months &v) {
+    auto ym = year_month{y_, m_} += v;
+    y_ = ym.year();
+    m_ = ym.month();
+    return *this;
+  }
+  constexpr year_month_day &operator-=(const months &v) { return *this += -v; }
+  constexpr year_month_day &operator+=(const years &v) {
+    y_ += v;
+    return *this;
+  }
+  constexpr year_month_day &operator-=(const years &v) {
+    y_ -= v;
+    return *this;
+  }
+  constexpr bool ok() const {
+    return y_.ok() && m_.ok() && d_.ok() &&
+           unsigned(d_) <= detail::last_day(int(y_), unsigned(m_));
+  }
+  friend constexpr bool operator==(year_month_day, year_month_day) = default;
+  friend constexpr strong_ordering operator<=>(year_month_day a,
+                                               year_month_day b) {
+    if (auto order = a.y_ <=> b.y_; order != 0)
+      return order;
+    if (auto order = a.m_ <=> b.m_; order != 0)
+      return order;
+    return a.d_ <=> b.d_;
+  }
+};
+class year_month_day_last {
+  chrono::year y_;
+  chrono::month_day_last mdl_;
+
+public:
+  constexpr year_month_day_last(chrono::year y, chrono::month_day_last mdl)
+      : y_(y), mdl_(mdl) {}
+  constexpr chrono::year year() const { return y_; }
+  constexpr chrono::month month() const { return mdl_.month(); }
+  constexpr chrono::month_day_last month_day_last() const { return mdl_; }
+  constexpr chrono::day day() const {
+    return chrono::day{detail::last_day(int(y_), unsigned(month()))};
+  }
+  constexpr year_month_day_last &operator+=(const months &value) {
+    auto ym = year_month{y_, month()} += value;
+    y_ = ym.year();
+    mdl_ = chrono::month_day_last{ym.month()};
+    return *this;
+  }
+  constexpr year_month_day_last &operator-=(const months &value) {
+    return *this += -value;
+  }
+  constexpr year_month_day_last &operator+=(const years &value) {
+    y_ += value;
+    return *this;
+  }
+  constexpr year_month_day_last &operator-=(const years &value) {
+    return *this += -value;
+  }
+  explicit constexpr operator sys_days() const {
+    return sys_days(year_month_day{y_, month(), day()});
+  }
+  explicit constexpr operator local_days() const {
+    return local_days{sys_days(*this).time_since_epoch()};
+  }
+  constexpr bool ok() const { return y_.ok() && mdl_.ok(); }
+  friend constexpr bool operator==(year_month_day_last,
+                                   year_month_day_last) = default;
+  friend constexpr strong_ordering operator<=>(year_month_day_last a,
+                                               year_month_day_last b) {
+    if (auto order = a.y_ <=> b.y_; order != 0)
+      return order;
+    return a.mdl_ <=> b.mdl_;
+  }
+};
+constexpr year_month_day::year_month_day(
+    const year_month_day_last &value) noexcept
+    : y_(value.year()), m_(value.month()), d_(value.day()) {}
+class year_month_weekday {
+  chrono::year y_;
+  chrono::month m_;
+  chrono::weekday_indexed wi_;
+
+public:
+  constexpr year_month_weekday(chrono::year y, chrono::month m,
+                               chrono::weekday_indexed wi)
+      : y_(y), m_(m), wi_(wi) {}
+  constexpr year_month_weekday(const sys_days &d)
+      : y_(year_month_day{d}.year()), m_(year_month_day{d}.month()),
+        wi_(chrono::weekday{d},
+            (unsigned(year_month_day{d}.day()) - 1) / 7 + 1) {}
+  explicit constexpr year_month_weekday(const local_days &d)
+      : year_month_weekday(sys_days{d.time_since_epoch()}) {}
+  explicit constexpr operator sys_days() const {
+    auto first = sys_days{year_month_day{y_, m_, chrono::day{1}}};
+    auto offset = wi_.weekday() - chrono::weekday{first};
+    return first + offset + days{7 * (int(wi_.index()) - 1)};
+  }
+  explicit constexpr operator local_days() const {
+    return local_days{sys_days(*this).time_since_epoch()};
+  }
+  constexpr chrono::year year() const { return y_; }
+  constexpr chrono::month month() const { return m_; }
+  constexpr chrono::weekday weekday() const { return wi_.weekday(); }
+  constexpr unsigned index() const { return wi_.index(); }
+  constexpr chrono::weekday_indexed weekday_indexed() const { return wi_; }
+  constexpr year_month_weekday &operator+=(const months &value) {
+    auto ym = year_month{y_, m_} += value;
+    y_ = ym.year();
+    m_ = ym.month();
+    return *this;
+  }
+  constexpr year_month_weekday &operator-=(const months &value) {
+    return *this += -value;
+  }
+  constexpr year_month_weekday &operator+=(const years &value) {
+    y_ += value;
+    return *this;
+  }
+  constexpr year_month_weekday &operator-=(const years &value) {
+    return *this += -value;
+  }
+  constexpr bool ok() const {
+    return y_.ok() && m_.ok() && wi_.ok() &&
+           year_month_day{sys_days(*this)}.month() == m_;
+  }
+  friend constexpr bool operator==(year_month_weekday,
+                                   year_month_weekday) = default;
+};
+class year_month_weekday_last {
+  chrono::year y_;
+  chrono::month m_;
+  chrono::weekday_last wl_;
+
+public:
+  constexpr year_month_weekday_last(chrono::year y, chrono::month m,
+                                    chrono::weekday_last wl)
+      : y_(y), m_(m), wl_(wl) {}
+  explicit constexpr operator sys_days() const {
+    auto end = sys_days{year_month_day_last{y_, month_day_last{m_}}};
+    return end - (chrono::weekday{end} - wl_.weekday());
+  }
+  explicit constexpr operator local_days() const {
+    return local_days{sys_days(*this).time_since_epoch()};
+  }
+  constexpr chrono::year year() const { return y_; }
+  constexpr chrono::month month() const { return m_; }
+  constexpr chrono::weekday weekday() const { return wl_.weekday(); }
+  constexpr chrono::weekday_last weekday_last() const { return wl_; }
+  constexpr year_month_weekday_last &operator+=(const months &value) {
+    auto ym = year_month{y_, m_} += value;
+    y_ = ym.year();
+    m_ = ym.month();
+    return *this;
+  }
+  constexpr year_month_weekday_last &operator-=(const months &value) {
+    return *this += -value;
+  }
+  constexpr year_month_weekday_last &operator+=(const years &value) {
+    y_ += value;
+    return *this;
+  }
+  constexpr year_month_weekday_last &operator-=(const years &value) {
+    return *this += -value;
+  }
+  constexpr bool ok() const { return y_.ok() && m_.ok() && wl_.ok(); }
+  friend constexpr bool operator==(year_month_weekday_last,
+                                   year_month_weekday_last) = default;
+};
+constexpr year_month operator/(year y, month m) { return {y, m}; }
+constexpr year_month operator/(year y, int m) { return y / month(unsigned(m)); }
+constexpr year_month_day operator/(year_month ym, day d) {
+  return {ym.year(), ym.month(), d};
+}
+constexpr year_month_day operator/(year_month ym, int d) {
+  return ym / day(unsigned(d));
+}
+constexpr year_month_day_last operator/(year_month ym, last_spec) {
+  return {ym.year(), month_day_last{ym.month()}};
+}
+constexpr year_month_weekday operator/(year_month ym, weekday_indexed wi) {
+  return {ym.year(), ym.month(), wi};
+}
+constexpr year_month_weekday_last operator/(year_month ym, weekday_last wl) {
+  return {ym.year(), ym.month(), wl};
+}
+constexpr year_month_day operator/(year y, month_day md) {
+  return {y, md.month(), md.day()};
+}
+constexpr month_day operator/(int m, day d) { return month(unsigned(m)) / d; }
+constexpr month_day operator/(day d, month m) { return m / d; }
+constexpr month_day operator/(day d, int m) { return month(unsigned(m)) / d; }
+constexpr month_day_last operator/(int m, last_spec) {
+  return month(unsigned(m)) / last;
+}
+constexpr month_day_last operator/(last_spec, month m) { return m / last; }
+constexpr month_day_last operator/(last_spec, int m) {
+  return month(unsigned(m)) / last;
+}
+constexpr month_weekday operator/(int m, weekday_indexed w) {
+  return month(unsigned(m)) / w;
+}
+constexpr month_weekday operator/(weekday_indexed w, month m) { return m / w; }
+constexpr month_weekday operator/(weekday_indexed w, int m) {
+  return month(unsigned(m)) / w;
+}
+constexpr month_weekday_last operator/(int m, weekday_last w) {
+  return month(unsigned(m)) / w;
+}
+constexpr month_weekday_last operator/(weekday_last w, month m) {
+  return m / w;
+}
+constexpr month_weekday_last operator/(weekday_last w, int m) {
+  return month(unsigned(m)) / w;
+}
+constexpr year_month_day operator/(int y, month_day md) { return year{y} / md; }
+constexpr year_month_day operator/(month_day md, year y) { return y / md; }
+constexpr year_month_day operator/(month_day md, int y) { return year{y} / md; }
+constexpr year_month_day_last operator/(int y, month_day_last mdl) {
+  return {year{y}, mdl};
+}
+constexpr year_month_day_last operator/(month_day_last mdl, year y) {
+  return {y, mdl};
+}
+constexpr year_month_day_last operator/(month_day_last mdl, int y) {
+  return {year{y}, mdl};
+}
+constexpr year_month_day_last operator/(year y, month_day_last mdl) {
+  return {y, mdl};
+}
+constexpr year_month_weekday operator/(year y, month_weekday mw) {
+  return {y, mw.month(), mw.weekday_indexed()};
+}
+constexpr year_month_weekday_last operator/(year y, month_weekday_last mw) {
+  return {y, mw.month(), mw.weekday_last()};
+}
+constexpr year_month_weekday operator/(int y, month_weekday mw) {
+  return year{y} / mw;
+}
+constexpr year_month_weekday operator/(month_weekday mw, year y) {
+  return y / mw;
+}
+constexpr year_month_weekday operator/(month_weekday mw, int y) {
+  return year{y} / mw;
+}
+constexpr year_month_weekday_last operator/(int y, month_weekday_last mw) {
+  return year{y} / mw;
+}
+constexpr year_month_weekday_last operator/(month_weekday_last mw, year y) {
+  return y / mw;
+}
+constexpr year_month_weekday_last operator/(month_weekday_last mw, int y) {
+  return year{y} / mw;
+}
+
+#define FTL_CALENDAR_ARITHMETIC(Type)                                          \
+  constexpr Type operator+(Type value, months amount) {                        \
+    return value += amount;                                                    \
+  }                                                                            \
+  constexpr Type operator+(months amount, Type value) {                        \
+    return value += amount;                                                    \
+  }                                                                            \
+  constexpr Type operator-(Type value, months amount) {                        \
+    return value -= amount;                                                    \
+  }                                                                            \
+  constexpr Type operator+(Type value, years amount) {                         \
+    return value += amount;                                                    \
+  }                                                                            \
+  constexpr Type operator+(years amount, Type value) {                         \
+    return value += amount;                                                    \
+  }                                                                            \
+  constexpr Type operator-(Type value, years amount) { return value -= amount; }
+FTL_CALENDAR_ARITHMETIC(year_month)
+FTL_CALENDAR_ARITHMETIC(year_month_day)
+FTL_CALENDAR_ARITHMETIC(year_month_day_last)
+FTL_CALENDAR_ARITHMETIC(year_month_weekday)
+FTL_CALENDAR_ARITHMETIC(year_month_weekday_last)
+#undef FTL_CALENDAR_ARITHMETIC
+
+constexpr months operator-(year_month left, year_month right) {
+  return months{(int(left.year()) - int(right.year())) * 12 +
+                int(unsigned(left.month())) - int(unsigned(right.month()))};
+}
+
+namespace chrono_detail {
+constexpr unsigned hms_width(uintmax_t denominator) {
+  uintmax_t power = 1;
+  for (unsigned width = 0; width <= 18; ++width) {
+    if (power % denominator == 0)
+      return width;
+    if (width != 18)
+      power *= 10;
+  }
+  return 6;
+}
+constexpr uintmax_t power_of_ten(unsigned exponent) {
+  uintmax_t result = 1;
+  while (exponent--)
+    result *= 10;
+  return result;
+}
+} // namespace chrono_detail
+
+template <class Duration> class hh_mm_ss {
+  static_assert(chrono_detail::is_duration<Duration>::value);
+  static_assert(Duration::period::num <= Duration::period::den);
+
+public:
+  static constexpr unsigned fractional_width =
+      chrono_detail::hms_width(Duration::period::den);
+  using precision =
+      duration<common_type_t<typename Duration::rep, chrono::seconds::rep>,
+               ratio<1, chrono_detail::power_of_ten(fractional_width)>>;
+
+private:
+  bool neg_;
+  chrono::hours h_;
+  chrono::minutes m_;
+  chrono::seconds s_;
+  precision sub_;
+
+public:
+  constexpr hh_mm_ss() noexcept : hh_mm_ss(Duration::zero()) {}
+  explicit constexpr hh_mm_ss(Duration d) : neg_(d < Duration::zero()) {
+    if (neg_)
+      d = -d;
+    h_ = duration_cast<chrono::hours>(d);
+    d -= duration_cast<Duration>(h_);
+    m_ = duration_cast<chrono::minutes>(d);
+    d -= duration_cast<Duration>(m_);
+    s_ = duration_cast<chrono::seconds>(d);
+    sub_ = duration_cast<precision>(d - duration_cast<Duration>(s_));
+  }
+  constexpr bool is_negative() const noexcept { return neg_; }
+  constexpr chrono::hours hours() const noexcept { return h_; }
+  constexpr chrono::minutes minutes() const noexcept { return m_; }
+  constexpr chrono::seconds seconds() const noexcept { return s_; }
+  constexpr precision subseconds() const noexcept { return sub_; }
+  constexpr explicit operator precision() const noexcept {
+    auto d = duration_cast<precision>(h_ + m_ + s_) + sub_;
+    return neg_ ? -d : d;
+  }
+  constexpr precision to_duration() const noexcept { return precision(*this); }
+};
+constexpr bool is_am(const hours &h) noexcept {
+  return h >= hours{0} && h < hours{12};
+}
+constexpr bool is_pm(const hours &h) noexcept {
+  return h >= hours{12} && h < hours{24};
+}
+constexpr hours make12(const hours &h) noexcept {
+  auto v = h.count() % 12;
+  return hours{v ? v : 12};
+}
+constexpr hours make24(const hours &h, bool pm) noexcept {
+  return hours{h.count() % 12 + (pm ? 12 : 0)};
+}
+
+struct utc_clock;
+struct tai_clock;
+struct gps_clock;
+template <class Duration> using utc_time = time_point<utc_clock, Duration>;
+using utc_seconds = utc_time<seconds>;
+template <class Duration> using tai_time = time_point<tai_clock, Duration>;
+using tai_seconds = tai_time<seconds>;
+template <class Duration> using gps_time = time_point<gps_clock, Duration>;
+using gps_seconds = gps_time<seconds>;
+struct leap_second_info {
+  bool is_leap_second;
+  seconds elapsed;
+};
+namespace chrono_detail {
+inline constexpr long long leap_boundaries[] = {
+    78796800,   94694400,   126230400, 157766400, 189302400,  220924800,
+    252460800,  283996800,  315532800, 362793600, 394329600,  425865600,
+    489024000,  567993600,  631152000, 662688000, 709948800,  741484800,
+    773020800,  820454400,  867715200, 915148800, 1136073600, 1230768000,
+    1341100800, 1435708800, 1483228800};
+constexpr int leaps_before(long long unix_seconds) noexcept {
+  int n = 0;
+  for (auto boundary : leap_boundaries)
+    if (unix_seconds >= boundary)
+      ++n;
+    else
+      break;
+  return n;
+}
+} // namespace chrono_detail
+struct utc_clock {
+  using rep = long long;
+  using period = nano;
+  using duration = nanoseconds;
+  using time_point = utc_time<duration>;
+  static constexpr bool is_steady = false;
+  template <class D> static constexpr auto from_sys(const sys_time<D> &t) {
+    auto whole = duration_cast<seconds>(t.time_since_epoch()).count();
+    using C = common_type_t<D, seconds>;
+    return utc_time<C>{C(t.time_since_epoch()) +
+                       seconds{chrono_detail::leaps_before(whole)}};
+  }
+  template <class D> static constexpr auto to_sys(const utc_time<D> &t) {
+    auto guess = duration_cast<seconds>(t.time_since_epoch()).count();
+    for (int i = 0; i < 2; ++i)
+      guess = duration_cast<seconds>(t.time_since_epoch()).count() -
+              chrono_detail::leaps_before(guess);
+    using C = common_type_t<D, seconds>;
+    return sys_time<C>{C(t.time_since_epoch()) -
+                       seconds{chrono_detail::leaps_before(guess)}};
+  }
+  static time_point now() { return from_sys(system_clock::now()); }
+};
+template <class D>
+constexpr leap_second_info get_leap_second_info(const utc_time<D> &t) {
+  auto sys = utc_clock::to_sys(t);
+  auto elapsed = seconds{chrono_detail::leaps_before(
+      duration_cast<seconds>(sys.time_since_epoch()).count())};
+  return {utc_clock::from_sys(sys) < t, elapsed};
+}
+struct tai_clock {
+  using rep = long long;
+  using period = nano;
+  using duration = nanoseconds;
+  using time_point = tai_time<duration>;
+  static constexpr bool is_steady = false;
+  template <class D> static constexpr auto from_utc(const utc_time<D> &t) {
+    using C = common_type_t<D, seconds>;
+    return tai_time<C>{C(t.time_since_epoch()) + seconds{378691210}};
+  }
+  template <class D> static constexpr auto to_utc(const tai_time<D> &t) {
+    using C = common_type_t<D, seconds>;
+    return utc_time<C>{C(t.time_since_epoch()) - seconds{378691210}};
+  }
+  static time_point now() { return from_utc(utc_clock::now()); }
+};
+struct gps_clock {
+  using rep = long long;
+  using period = nano;
+  using duration = nanoseconds;
+  using time_point = gps_time<duration>;
+  static constexpr bool is_steady = false;
+  template <class D> static constexpr auto from_utc(const utc_time<D> &t) {
+    using C = common_type_t<D, seconds>;
+    return gps_time<C>{C(t.time_since_epoch()) - seconds{315964809}};
+  }
+  template <class D> static constexpr auto to_utc(const gps_time<D> &t) {
+    using C = common_type_t<D, seconds>;
+    return utc_time<C>{C(t.time_since_epoch()) + seconds{315964809}};
+  }
+  static time_point now() { return from_utc(utc_clock::now()); }
+};
+struct file_clock {
+  using rep = long long;
+  using period = nano;
+  using duration = nanoseconds;
+  using time_point = chrono::time_point<file_clock>;
+  static constexpr bool is_steady = false;
+  template <class D> static constexpr auto from_sys(const sys_time<D> &t) {
+    return chrono::time_point<file_clock, D>{t.time_since_epoch()};
+  }
+  template <class D>
+  static constexpr auto to_sys(const chrono::time_point<file_clock, D> &t) {
+    return sys_time<D>{t.time_since_epoch()};
+  }
+  static time_point now() noexcept { return from_sys(system_clock::now()); }
+};
+template <class Duration> using file_time = time_point<file_clock, Duration>;
+using file_seconds = file_time<seconds>;
+template <class DestinationClock, class SourceClock>
+struct clock_time_conversion;
+template <class Clock> struct clock_time_conversion<Clock, Clock> {
+  template <class D>
+  constexpr auto operator()(const time_point<Clock, D> &t) const {
+    return t;
+  }
+};
+template <> struct clock_time_conversion<system_clock, system_clock> {
+  template <class D>
+  constexpr sys_time<D> operator()(const sys_time<D> &t) const {
+    return t;
+  }
+};
+template <> struct clock_time_conversion<utc_clock, utc_clock> {
+  template <class D>
+  constexpr utc_time<D> operator()(const utc_time<D> &t) const {
+    return t;
+  }
+};
+template <class Clock> struct clock_time_conversion<system_clock, Clock> {
+  template <class D>
+    requires requires(const time_point<Clock, D> &value) {
+      Clock::to_sys(value);
+    }
+  constexpr auto operator()(const time_point<Clock, D> &t) const {
+    return Clock::to_sys(t);
+  }
+};
+template <class Clock> struct clock_time_conversion<Clock, system_clock> {
+  template <class D>
+    requires requires(const sys_time<D> &value) { Clock::from_sys(value); }
+  constexpr auto operator()(const sys_time<D> &t) const {
+    return Clock::from_sys(t);
+  }
+};
+template <> struct clock_time_conversion<utc_clock, tai_clock> {
+  template <class D> constexpr auto operator()(const tai_time<D> &t) const {
+    return tai_clock::to_utc(t);
+  }
+};
+template <> struct clock_time_conversion<tai_clock, utc_clock> {
+  template <class D> constexpr auto operator()(const utc_time<D> &t) const {
+    return tai_clock::from_utc(t);
+  }
+};
+template <> struct clock_time_conversion<utc_clock, gps_clock> {
+  template <class D> constexpr auto operator()(const gps_time<D> &t) const {
+    return gps_clock::to_utc(t);
+  }
+};
+template <> struct clock_time_conversion<gps_clock, utc_clock> {
+  template <class D> constexpr auto operator()(const utc_time<D> &t) const {
+    return gps_clock::from_utc(t);
+  }
+};
+template <class DestinationClock, class SourceClock, class D>
+constexpr auto clock_cast(const time_point<SourceClock, D> &t) {
+  constexpr bool direct =
+      requires { clock_time_conversion<DestinationClock, SourceClock>{}(t); };
+  constexpr bool via_system = requires {
+    clock_time_conversion<DestinationClock, system_clock>{}(
+        clock_time_conversion<system_clock, SourceClock>{}(t));
+  };
+  constexpr bool via_utc = requires {
+    clock_time_conversion<DestinationClock, utc_clock>{}(
+        clock_time_conversion<utc_clock, SourceClock>{}(t));
+  };
+  constexpr bool via_system_utc = requires {
+    clock_time_conversion<DestinationClock, utc_clock>{}(
+        clock_time_conversion<utc_clock, system_clock>{}(
+            clock_time_conversion<system_clock, SourceClock>{}(t)));
+  };
+  constexpr bool via_utc_system = requires {
+    clock_time_conversion<DestinationClock, system_clock>{}(
+        clock_time_conversion<system_clock, utc_clock>{}(
+            clock_time_conversion<utc_clock, SourceClock>{}(t)));
+  };
+
+  static_assert(direct || via_system || via_utc || via_system_utc ||
+                via_utc_system);
+  static_assert(direct || !(via_system && via_utc));
+  static_assert(direct || via_system || via_utc ||
+                !(via_system_utc && via_utc_system));
+
+  if constexpr (direct)
+    return clock_time_conversion<DestinationClock, SourceClock>{}(t);
+  else if constexpr (via_system)
+    return clock_time_conversion<DestinationClock, system_clock>{}(
+        clock_time_conversion<system_clock, SourceClock>{}(t));
+  else if constexpr (via_utc)
+    return clock_time_conversion<DestinationClock, utc_clock>{}(
+        clock_time_conversion<utc_clock, SourceClock>{}(t));
+  else if constexpr (via_system_utc)
+    return clock_time_conversion<DestinationClock, utc_clock>{}(
+        clock_time_conversion<utc_clock, system_clock>{}(
+            clock_time_conversion<system_clock, SourceClock>{}(t)));
+  else
+    return clock_time_conversion<DestinationClock, system_clock>{}(
+        clock_time_conversion<system_clock, utc_clock>{}(
+            clock_time_conversion<utc_clock, SourceClock>{}(t)));
+}
+
+namespace literals {
+inline namespace chrono_literals {
+constexpr day operator""d(unsigned long long value) noexcept {
+  return day{static_cast<unsigned>(value)};
+}
+constexpr year operator""y(unsigned long long value) noexcept {
+  return year{static_cast<int>(value)};
+}
+constexpr hours operator""h(unsigned long long v) { return hours(v); }
+constexpr duration<long double, ratio<3600>> operator""h(long double v) {
+  return duration<long double, ratio<3600>>(v);
+}
+constexpr minutes operator""min(unsigned long long v) { return minutes(v); }
+constexpr duration<long double, ratio<60>> operator""min(long double v) {
+  return duration<long double, ratio<60>>(v);
+}
+constexpr seconds operator""s(unsigned long long v) { return seconds(v); }
+constexpr duration<long double> operator""s(long double v) {
+  return duration<long double>(v);
+}
+constexpr milliseconds operator""ms(unsigned long long v) {
+  return milliseconds(v);
+}
+constexpr duration<long double, milli> operator""ms(long double v) {
+  return duration<long double, milli>(v);
+}
+constexpr microseconds operator""us(unsigned long long v) {
+  return microseconds(v);
+}
+constexpr duration<long double, micro> operator""us(long double v) {
+  return duration<long double, micro>(v);
+}
+constexpr nanoseconds operator""ns(unsigned long long v) {
+  return nanoseconds(v);
+}
+constexpr duration<long double, nano> operator""ns(long double v) {
+  return duration<long double, nano>(v);
+}
+} // namespace chrono_literals
+} // namespace literals
+} // namespace chrono
+
+template <class R1, class P1, class R2, class P2>
+struct common_type<chrono::duration<R1, P1>, chrono::duration<R2, P2>> {
+  using type = chrono::duration_common_t<R1, P1, R2, P2>;
+};
+template <class C, class D1, class D2>
+struct common_type<chrono::time_point<C, D1>, chrono::time_point<C, D2>> {
+  using type = chrono::time_point<C, common_type_t<D1, D2>>;
+};
+
+FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_chrono) || __cpp_lib_chrono < 201611L
+#undef __cpp_lib_chrono
+#define __cpp_lib_chrono 201611L
+#endif
+
+#if !defined(__cpp_lib_chrono_udls) || __cpp_lib_chrono_udls < 201304L
+#undef __cpp_lib_chrono_udls
+#define __cpp_lib_chrono_udls 201304L
+#endif
+#endif

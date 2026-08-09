@@ -1,0 +1,178 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_RATIO_HEADER
+#define FTL_RATIO_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <cstdint>
+#include <type_traits>
+#else
+#include <ftl/cstdint>
+#include <ftl/type_traits>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+namespace detail {
+constexpr uintmax_t ratio_abs(intmax_t value) noexcept {
+  return value < 0 ? uintmax_t(-(value + 1)) + 1 : uintmax_t(value);
+}
+constexpr uintmax_t ratio_gcd(uintmax_t left, uintmax_t right) noexcept {
+  while (right != 0) {
+    const auto remainder = left % right;
+    left = right;
+    right = remainder;
+  }
+  return left;
+}
+constexpr bool ratio_less_unsigned(uintmax_t left_num, uintmax_t left_den,
+                                   uintmax_t right_num,
+                                   uintmax_t right_den) noexcept {
+  bool reversed = false;
+  for (;;) {
+    const auto left_whole = left_num / left_den;
+    const auto right_whole = right_num / right_den;
+    if (left_whole != right_whole)
+      return reversed ? left_whole > right_whole : left_whole < right_whole;
+    left_num %= left_den;
+    right_num %= right_den;
+    if (left_num == 0 || right_num == 0) {
+      if (left_num == right_num)
+        return false;
+      const bool result = left_num == 0;
+      return reversed ? !result : result;
+    }
+    const auto old_left_den = left_den;
+    const auto old_right_den = right_den;
+    left_den = left_num;
+    right_den = right_num;
+    left_num = old_left_den;
+    right_num = old_right_den;
+    reversed = !reversed;
+  }
+}
+
+template <intmax_t Left, intmax_t Right> struct ratio_checked_multiply {
+  static constexpr auto a = ratio_abs(Left);
+  static constexpr auto b = ratio_abs(Right);
+  static constexpr auto limit = (Left < 0) != (Right < 0)
+                                    ? uintmax_t(INTMAX_MAX) + 1
+                                    : uintmax_t(INTMAX_MAX);
+  static_assert(a == 0 || b <= limit / a, "ratio arithmetic overflow");
+  static constexpr intmax_t value = Left * Right;
+};
+
+template <intmax_t Value, bool Negate> struct ratio_signed_value {
+  static constexpr intmax_t value = Value;
+};
+template <intmax_t Value> struct ratio_signed_value<Value, true> {
+  static_assert(Value != INTMAX_MIN, "ratio normalization overflow");
+  static constexpr intmax_t value = -Value;
+};
+
+template <intmax_t Left, intmax_t Right> struct ratio_checked_add {
+  static_assert((Right >= 0 && Left <= INTMAX_MAX - Right) ||
+                    (Right < 0 && Left >= INTMAX_MIN - Right),
+                "ratio arithmetic overflow");
+  static constexpr intmax_t value = Left + Right;
+};
+} // namespace detail
+
+template <intmax_t N, intmax_t D = 1> class ratio {
+  static_assert(D != 0, "ratio denominator cannot be zero");
+  static constexpr auto divisor =
+      detail::ratio_gcd(detail::ratio_abs(N), detail::ratio_abs(D));
+
+public:
+  static constexpr intmax_t num =
+      N == 0
+          ? 0
+          : detail::ratio_signed_value<N / intmax_t(divisor), (D < 0)>::value;
+  static constexpr intmax_t den = intmax_t(detail::ratio_abs(D) / divisor);
+  using type = ratio<num, den>;
+};
+
+template <class R1, class R2> struct ratio_multiply {
+private:
+  static constexpr auto g1 =
+      detail::ratio_gcd(detail::ratio_abs(R1::num), detail::ratio_abs(R2::den));
+  static constexpr auto g2 =
+      detail::ratio_gcd(detail::ratio_abs(R2::num), detail::ratio_abs(R1::den));
+
+public:
+  using type =
+      ratio<detail::ratio_checked_multiply<R1::num / intmax_t(g1),
+                                           R2::num / intmax_t(g2)>::value,
+            detail::ratio_checked_multiply<R1::den / intmax_t(g2),
+                                           R2::den / intmax_t(g1)>::value>;
+};
+template <class R1, class R2>
+using ratio_multiply_t = typename ratio_multiply<R1, R2>::type;
+
+template <class R1, class R2> struct ratio_divide {
+  static_assert(R2::num != 0, "cannot divide by a zero ratio");
+  using type = ratio_multiply_t<R1, ratio<R2::den, R2::num>>;
+};
+template <class R1, class R2>
+using ratio_divide_t = typename ratio_divide<R1, R2>::type;
+
+template <class R1, class R2> struct ratio_add {
+private:
+  static constexpr auto g = detail::ratio_gcd(R1::den, R2::den);
+  static constexpr auto left =
+      detail::ratio_checked_multiply<R1::num, R2::den / intmax_t(g)>::value;
+  static constexpr auto right =
+      detail::ratio_checked_multiply<R2::num, R1::den / intmax_t(g)>::value;
+  static constexpr auto numerator =
+      detail::ratio_checked_add<left, right>::value;
+
+public:
+  using type = ratio<numerator, detail::ratio_checked_multiply<
+                                    R1::den, R2::den / intmax_t(g)>::value>;
+};
+template <class R1, class R2>
+using ratio_add_t = typename ratio_add<R1, R2>::type;
+
+template <class R1, class R2>
+struct ratio_subtract : ratio_add<R1, ratio<-R2::num, R2::den>> {};
+template <class R1, class R2>
+using ratio_subtract_t = typename ratio_subtract<R1, R2>::type;
+
+template <class R1, class R2>
+inline constexpr bool ratio_equal_v = R1::num == R2::num && R1::den == R2::den;
+template <class R1, class R2>
+inline constexpr bool ratio_not_equal_v = !ratio_equal_v<R1, R2>;
+template <class R1, class R2>
+inline constexpr bool ratio_less_v =
+    R1::num < 0 && R2::num >= 0   ? true
+    : R1::num >= 0 && R2::num < 0 ? false
+    : R1::num < 0
+        ? detail::ratio_less_unsigned(detail::ratio_abs(R2::num), R2::den,
+                                      detail::ratio_abs(R1::num), R1::den)
+        : detail::ratio_less_unsigned(R1::num, R1::den, R2::num, R2::den);
+template <class R1, class R2>
+inline constexpr bool ratio_less_equal_v = !ratio_less_v<R2, R1>;
+template <class R1, class R2>
+inline constexpr bool ratio_greater_v = ratio_less_v<R2, R1>;
+template <class R1, class R2>
+inline constexpr bool ratio_greater_equal_v = !ratio_less_v<R1, R2>;
+
+using atto = ratio<1, 1000000000000000000LL>;
+using femto = ratio<1, 1000000000000000LL>;
+using pico = ratio<1, 1000000000000LL>;
+using nano = ratio<1, 1000000000>;
+using micro = ratio<1, 1000000>;
+using milli = ratio<1, 1000>;
+using centi = ratio<1, 100>;
+using deci = ratio<1, 10>;
+using deca = ratio<10, 1>;
+using hecto = ratio<100, 1>;
+using kilo = ratio<1000, 1>;
+using mega = ratio<1000000, 1>;
+using giga = ratio<1000000000, 1>;
+using tera = ratio<1000000000000LL, 1>;
+using peta = ratio<1000000000000000LL, 1>;
+using exa = ratio<1000000000000000000LL, 1>;
+
+FTL_END_NAMESPACE
+#endif
