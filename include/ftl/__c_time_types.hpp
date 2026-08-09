@@ -9,6 +9,13 @@ namespace std {
 namespace ftl {
 #endif
 
+using clock_t = long;
+#if defined(_WIN32)
+using time_t = long long;
+#else
+using time_t = long;
+#endif
+
 struct tm {
   int tm_sec;
   int tm_min;

@@ -1,0 +1,143 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CTIME_HEADER
+#define FTL_CTIME_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <__c_time_types.hpp>
+#include <cstddef>
+#include <detail/time_core.hpp>
+#include <detail/time_storage.hpp>
+#include <type_traits>
+#else
+#include <ftl/__c_time_types.hpp>
+#include <ftl/cstddef>
+#include <ftl/detail/time_core.hpp>
+#include <ftl/detail/time_storage.hpp>
+#include <ftl/type_traits>
+#endif
+
+#define CLOCKS_PER_SEC 1000L
+
+namespace ftl_time_runtime {
+extern "C" {
+#if defined(_WIN32)
+long clock();
+long long _time64(long long *);
+int _localtime64_s(void *, const long long *);
+long long _mktime64(void *);
+decltype(sizeof(0)) strftime(char *, decltype(sizeof(0)), const char *,
+                             const void *);
+#else
+long clock();
+long time(long *);
+void *localtime(const long *);
+long mktime(void *);
+decltype(sizeof(0)) strftime(char *, decltype(sizeof(0)), const char *,
+                             const void *);
+#endif
+}
+} // namespace ftl_time_runtime
+
+FTL_BEGIN_NAMESPACE
+
+inline clock_t clock() noexcept { return ftl_time_runtime::clock(); }
+inline double difftime(time_t end, time_t beginning) noexcept {
+  return static_cast<double>(end - beginning);
+}
+inline time_t time(time_t *result) noexcept {
+#if defined(_WIN32)
+  return ftl_time_runtime::_time64(result);
+#else
+  return ftl_time_runtime::time(result);
+#endif
+}
+
+inline tm *gmtime(const time_t *source) noexcept {
+  if (!source)
+    return nullptr;
+  const long long days = detail::floor_div(*source, 86400);
+  long long seconds = *source - days * 86400;
+  const auto date = detail::civil_from_days(days);
+  auto &out = detail::ctime_tm_storage;
+  out.tm_sec = int(seconds % 60);
+  seconds /= 60;
+  out.tm_min = int(seconds % 60);
+  seconds /= 60;
+  out.tm_hour = int(seconds);
+  out.tm_mday = int(date.day);
+  out.tm_mon = int(date.month) - 1;
+  out.tm_year = date.year - 1900;
+  out.tm_wday = int((days + 4) % 7 + ((days + 4) % 7 < 0 ? 7 : 0));
+  out.tm_yday = int(days - detail::days_from_civil(date.year, 1, 1));
+  out.tm_isdst = 0;
+  return &out;
+}
+
+inline tm *localtime(const time_t *source) noexcept {
+  if (!source)
+    return nullptr;
+  auto &out = detail::ctime_tm_storage;
+#if defined(_WIN32)
+  return ftl_time_runtime::_localtime64_s(&out, source) == 0 ? &out : nullptr;
+#else
+  const auto native =
+      static_cast<const tm *>(ftl_time_runtime::localtime(source));
+  if (!native)
+    return nullptr;
+  out = *native;
+  return &out;
+#endif
+}
+
+inline time_t mktime(tm *value) noexcept {
+#if defined(_WIN32)
+  return ftl_time_runtime::_mktime64(value);
+#else
+  return ftl_time_runtime::mktime(value);
+#endif
+}
+
+inline char *asctime(const tm *value) noexcept {
+  if (!value || value->tm_wday < 0 || value->tm_wday > 6 || value->tm_mon < 0 ||
+      value->tm_mon > 11)
+    return nullptr;
+  constexpr const char *weekdays[] = {"Sun", "Mon", "Tue", "Wed",
+                                      "Thu", "Fri", "Sat"};
+  constexpr const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+  auto *out = detail::ctime_text_storage;
+  auto two = [](char *target, int number) {
+    target[0] = char('0' + number / 10 % 10);
+    target[1] = char('0' + number % 10);
+  };
+  for (int i = 0; i < 3; ++i) {
+    out[i] = weekdays[value->tm_wday][i];
+    out[i + 4] = months[value->tm_mon][i];
+  }
+  out[3] = out[7] = out[10] = out[19] = ' ';
+  out[13] = out[16] = ':';
+  out[8] = value->tm_mday < 10 ? ' ' : char('0' + value->tm_mday / 10 % 10);
+  out[9] = char('0' + value->tm_mday % 10);
+  two(out + 11, value->tm_hour);
+  two(out + 14, value->tm_min);
+  two(out + 17, value->tm_sec);
+  const int year = value->tm_year + 1900;
+  for (int i = 0, divisor = 1000; i < 4; ++i, divisor /= 10)
+    out[20 + i] = char('0' + year / divisor % 10);
+  out[24] = '\n';
+  out[25] = '\0';
+  return out;
+}
+
+inline char *ctime(const time_t *source) noexcept {
+  const auto value = localtime(source);
+  return value ? asctime(value) : nullptr;
+}
+inline size_t strftime(char *buffer, size_t count, const char *format,
+                       const tm *value) {
+  return ftl_time_runtime::strftime(buffer, count, format, value);
+}
+
+FTL_END_NAMESPACE
+#endif
