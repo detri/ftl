@@ -1,0 +1,543 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_MUTEX_HEADER
+#define FTL_MUTEX_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <chrono>
+#include <cstddef>
+#include <detail/mutex.hpp>
+#include <exception>
+#include <functional>
+#include <memory>
+#include <system_error>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+#define FTL_MUTEX_BEGIN_NAMESPACE namespace std {
+#define FTL_MUTEX_END_NAMESPACE }
+#else
+#include <ftl/chrono>
+#include <ftl/cstddef>
+#include <ftl/detail/mutex.hpp>
+#include <ftl/exception>
+#include <ftl/functional>
+#include <ftl/memory>
+#include <ftl/system_error>
+#include <ftl/tuple>
+#include <ftl/type_traits>
+#include <ftl/utility>
+#define FTL_MUTEX_BEGIN_NAMESPACE namespace ftl {
+#define FTL_MUTEX_END_NAMESPACE }
+#endif
+
+FTL_MUTEX_BEGIN_NAMESPACE
+
+struct defer_lock_t {
+  explicit defer_lock_t() = default;
+};
+
+struct try_to_lock_t {
+  explicit try_to_lock_t() = default;
+};
+
+struct adopt_lock_t {
+  explicit adopt_lock_t() = default;
+};
+
+inline constexpr defer_lock_t defer_lock{};
+inline constexpr try_to_lock_t try_to_lock{};
+inline constexpr adopt_lock_t adopt_lock{};
+
+namespace detail {
+
+[[noreturn]]
+inline void throw_mutex_error(errc error, const char *operation) {
+#if FTL_HAS_EXCEPTIONS
+  throw system_error(make_error_code(error), operation);
+#else
+  (void)error;
+  (void)operation;
+  terminate();
+#endif
+}
+
+template <class Lockable> class unlock_guard {
+public:
+  explicit unlock_guard(Lockable &lockable) noexcept : lockable_(&lockable) {}
+
+  unlock_guard(const unlock_guard &) = delete;
+  unlock_guard &operator=(const unlock_guard &) = delete;
+
+  ~unlock_guard() {
+    if (lockable_ != nullptr)
+      lockable_->unlock();
+  }
+
+  void release() noexcept { lockable_ = nullptr; }
+
+private:
+  Lockable *lockable_;
+};
+
+template <class First> int try_lock_pack(First &first) {
+  return first.try_lock() ? -1 : 0;
+}
+
+template <class First, class Second, class... Rest>
+int try_lock_pack(First &first, Second &second, Rest &...rest) {
+  if (!first.try_lock())
+    return 0;
+
+  unlock_guard<First> guard(first);
+
+  const int result = try_lock_pack(second, rest...);
+
+  if (result == -1) {
+    guard.release();
+    return -1;
+  }
+
+  return result + 1;
+}
+
+template <size_t Index = 0, class Tuple>
+void tuple_lock_at(Tuple &locks, size_t index) {
+  if constexpr (Index < tuple_size_v<Tuple>) {
+    if (Index == index) {
+      get<Index>(locks).lock();
+      return;
+    }
+
+    tuple_lock_at<Index + 1>(locks, index);
+  }
+}
+
+template <size_t Index = 0, class Tuple>
+bool tuple_try_lock_at(Tuple &locks, size_t index) {
+  if constexpr (Index < tuple_size_v<Tuple>) {
+    if (Index == index)
+      return get<Index>(locks).try_lock();
+
+    return tuple_try_lock_at<Index + 1>(locks, index);
+  } else {
+    return false;
+  }
+}
+
+template <size_t Index = 0, class Tuple>
+void tuple_unlock_at(Tuple &locks, size_t index) noexcept {
+  if constexpr (Index < tuple_size_v<Tuple>) {
+    if (Index == index) {
+      get<Index>(locks).unlock();
+      return;
+    }
+
+    tuple_unlock_at<Index + 1>(locks, index);
+  }
+}
+
+template <class Tuple> class lock_sequence_guard {
+public:
+  lock_sequence_guard(Tuple &locks, size_t first) noexcept
+      : locks_(locks), first_(first), count_(1) {}
+
+  lock_sequence_guard(const lock_sequence_guard &) = delete;
+  lock_sequence_guard &operator=(const lock_sequence_guard &) = delete;
+
+  ~lock_sequence_guard() { unlock(); }
+
+  void acquired() noexcept { ++count_; }
+
+  void release() noexcept { count_ = 0; }
+
+  void unlock() noexcept {
+    constexpr size_t lock_count = tuple_size_v<Tuple>;
+
+    while (count_ != 0) {
+      --count_;
+
+      const size_t index = (first_ + count_) % lock_count;
+
+      tuple_unlock_at(locks_, index);
+    }
+  }
+
+private:
+  Tuple &locks_;
+  size_t first_;
+  size_t count_;
+};
+
+template <class... MutexTypes> struct scoped_lock_mutex_type {};
+
+template <class Mutex> struct scoped_lock_mutex_type<Mutex> {
+  using mutex_type = Mutex;
+};
+
+} // namespace detail
+
+class mutex {
+public:
+  constexpr mutex() noexcept = default;
+  ~mutex() = default;
+
+  mutex(const mutex &) = delete;
+  mutex &operator=(const mutex &) = delete;
+
+  void lock() { state_.lock(); }
+
+  bool try_lock() { return state_.try_lock(); }
+
+  void unlock() { state_.unlock(); }
+
+private:
+  detail::mutex_state state_;
+};
+
+class recursive_mutex {
+public:
+  recursive_mutex() {}
+  ~recursive_mutex() = default;
+
+  recursive_mutex(const recursive_mutex &) = delete;
+  recursive_mutex &operator=(const recursive_mutex &) = delete;
+
+  void lock() {
+    if (!state_.lock()) {
+      detail::throw_mutex_error(errc::resource_unavailable_try_again,
+                                "recursive_mutex::lock");
+    }
+  }
+
+  bool try_lock() noexcept { return state_.try_lock(); }
+
+  void unlock() { state_.unlock(); }
+
+private:
+  detail::recursive_mutex_state state_;
+};
+
+class timed_mutex {
+public:
+  timed_mutex() {}
+  ~timed_mutex() = default;
+
+  timed_mutex(const timed_mutex &) = delete;
+  timed_mutex &operator=(const timed_mutex &) = delete;
+
+  void lock() { state_.lock(); }
+
+  bool try_lock() { return state_.try_lock(); }
+
+  template <class Rep, class Period>
+  bool try_lock_for(const chrono::duration<Rep, Period> &relative_time) {
+    return state_.try_lock_for(
+        detail::mutex_timeout_nanoseconds(relative_time));
+  }
+
+  template <class Clock, class Duration>
+  bool
+  try_lock_until(const chrono::time_point<Clock, Duration> &absolute_time) {
+    return detail::mutex_try_lock_until(state_, absolute_time);
+  }
+
+  void unlock() { state_.unlock(); }
+
+private:
+  detail::mutex_state state_;
+};
+
+class recursive_timed_mutex {
+public:
+  recursive_timed_mutex() {}
+  ~recursive_timed_mutex() = default;
+
+  recursive_timed_mutex(const recursive_timed_mutex &) = delete;
+
+  recursive_timed_mutex &operator=(const recursive_timed_mutex &) = delete;
+
+  void lock() {
+    if (!state_.lock()) {
+      detail::throw_mutex_error(errc::resource_unavailable_try_again,
+                                "recursive_timed_mutex::lock");
+    }
+  }
+
+  bool try_lock() noexcept { return state_.try_lock(); }
+
+  template <class Rep, class Period>
+  bool try_lock_for(const chrono::duration<Rep, Period> &relative_time) {
+    return state_.try_lock_for(
+        detail::mutex_timeout_nanoseconds(relative_time));
+  }
+
+  template <class Clock, class Duration>
+  bool
+  try_lock_until(const chrono::time_point<Clock, Duration> &absolute_time) {
+    return detail::mutex_try_lock_until(state_, absolute_time);
+  }
+
+  void unlock() { state_.unlock(); }
+
+private:
+  detail::recursive_mutex_state state_;
+};
+
+template <class L1, class L2, class... L3>
+int try_lock(L1 &first, L2 &second, L3 &...rest) {
+  return detail::try_lock_pack(first, second, rest...);
+}
+
+template <class L1, class L2, class... L3>
+void lock(L1 &first, L2 &second, L3 &...rest) {
+  tuple<L1 &, L2 &, L3 &...> locks{first, second, rest...};
+
+  constexpr size_t lock_count = 2 + sizeof...(L3);
+
+  size_t first_index = 0;
+
+  for (;;) {
+    detail::tuple_lock_at(locks, first_index);
+
+    detail::lock_sequence_guard guard(locks, first_index);
+
+    bool failed = false;
+    size_t failed_index = first_index;
+
+    for (size_t offset = 1; offset < lock_count; ++offset) {
+      const size_t index = (first_index + offset) % lock_count;
+
+      if (!detail::tuple_try_lock_at(locks, index)) {
+        failed = true;
+        failed_index = index;
+        break;
+      }
+
+      guard.acquired();
+    }
+
+    if (!failed) {
+      guard.release();
+      return;
+    }
+
+    guard.unlock();
+
+    // Begin the next attempt at the mutex that
+    // prevented the previous attempt from
+    // completing. This avoids permanently
+    // privileging one ordering.
+    first_index = failed_index;
+
+    detail::native_thread_yield();
+  }
+}
+
+template <class Mutex> class lock_guard {
+public:
+  using mutex_type = Mutex;
+
+  explicit lock_guard(mutex_type &mutex) : mutex_(mutex) { mutex_.lock(); }
+
+  lock_guard(mutex_type &mutex, adopt_lock_t) : mutex_(mutex) {}
+
+  ~lock_guard() { mutex_.unlock(); }
+
+  lock_guard(const lock_guard &) = delete;
+  lock_guard &operator=(const lock_guard &) = delete;
+
+private:
+  mutex_type &mutex_;
+};
+
+template <class... MutexTypes>
+class scoped_lock : public detail::scoped_lock_mutex_type<MutexTypes...> {
+public:
+  explicit scoped_lock(MutexTypes &...mutexes) : mutexes_(mutexes...) {
+    if constexpr (sizeof...(MutexTypes) == 1) {
+      get<0>(mutexes_).lock();
+    } else if constexpr (sizeof...(MutexTypes) > 1) {
+      apply([](auto &...locks) { lock(locks...); }, mutexes_);
+    }
+  }
+
+  explicit scoped_lock(adopt_lock_t, MutexTypes &...mutexes)
+      : mutexes_(mutexes...) {}
+
+  ~scoped_lock() {
+    apply([](auto &...locks) { (locks.unlock(), ...); }, mutexes_);
+  }
+
+  scoped_lock(const scoped_lock &) = delete;
+  scoped_lock &operator=(const scoped_lock &) = delete;
+
+private:
+  tuple<MutexTypes &...> mutexes_;
+};
+
+template <class Mutex> class unique_lock {
+public:
+  using mutex_type = Mutex;
+
+  unique_lock() noexcept = default;
+
+  explicit unique_lock(mutex_type &mutex) : mutex_(addressof(mutex)) {
+    mutex_->lock();
+    owns_ = true;
+  }
+
+  unique_lock(mutex_type &mutex, defer_lock_t) noexcept
+      : mutex_(addressof(mutex)) {}
+
+  unique_lock(mutex_type &mutex, try_to_lock_t)
+      : mutex_(addressof(mutex)), owns_(mutex_->try_lock()) {}
+
+  unique_lock(mutex_type &mutex, adopt_lock_t)
+      : mutex_(addressof(mutex)), owns_(true) {}
+
+  template <class Clock, class Duration>
+  unique_lock(mutex_type &mutex,
+              const chrono::time_point<Clock, Duration> &absolute_time)
+      : mutex_(addressof(mutex)), owns_(mutex_->try_lock_until(absolute_time)) {
+  }
+
+  template <class Rep, class Period>
+  unique_lock(mutex_type &mutex,
+              const chrono::duration<Rep, Period> &relative_time)
+      : mutex_(addressof(mutex)), owns_(mutex_->try_lock_for(relative_time)) {}
+
+  ~unique_lock() {
+    if (owns_)
+      mutex_->unlock();
+  }
+
+  unique_lock(const unique_lock &) = delete;
+  unique_lock &operator=(const unique_lock &) = delete;
+
+  unique_lock(unique_lock &&other) noexcept
+      : mutex_(exchange(other.mutex_, nullptr)),
+        owns_(exchange(other.owns_, false)) {}
+
+  unique_lock &operator=(unique_lock &&other) noexcept {
+    unique_lock(move(other)).swap(*this);
+    return *this;
+  }
+
+  void lock() {
+    require_lockable();
+
+    mutex_->lock();
+    owns_ = true;
+  }
+
+  bool try_lock() noexcept {
+    require_lockable();
+
+    owns_ = mutex_->try_lock();
+    return owns_;
+  }
+
+  template <class Rep, class Period>
+  bool try_lock_for(const chrono::duration<Rep, Period> &relative_time) {
+    require_lockable();
+
+    owns_ = mutex_->try_lock_for(relative_time);
+
+    return owns_;
+  }
+
+  template <class Clock, class Duration>
+  bool
+  try_lock_until(const chrono::time_point<Clock, Duration> &absolute_time) {
+    require_lockable();
+
+    owns_ = mutex_->try_lock_until(absolute_time);
+
+    return owns_;
+  }
+
+  void unlock() {
+    if (!owns_) {
+      detail::throw_mutex_error(errc::operation_not_permitted,
+                                "unique_lock::unlock");
+    }
+
+    mutex_->unlock();
+    owns_ = false;
+  }
+
+  void swap(unique_lock &other) noexcept {
+    mutex_type *mutex = mutex_;
+    mutex_ = other.mutex_;
+    other.mutex_ = mutex;
+
+    const bool owns = owns_;
+    owns_ = other.owns_;
+    other.owns_ = owns;
+  }
+
+  mutex_type *release() noexcept {
+    mutex_type *result = mutex_;
+
+    mutex_ = nullptr;
+    owns_ = false;
+
+    return result;
+  }
+
+  bool owns_lock() const noexcept { return owns_; }
+
+  explicit operator bool() const noexcept { return owns_; }
+
+  mutex_type *mutex() const noexcept { return mutex_; }
+
+private:
+  void require_lockable() const {
+    if (mutex_ == nullptr) {
+      detail::throw_mutex_error(errc::operation_not_permitted, "unique_lock");
+    }
+
+    if (owns_) {
+      detail::throw_mutex_error(errc::resource_deadlock_would_occur,
+                                "unique_lock");
+    }
+  }
+
+  mutex_type *mutex_ = nullptr;
+  bool owns_ = false;
+};
+
+struct once_flag {
+  constexpr once_flag() noexcept = default;
+
+  once_flag(const once_flag &) = delete;
+  once_flag &operator=(const once_flag &) = delete;
+
+private:
+  template <class Callable, class... Args>
+  friend void call_once(once_flag &, Callable &&, Args &&...);
+
+  detail::once_state state_;
+};
+
+template <class Callable, class... Args>
+void call_once(once_flag &flag, Callable &&function, Args &&...arguments) {
+  static_assert(is_invocable_v<Callable, Args...>);
+
+  flag.state_.call([&] {
+    invoke(forward<Callable>(function), forward<Args>(arguments)...);
+  });
+}
+
+template <class Mutex>
+void swap(unique_lock<Mutex> &left, unique_lock<Mutex> &right) noexcept {
+  left.swap(right);
+}
+
+FTL_MUTEX_END_NAMESPACE
+
+#undef FTL_MUTEX_BEGIN_NAMESPACE
+#undef FTL_MUTEX_END_NAMESPACE
+
+#endif // FTL_MUTEX_HEADER

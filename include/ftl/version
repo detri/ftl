@@ -448,6 +448,18 @@
 #define __cpp_lib_stdatomic_h 202011L
 #endif
 
+#if !defined(__cpp_lib_shared_timed_mutex) || \
+    __cpp_lib_shared_timed_mutex < 201402L
+#undef __cpp_lib_shared_timed_mutex
+#define __cpp_lib_shared_timed_mutex 201402L
+#endif
+
+#if !defined(__cpp_lib_shared_mutex) || \
+    __cpp_lib_shared_mutex < 201505L
+#undef __cpp_lib_shared_mutex
+#define __cpp_lib_shared_mutex 201505L
+#endif
+
 #if !defined(__cpp_lib_jthread) || \
     __cpp_lib_jthread < 201911L
 #undef __cpp_lib_jthread

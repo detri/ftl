@@ -1,0 +1,255 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CONDITION_VARIABLE_HEADER
+#define FTL_CONDITION_VARIABLE_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <chrono>
+#include <detail/condition_variable.hpp>
+#include <detail/thread_exit.hpp>
+#include <mutex>
+#include <new>
+#include <stop_token>
+#include <system_error>
+#include <utility>
+#define FTL_CONDITION_VARIABLE_BEGIN_NAMESPACE namespace std {
+#define FTL_CONDITION_VARIABLE_END_NAMESPACE }
+#else
+#include <ftl/chrono>
+#include <ftl/detail/condition_variable.hpp>
+#include <ftl/detail/thread_exit.hpp>
+#include <ftl/mutex>
+#include <ftl/new>
+#include <ftl/stop_token>
+#include <ftl/system_error>
+#include <ftl/utility>
+#define FTL_CONDITION_VARIABLE_BEGIN_NAMESPACE namespace ftl {
+#define FTL_CONDITION_VARIABLE_END_NAMESPACE }
+#endif
+
+FTL_CONDITION_VARIABLE_BEGIN_NAMESPACE
+
+enum class cv_status { no_timeout, timeout };
+
+class condition_variable {
+public:
+  condition_variable() {}
+  ~condition_variable() = default;
+
+  condition_variable(const condition_variable &) = delete;
+
+  condition_variable &operator=(const condition_variable &) = delete;
+
+  void notify_one() noexcept { state_.notify_one(); }
+
+  void notify_all() noexcept { state_.notify_all(); }
+
+  void wait(unique_lock<mutex> &lock) { detail::condition_wait(state_, lock); }
+
+  template <class Predicate>
+  void wait(unique_lock<mutex> &lock, Predicate pred) {
+    while (!pred())
+      wait(lock);
+  }
+
+  template <class Clock, class Duration>
+  cv_status
+  wait_until(unique_lock<mutex> &lock,
+             const chrono::time_point<Clock, Duration> &absolute_time) {
+    return detail::condition_wait_until(state_, lock, absolute_time)
+               ? cv_status::timeout
+               : cv_status::no_timeout;
+  }
+
+  template <class Clock, class Duration, class Predicate>
+  bool wait_until(unique_lock<mutex> &lock,
+                  const chrono::time_point<Clock, Duration> &absolute_time,
+                  Predicate pred) {
+    while (!pred()) {
+      if (wait_until(lock, absolute_time) == cv_status::timeout) {
+        return pred();
+      }
+    }
+
+    return true;
+  }
+
+  template <class Rep, class Period>
+  cv_status wait_for(unique_lock<mutex> &lock,
+                     const chrono::duration<Rep, Period> &relative_time) {
+    return wait_until(lock, chrono::steady_clock::now() + relative_time);
+  }
+
+  template <class Rep, class Period, class Predicate>
+  bool wait_for(unique_lock<mutex> &lock,
+                const chrono::duration<Rep, Period> &relative_time,
+                Predicate pred) {
+    return wait_until(lock, chrono::steady_clock::now() + relative_time,
+                      move(pred));
+  }
+
+private:
+  detail::condition_variable_state state_;
+};
+
+class condition_variable_any {
+public:
+  condition_variable_any() {}
+  ~condition_variable_any() = default;
+
+  condition_variable_any(const condition_variable_any &) = delete;
+
+  condition_variable_any &operator=(const condition_variable_any &) = delete;
+
+  void notify_one() noexcept { state_.notify_one(); }
+
+  void notify_all() noexcept { state_.notify_all(); }
+
+  template <class Lock> void wait(Lock &lock) {
+    detail::condition_wait(state_, lock);
+  }
+
+  template <class Lock, class Predicate> void wait(Lock &lock, Predicate pred) {
+    while (!pred())
+      wait(lock);
+  }
+
+  template <class Lock, class Clock, class Duration>
+  cv_status
+  wait_until(Lock &lock,
+             const chrono::time_point<Clock, Duration> &absolute_time) {
+    return detail::condition_wait_until(state_, lock, absolute_time)
+               ? cv_status::timeout
+               : cv_status::no_timeout;
+  }
+
+  template <class Lock, class Clock, class Duration, class Predicate>
+  bool wait_until(Lock &lock,
+                  const chrono::time_point<Clock, Duration> &absolute_time,
+                  Predicate pred) {
+    while (!pred()) {
+      if (wait_until(lock, absolute_time) == cv_status::timeout) {
+        return pred();
+      }
+    }
+
+    return true;
+  }
+
+  template <class Lock, class Rep, class Period>
+  cv_status wait_for(Lock &lock,
+                     const chrono::duration<Rep, Period> &relative_time) {
+    return wait_until(lock, chrono::steady_clock::now() + relative_time);
+  }
+
+  template <class Lock, class Rep, class Period, class Predicate>
+  bool wait_for(Lock &lock, const chrono::duration<Rep, Period> &relative_time,
+                Predicate pred) {
+    return wait_until(lock, chrono::steady_clock::now() + relative_time,
+                      move(pred));
+  }
+
+  template <class Lock, class Predicate>
+  bool wait(Lock &lock, stop_token token, Predicate pred) {
+    detail::condition_stop_notifier notifier{&state_};
+
+    stop_callback<detail::condition_stop_notifier> callback(token, notifier);
+
+    while (!token.stop_requested()) {
+      if (pred())
+        return true;
+
+      detail::condition_wait_interruptible(state_, lock, token);
+    }
+
+    return pred();
+  }
+
+  template <class Lock, class Clock, class Duration, class Predicate>
+  bool wait_until(Lock &lock, stop_token token,
+                  const chrono::time_point<Clock, Duration> &absolute_time,
+                  Predicate pred) {
+    detail::condition_stop_notifier notifier{&state_};
+
+    stop_callback<detail::condition_stop_notifier> callback(token, notifier);
+
+    while (!token.stop_requested()) {
+      if (pred())
+        return true;
+
+      if (detail::condition_wait_until_interruptible(state_, lock, token,
+                                                     absolute_time)) {
+        return pred();
+      }
+    }
+
+    return pred();
+  }
+
+  template <class Lock, class Rep, class Period, class Predicate>
+  bool wait_for(Lock &lock, stop_token token,
+                const chrono::duration<Rep, Period> &relative_time,
+                Predicate pred) {
+    return wait_until(lock, move(token),
+                      chrono::steady_clock::now() + relative_time, move(pred));
+  }
+
+private:
+  detail::condition_variable_state state_;
+};
+
+namespace detail {
+
+template <class Condition, class Lock>
+class notify_at_thread_exit_action final : public thread_exit_action {
+public:
+  notify_at_thread_exit_action(Condition &condition, Lock &&lock)
+      : thread_exit_action(&notify_at_thread_exit_action::invoke),
+        condition_(addressof(condition)), lock_(move(lock)) {}
+
+private:
+  static void invoke(thread_exit_action *base) noexcept {
+    auto *self = static_cast<notify_at_thread_exit_action *>(base);
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+      self->lock_.unlock();
+    } catch (...) {
+      terminate();
+    }
+#else
+    self->lock_.unlock();
+#endif
+
+    self->condition_->notify_all();
+
+    delete self;
+  }
+
+  Condition *condition_;
+  Lock lock_;
+};
+
+} // namespace detail
+
+inline void notify_all_at_thread_exit(condition_variable &condition,
+                                      unique_lock<mutex> lock) {
+  using action_type = detail::notify_at_thread_exit_action<condition_variable,
+                                                           unique_lock<mutex>>;
+
+  auto *action = new action_type(condition, move(lock));
+
+  if (!detail::register_thread_exit_action(action)) {
+    delete action;
+
+    detail::throw_mutex_error(errc::resource_unavailable_try_again,
+                              "notify_all_at_thread_exit");
+  }
+}
+
+FTL_CONDITION_VARIABLE_END_NAMESPACE
+
+#undef FTL_CONDITION_VARIABLE_BEGIN_NAMESPACE
+#undef FTL_CONDITION_VARIABLE_END_NAMESPACE
+
+#endif // FTL_CONDITION_VARIABLE_HEADER
