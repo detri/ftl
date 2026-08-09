@@ -19,8 +19,87 @@ struct atomic_pair {
   tested::uint16_t second;
 };
 
+struct atomic_triple {
+  tested::uint32_t first;
+  tested::uint32_t second;
+  tested::uint32_t third;
+};
+
+static_assert(sizeof(atomic_triple) == 12);
+
+static_assert(tested::is_trivially_copyable_v<atomic_triple>);
+
+static_assert(!tested::atomic<atomic_triple>::is_always_lock_free);
+
 static_assert(sizeof(atomic_pair) == 4);
 static_assert(tested::is_trivially_copyable_v<atomic_pair>);
+
+static_assert(sizeof(atomic_triple) == 12);
+static_assert(tested::is_trivially_copyable_v<atomic_triple>);
+
+static_assert(!tested::atomic<atomic_triple>::is_always_lock_free);
+
+static_assert(!tested::atomic_ref<atomic_triple>::is_always_lock_free);
+
+static_assert(tested::atomic_ref<atomic_triple>::required_alignment >=
+              alignof(atomic_triple));
+
+struct padded_atomic_value {
+  tested::uint8_t first;
+  tested::uint32_t second;
+};
+
+static_assert(sizeof(padded_atomic_value) == 8);
+static_assert(tested::is_trivially_copyable_v<padded_atomic_value>);
+
+template <class Atomic>
+concept has_volatile_store =
+    requires(volatile Atomic &value, typename Atomic::value_type desired) {
+      value.store(desired);
+    };
+
+template <class Atomic>
+concept has_volatile_load =
+    requires(const volatile Atomic &value) { value.load(); };
+
+template <class Atomic>
+concept has_volatile_exchange =
+    requires(volatile Atomic &value, typename Atomic::value_type desired) {
+      value.exchange(desired);
+    };
+
+template <class Atomic>
+concept has_volatile_compare_exchange =
+    requires(volatile Atomic &value, typename Atomic::value_type expected,
+             typename Atomic::value_type desired) {
+      value.compare_exchange_strong(expected, desired);
+    };
+
+template <class Atomic>
+concept has_volatile_wait =
+    requires(const volatile Atomic &value, typename Atomic::value_type old) {
+      value.wait(old);
+    };
+
+static_assert(has_volatile_store<tested::atomic<int>>);
+
+static_assert(has_volatile_load<tested::atomic<int>>);
+
+static_assert(has_volatile_exchange<tested::atomic<int>>);
+
+static_assert(has_volatile_compare_exchange<tested::atomic<int>>);
+
+static_assert(!has_volatile_store<tested::atomic<atomic_triple>>);
+
+static_assert(!has_volatile_load<tested::atomic<atomic_triple>>);
+
+static_assert(!has_volatile_exchange<tested::atomic<atomic_triple>>);
+
+static_assert(!has_volatile_compare_exchange<tested::atomic<atomic_triple>>);
+
+// Volatile wait remains available even when the
+// ordinary volatile atomic operations are constrained.
+static_assert(has_volatile_wait<tested::atomic<atomic_triple>>);
 
 static_assert(tested::atomic_bool::is_always_lock_free);
 static_assert(tested::atomic_int::is_always_lock_free);
@@ -1070,6 +1149,156 @@ bool pointer_min_difference_does_not_overflow() {
   return reference.load() == values;
 }
 
+bool non_lock_free_atomic_works() {
+  const atomic_triple first{1, 2, 3};
+
+  const atomic_triple second{4, 5, 6};
+
+  const atomic_triple third{7, 8, 9};
+
+  tested::atomic<atomic_triple> value{first};
+
+  if (value.is_lock_free())
+    return false;
+
+  auto observed = value.load();
+
+  if (observed.first != 1 || observed.second != 2 || observed.third != 3) {
+    return false;
+  }
+
+  value.store(second);
+
+  const auto old = value.exchange(third);
+
+  if (old.first != 4 || old.second != 5 || old.third != 6) {
+    return false;
+  }
+
+  atomic_triple expected = third;
+
+  if (!value.compare_exchange_strong(expected, first)) {
+    return false;
+  }
+
+  expected = second;
+
+  if (value.compare_exchange_strong(expected, third)) {
+    return false;
+  }
+
+  return expected.first == 1 && expected.second == 2 && expected.third == 3;
+}
+
+bool non_lock_free_atomic_ref_works() {
+  alignas(tested::atomic_ref<atomic_triple>::required_alignment)
+      atomic_triple storage{1, 2, 3};
+
+  tested::atomic_ref<atomic_triple> first{storage};
+
+  tested::atomic_ref<atomic_triple> second{storage};
+
+  if (first.is_lock_free() || second.is_lock_free()) {
+    return false;
+  }
+
+  second.store(atomic_triple{4, 5, 6});
+
+  auto observed = first.load();
+
+  if (observed.first != 4 || observed.second != 5 || observed.third != 6) {
+    return false;
+  }
+
+  atomic_triple expected{4, 5, 6};
+
+  if (!first.compare_exchange_strong(expected, atomic_triple{7, 8, 9})) {
+    return false;
+  }
+
+  observed = second.load();
+
+  if (observed.first != 7 || observed.second != 8 || observed.third != 9) {
+    return false;
+  }
+
+  expected = atomic_triple{1, 2, 3};
+
+  if (second.compare_exchange_strong(expected, atomic_triple{10, 11, 12})) {
+    return false;
+  }
+
+  return expected.first == 7 && expected.second == 8 && expected.third == 9;
+}
+
+bool non_lock_free_free_functions_work() {
+  tested::atomic<atomic_triple> value{atomic_triple{1, 2, 3}};
+
+  tested::atomic_store(&value, atomic_triple{4, 5, 6});
+
+  auto observed = tested::atomic_load(&value);
+
+  if (observed.first != 4 || observed.second != 5 || observed.third != 6) {
+    return false;
+  }
+
+  atomic_triple expected{4, 5, 6};
+
+  if (!tested::atomic_compare_exchange_strong(&value, &expected,
+                                              atomic_triple{7, 8, 9})) {
+    return false;
+  }
+
+  observed = tested::atomic_load_explicit(&value, tested::memory_order_acquire);
+
+  return observed.first == 7 && observed.second == 8 && observed.third == 9;
+}
+
+void poison_padding(padded_atomic_value &value, unsigned char byte) {
+  auto *begin = reinterpret_cast<unsigned char *>(&value);
+
+  auto *second = reinterpret_cast<unsigned char *>(&value.second);
+
+  const tested::size_t second_offset =
+      static_cast<tested::size_t>(second - begin);
+
+  // Internal padding between first and second.
+  for (tested::size_t index = sizeof(value.first); index < second_offset;
+       ++index) {
+    begin[index] = byte;
+  }
+
+  // Any tail padding after second.
+  for (tested::size_t index = second_offset + sizeof(value.second);
+       index < sizeof(value); ++index) {
+    begin[index] = byte;
+  }
+}
+
+#if defined(__clang__)
+#if __has_builtin(__builtin_clear_padding)
+#define FTL_TEST_ATOMIC_PADDING 1
+#else
+#define FTL_TEST_ATOMIC_PADDING 0
+#endif
+#else
+#define FTL_TEST_ATOMIC_PADDING 1
+#endif
+
+bool atomic_padding_is_ignored() {
+  padded_atomic_value stored{0x42, 0xc0defefe};
+
+  padded_atomic_value expected{0x42, 0xc0defefe};
+
+  poison_padding(stored, 0xaa);
+
+  poison_padding(expected, 0x55);
+
+  tested::atomic<padded_atomic_value> value{stored};
+
+  return value.compare_exchange_strong(expected, padded_atomic_value{0, 0});
+}
+
 bool ftl_test() {
   return basic_operations_work() && compare_exchange_works() &&
          generic_atomic_works() && arithmetic_works() &&
@@ -1091,5 +1320,13 @@ bool ftl_test() {
          atomic_ref_wait_immediate_return_works() &&
          atomic_flag_wait_immediate_return_works() &&
          platform_wait_backend_links() &&
-         pointer_min_difference_does_not_overflow();
+         pointer_min_difference_does_not_overflow() &&
+         non_lock_free_atomic_works() && non_lock_free_atomic_ref_works() &&
+         non_lock_free_free_functions_work()
+#if FTL_TEST_ATOMIC_PADDING
+         && atomic_padding_is_ignored()
+#endif
+      ;
 }
+
+#undef FTL_TEST_ATOMIC_PADDING

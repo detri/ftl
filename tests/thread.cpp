@@ -14,6 +14,25 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+struct wide_atomic_value {
+  tested::uint32_t first;
+  tested::uint32_t second;
+  tested::uint32_t third;
+};
+
+static_assert(
+    sizeof(wide_atomic_value) == 12);
+
+static_assert(
+    !tested::atomic<
+        wide_atomic_value>::
+        is_always_lock_free);
+
+static_assert(
+    !tested::atomic_ref<
+        wide_atomic_value>::
+        is_always_lock_free);
+
 template <class T> void wait_until_equal(tested::atomic<T> &value, T expected) {
   T current = value.load(tested::memory_order_acquire);
 
@@ -1026,6 +1045,186 @@ bool stop_callback_registration_request_race() {
   return true;
 }
 
+bool atomic_shared_ptr_wait_notify_works() {
+  auto initial = tested::make_shared<int>(1);
+
+  auto replacement = tested::make_shared<int>(2);
+
+  tested::atomic<tested::shared_ptr<int>> value{initial};
+
+  tested::atomic_bool ready{false};
+  tested::atomic_bool completed{false};
+
+  tested::thread waiter{[&] {
+    ready.store(true, tested::memory_order_release);
+
+    ready.notify_all();
+
+    value.wait(initial, tested::memory_order_acquire);
+
+    auto observed = value.load(tested::memory_order_acquire);
+
+    completed.store(observed.get() == replacement.get(),
+                    tested::memory_order_release);
+  }};
+
+  wait_until_true(ready);
+
+  tested::this_thread::sleep_for(tested::chrono::milliseconds{2});
+
+  if (completed.load(tested::memory_order_acquire)) {
+    waiter.join();
+    return false;
+  }
+
+  value.store(replacement, tested::memory_order_release);
+
+  value.notify_one();
+
+  waiter.join();
+
+  return completed.load(tested::memory_order_acquire);
+}
+
+bool non_lock_free_atomic_wait_works() {
+  const wide_atomic_value initial{
+      1, 2, 3};
+
+  const wide_atomic_value changed{
+      4, 5, 6};
+
+  tested::atomic<
+      wide_atomic_value>
+      value{initial};
+
+  tested::atomic_bool ready{
+      false};
+
+  tested::atomic_bool completed{
+      false};
+
+  tested::thread waiter{[&] {
+    ready.store(
+        true,
+        tested::memory_order_release);
+
+    ready.notify_all();
+
+    value.wait(
+        initial,
+        tested::memory_order_acquire);
+
+    const auto observed =
+        value.load(
+            tested::memory_order_acquire);
+
+    completed.store(
+        observed.first == 4 &&
+            observed.second == 5 &&
+            observed.third == 6,
+        tested::memory_order_release);
+  }};
+
+  wait_until_true(ready);
+
+  tested::this_thread::sleep_for(
+      tested::chrono::milliseconds{
+          2});
+
+  if (completed.load(
+          tested::memory_order_acquire)) {
+    waiter.join();
+    return false;
+  }
+
+  value.store(
+      changed,
+      tested::memory_order_release);
+
+  value.notify_one();
+
+  waiter.join();
+
+  return completed.load(
+      tested::memory_order_acquire);
+}
+
+bool non_lock_free_atomic_ref_wait_works() {
+  const wide_atomic_value initial{
+      1, 2, 3};
+
+  const wide_atomic_value changed{
+      4, 5, 6};
+
+  alignas(
+      tested::atomic_ref<
+          wide_atomic_value
+      >::required_alignment)
+  wide_atomic_value storage =
+      initial;
+
+  tested::atomic_ref<
+      wide_atomic_value>
+      waiter_ref{storage};
+
+  tested::atomic_ref<
+      wide_atomic_value>
+      writer_ref{storage};
+
+  tested::atomic_bool ready{
+      false};
+
+  tested::atomic_bool completed{
+      false};
+
+  tested::thread waiter{[&] {
+    ready.store(
+        true,
+        tested::memory_order_release);
+
+    ready.notify_all();
+
+    waiter_ref.wait(
+        initial,
+        tested::memory_order_acquire);
+
+    const auto observed =
+        waiter_ref.load(
+            tested::memory_order_acquire);
+
+    completed.store(
+        observed.first == 4 &&
+            observed.second == 5 &&
+            observed.third == 6,
+        tested::memory_order_release);
+  }};
+
+  wait_until_true(ready);
+
+  tested::this_thread::sleep_for(
+      tested::chrono::milliseconds{
+          2});
+
+  if (completed.load(
+          tested::memory_order_acquire)) {
+    waiter.join();
+    return false;
+  }
+
+  writer_ref.store(
+      changed,
+      tested::memory_order_release);
+
+  // Important: notify through a DIFFERENT
+  // atomic_ref object referencing the same storage.
+  writer_ref.notify_one();
+
+  waiter.join();
+
+  return completed.load(
+      tested::memory_order_acquire);
+}
+
 bool ftl_test() {
   return basic_thread_works() && arguments_work() &&
          move_only_argument_works() && thread_ids_work() &&
@@ -1049,5 +1248,7 @@ bool ftl_test() {
          stop_callback_destructor_waits_for_execution() &&
          stop_callback_destructor_ignores_unrelated_execution() &&
          stop_callback_can_destroy_itself() &&
-         stop_callback_registration_request_race();
+         stop_callback_registration_request_race() &&
+         atomic_shared_ptr_wait_notify_works() &&
+         non_lock_free_atomic_wait_works() && non_lock_free_atomic_ref_wait_works();
 }

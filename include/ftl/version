@@ -442,6 +442,12 @@
 #define __cpp_lib_atomic_lock_free_type_aliases 201907L
 #endif
 
+#if !defined(__cpp_lib_stdatomic_h) || \
+    __cpp_lib_stdatomic_h < 202011L
+#undef __cpp_lib_stdatomic_h
+#define __cpp_lib_stdatomic_h 202011L
+#endif
+
 #if !defined(__cpp_lib_jthread) || \
     __cpp_lib_jthread < 201911L
 #undef __cpp_lib_jthread

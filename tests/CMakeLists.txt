@@ -493,6 +493,7 @@ foreach (header IN ITEMS
         floating_conversion
         stop_token
         thread
+        stdatomic_h
 )
     add_ftl_test(${header})
 endforeach ()

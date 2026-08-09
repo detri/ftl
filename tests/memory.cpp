@@ -8,242 +8,291 @@ namespace tested = ftl;
 #define ftl tested
 
 struct object {
-    int value;
-    constexpr explicit object(int input) : value(input) {}
+  int value;
+  constexpr explicit object(int input) : value(input) {}
 };
 struct base {};
 struct derived : base {};
 struct fancy_pointer {
-    object* value{};
-    constexpr explicit operator bool() const noexcept { return value; }
-    constexpr object& operator*() const noexcept { return *value; }
-    constexpr object* operator->() const noexcept { return value; }
-    constexpr object& operator[](ftl::size_t index) const noexcept {
-        return value[index];
-    }
-    friend constexpr bool operator==(
-        fancy_pointer pointer, ftl::nullptr_t) noexcept {
-        return pointer.value == nullptr;
-    }
+  object *value{};
+  constexpr explicit operator bool() const noexcept { return value; }
+  constexpr object &operator*() const noexcept { return *value; }
+  constexpr object *operator->() const noexcept { return value; }
+  constexpr object &operator[](ftl::size_t index) const noexcept {
+    return value[index];
+  }
+  friend constexpr bool operator==(fancy_pointer pointer,
+                                   ftl::nullptr_t) noexcept {
+    return pointer.value == nullptr;
+  }
 };
 struct fancy_delete {
-    using pointer = fancy_pointer;
-    void operator()(pointer) const noexcept {}
+  using pointer = fancy_pointer;
+  void operator()(pointer) const noexcept {}
 };
 
 struct counting_delete {
-    int* count;
-    void operator()(object* pointer) const noexcept {
-        ++*count;
-        delete pointer;
-    }
+  int *count;
+  void operator()(object *pointer) const noexcept {
+    ++*count;
+    delete pointer;
+  }
 };
 struct enabled : ftl::enable_shared_from_this<enabled> {
-    int value;
-    explicit enabled(int input) : value(input) {}
+  int value;
+  explicit enabled(int input) : value(input) {}
 };
 struct allocator_aware {
-    using allocator_type = ftl::allocator<int>;
-    int value;
-    allocator_aware(ftl::allocator_arg_t, const allocator_type&, int input)
-        : value(input) {}
+  using allocator_type = ftl::allocator<int>;
+  int value;
+  allocator_aware(ftl::allocator_arg_t, const allocator_type &, int input)
+      : value(input) {}
+};
+struct atomic_alias_owner {
+  object first{1};
+  object second{2};
 };
 
-void make_object(object** output) { *output = new object{31}; }
-void replace_object(object** output) { delete *output; *output = new object{32}; }
-
-static_assert(ftl::is_default_constructible_v<ftl::default_delete<object>>);
-static_assert(ftl::is_constructible_v<
-              ftl::default_delete<const object[]>,
-              ftl::default_delete<object[]>>);
-static_assert(ftl::is_constructible_v<
-              ftl::unique_ptr<base>, ftl::unique_ptr<derived>&&>);
-static_assert(ftl::is_assignable_v<
-              ftl::unique_ptr<base>&, ftl::unique_ptr<derived>&&>);
-static_assert(ftl::is_constructible_v<
-              ftl::unique_ptr<const object[]>,
-              ftl::unique_ptr<object[]>&&>);
-static_assert(!ftl::is_constructible_v<
-              ftl::unique_ptr<base[]>, ftl::unique_ptr<derived[]>&&>);
-static_assert(sizeof(ftl::unique_ptr<object>) == sizeof(object*));
-static_assert(sizeof(ftl::unique_ptr<object[]>) == sizeof(object*));
-static_assert(ftl::is_same_v<
-              ftl::unique_ptr<object, fancy_delete>::pointer,
-              fancy_pointer>);
-static_assert(ftl::is_constructible_v<
-              ftl::unique_ptr<object, fancy_delete>, fancy_pointer>);
-static_assert(ftl::is_constructible_v<
-              ftl::unique_ptr<object[], fancy_delete>, fancy_pointer>);
-
-bool lifetime_works() {
-    union storage {
-        unsigned char bytes[sizeof(object)];
-        object value;
-        storage() : bytes{} {}
-        ~storage() {}
-    } slot;
-
-    auto* value = ftl::construct_at(&slot.value, 42);
-    const bool result = value->value == 42;
-    ftl::destroy_at(value);
-    return result;
+void make_object(object **output) { *output = new object{31}; }
+void replace_object(object **output) {
+  delete *output;
+  *output = new object{32};
 }
 
-void algorithms_compile(object* source, object* destination) {
-    auto end = ftl::uninitialized_copy_n(source, 1, destination);
-    ftl::destroy(destination, end);
+static_assert(ftl::is_default_constructible_v<ftl::default_delete<object>>);
+static_assert(ftl::is_constructible_v<ftl::default_delete<const object[]>,
+                                      ftl::default_delete<object[]>>);
+static_assert(ftl::is_constructible_v<ftl::unique_ptr<base>,
+                                      ftl::unique_ptr<derived> &&>);
+static_assert(
+    ftl::is_assignable_v<ftl::unique_ptr<base> &, ftl::unique_ptr<derived> &&>);
+static_assert(ftl::is_constructible_v<ftl::unique_ptr<const object[]>,
+                                      ftl::unique_ptr<object[]> &&>);
+static_assert(!ftl::is_constructible_v<ftl::unique_ptr<base[]>,
+                                       ftl::unique_ptr<derived[]> &&>);
+static_assert(sizeof(ftl::unique_ptr<object>) == sizeof(object *));
+static_assert(sizeof(ftl::unique_ptr<object[]>) == sizeof(object *));
+static_assert(ftl::is_same_v<ftl::unique_ptr<object, fancy_delete>::pointer,
+                             fancy_pointer>);
+static_assert(ftl::is_constructible_v<ftl::unique_ptr<object, fancy_delete>,
+                                      fancy_pointer>);
+static_assert(ftl::is_constructible_v<ftl::unique_ptr<object[], fancy_delete>,
+                                      fancy_pointer>);
 
-    auto result = ftl::uninitialized_move_n(source, 1, destination);
-    ftl::destroy(destination, result.second);
+bool lifetime_works() {
+  union storage {
+    unsigned char bytes[sizeof(object)];
+    object value;
+    storage() : bytes{} {}
+    ~storage() {}
+  } slot;
 
-    ftl::uninitialized_fill_n(destination, 1, object{7});
-    ftl::destroy_n(destination, 1);
+  auto *value = ftl::construct_at(&slot.value, 42);
+  const bool result = value->value == 42;
+  ftl::destroy_at(value);
+  return result;
+}
+
+void algorithms_compile(object *source, object *destination) {
+  auto end = ftl::uninitialized_copy_n(source, 1, destination);
+  ftl::destroy(destination, end);
+
+  auto result = ftl::uninitialized_move_n(source, 1, destination);
+  ftl::destroy(destination, result.second);
+
+  ftl::uninitialized_fill_n(destination, 1, object{7});
+  ftl::destroy_n(destination, 1);
 }
 
 bool shared_ownership_works() {
-    auto first = ftl::make_shared<object>(42);
-    ftl::weak_ptr<object> weak = first;
-    auto second = weak.lock();
-    return first.use_count() == 2 && second->value == 42 &&
-           !weak.expired();
+  auto first = ftl::make_shared<object>(42);
+  ftl::weak_ptr<object> weak = first;
+  auto second = weak.lock();
+  return first.use_count() == 2 && second->value == 42 && !weak.expired();
 }
 
 bool unique_ownership_works() {
-    int deletes = 0;
-    {
-        ftl::unique_ptr<object, counting_delete> owner{
-            new object{1}, counting_delete{&deletes}};
-        owner.reset(new object{2});
-        if (deletes != 1 || owner->value != 2)
-            return false;
-        auto moved = ftl::move(owner);
-        if (owner || !moved || moved->value != 2)
-            return false;
-    }
-    return deletes == 2;
+  int deletes = 0;
+  {
+    ftl::unique_ptr<object, counting_delete> owner{new object{1},
+                                                   counting_delete{&deletes}};
+    owner.reset(new object{2});
+    if (deletes != 1 || owner->value != 2)
+      return false;
+    auto moved = ftl::move(owner);
+    if (owner || !moved || moved->value != 2)
+      return false;
+  }
+  return deletes == 2;
 }
 
 bool weak_lifetime_works() {
-    ftl::weak_ptr<object> weak;
-    {
-        auto owner = ftl::make_shared<object>(9);
-        weak = ftl::weak_ptr<object>{owner};
-        if (weak.expired() || weak.lock()->value != 9)
-            return false;
-    }
-    return weak.expired() && !weak.lock();
+  ftl::weak_ptr<object> weak;
+  {
+    auto owner = ftl::make_shared<object>(9);
+    weak = ftl::weak_ptr<object>{owner};
+    if (weak.expired() || weak.lock()->value != 9)
+      return false;
+  }
+  return weak.expired() && !weak.lock();
 }
 
 bool allocator_works() {
-    ftl::allocator<object> allocator;
-    using traits = ftl::allocator_traits<decltype(allocator)>;
-    auto allocation = traits::allocate_at_least(allocator, 2);
-    traits::construct(allocator, allocation.ptr, 11);
-    traits::construct(allocator, allocation.ptr + 1, 12);
-    const bool result =
-        allocation.count >= 2 &&
-        allocation.ptr[0].value == 11 &&
-        allocation.ptr[1].value == 12;
-    traits::destroy(allocator, allocation.ptr + 1);
-    traits::destroy(allocator, allocation.ptr);
-    traits::deallocate(allocator, allocation.ptr, allocation.count);
-    return result;
+  ftl::allocator<object> allocator;
+  using traits = ftl::allocator_traits<decltype(allocator)>;
+  auto allocation = traits::allocate_at_least(allocator, 2);
+  traits::construct(allocator, allocation.ptr, 11);
+  traits::construct(allocator, allocation.ptr + 1, 12);
+  const bool result = allocation.count >= 2 && allocation.ptr[0].value == 11 &&
+                      allocation.ptr[1].value == 12;
+  traits::destroy(allocator, allocation.ptr + 1);
+  traits::destroy(allocator, allocation.ptr);
+  traits::deallocate(allocator, allocation.ptr, allocation.count);
+  return result;
 }
 
 bool allocate_shared_works() {
-    auto owner = ftl::allocate_shared<enabled>(
-        ftl::allocator<enabled>{}, 17);
-    auto self = owner->shared_from_this();
-    return self.get() == owner.get() &&
-           self->value == 17 &&
-           owner.use_count() == 2 &&
-           !owner->weak_from_this().expired();
+  auto owner = ftl::allocate_shared<enabled>(ftl::allocator<enabled>{}, 17);
+  auto self = owner->shared_from_this();
+  return self.get() == owner.get() && self->value == 17 &&
+         owner.use_count() == 2 && !owner->weak_from_this().expired();
 }
 
-static_assert(ftl::is_constructible_v<
-              ftl::shared_ptr<base>, ftl::shared_ptr<derived>>);
-static_assert(ftl::is_constructible_v<
-              ftl::weak_ptr<base>, ftl::shared_ptr<derived>>);
+static_assert(
+    ftl::is_constructible_v<ftl::shared_ptr<base>, ftl::shared_ptr<derived>>);
+static_assert(
+    ftl::is_constructible_v<ftl::weak_ptr<base>, ftl::shared_ptr<derived>>);
 
-static_assert(requires(object* location) {
-    ftl::construct_at(location, 42);
-    ftl::destroy_at(location);
+static_assert(requires(object *location) {
+  ftl::construct_at(location, 42);
+  ftl::destroy_at(location);
 });
 
 static_assert(ftl::uses_allocator_v<allocator_aware, ftl::allocator<int>>);
 static_assert(ftl::is_same_v<decltype(ftl::make_unique<object>(1)),
-                            ftl::unique_ptr<object>>);
+                             ftl::unique_ptr<object>>);
 static_assert(ftl::is_same_v<decltype(ftl::make_shared<object[]>(2)),
-                            ftl::shared_ptr<object[]>>);
+                             ftl::shared_ptr<object[]>>);
 
 bool extended_memory_works() {
-    auto array = ftl::make_shared<object[]>(2, object{8});
-    auto owner = ftl::make_shared<derived>();
-    ftl::shared_ptr<base> base_owner = owner;
-    auto down = ftl::static_pointer_cast<derived>(base_owner);
-    ftl::atomic<ftl::shared_ptr<derived>> atomic_owner{owner};
-    auto loaded = atomic_owner.load();
-    ftl::unique_ptr<object> output;
-    make_object(ftl::out_ptr(output));
-    replace_object(ftl::inout_ptr(output));
-    auto aware = ftl::make_obj_using_allocator<allocator_aware>(
-        ftl::allocator<int>{}, 19);
-    return array[1].value == 8 && down.get() == owner.get() &&
-           loaded.get() == owner.get() && output->value == 32 &&
-           aware.value == 19;
+  auto array = ftl::make_shared<object[]>(2, object{8});
+  auto owner = ftl::make_shared<derived>();
+  ftl::shared_ptr<base> base_owner = owner;
+  auto down = ftl::static_pointer_cast<derived>(base_owner);
+  ftl::atomic<ftl::shared_ptr<derived>> atomic_owner{owner};
+  auto loaded = atomic_owner.load();
+  ftl::unique_ptr<object> output;
+  make_object(ftl::out_ptr(output));
+  replace_object(ftl::inout_ptr(output));
+  auto aware =
+      ftl::make_obj_using_allocator<allocator_aware>(ftl::allocator<int>{}, 19);
+  return array[1].value == 8 && down.get() == owner.get() &&
+         loaded.get() == owner.get() && output->value == 32 &&
+         aware.value == 19;
 }
 
-template<
-    class Pointer,
-    bool =
-        tested::is_void_v<
-            typename tested::pointer_traits<
-                Pointer
-            >::element_type
-        >
->
+template <class Pointer,
+          bool = tested::is_void_v<
+              typename tested::pointer_traits<Pointer>::element_type>>
 struct has_pointer_to_helper;
 
-template<class Pointer>
-struct has_pointer_to_helper<Pointer, true> {
-    static constexpr bool value = false;
+template <class Pointer> struct has_pointer_to_helper<Pointer, true> {
+  static constexpr bool value = false;
 };
 
-template<class Pointer>
-struct has_pointer_to_helper<Pointer, false> {
+template <class Pointer> struct has_pointer_to_helper<Pointer, false> {
 private:
-    using element_type =
-        typename tested::pointer_traits<
-            Pointer
-        >::element_type;
+  using element_type = typename tested::pointer_traits<Pointer>::element_type;
 
 public:
-    static constexpr bool value =
-        requires(element_type& object) {
-        tested::pointer_traits<
-            Pointer
-        >::pointer_to(object);
-        };
+  static constexpr bool value = requires(element_type &object) {
+    tested::pointer_traits<Pointer>::pointer_to(object);
+  };
 };
 
-template<class Pointer>
-inline constexpr bool has_pointer_to_v =
-    has_pointer_to_helper<Pointer>::value;
+template <class Pointer>
+inline constexpr bool has_pointer_to_v = has_pointer_to_helper<Pointer>::value;
 
-static_assert(has_pointer_to_v<int*>);
-static_assert(has_pointer_to_v<const int*>);
+static_assert(has_pointer_to_v<int *>);
+static_assert(has_pointer_to_v<const int *>);
 
-static_assert(!has_pointer_to_v<void*>);
-static_assert(!has_pointer_to_v<const void*>);
-static_assert(!has_pointer_to_v<volatile void*>);
-static_assert(!has_pointer_to_v<const volatile void*>);
+static_assert(!has_pointer_to_v<void *>);
+static_assert(!has_pointer_to_v<const void *>);
+static_assert(!has_pointer_to_v<volatile void *>);
+static_assert(!has_pointer_to_v<const volatile void *>);
+
+bool atomic_shared_ptr_ownership_equivalence_works() {
+  object storage{42};
+
+  auto no_delete = [](object *) noexcept {};
+
+  ftl::shared_ptr<object> first{&storage, no_delete};
+
+  ftl::shared_ptr<object> different_owner{&storage, no_delete};
+
+  ftl::atomic<ftl::shared_ptr<object>> value{first};
+
+  auto expected = different_owner;
+
+  auto desired = ftl::make_shared<object>(99);
+
+  // Same raw pointer, different ownership:
+  // these are NOT equivalent.
+  if (value.compare_exchange_strong(expected, desired)) {
+    return false;
+  }
+
+  if (expected.get() != first.get())
+    return false;
+
+  return !expected.owner_before(first) && !first.owner_before(expected);
+}
+
+bool atomic_weak_ptr_stored_pointer_equivalence_works() {
+  auto owner = ftl::make_shared<atomic_alias_owner>();
+
+  ftl::shared_ptr<object> first{owner, &owner->first};
+
+  ftl::shared_ptr<object> second{owner, &owner->second};
+
+  ftl::weak_ptr<object> weak_first{first};
+  ftl::weak_ptr<object> weak_second{second};
+
+  ftl::atomic<ftl::weak_ptr<object>> value{weak_first};
+
+  auto expected = weak_second;
+
+  // Same ownership, different stored pointer:
+  // these are also NOT equivalent.
+  if (value.compare_exchange_strong(expected, ftl::weak_ptr<object>{})) {
+    return false;
+  }
+
+  auto observed = expected.lock();
+
+  return observed.get() == &owner->first;
+}
+
+bool atomic_smart_pointer_assignment_works() {
+  auto first = ftl::make_shared<object>(1);
+
+  auto second = ftl::make_shared<object>(2);
+
+  ftl::atomic<ftl::shared_ptr<object>> value{first};
+
+  value = second;
+
+  auto loaded = value.load();
+
+  return loaded.get() == second.get() && loaded->value == 2;
+}
 
 bool ftl_test() {
-    return lifetime_works() &&
-           shared_ownership_works() &&
-           unique_ownership_works() &&
-           weak_lifetime_works() &&
-           allocator_works() &&
-           allocate_shared_works() &&
-           extended_memory_works();
+  return lifetime_works() && shared_ownership_works() &&
+         unique_ownership_works() && weak_lifetime_works() &&
+         allocator_works() && allocate_shared_works() &&
+         extended_memory_works() &&
+         atomic_shared_ptr_ownership_equivalence_works() &&
+         atomic_weak_ptr_stored_pointer_equivalence_works() &&
+         atomic_smart_pointer_assignment_works();
 }
