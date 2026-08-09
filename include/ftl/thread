@@ -97,9 +97,21 @@ public:
   public:
     id() noexcept = default;
 
-    friend bool operator==(id, id) noexcept = default;
+    friend constexpr bool operator==(
+        id left,
+        id right) noexcept {
+        return left.value_ == right.value_;
+    }
 
-    friend strong_ordering operator<=>(id, id) noexcept = default;
+    friend constexpr strong_ordering operator<=>(
+        id left,
+        id right) noexcept {
+        return left.value_ < right.value_
+            ? strong_ordering::less
+            : left.value_ > right.value_
+                ? strong_ordering::greater
+                : strong_ordering::equal;
+    }
 
   private:
     explicit id(detail::native_thread_id value) noexcept : value_(value) {}
