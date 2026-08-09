@@ -50,6 +50,14 @@ bool ftl_test() {
   const auto lower_log = tested::log(complex<double>{-1.0, -0.0});
   const auto projected =
       tested::proj(complex<double>{HUGE_VAL, -2.0});
+  const auto divided_by_zero = value / complex<double>{0.0, 0.0};
+  const auto divided_by_negative_zero = value / complex<double>{-0.0, 0.0};
+  const auto divided_by_infinity =
+      value / complex<double>{HUGE_VAL, HUGE_VAL};
+  const auto infinite_numerator =
+      complex<double>{HUGE_VAL, 1.0} / complex<double>{2.0, 3.0};
+  const auto nan = tested::numeric_limits<double>::quiet_NaN();
+  const auto nan_quotient = value / complex<double>{nan, 1.0};
   const double *layout = reinterpret_cast<const double *>(&value);
   return tested::abs(value) == 5.0 && square_root.real() == 0.0 &&
          square_root.imag() == 1.0 && exponential == complex<double>{1.0} &&
@@ -60,5 +68,21 @@ bool ftl_test() {
          upper_log.imag() > 3.14 && upper_log.imag() < 3.15 &&
          lower_log.imag() < -3.14 && lower_log.imag() > -3.15 &&
          tested::isinf(projected.real()) && projected.imag() == 0.0 &&
-         tested::signbit(projected.imag());
+         tested::signbit(projected.imag()) &&
+         tested::isinf(divided_by_zero.real()) &&
+         tested::isinf(divided_by_zero.imag()) &&
+         !tested::signbit(divided_by_zero.real()) &&
+         !tested::signbit(divided_by_zero.imag()) &&
+         tested::isinf(divided_by_negative_zero.real()) &&
+         tested::isinf(divided_by_negative_zero.imag()) &&
+         tested::signbit(divided_by_negative_zero.real()) &&
+         tested::signbit(divided_by_negative_zero.imag()) &&
+         divided_by_infinity.real() == 0.0 &&
+         divided_by_infinity.imag() == 0.0 &&
+         tested::isinf(infinite_numerator.real()) &&
+         tested::isinf(infinite_numerator.imag()) &&
+         !tested::signbit(infinite_numerator.real()) &&
+         tested::signbit(infinite_numerator.imag()) &&
+         tested::isnan(nan_quotient.real()) &&
+         tested::isnan(nan_quotient.imag());
 }

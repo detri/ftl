@@ -88,6 +88,8 @@ public:
     return *this;
   }
   template <class U> constexpr complex &operator/=(const complex<U> &other) {
+    const T left_real = real_;
+    const T left_imaginary = imaginary_;
     const T other_real = static_cast<T>(other.real());
     const T other_imaginary = static_cast<T>(other.imag());
     const T abs_real = other_real < T{} ? -other_real : other_real;
@@ -105,6 +107,28 @@ public:
       const T new_real = (imaginary_ * ratio + real_) / denominator;
       imaginary_ = (imaginary_ - real_ * ratio) / denominator;
       real_ = new_real;
+    }
+    if (isnan(real_) && isnan(imaginary_)) {
+      const T infinity = numeric_limits<T>::infinity();
+      if (other_real == T{} && other_imaginary == T{} &&
+          (!isnan(left_real) || !isnan(left_imaginary))) {
+        real_ = copysign(infinity, other_real) * left_real;
+        imaginary_ = copysign(infinity, other_real) * left_imaginary;
+      } else if ((isinf(left_real) || isinf(left_imaginary)) &&
+                 isfinite(other_real) && isfinite(other_imaginary)) {
+        const T a = copysign(isinf(left_real) ? T{1} : T{}, left_real);
+        const T b = copysign(isinf(left_imaginary) ? T{1} : T{},
+                             left_imaginary);
+        real_ = infinity * (a * other_real + b * other_imaginary);
+        imaginary_ = infinity * (b * other_real - a * other_imaginary);
+      } else if ((isinf(other_real) || isinf(other_imaginary)) &&
+                 isfinite(left_real) && isfinite(left_imaginary)) {
+        const T c = copysign(isinf(other_real) ? T{1} : T{}, other_real);
+        const T d = copysign(isinf(other_imaginary) ? T{1} : T{},
+                             other_imaginary);
+        real_ = T{} * (left_real * c + left_imaginary * d);
+        imaginary_ = T{} * (left_imaginary * c - left_real * d);
+      }
     }
     return *this;
   }

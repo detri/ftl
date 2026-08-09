@@ -13,12 +13,11 @@ template <class T>
 bool within_ulps(T actual, T expected, unsigned limit) {
   if (actual == expected) return true;
   if (!tested::isfinite(actual) || !tested::isfinite(expected)) return false;
-  const T toward = tested::numeric_limits<T>::infinity();
-  T ulp = tested::nextafter(expected, toward) - expected;
-  if (ulp < T{}) ulp = -ulp;
-  T error = actual - expected;
-  if (error < T{}) error = -error;
-  return error <= T(limit) * ulp;
+  for (unsigned distance = 0; distance < limit; ++distance) {
+    expected = tested::nextafter(expected, actual);
+    if (expected == actual) return true;
+  }
+  return false;
 }
 
 template <class T>
@@ -63,13 +62,22 @@ template <class T>
 bool special_vectors() {
   const T pi = T(3.141592653589793238462643383279502884L);
   const auto close = [](T actual, T expected) {
-    // Decimal donors are rounded to binary64, so binary80 permits the
-    // corresponding half-double-ULP reference uncertainty.
-    return within_ulps(actual, expected, 8192);
+    // Binary80 donors carry binary64 reference uncertainty. Binary32/64 use
+    // a much tighter adaptation-regression bound.
+    constexpr unsigned limit = tested::numeric_limits<T>::digits > 53 ? 8192 : 64;
+    return within_ulps(actual, expected, limit);
   };
   return close(tested::comp_ellint_1(T{}), pi / T{2}) &&
          close(tested::assoc_legendre(1, 1, T(0.5L)),
                T(0.866025403784438646763723170752936183L)) &&
+         close(tested::hermite(20, T(0.5L)), T(-759627879679.0L)) &&
+         close(tested::laguerre(20, T{1}),
+               T(-0.164258811827792959953337607485686470L)) &&
+         close(tested::assoc_laguerre(20, 10, T(0.5L)),
+               T(11389309.2731485325302939533920319270L)) &&
+         close(tested::legendre(20, T{}), T(0.176197052001953125L)) &&
+         close(tested::beta(T{10}, T{12}),
+               T(2.83514215402760294401161274226289706e-7L)) &&
          tested::sph_legendre(1, 1, T(0.5L)) < T{} &&
          close(tested::comp_ellint_2(T{}), pi / T{2}) &&
          close(tested::comp_ellint_3(T{}, T{}), pi / T{2}) &&
