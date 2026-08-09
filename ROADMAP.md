@@ -162,6 +162,9 @@ dependency order, not hundreds of individual overloads.
 | `<complex>`          | Stage 5.3         |
 | `<random>`           | Stage 5.4         |
 | `<valarray>`         | Stage 5.4         |
+| `<atomic>`           | Stage 6.1         |
+| `<stdatomic.h>`      | Stage 6.1         |
+| `<stop_token>`       | Stage 6.2         |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -174,7 +177,7 @@ synopses:
 
 | Header         | Implemented direction                                                                                           | Major remaining groups                                                                                             |
 |----------------|-----------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
-| `<atomic>`     | integral atomics and memory orders                                                                              | generic/pointer atomics, `atomic_ref`, flag, fences, wait/notify, lock-free rules                                  |
+| `<thread>`     | complete thread/jthread runtime surface, IDs, hashing, stop-token integration, sleep/yield, and native backends | `thread::id` stream insertion and formatter after Stage 7                                                          |
 | `<stacktrace>` | native capture, entries, allocator-aware container, comparisons, strings, PMR, and hashes                       | stream insertion and formatters after Stage 7; feature-test advertisement                                          |
 | `<iosfwd>`     | `char_traits`, fundamental stream types, aliases, and stream-class forward declarations                         | complete C++23 forward-declaration and positioning-type inventory                                                  |
 | `<streambuf>`  | input/get-area stream-buffer machinery needed by seeded input streams                                           | put area, positioning/seeking, locale, synchronization, putback, and complete synopsis                             |
@@ -194,13 +197,12 @@ still needs synopsis-level and cross-toolchain coverage.
 The following public headers do not exist. Compatibility/deprecated headers
 remain required when C++23 still specifies them; they are not silently dropped.
 
-| Area                      | Absent headers                                                                                                                                                     |
-|---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Text/encoding             | `<codecvt>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                               |
-| Errors/time/localization  | `<locale>`, `<clocale>`                                                                                                                                            |
-| I/O/formatting/files      | `<cstdio>`, `<fstream>`, `<iomanip>`, `<iostream>`, `<ostream>`, `<sstream>`, `<spanstream>`, `<strstream>`, `<syncstream>`, `<filesystem>`, `<format>`, `<print>` |
-| Concurrency               | `<barrier>`, `<condition_variable>`, `<future>`, `<latch>`, `<mutex>`, `<semaphore>`, `<shared_mutex>`, `<stop_token>`, `<thread>`                                 |
-| C compatibility           | `<stdatomic.h>`                                                                                                                                                    |
+| Area                     | Absent headers                                                                                                                                                     |
+|--------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Text/encoding            | `<codecvt>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                               |
+| Errors/time/localization | `<locale>`, `<clocale>`                                                                                                                                            |
+| I/O/formatting/files     | `<cstdio>`, `<fstream>`, `<iomanip>`, `<iostream>`, `<ostream>`, `<sstream>`, `<spanstream>`, `<strstream>`, `<syncstream>`, `<filesystem>`, `<format>`, `<print>` |
+| Concurrency              | `<barrier>`, `<condition_variable>`, `<future>`, `<latch>`, `<mutex>`, `<semaphore>`, `<shared_mutex>`                                                             |
 
 Freestanding C compatibility also requires deciding and documenting how the
 corresponding `.h` spellings are supplied. That is part of the relevant
@@ -522,14 +524,50 @@ fallback.
 
 ### Stage 6 — Concurrency
 
+**Status: in progress.**
+
 Take these closures in order:
 
-1. Finish `<atomic>` including wait/notify and the platform blocking layer,
-   plus its C++23 `<stdatomic.h>` compatibility surface.
-2. `<stop_token>` + `<thread>`
+1. `<atomic>` + `<stdatomic.h>` — **complete**
+2. `<stop_token>` + `<thread>` — **runtime closure complete**;
+   `<stop_token>` complete, with `<thread>` stream insertion and formatting
+   deferred to Stage 7
 3. `<mutex>` + `<shared_mutex>` + `<condition_variable>`
 4. `<semaphore>` + `<latch>` + `<barrier>`
 5. `<future>`
+
+Stage 6.1 completes the C++23 atomic surface, including generic lock-free and
+non-lock-free `atomic<T>`, `atomic_ref<T>`, integral, floating-point, pointer,
+flag, smart-pointer, fence, wait/notify, free-function, feature-test, and
+`<stdatomic.h>` compatibility facilities. Non-lock-free objects use an
+address-striped blocking fallback over the same platform wait/wake layer used
+by atomic waiting.
+
+MSVC uses `WaitOnAddress`, Linux uses futex-backed waiting, and macOS uses its
+native address-wait primitives. The implementation does not require a hosted
+C++ standard-library atomic or synchronization implementation.
+
+Clang currently provides no general primitive equivalent to GCC's
+`__builtin_clear_padding` or MSVC's `__builtin_zero_non_value_bits`.
+Consequently, on Clang toolchains without such a builtin, comparison of
+otherwise lock-free atomic types containing padding cannot normalize
+non-value bits before compare/exchange or wait. FTL treats this as a documented
+compiler limitation rather than introducing a type-specific padding model.
+
+Stage 6.2 provides the native runtime surface for `<stop_token>` and `<thread>`,
+including stop states and callbacks, `thread`, `jthread`, thread IDs, hashing,
+hardware-concurrency queries, yielding, sleeping, joining, detaching, and
+stop-token integration. `<stop_token>` is complete. `<thread>` remains seeded
+only because the C++23 `thread::id` stream insertion and formatter interfaces
+depend on the Stage 7 stream and formatting closures.
+
+The current CMake integration has one known feature-gating limitation on UNIX:
+the `ftl` interface target links `Threads::Threads` unconditionally, even when
+a consumer defines `FTL_NO_THREADS`. The macro still removes the thread API at
+compile time, but consumer preprocessor definitions cannot currently remove
+that already-declared transitive link requirement. Stage 8 will make runtime
+link dependencies explicit per-target choices as part of the replacement
+integration.
 
 **Exit:** the full memory model and synchronization API pass stress, sanitizer,
 and platform shutdown/lifetime tests on every supported toolchain.
@@ -557,6 +595,8 @@ facility.
 ### Stage 8 — Replacement product and ABI
 
 - Implement `ftl_replace_stl()` as a transitive per-target CMake choice.
+- Make optional runtime link dependencies feature-sensitive per target instead
+  of unconditional interface requirements such as `Threads::Threads`.
 - Define the runtime library boundary for exceptions, allocation, threads,
   locale, I/O, and filesystem.
 - Publish ABI versioning and supported interoperability rules.

@@ -732,15 +732,13 @@ inline constexpr size_t atomic_storage_alignment_v =
         ? (alignof(T) > sizeof(T) ? alignof(T) : sizeof(T))
         : alignof(T);
 
-template <class T>
-struct atomic_object_bytes {
+template <class T> struct atomic_object_bytes {
   unsigned char data[sizeof(T)];
 };
 
 template <class T>
 inline constexpr bool atomic_might_have_non_value_bits_v =
-    !has_unique_object_representations_v<T> &&
-    !is_floating_point_v<T>;
+    !has_unique_object_representations_v<T> && !is_floating_point_v<T>;
 
 #if defined(__clang__)
 
@@ -764,8 +762,7 @@ inline constexpr bool atomic_padding_normalization_supported = false;
 
 #endif
 
-template <class T>
-void atomic_clear_non_value_bits(T &value) noexcept {
+template <class T> void atomic_clear_non_value_bits(T &value) noexcept {
   if constexpr (!atomic_might_have_non_value_bits_v<T>) {
     return;
   }
@@ -798,8 +795,7 @@ atomic_object_bytes<T>
 atomic_object_read_bytes(const volatile T *value) noexcept {
   atomic_object_bytes<T> result{};
 
-  const auto *source =
-      reinterpret_cast<const volatile unsigned char *>(value);
+  const auto *source = reinterpret_cast<const volatile unsigned char *>(value);
 
   for (size_t index = 0; index < sizeof(T); ++index)
     result.data[index] = source[index];
@@ -807,28 +803,23 @@ atomic_object_read_bytes(const volatile T *value) noexcept {
   return result;
 }
 
-template <class T>
-T atomic_object_read(const volatile T *value) noexcept {
-  return bit_cast<T>(
-      atomic_object_read_bytes(value));
+template <class T> T atomic_object_read(const volatile T *value) noexcept {
+  return bit_cast<T>(atomic_object_read_bytes(value));
 }
 
 template <class T>
 void atomic_object_write(volatile T *value, const T &desired) noexcept {
-  const auto bytes =
-      bit_cast<atomic_object_bytes<T>>(desired);
+  const auto bytes = bit_cast<atomic_object_bytes<T>>(desired);
 
-  auto *destination =
-      reinterpret_cast<volatile unsigned char *>(value);
+  auto *destination = reinterpret_cast<volatile unsigned char *>(value);
 
   for (size_t index = 0; index < sizeof(T); ++index)
     destination[index] = bytes.data[index];
 }
 
 template <class T>
-bool atomic_bytes_equal(
-    const atomic_object_bytes<T> &left,
-    const atomic_object_bytes<T> &right) noexcept {
+bool atomic_bytes_equal(const atomic_object_bytes<T> &left,
+                        const atomic_object_bytes<T> &right) noexcept {
   for (size_t index = 0; index < sizeof(T); ++index) {
     if (left.data[index] != right.data[index])
       return false;
@@ -838,35 +829,25 @@ bool atomic_bytes_equal(
 }
 
 template <class T>
-atomic_object_bytes<T>
-atomic_normalized_bytes(const T &value) noexcept {
-  auto bytes =
-      bit_cast<atomic_object_bytes<T>>(value);
+atomic_object_bytes<T> atomic_normalized_bytes(const T &value) noexcept {
+  auto bytes = bit_cast<atomic_object_bytes<T>>(value);
 
-  if constexpr (
-      atomic_might_have_non_value_bits_v<T> &&
-      atomic_padding_normalization_supported) {
-    T normalized =
-        bit_cast<T>(bytes);
+  if constexpr (atomic_might_have_non_value_bits_v<T> &&
+                atomic_padding_normalization_supported) {
+    T normalized = bit_cast<T>(bytes);
 
-    atomic_clear_non_value_bits(
-        normalized);
+    atomic_clear_non_value_bits(normalized);
 
-    bytes =
-        bit_cast<atomic_object_bytes<T>>(
-            normalized);
+    bytes = bit_cast<atomic_object_bytes<T>>(normalized);
   }
 
   return bytes;
 }
 
 template <class T>
-bool atomic_value_representation_equal(
-    const T &left,
-    const T &right) noexcept {
-  return atomic_bytes_equal(
-      atomic_normalized_bytes(left),
-      atomic_normalized_bytes(right));
+bool atomic_value_representation_equal(const T &left, const T &right) noexcept {
+  return atomic_bytes_equal(atomic_normalized_bytes(left),
+                            atomic_normalized_bytes(right));
 }
 
 struct alignas(64) atomic_object_bucket {
@@ -951,82 +932,58 @@ T atomic_locked_exchange(volatile T *value, T desired) noexcept {
 }
 
 template <class T>
-bool atomic_locked_compare_exchange(
-    volatile T *value,
-    T &expected,
-    T desired) noexcept {
+bool atomic_locked_compare_exchange(volatile T *value, T &expected,
+                                    T desired) noexcept {
   atomic_object_guard hold{value};
 
-  const T observed =
-      atomic_object_read(value);
+  const T observed = atomic_object_read(value);
 
-  if (atomic_value_representation_equal(
-          observed,
-          expected)) {
-    atomic_object_write(
-        value,
-        desired);
+  if (atomic_value_representation_equal(observed, expected)) {
+    atomic_object_write(value, desired);
 
     return true;
   }
 
   // Do not use operator=. atomic_ref<T> only requires
   // T to be trivially copyable, not copy-assignable.
-  atomic_object_write(
-      &expected,
-      observed);
+  atomic_object_write(&expected, observed);
 
   return false;
 }
 
 template <class T>
-void atomic_locked_wait(
-    const volatile T *value,
-    T old) noexcept {
-  auto &bucket =
-      atomic_object_bucket_for(value);
+void atomic_locked_wait(const volatile T *value, T old) noexcept {
+  auto &bucket = atomic_object_bucket_for(value);
 
   for (;;) {
     {
       atomic_object_guard hold{value};
 
-      const T observed =
-          atomic_object_read(value);
+      const T observed = atomic_object_read(value);
 
-      if (!atomic_value_representation_equal(
-              observed,
-              old)) {
+      if (!atomic_value_representation_equal(observed, old)) {
         return;
       }
     }
 
     const uint32_t version =
-        atomic_load_object(
-            &bucket.version,
-            memory_order_seq_cst);
+        atomic_load_object(&bucket.version, memory_order_seq_cst);
 
     // Close the lost-wakeup window between checking
     // the value and blocking on the proxy version.
     {
       atomic_object_guard hold{value};
 
-      const T observed =
-          atomic_object_read(value);
+      const T observed = atomic_object_read(value);
 
-      if (!atomic_value_representation_equal(
-              observed,
-              old)) {
+      if (!atomic_value_representation_equal(observed, old)) {
         return;
       }
     }
 
     atomic_wait_until_changed<4>(
-        &bucket.version,
-        version,
-        [&bucket]() noexcept {
-          return atomic_load_object(
-              &bucket.version,
-              memory_order_relaxed);
+        &bucket.version, version, [&bucket]() noexcept {
+          return atomic_load_object(&bucket.version, memory_order_relaxed);
         });
   }
 }
@@ -1044,441 +1001,261 @@ inline void atomic_locked_notify(const volatile void *value) noexcept {
   atomic_notify_all<4>(&bucket.version);
 }
 
-template<class T>
-T atomic_dispatch_load(
-    const volatile T* value,
-    memory_order order) noexcept {
-    if constexpr (atomic_native_lock_free_v<T>) {
-        return atomic_load_object(
-            value,
-            order);
-    } else {
-        return atomic_locked_load(
-            value);
-    }
+template <class T>
+T atomic_dispatch_load(const volatile T *value, memory_order order) noexcept {
+  if constexpr (atomic_native_lock_free_v<T>) {
+    return atomic_load_object(value, order);
+  } else {
+    return atomic_locked_load(value);
+  }
 }
 
-template<class T>
-void atomic_dispatch_store(
-    volatile T* value,
-    T desired,
-    memory_order order) noexcept {
-    if constexpr (atomic_native_lock_free_v<T>) {
-        atomic_store_object(
-            value,
-            desired,
-            order);
-    } else {
-        atomic_locked_store(
-            value,
-            desired);
-    }
+template <class T>
+void atomic_dispatch_store(volatile T *value, T desired,
+                           memory_order order) noexcept {
+  if constexpr (atomic_native_lock_free_v<T>) {
+    atomic_store_object(value, desired, order);
+  } else {
+    atomic_locked_store(value, desired);
+  }
 }
 
-template<class T>
-T atomic_dispatch_exchange(
-    volatile T* value,
-    T desired,
-    memory_order order) noexcept {
-    if constexpr (atomic_native_lock_free_v<T>) {
-        return atomic_exchange_object(
-            value,
-            desired,
-            order);
-    } else {
-        return atomic_locked_exchange(
-            value,
-            desired);
-    }
+template <class T>
+T atomic_dispatch_exchange(volatile T *value, T desired,
+                           memory_order order) noexcept {
+  if constexpr (atomic_native_lock_free_v<T>) {
+    return atomic_exchange_object(value, desired, order);
+  } else {
+    return atomic_locked_exchange(value, desired);
+  }
 }
 
-template<class T>
-bool atomic_dispatch_compare_exchange(
-    volatile T* value,
-    T& expected,
-    T desired,
-    bool weak,
-    memory_order success,
-    memory_order failure) noexcept {
-    if constexpr (!atomic_native_lock_free_v<T>) {
-        return atomic_locked_compare_exchange(
-            value,
-            expected,
-            desired);
-    } else if constexpr (
-        !atomic_might_have_non_value_bits_v<T> ||
-        !atomic_padding_normalization_supported
-    ) {
-        return atomic_compare_exchange_object(
-            value,
-            expected,
-            desired,
-            weak,
-            success,
-            failure);
-    } else {
-        // Hardware CAS compares the whole representation.
-        // First compare value representations ourselves,
-        // then use the actually observed raw representation
-        // as the hardware comparand.
-        T observed =
-            atomic_load_object(
-                value,
-                failure);
+template <class T>
+bool atomic_dispatch_compare_exchange(volatile T *value, T &expected, T desired,
+                                      bool weak, memory_order success,
+                                      memory_order failure) noexcept {
+  if constexpr (!atomic_native_lock_free_v<T>) {
+    return atomic_locked_compare_exchange(value, expected, desired);
+  } else if constexpr (!atomic_might_have_non_value_bits_v<T> ||
+                       !atomic_padding_normalization_supported) {
+    return atomic_compare_exchange_object(value, expected, desired, weak,
+                                          success, failure);
+  } else {
+    // Hardware CAS compares the whole representation.
+    // First compare value representations ourselves,
+    // then use the actually observed raw representation
+    // as the hardware comparand.
+    T observed = atomic_load_object(value, failure);
 
-        for (;;) {
-            if (!atomic_value_representation_equal(
-                    observed,
-                    expected)) {
-                atomic_object_write(
-                    &expected,
-                    observed);
+    for (;;) {
+      if (!atomic_value_representation_equal(observed, expected)) {
+        atomic_object_write(&expected, observed);
 
-                return false;
-            }
+        return false;
+      }
 
-            T raw_expected = observed;
+      T raw_expected = observed;
 
-            if (atomic_compare_exchange_object(
-                    value,
-                    raw_expected,
-                    desired,
-                    weak,
-                    success,
-                    failure)) {
-                return true;
-            }
+      if (atomic_compare_exchange_object(value, raw_expected, desired, weak,
+                                         success, failure)) {
+        return true;
+      }
 
-            if (weak) {
-                atomic_object_write(
-                    &expected,
-                    raw_expected);
+      if (weak) {
+        atomic_object_write(&expected, raw_expected);
 
-                return false;
-            }
+        return false;
+      }
 
-            observed = raw_expected;
-        }
+      observed = raw_expected;
     }
+  }
 }
 
-template<class T>
-void atomic_dispatch_wait(
-    const volatile T* value,
-    T old,
-    memory_order order) noexcept {
-    if constexpr (!atomic_native_lock_free_v<T>) {
-        atomic_locked_wait(
-            value,
-            old);
-    } else if constexpr (
-        !atomic_might_have_non_value_bits_v<T> ||
-        !atomic_padding_normalization_supported
-    ) {
-        using word_type =
-            atomic_word_t<T>;
+template <class T>
+void atomic_dispatch_wait(const volatile T *value, T old,
+                          memory_order order) noexcept {
+  if constexpr (!atomic_native_lock_free_v<T>) {
+    atomic_locked_wait(value, old);
+  } else if constexpr (!atomic_might_have_non_value_bits_v<T> ||
+                       !atomic_padding_normalization_supported) {
+    using word_type = atomic_word_t<T>;
 
-        const word_type old_word =
-            atomic_to_word(old);
+    const word_type old_word = atomic_to_word(old);
 
-        atomic_wait_until_changed<
-            sizeof(T)>(
-                value,
-                old_word,
-                [value, order]() noexcept
-                    -> word_type {
-                    return atomic_to_word(
-                        atomic_load_object(
-                            value,
-                            order));
-                });
-    } else {
-        using word_type =
-            atomic_word_t<T>;
+    atomic_wait_until_changed<sizeof(T)>(
+        value, old_word, [value, order]() noexcept -> word_type {
+          return atomic_to_word(atomic_load_object(value, order));
+        });
+  } else {
+    using word_type = atomic_word_t<T>;
 
-        for (;;) {
-            const T observed =
-                atomic_load_object(
-                    value,
-                    order);
+    for (;;) {
+      const T observed = atomic_load_object(value, order);
 
-            if (!atomic_value_representation_equal(
-                    observed,
-                    old)) {
-                return;
-            }
+      if (!atomic_value_representation_equal(observed, old)) {
+        return;
+      }
 
-            const word_type observed_word =
-                atomic_to_word(observed);
+      const word_type observed_word = atomic_to_word(observed);
 
-            atomic_wait_until_changed<
-                sizeof(T)>(
-                    value,
-                    observed_word,
-                    [value, order]() noexcept
-                        -> word_type {
-                        return atomic_to_word(
-                            atomic_load_object(
-                                value,
-                                order));
-                    });
+      atomic_wait_until_changed<sizeof(T)>(
+          value, observed_word, [value, order]() noexcept -> word_type {
+            return atomic_to_word(atomic_load_object(value, order));
+          });
 
-            // Raw bits changed. They may have been
-            // padding-only, so loop and perform the
-            // semantic comparison again.
-        }
+      // Raw bits changed. They may have been
+      // padding-only, so loop and perform the
+      // semantic comparison again.
     }
+  }
 }
 
-template<class T>
-void atomic_dispatch_notify_one(
-    const volatile T* value) noexcept {
-    if constexpr (atomic_native_lock_free_v<T>) {
-        atomic_notify_one<sizeof(T)>(
-            value);
-    } else {
-        atomic_locked_notify(
-            value);
-    }
+template <class T>
+void atomic_dispatch_notify_one(const volatile T *value) noexcept {
+  if constexpr (atomic_native_lock_free_v<T>) {
+    atomic_notify_one<sizeof(T)>(value);
+  } else {
+    atomic_locked_notify(value);
+  }
 }
 
-template<class T>
-void atomic_dispatch_notify_all(
-    const volatile T* value) noexcept {
-    if constexpr (atomic_native_lock_free_v<T>) {
-        atomic_notify_all<sizeof(T)>(
-            value);
-    } else {
-        // Shared proxy buckets require wake-all even
-        // for notify_one, so this currently has the
-        // same implementation.
-        atomic_locked_notify(
-            value);
-    }
+template <class T>
+void atomic_dispatch_notify_all(const volatile T *value) noexcept {
+  if constexpr (atomic_native_lock_free_v<T>) {
+    atomic_notify_all<sizeof(T)>(value);
+  } else {
+    // Shared proxy buckets require wake-all even
+    // for notify_one, so this currently has the
+    // same implementation.
+    atomic_locked_notify(value);
+  }
 }
 
-template<class T>
-T atomic_dispatch_fetch_add(
-    volatile T* value,
-    atomic_operand_t<T> operand,
-    memory_order order) noexcept
+template <class T>
+T atomic_dispatch_fetch_add(volatile T *value, atomic_operand_t<T> operand,
+                            memory_order order) noexcept
   requires atomic_additive<T>
 {
-    if constexpr (
-        atomic_integral<T> &&
-        atomic_native_lock_free_v<T>
-    ) {
-        return atomic_fetch_add_integral(
-            value,
-            operand,
-            order);
-    } else {
-        T current =
-            atomic_dispatch_load(
-                value,
-                memory_order_relaxed);
+  if constexpr (atomic_integral<T> && atomic_native_lock_free_v<T>) {
+    return atomic_fetch_add_integral(value, operand, order);
+  } else {
+    T current = atomic_dispatch_load(value, memory_order_relaxed);
 
-        for (;;) {
-            T desired;
+    for (;;) {
+      T desired;
 
-            if constexpr (atomic_integral<T>) {
-                desired =
-                    atomic_integral_add(
-                        current,
-                        operand);
-            } else if constexpr (
-                atomic_floating<T>
-            ) {
-                desired =
-                    static_cast<T>(
-                        current + operand);
-            } else {
-                desired =
-                    atomic_pointer_add(
-                        current,
-                        operand);
-            }
+      if constexpr (atomic_integral<T>) {
+        desired = atomic_integral_add(current, operand);
+      } else if constexpr (atomic_floating<T>) {
+        desired = static_cast<T>(current + operand);
+      } else {
+        desired = atomic_pointer_add(current, operand);
+      }
 
-            if (atomic_dispatch_compare_exchange(
-                    value,
-                    current,
-                    desired,
-                    true,
-                    order,
-                    memory_order_relaxed)) {
-                return current;
-            }
-        }
+      if (atomic_dispatch_compare_exchange(value, current, desired, true, order,
+                                           memory_order_relaxed)) {
+        return current;
+      }
     }
+  }
 }
 
-template<class T>
-T atomic_dispatch_fetch_sub(
-    volatile T* value,
-    atomic_operand_t<T> operand,
-    memory_order order) noexcept
+template <class T>
+T atomic_dispatch_fetch_sub(volatile T *value, atomic_operand_t<T> operand,
+                            memory_order order) noexcept
   requires atomic_additive<T>
 {
-    if constexpr (
-        atomic_integral<T> &&
-        atomic_native_lock_free_v<T>
-    ) {
-        return atomic_fetch_sub_integral(
-            value,
-            operand,
-            order);
-    } else {
-        T current =
-            atomic_dispatch_load(
-                value,
-                memory_order_relaxed);
+  if constexpr (atomic_integral<T> && atomic_native_lock_free_v<T>) {
+    return atomic_fetch_sub_integral(value, operand, order);
+  } else {
+    T current = atomic_dispatch_load(value, memory_order_relaxed);
 
-        for (;;) {
-            T desired;
+    for (;;) {
+      T desired;
 
-            if constexpr (atomic_integral<T>) {
-                desired =
-                    atomic_integral_sub(
-                        current,
-                        operand);
-            } else if constexpr (
-                atomic_floating<T>
-            ) {
-                desired =
-                    static_cast<T>(
-                        current - operand);
-            } else {
-                desired =
-                    atomic_pointer_sub(
-                        current,
-                        operand);
-            }
+      if constexpr (atomic_integral<T>) {
+        desired = atomic_integral_sub(current, operand);
+      } else if constexpr (atomic_floating<T>) {
+        desired = static_cast<T>(current - operand);
+      } else {
+        desired = atomic_pointer_sub(current, operand);
+      }
 
-            if (atomic_dispatch_compare_exchange(
-                    value,
-                    current,
-                    desired,
-                    true,
-                    order,
-                    memory_order_relaxed)) {
-                return current;
-            }
-        }
+      if (atomic_dispatch_compare_exchange(value, current, desired, true, order,
+                                           memory_order_relaxed)) {
+        return current;
+      }
     }
+  }
 }
 
-template<class T>
-T atomic_dispatch_fetch_and(
-    volatile T* value,
-    T operand,
-    memory_order order) noexcept
+template <class T>
+T atomic_dispatch_fetch_and(volatile T *value, T operand,
+                            memory_order order) noexcept
   requires atomic_integral<T>
 {
-    if constexpr (atomic_native_lock_free_v<T>) {
-        return atomic_fetch_and_integral(
-            value,
-            operand,
-            order);
-    } else {
-        T current =
-            atomic_dispatch_load(
-                value,
-                memory_order_relaxed);
+  if constexpr (atomic_native_lock_free_v<T>) {
+    return atomic_fetch_and_integral(value, operand, order);
+  } else {
+    T current = atomic_dispatch_load(value, memory_order_relaxed);
 
-        for (;;) {
-            const T desired =
-                static_cast<T>(
-                    current & operand);
+    for (;;) {
+      const T desired = static_cast<T>(current & operand);
 
-            if (atomic_dispatch_compare_exchange(
-                    value,
-                    current,
-                    desired,
-                    true,
-                    order,
-                    memory_order_relaxed)) {
-                return current;
-            }
-        }
+      if (atomic_dispatch_compare_exchange(value, current, desired, true, order,
+                                           memory_order_relaxed)) {
+        return current;
+      }
     }
+  }
 }
 
-template<class T>
-T atomic_dispatch_fetch_or(
-    volatile T* value,
-    T operand,
-    memory_order order) noexcept
+template <class T>
+T atomic_dispatch_fetch_or(volatile T *value, T operand,
+                           memory_order order) noexcept
   requires atomic_integral<T>
 {
-    if constexpr (atomic_native_lock_free_v<T>) {
-        return atomic_fetch_or_integral(
-            value,
-            operand,
-            order);
-    } else {
-        T current =
-            atomic_dispatch_load(
-                value,
-                memory_order_relaxed);
+  if constexpr (atomic_native_lock_free_v<T>) {
+    return atomic_fetch_or_integral(value, operand, order);
+  } else {
+    T current = atomic_dispatch_load(value, memory_order_relaxed);
 
-        for (;;) {
-            const T desired =
-                static_cast<T>(
-                    current | operand);
+    for (;;) {
+      const T desired = static_cast<T>(current | operand);
 
-            if (atomic_dispatch_compare_exchange(
-                    value,
-                    current,
-                    desired,
-                    true,
-                    order,
-                    memory_order_relaxed)) {
-                return current;
-            }
-        }
+      if (atomic_dispatch_compare_exchange(value, current, desired, true, order,
+                                           memory_order_relaxed)) {
+        return current;
+      }
     }
+  }
 }
 
-template<class T>
-T atomic_dispatch_fetch_xor(
-    volatile T* value,
-    T operand,
-    memory_order order) noexcept
+template <class T>
+T atomic_dispatch_fetch_xor(volatile T *value, T operand,
+                            memory_order order) noexcept
   requires atomic_integral<T>
 {
-    if constexpr (atomic_native_lock_free_v<T>) {
-        return atomic_fetch_xor_integral(
-            value,
-            operand,
-            order);
-    } else {
-        T current =
-            atomic_dispatch_load(
-                value,
-                memory_order_relaxed);
+  if constexpr (atomic_native_lock_free_v<T>) {
+    return atomic_fetch_xor_integral(value, operand, order);
+  } else {
+    T current = atomic_dispatch_load(value, memory_order_relaxed);
 
-        for (;;) {
-            const T desired =
-                static_cast<T>(
-                    current ^ operand);
+    for (;;) {
+      const T desired = static_cast<T>(current ^ operand);
 
-            if (atomic_dispatch_compare_exchange(
-                    value,
-                    current,
-                    desired,
-                    true,
-                    order,
-                    memory_order_relaxed)) {
-                return current;
-            }
-        }
+      if (atomic_dispatch_compare_exchange(value, current, desired, true, order,
+                                           memory_order_relaxed)) {
+        return current;
+      }
     }
+  }
 }
 
 } // namespace detail
 
-template <class T>
-class atomic : public detail::atomic_difference_type<T> {
+template <class T> class atomic : public detail::atomic_difference_type<T> {
   static_assert(is_trivially_copyable_v<T>);
   static_assert(is_copy_constructible_v<T>);
   static_assert(is_move_constructible_v<T>);
@@ -1495,8 +1272,7 @@ public:
   constexpr atomic() noexcept(is_nothrow_default_constructible_v<T>)
       : value_() {}
 
-  constexpr atomic(T desired) noexcept
-      : value_(desired) {}
+  constexpr atomic(T desired) noexcept : value_(desired) {}
 
   atomic(const atomic &) = delete;
   atomic &operator=(const atomic &) = delete;
@@ -1512,24 +1288,15 @@ public:
     return is_always_lock_free;
   }
 
-  void store(
-      T desired,
-      memory_order order = memory_order_seq_cst) volatile noexcept
+  void store(T desired,
+             memory_order order = memory_order_seq_cst) volatile noexcept
     requires(is_always_lock_free)
   {
-    detail::atomic_dispatch_store(
-        &value_,
-        desired,
-        order);
+    detail::atomic_dispatch_store(&value_, desired, order);
   }
 
-  void store(
-      T desired,
-      memory_order order = memory_order_seq_cst) noexcept {
-    detail::atomic_dispatch_store(
-        &value_,
-        desired,
-        order);
+  void store(T desired, memory_order order = memory_order_seq_cst) noexcept {
+    detail::atomic_dispatch_store(&value_, desired, order);
   }
 
   T operator=(T desired) volatile noexcept
@@ -1545,21 +1312,15 @@ public:
   }
 
   [[nodiscard]]
-  T load(
-      memory_order order = memory_order_seq_cst) const volatile noexcept
+  T load(memory_order order = memory_order_seq_cst) const volatile noexcept
     requires(is_always_lock_free)
   {
-    return detail::atomic_dispatch_load(
-        &value_,
-        order);
+    return detail::atomic_dispatch_load(&value_, order);
   }
 
   [[nodiscard]]
-  T load(
-      memory_order order = memory_order_seq_cst) const noexcept {
-    return detail::atomic_dispatch_load(
-        &value_,
-        order);
+  T load(memory_order order = memory_order_seq_cst) const noexcept {
+    return detail::atomic_dispatch_load(&value_, order);
   }
 
   operator T() const volatile noexcept
@@ -1568,573 +1329,369 @@ public:
     return load();
   }
 
-  operator T() const noexcept {
-    return load();
-  }
+  operator T() const noexcept { return load(); }
 
-  T exchange(
-      T desired,
-      memory_order order = memory_order_seq_cst) volatile noexcept
+  T exchange(T desired,
+             memory_order order = memory_order_seq_cst) volatile noexcept
     requires(is_always_lock_free)
   {
-    return detail::atomic_dispatch_exchange(
-        &value_,
-        desired,
-        order);
+    return detail::atomic_dispatch_exchange(&value_, desired, order);
   }
 
-  T exchange(
-      T desired,
-      memory_order order = memory_order_seq_cst) noexcept {
-    return detail::atomic_dispatch_exchange(
-        &value_,
-        desired,
-        order);
+  T exchange(T desired, memory_order order = memory_order_seq_cst) noexcept {
+    return detail::atomic_dispatch_exchange(&value_, desired, order);
   }
 
-  void wait(
-      T old,
-      memory_order order = memory_order_seq_cst) const volatile noexcept {
-    detail::atomic_dispatch_wait(
-        &value_,
-        old,
-        order);
+  void wait(T old, memory_order order = memory_order_seq_cst) const
+      volatile noexcept {
+    detail::atomic_dispatch_wait(&value_, old, order);
   }
 
-  void wait(
-      T old,
-      memory_order order = memory_order_seq_cst) const noexcept {
-    detail::atomic_dispatch_wait(
-        &value_,
-        old,
-        order);
+  void wait(T old, memory_order order = memory_order_seq_cst) const noexcept {
+    detail::atomic_dispatch_wait(&value_, old, order);
   }
 
   void notify_one() volatile noexcept {
-    detail::atomic_dispatch_notify_one(
-        &value_);
+    detail::atomic_dispatch_notify_one(&value_);
   }
 
-  void notify_one() noexcept {
-    detail::atomic_dispatch_notify_one(
-        &value_);
-  }
+  void notify_one() noexcept { detail::atomic_dispatch_notify_one(&value_); }
 
   void notify_all() volatile noexcept {
-    detail::atomic_dispatch_notify_all(
-        &value_);
+    detail::atomic_dispatch_notify_all(&value_);
   }
 
-  void notify_all() noexcept {
-    detail::atomic_dispatch_notify_all(
-        &value_);
-  }
+  void notify_all() noexcept { detail::atomic_dispatch_notify_all(&value_); }
 
-  bool compare_exchange_weak(
-      T &expected,
-      T desired,
-      memory_order success,
-      memory_order failure) volatile noexcept
+  bool compare_exchange_weak(T &expected, T desired, memory_order success,
+                             memory_order failure) volatile noexcept
     requires(is_always_lock_free)
   {
-    return detail::atomic_dispatch_compare_exchange(
-        &value_,
-        expected,
-        desired,
-        true,
-        success,
-        failure);
+    return detail::atomic_dispatch_compare_exchange(&value_, expected, desired,
+                                                    true, success, failure);
+  }
+
+  bool compare_exchange_weak(T &expected, T desired, memory_order success,
+                             memory_order failure) noexcept {
+    return detail::atomic_dispatch_compare_exchange(&value_, expected, desired,
+                                                    true, success, failure);
   }
 
   bool compare_exchange_weak(
-      T &expected,
-      T desired,
-      memory_order success,
-      memory_order failure) noexcept {
-    return detail::atomic_dispatch_compare_exchange(
-        &value_,
-        expected,
-        desired,
-        true,
-        success,
-        failure);
-  }
-
-  bool compare_exchange_weak(
-      T &expected,
-      T desired,
+      T &expected, T desired,
       memory_order order = memory_order_seq_cst) volatile noexcept
     requires(is_always_lock_free)
   {
-    return compare_exchange_weak(
-        expected,
-        desired,
-        order,
-        detail::atomic_failure_order(order));
+    return compare_exchange_weak(expected, desired, order,
+                                 detail::atomic_failure_order(order));
   }
 
-  bool compare_exchange_weak(
-      T &expected,
-      T desired,
-      memory_order order = memory_order_seq_cst) noexcept {
-    return compare_exchange_weak(
-        expected,
-        desired,
-        order,
-        detail::atomic_failure_order(order));
+  bool
+  compare_exchange_weak(T &expected, T desired,
+                        memory_order order = memory_order_seq_cst) noexcept {
+    return compare_exchange_weak(expected, desired, order,
+                                 detail::atomic_failure_order(order));
   }
 
-  bool compare_exchange_strong(
-      T &expected,
-      T desired,
-      memory_order success,
-      memory_order failure) volatile noexcept
+  bool compare_exchange_strong(T &expected, T desired, memory_order success,
+                               memory_order failure) volatile noexcept
     requires(is_always_lock_free)
   {
-    return detail::atomic_dispatch_compare_exchange(
-        &value_,
-        expected,
-        desired,
-        false,
-        success,
-        failure);
+    return detail::atomic_dispatch_compare_exchange(&value_, expected, desired,
+                                                    false, success, failure);
+  }
+
+  bool compare_exchange_strong(T &expected, T desired, memory_order success,
+                               memory_order failure) noexcept {
+    return detail::atomic_dispatch_compare_exchange(&value_, expected, desired,
+                                                    false, success, failure);
   }
 
   bool compare_exchange_strong(
-      T &expected,
-      T desired,
-      memory_order success,
-      memory_order failure) noexcept {
-    return detail::atomic_dispatch_compare_exchange(
-        &value_,
-        expected,
-        desired,
-        false,
-        success,
-        failure);
-  }
-
-  bool compare_exchange_strong(
-      T &expected,
-      T desired,
+      T &expected, T desired,
       memory_order order = memory_order_seq_cst) volatile noexcept
     requires(is_always_lock_free)
   {
-    return compare_exchange_strong(
-        expected,
-        desired,
-        order,
-        detail::atomic_failure_order(order));
+    return compare_exchange_strong(expected, desired, order,
+                                   detail::atomic_failure_order(order));
   }
 
-  bool compare_exchange_strong(
-      T &expected,
-      T desired,
-      memory_order order = memory_order_seq_cst) noexcept {
-    return compare_exchange_strong(
-        expected,
-        desired,
-        order,
-        detail::atomic_failure_order(order));
+  bool
+  compare_exchange_strong(T &expected, T desired,
+                          memory_order order = memory_order_seq_cst) noexcept {
+    return compare_exchange_strong(expected, desired, order,
+                                   detail::atomic_failure_order(order));
   }
 
-  T fetch_add(
-      detail::atomic_operand_t<T> operand,
-      memory_order order = memory_order_seq_cst) volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_additive<T>)
+  T fetch_add(detail::atomic_operand_t<T> operand,
+              memory_order order = memory_order_seq_cst) volatile noexcept
+    requires(is_always_lock_free && detail::atomic_additive<T>)
   {
-    return detail::atomic_dispatch_fetch_add(
-        &value_,
-        operand,
-        order);
+    return detail::atomic_dispatch_fetch_add(&value_, operand, order);
   }
 
-  T fetch_add(
-      detail::atomic_operand_t<T> operand,
-      memory_order order = memory_order_seq_cst) noexcept
+  T fetch_add(detail::atomic_operand_t<T> operand,
+              memory_order order = memory_order_seq_cst) noexcept
     requires detail::atomic_additive<T>
   {
-    return detail::atomic_dispatch_fetch_add(
-        &value_,
-        operand,
-        order);
+    return detail::atomic_dispatch_fetch_add(&value_, operand, order);
   }
 
-  T fetch_sub(
-      detail::atomic_operand_t<T> operand,
-      memory_order order = memory_order_seq_cst) volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_additive<T>)
+  T fetch_sub(detail::atomic_operand_t<T> operand,
+              memory_order order = memory_order_seq_cst) volatile noexcept
+    requires(is_always_lock_free && detail::atomic_additive<T>)
   {
-    return detail::atomic_dispatch_fetch_sub(
-        &value_,
-        operand,
-        order);
+    return detail::atomic_dispatch_fetch_sub(&value_, operand, order);
   }
 
-  T fetch_sub(
-      detail::atomic_operand_t<T> operand,
-      memory_order order = memory_order_seq_cst) noexcept
+  T fetch_sub(detail::atomic_operand_t<T> operand,
+              memory_order order = memory_order_seq_cst) noexcept
     requires detail::atomic_additive<T>
   {
-    return detail::atomic_dispatch_fetch_sub(
-        &value_,
-        operand,
-        order);
+    return detail::atomic_dispatch_fetch_sub(&value_, operand, order);
   }
 
-  T fetch_and(
-      T operand,
-      memory_order order = memory_order_seq_cst) volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_integral<T>)
+  T fetch_and(T operand,
+              memory_order order = memory_order_seq_cst) volatile noexcept
+    requires(is_always_lock_free && detail::atomic_integral<T>)
   {
-    return detail::atomic_dispatch_fetch_and(
-        &value_,
-        operand,
-        order);
+    return detail::atomic_dispatch_fetch_and(&value_, operand, order);
   }
 
-  T fetch_and(
-      T operand,
-      memory_order order = memory_order_seq_cst) noexcept
+  T fetch_and(T operand, memory_order order = memory_order_seq_cst) noexcept
     requires detail::atomic_integral<T>
   {
-    return detail::atomic_dispatch_fetch_and(
-        &value_,
-        operand,
-        order);
+    return detail::atomic_dispatch_fetch_and(&value_, operand, order);
   }
 
-  T fetch_or(
-      T operand,
-      memory_order order = memory_order_seq_cst) volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_integral<T>)
+  T fetch_or(T operand,
+             memory_order order = memory_order_seq_cst) volatile noexcept
+    requires(is_always_lock_free && detail::atomic_integral<T>)
   {
-    return detail::atomic_dispatch_fetch_or(
-        &value_,
-        operand,
-        order);
+    return detail::atomic_dispatch_fetch_or(&value_, operand, order);
   }
 
-  T fetch_or(
-      T operand,
-      memory_order order = memory_order_seq_cst) noexcept
+  T fetch_or(T operand, memory_order order = memory_order_seq_cst) noexcept
     requires detail::atomic_integral<T>
   {
-    return detail::atomic_dispatch_fetch_or(
-        &value_,
-        operand,
-        order);
+    return detail::atomic_dispatch_fetch_or(&value_, operand, order);
   }
 
-  T fetch_xor(
-      T operand,
-      memory_order order = memory_order_seq_cst) volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_integral<T>)
+  T fetch_xor(T operand,
+              memory_order order = memory_order_seq_cst) volatile noexcept
+    requires(is_always_lock_free && detail::atomic_integral<T>)
   {
-    return detail::atomic_dispatch_fetch_xor(
-        &value_,
-        operand,
-        order);
+    return detail::atomic_dispatch_fetch_xor(&value_, operand, order);
   }
 
-  T fetch_xor(
-      T operand,
-      memory_order order = memory_order_seq_cst) noexcept
+  T fetch_xor(T operand, memory_order order = memory_order_seq_cst) noexcept
     requires detail::atomic_integral<T>
   {
-    return detail::atomic_dispatch_fetch_xor(
-        &value_,
-        operand,
-        order);
+    return detail::atomic_dispatch_fetch_xor(&value_, operand, order);
   }
 
   T operator++(int) volatile noexcept
-    requires(
-        is_always_lock_free &&
-        (detail::atomic_integral<T> ||
-         detail::atomic_object_pointer<T>))
+    requires(is_always_lock_free &&
+             (detail::atomic_integral<T> || detail::atomic_object_pointer<T>))
   {
     return fetch_add(1);
   }
 
   T operator++(int) noexcept
-    requires(
-        detail::atomic_integral<T> ||
-        detail::atomic_object_pointer<T>)
+    requires(detail::atomic_integral<T> || detail::atomic_object_pointer<T>)
   {
     return fetch_add(1);
   }
 
   T operator--(int) volatile noexcept
-    requires(
-        is_always_lock_free &&
-        (detail::atomic_integral<T> ||
-         detail::atomic_object_pointer<T>))
+    requires(is_always_lock_free &&
+             (detail::atomic_integral<T> || detail::atomic_object_pointer<T>))
   {
     return fetch_sub(1);
   }
 
   T operator--(int) noexcept
-    requires(
-        detail::atomic_integral<T> ||
-        detail::atomic_object_pointer<T>)
+    requires(detail::atomic_integral<T> || detail::atomic_object_pointer<T>)
   {
     return fetch_sub(1);
   }
 
   T operator++() volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_integral<T>)
+    requires(is_always_lock_free && detail::atomic_integral<T>)
   {
-    return detail::atomic_integral_add(
-        fetch_add(T{1}),
-        T{1});
+    return detail::atomic_integral_add(fetch_add(T{1}), T{1});
   }
 
   T operator++() noexcept
     requires detail::atomic_integral<T>
   {
-    return detail::atomic_integral_add(
-        fetch_add(T{1}),
-        T{1});
+    return detail::atomic_integral_add(fetch_add(T{1}), T{1});
   }
 
   T operator++() volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_object_pointer<T>)
+    requires(is_always_lock_free && detail::atomic_object_pointer<T>)
   {
-    return detail::atomic_pointer_add(
-        fetch_add(1),
-        1);
+    return detail::atomic_pointer_add(fetch_add(1), 1);
   }
 
   T operator++() noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_add(
-        fetch_add(1),
-        1);
+    return detail::atomic_pointer_add(fetch_add(1), 1);
   }
 
   T operator--() volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_integral<T>)
+    requires(is_always_lock_free && detail::atomic_integral<T>)
   {
-    return detail::atomic_integral_sub(
-        fetch_sub(T{1}),
-        T{1});
+    return detail::atomic_integral_sub(fetch_sub(T{1}), T{1});
   }
 
   T operator--() noexcept
     requires detail::atomic_integral<T>
   {
-    return detail::atomic_integral_sub(
-        fetch_sub(T{1}),
-        T{1});
+    return detail::atomic_integral_sub(fetch_sub(T{1}), T{1});
   }
 
   T operator--() volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_object_pointer<T>)
+    requires(is_always_lock_free && detail::atomic_object_pointer<T>)
   {
-    return detail::atomic_pointer_sub(
-        fetch_sub(1),
-        1);
+    return detail::atomic_pointer_sub(fetch_sub(1), 1);
   }
 
   T operator--() noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_sub(
-        fetch_sub(1),
-        1);
+    return detail::atomic_pointer_sub(fetch_sub(1), 1);
   }
 
-  T operator+=(
-      detail::atomic_operand_t<T> operand) volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_integral<T>)
+  T operator+=(detail::atomic_operand_t<T> operand) volatile noexcept
+    requires(is_always_lock_free && detail::atomic_integral<T>)
   {
-    return detail::atomic_integral_add(
-        fetch_add(operand),
-        operand);
+    return detail::atomic_integral_add(fetch_add(operand), operand);
   }
 
-  T operator+=(
-      detail::atomic_operand_t<T> operand) noexcept
+  T operator+=(detail::atomic_operand_t<T> operand) noexcept
     requires detail::atomic_integral<T>
   {
-    return detail::atomic_integral_add(
-        fetch_add(operand),
-        operand);
+    return detail::atomic_integral_add(fetch_add(operand), operand);
   }
 
-  T operator+=(
-      detail::atomic_operand_t<T> operand) volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_floating<T>)
+  T operator+=(detail::atomic_operand_t<T> operand) volatile noexcept
+    requires(is_always_lock_free && detail::atomic_floating<T>)
   {
-    return static_cast<T>(
-        fetch_add(operand) + operand);
+    return static_cast<T>(fetch_add(operand) + operand);
   }
 
-  T operator+=(
-      detail::atomic_operand_t<T> operand) noexcept
+  T operator+=(detail::atomic_operand_t<T> operand) noexcept
     requires detail::atomic_floating<T>
   {
-    return static_cast<T>(
-        fetch_add(operand) + operand);
+    return static_cast<T>(fetch_add(operand) + operand);
   }
 
-  T operator+=(
-      detail::atomic_operand_t<T> operand) volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_object_pointer<T>)
+  T operator+=(detail::atomic_operand_t<T> operand) volatile noexcept
+    requires(is_always_lock_free && detail::atomic_object_pointer<T>)
   {
-    return detail::atomic_pointer_add(
-        fetch_add(operand),
-        operand);
+    return detail::atomic_pointer_add(fetch_add(operand), operand);
   }
 
-  T operator+=(
-      detail::atomic_operand_t<T> operand) noexcept
+  T operator+=(detail::atomic_operand_t<T> operand) noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_add(
-        fetch_add(operand),
-        operand);
+    return detail::atomic_pointer_add(fetch_add(operand), operand);
   }
 
-  T operator-=(
-      detail::atomic_operand_t<T> operand) volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_integral<T>)
+  T operator-=(detail::atomic_operand_t<T> operand) volatile noexcept
+    requires(is_always_lock_free && detail::atomic_integral<T>)
   {
-    return detail::atomic_integral_sub(
-        fetch_sub(operand),
-        operand);
+    return detail::atomic_integral_sub(fetch_sub(operand), operand);
   }
 
-  T operator-=(
-      detail::atomic_operand_t<T> operand) noexcept
+  T operator-=(detail::atomic_operand_t<T> operand) noexcept
     requires detail::atomic_integral<T>
   {
-    return detail::atomic_integral_sub(
-        fetch_sub(operand),
-        operand);
+    return detail::atomic_integral_sub(fetch_sub(operand), operand);
   }
 
-  T operator-=(
-      detail::atomic_operand_t<T> operand) volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_floating<T>)
+  T operator-=(detail::atomic_operand_t<T> operand) volatile noexcept
+    requires(is_always_lock_free && detail::atomic_floating<T>)
   {
-    return static_cast<T>(
-        fetch_sub(operand) - operand);
+    return static_cast<T>(fetch_sub(operand) - operand);
   }
 
-  T operator-=(
-      detail::atomic_operand_t<T> operand) noexcept
+  T operator-=(detail::atomic_operand_t<T> operand) noexcept
     requires detail::atomic_floating<T>
   {
-    return static_cast<T>(
-        fetch_sub(operand) - operand);
+    return static_cast<T>(fetch_sub(operand) - operand);
   }
 
-  T operator-=(
-      detail::atomic_operand_t<T> operand) volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_object_pointer<T>)
+  T operator-=(detail::atomic_operand_t<T> operand) volatile noexcept
+    requires(is_always_lock_free && detail::atomic_object_pointer<T>)
   {
-    return detail::atomic_pointer_sub(
-        fetch_sub(operand),
-        operand);
+    return detail::atomic_pointer_sub(fetch_sub(operand), operand);
   }
 
-  T operator-=(
-      detail::atomic_operand_t<T> operand) noexcept
+  T operator-=(detail::atomic_operand_t<T> operand) noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_sub(
-        fetch_sub(operand),
-        operand);
+    return detail::atomic_pointer_sub(fetch_sub(operand), operand);
   }
 
   T operator&=(T operand) volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_integral<T>)
+    requires(is_always_lock_free && detail::atomic_integral<T>)
   {
-    return static_cast<T>(
-        fetch_and(operand) & operand);
+    return static_cast<T>(fetch_and(operand) & operand);
   }
 
   T operator&=(T operand) noexcept
     requires detail::atomic_integral<T>
   {
-    return static_cast<T>(
-        fetch_and(operand) & operand);
+    return static_cast<T>(fetch_and(operand) & operand);
   }
 
   T operator|=(T operand) volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_integral<T>)
+    requires(is_always_lock_free && detail::atomic_integral<T>)
   {
-    return static_cast<T>(
-        fetch_or(operand) | operand);
+    return static_cast<T>(fetch_or(operand) | operand);
   }
 
   T operator|=(T operand) noexcept
     requires detail::atomic_integral<T>
   {
-    return static_cast<T>(
-        fetch_or(operand) | operand);
+    return static_cast<T>(fetch_or(operand) | operand);
   }
 
   T operator^=(T operand) volatile noexcept
-    requires(
-        is_always_lock_free &&
-        detail::atomic_integral<T>)
+    requires(is_always_lock_free && detail::atomic_integral<T>)
   {
-    return static_cast<T>(
-        fetch_xor(operand) ^ operand);
+    return static_cast<T>(fetch_xor(operand) ^ operand);
   }
 
   T operator^=(T operand) noexcept
     requires detail::atomic_integral<T>
   {
-    return static_cast<T>(
-        fetch_xor(operand) ^ operand);
+    return static_cast<T>(fetch_xor(operand) ^ operand);
   }
 
 private:
-  alignas(detail::atomic_storage_alignment_v<T>)
-      T value_;
+  template <class U>
+  friend void atomic_init(volatile atomic<U> *,
+                          typename atomic<U>::value_type) noexcept;
+
+  template <class U>
+  friend void atomic_init(atomic<U> *, typename atomic<U>::value_type) noexcept;
+
+  void initialize(T desired) volatile noexcept {
+    detail::atomic_object_write(&value_, desired);
+  }
+
+  void initialize(T desired) noexcept {
+    detail::atomic_object_write(&value_, desired);
+  }
+
+  alignas(detail::atomic_storage_alignment_v<T>) T value_;
 };
 
-template <class T>
-class atomic_ref : public detail::atomic_difference_type<T> {
+template <class T> class atomic_ref : public detail::atomic_difference_type<T> {
   static_assert(is_trivially_copyable_v<T>);
   static_assert(is_same_v<T, remove_cv_t<T>>);
 
@@ -2145,14 +1702,10 @@ public:
       detail::atomic_native_lock_free_v<T>;
 
   static constexpr size_t required_alignment =
-      is_always_lock_free
-          ? (alignof(T) > sizeof(T)
-                 ? alignof(T)
-                 : sizeof(T))
-          : alignof(T);
+      is_always_lock_free ? (alignof(T) > sizeof(T) ? alignof(T) : sizeof(T))
+                          : alignof(T);
 
-  explicit atomic_ref(T &object) noexcept
-      : ptr_(&object) {}
+  explicit atomic_ref(T &object) noexcept : ptr_(&object) {}
 
   atomic_ref(const atomic_ref &) noexcept = default;
 
@@ -2163,13 +1716,9 @@ public:
     return is_always_lock_free;
   }
 
-  void store(
-      T desired,
-      memory_order order = memory_order_seq_cst) const noexcept {
-    detail::atomic_dispatch_store(
-        ptr_,
-        desired,
-        order);
+  void store(T desired,
+             memory_order order = memory_order_seq_cst) const noexcept {
+    detail::atomic_dispatch_store(ptr_, desired, order);
   }
 
   T operator=(T desired) const noexcept {
@@ -2178,162 +1727,94 @@ public:
   }
 
   [[nodiscard]]
-  T load(
-      memory_order order = memory_order_seq_cst) const noexcept {
-    return detail::atomic_dispatch_load(
-        ptr_,
-        order);
+  T load(memory_order order = memory_order_seq_cst) const noexcept {
+    return detail::atomic_dispatch_load(ptr_, order);
   }
 
-  operator T() const noexcept {
-    return load();
+  operator T() const noexcept { return load(); }
+
+  T exchange(T desired,
+             memory_order order = memory_order_seq_cst) const noexcept {
+    return detail::atomic_dispatch_exchange(ptr_, desired, order);
   }
 
-  T exchange(
-      T desired,
-      memory_order order = memory_order_seq_cst) const noexcept {
-    return detail::atomic_dispatch_exchange(
-        ptr_,
-        desired,
-        order);
+  bool compare_exchange_weak(T &expected, T desired, memory_order success,
+                             memory_order failure) const noexcept {
+    return detail::atomic_dispatch_compare_exchange(ptr_, expected, desired,
+                                                    true, success, failure);
   }
 
   bool compare_exchange_weak(
-      T &expected,
-      T desired,
-      memory_order success,
-      memory_order failure) const noexcept {
-    return detail::atomic_dispatch_compare_exchange(
-        ptr_,
-        expected,
-        desired,
-        true,
-        success,
-        failure);
+      T &expected, T desired,
+      memory_order order = memory_order_seq_cst) const noexcept {
+    return compare_exchange_weak(expected, desired, order,
+                                 detail::atomic_failure_order(order));
   }
 
-  bool compare_exchange_weak(
-      T &expected,
-      T desired,
-      memory_order order = memory_order_seq_cst) const noexcept {
-    return compare_exchange_weak(
-        expected,
-        desired,
-        order,
-        detail::atomic_failure_order(order));
+  bool compare_exchange_strong(T &expected, T desired, memory_order success,
+                               memory_order failure) const noexcept {
+    return detail::atomic_dispatch_compare_exchange(ptr_, expected, desired,
+                                                    false, success, failure);
   }
 
   bool compare_exchange_strong(
-      T &expected,
-      T desired,
-      memory_order success,
-      memory_order failure) const noexcept {
-    return detail::atomic_dispatch_compare_exchange(
-        ptr_,
-        expected,
-        desired,
-        false,
-        success,
-        failure);
-  }
-
-  bool compare_exchange_strong(
-      T &expected,
-      T desired,
+      T &expected, T desired,
       memory_order order = memory_order_seq_cst) const noexcept {
-    return compare_exchange_strong(
-        expected,
-        desired,
-        order,
-        detail::atomic_failure_order(order));
+    return compare_exchange_strong(expected, desired, order,
+                                   detail::atomic_failure_order(order));
   }
 
-  void wait(
-      T old,
-      memory_order order = memory_order_seq_cst) const noexcept {
-    detail::atomic_dispatch_wait(
-        ptr_,
-        old,
-        order);
+  void wait(T old, memory_order order = memory_order_seq_cst) const noexcept {
+    detail::atomic_dispatch_wait(ptr_, old, order);
   }
 
-  void notify_one() const noexcept {
-    detail::atomic_dispatch_notify_one(
-        ptr_);
-  }
+  void notify_one() const noexcept { detail::atomic_dispatch_notify_one(ptr_); }
 
-  void notify_all() const noexcept {
-    detail::atomic_dispatch_notify_all(
-        ptr_);
-  }
+  void notify_all() const noexcept { detail::atomic_dispatch_notify_all(ptr_); }
 
-  T fetch_add(
-      detail::atomic_operand_t<T> operand,
-      memory_order order = memory_order_seq_cst) const noexcept
+  T fetch_add(detail::atomic_operand_t<T> operand,
+              memory_order order = memory_order_seq_cst) const noexcept
     requires detail::atomic_additive<T>
   {
-    return detail::atomic_dispatch_fetch_add(
-        ptr_,
-        operand,
-        order);
+    return detail::atomic_dispatch_fetch_add(ptr_, operand, order);
   }
 
-  T fetch_sub(
-      detail::atomic_operand_t<T> operand,
-      memory_order order = memory_order_seq_cst) const noexcept
+  T fetch_sub(detail::atomic_operand_t<T> operand,
+              memory_order order = memory_order_seq_cst) const noexcept
     requires detail::atomic_additive<T>
   {
-    return detail::atomic_dispatch_fetch_sub(
-        ptr_,
-        operand,
-        order);
+    return detail::atomic_dispatch_fetch_sub(ptr_, operand, order);
   }
 
-  T fetch_and(
-      T operand,
-      memory_order order = memory_order_seq_cst) const noexcept
+  T fetch_and(T operand,
+              memory_order order = memory_order_seq_cst) const noexcept
     requires detail::atomic_integral<T>
   {
-    return detail::atomic_dispatch_fetch_and(
-        ptr_,
-        operand,
-        order);
+    return detail::atomic_dispatch_fetch_and(ptr_, operand, order);
   }
 
-  T fetch_or(
-      T operand,
-      memory_order order = memory_order_seq_cst) const noexcept
+  T fetch_or(T operand,
+             memory_order order = memory_order_seq_cst) const noexcept
     requires detail::atomic_integral<T>
   {
-    return detail::atomic_dispatch_fetch_or(
-        ptr_,
-        operand,
-        order);
+    return detail::atomic_dispatch_fetch_or(ptr_, operand, order);
   }
 
-  T fetch_xor(
-      T operand,
-      memory_order order = memory_order_seq_cst) const noexcept
+  T fetch_xor(T operand,
+              memory_order order = memory_order_seq_cst) const noexcept
     requires detail::atomic_integral<T>
   {
-    return detail::atomic_dispatch_fetch_xor(
-        ptr_,
-        operand,
-        order);
+    return detail::atomic_dispatch_fetch_xor(ptr_, operand, order);
   }
 
   T operator++(int) const noexcept
-    requires(
-        detail::atomic_integral<T> ||
-        detail::atomic_object_pointer<T>)
+    requires(detail::atomic_integral<T> || detail::atomic_object_pointer<T>)
   {
     return fetch_add(1);
   }
 
   T operator--(int) const noexcept
-    requires(
-        detail::atomic_integral<T> ||
-        detail::atomic_object_pointer<T>)
+    requires(detail::atomic_integral<T> || detail::atomic_object_pointer<T>)
   {
     return fetch_sub(1);
   }
@@ -2341,106 +1822,79 @@ public:
   T operator++() const noexcept
     requires detail::atomic_integral<T>
   {
-    return detail::atomic_integral_add(
-        fetch_add(T{1}),
-        T{1});
+    return detail::atomic_integral_add(fetch_add(T{1}), T{1});
   }
 
   T operator++() const noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_add(
-        fetch_add(1),
-        1);
+    return detail::atomic_pointer_add(fetch_add(1), 1);
   }
 
   T operator--() const noexcept
     requires detail::atomic_integral<T>
   {
-    return detail::atomic_integral_sub(
-        fetch_sub(T{1}),
-        T{1});
+    return detail::atomic_integral_sub(fetch_sub(T{1}), T{1});
   }
 
   T operator--() const noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_sub(
-        fetch_sub(1),
-        1);
+    return detail::atomic_pointer_sub(fetch_sub(1), 1);
   }
 
-  T operator+=(
-      detail::atomic_operand_t<T> operand) const noexcept
+  T operator+=(detail::atomic_operand_t<T> operand) const noexcept
     requires detail::atomic_integral<T>
   {
-    return detail::atomic_integral_add(
-        fetch_add(operand),
-        operand);
+    return detail::atomic_integral_add(fetch_add(operand), operand);
   }
 
-  T operator+=(
-      detail::atomic_operand_t<T> operand) const noexcept
+  T operator+=(detail::atomic_operand_t<T> operand) const noexcept
     requires detail::atomic_floating<T>
   {
-    return static_cast<T>(
-        fetch_add(operand) + operand);
+    return static_cast<T>(fetch_add(operand) + operand);
   }
 
-  T operator+=(
-      detail::atomic_operand_t<T> operand) const noexcept
+  T operator+=(detail::atomic_operand_t<T> operand) const noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_add(
-        fetch_add(operand),
-        operand);
+    return detail::atomic_pointer_add(fetch_add(operand), operand);
   }
 
-  T operator-=(
-      detail::atomic_operand_t<T> operand) const noexcept
+  T operator-=(detail::atomic_operand_t<T> operand) const noexcept
     requires detail::atomic_integral<T>
   {
-    return detail::atomic_integral_sub(
-        fetch_sub(operand),
-        operand);
+    return detail::atomic_integral_sub(fetch_sub(operand), operand);
   }
 
-  T operator-=(
-      detail::atomic_operand_t<T> operand) const noexcept
+  T operator-=(detail::atomic_operand_t<T> operand) const noexcept
     requires detail::atomic_floating<T>
   {
-    return static_cast<T>(
-        fetch_sub(operand) - operand);
+    return static_cast<T>(fetch_sub(operand) - operand);
   }
 
-  T operator-=(
-      detail::atomic_operand_t<T> operand) const noexcept
+  T operator-=(detail::atomic_operand_t<T> operand) const noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_sub(
-        fetch_sub(operand),
-        operand);
+    return detail::atomic_pointer_sub(fetch_sub(operand), operand);
   }
 
   T operator&=(T operand) const noexcept
     requires detail::atomic_integral<T>
   {
-    return static_cast<T>(
-        fetch_and(operand) & operand);
+    return static_cast<T>(fetch_and(operand) & operand);
   }
 
   T operator|=(T operand) const noexcept
     requires detail::atomic_integral<T>
   {
-    return static_cast<T>(
-        fetch_or(operand) | operand);
+    return static_cast<T>(fetch_or(operand) | operand);
   }
 
   T operator^=(T operand) const noexcept
     requires detail::atomic_integral<T>
   {
-    return static_cast<T>(
-        fetch_xor(operand) ^ operand);
+    return static_cast<T>(fetch_xor(operand) ^ operand);
   }
 
 private:
@@ -2896,13 +2350,13 @@ inline void atomic_flag_clear_explicit(atomic_flag *object,
 template <class T>
 void atomic_init(volatile atomic<T> *object,
                  typename atomic<T>::value_type desired) noexcept {
-  object->store(desired, memory_order_relaxed);
+  object->initialize(desired);
 }
 
 template <class T>
 void atomic_init(atomic<T> *object,
                  typename atomic<T>::value_type desired) noexcept {
-  object->store(desired, memory_order_relaxed);
+  object->initialize(desired);
 }
 
 extern "C" inline void atomic_thread_fence(memory_order order) noexcept {

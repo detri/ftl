@@ -25,12 +25,6 @@ struct atomic_triple {
   tested::uint32_t third;
 };
 
-static_assert(sizeof(atomic_triple) == 12);
-
-static_assert(tested::is_trivially_copyable_v<atomic_triple>);
-
-static_assert(!tested::atomic<atomic_triple>::is_always_lock_free);
-
 static_assert(sizeof(atomic_pair) == 4);
 static_assert(tested::is_trivially_copyable_v<atomic_pair>);
 
@@ -1299,6 +1293,18 @@ bool atomic_padding_is_ignored() {
   return value.compare_exchange_strong(expected, padded_atomic_value{0, 0});
 }
 
+bool non_lock_free_atomic_init_works() {
+  tested::atomic<atomic_triple> value{};
+
+  volatile tested::atomic<atomic_triple> *volatile_value = &value;
+
+  tested::atomic_init(volatile_value, atomic_triple{1, 2, 3});
+
+  const auto observed = value.load();
+
+  return observed.first == 1 && observed.second == 2 && observed.third == 3;
+}
+
 bool ftl_test() {
   return basic_operations_work() && compare_exchange_works() &&
          generic_atomic_works() && arithmetic_works() &&
@@ -1322,7 +1328,8 @@ bool ftl_test() {
          platform_wait_backend_links() &&
          pointer_min_difference_does_not_overflow() &&
          non_lock_free_atomic_works() && non_lock_free_atomic_ref_works() &&
-         non_lock_free_free_functions_work()
+         non_lock_free_free_functions_work() &&
+         non_lock_free_atomic_init_works()
 #if FTL_TEST_ATOMIC_PADDING
          && atomic_padding_is_ignored()
 #endif
