@@ -79,17 +79,43 @@ function(add_ftl_freestanding_link_check name source)
     target_compile_features(ftl_check_${name} PRIVATE cxx_std_23)
     target_compile_definitions(ftl_check_${name} PRIVATE FTL_REPLACE_STL)
     target_include_directories(ftl_check_${name} PRIVATE ../include/ftl)
+
     if (MSVC)
-        target_compile_options(ftl_check_${name} PRIVATE /X)
-        target_link_options(ftl_check_${name} PRIVATE
-                /NODEFAULTLIB /ENTRY:ftl_entry /SUBSYSTEM:CONSOLE)
+        target_compile_options(
+                ftl_check_${name}
+                PRIVATE
+                /X
+                /GS-
+        )
+
+        target_link_options(
+                ftl_check_${name}
+                PRIVATE
+                /NODEFAULTLIB
+                /ENTRY:ftl_entry
+                /SUBSYSTEM:CONSOLE
+        )
     else ()
-        target_compile_options(ftl_check_${name} PRIVATE -nostdinc++)
+        target_compile_options(
+                ftl_check_${name}
+                PRIVATE
+                -nostdinc++
+                -fno-stack-protector
+        )
+
         if (APPLE)
-            target_link_options(ftl_check_${name} PRIVATE "LINKER:-e,_ftl_entry")
+            target_link_options(
+                    ftl_check_${name}
+                    PRIVATE
+                    "LINKER:-e,_ftl_entry"
+            )
         else ()
-            target_link_options(ftl_check_${name} PRIVATE
-                    -nostdlib "LINKER:-e,ftl_entry")
+            target_link_options(
+                    ftl_check_${name}
+                    PRIVATE
+                    -nostdlib
+                    "LINKER:-e,ftl_entry"
+            )
         endif ()
     endif ()
 endfunction()
@@ -197,7 +223,19 @@ add_ftl_freestanding_link_check(vector_freestanding_link
         checks/vector_freestanding_link.cpp)
 target_compile_definitions(ftl_check_vector_freestanding_link PRIVATE FTL_NO_EXCEPTIONS)
 if (MSVC)
-    target_compile_options(ftl_check_vector_freestanding_link PRIVATE /O2 /GS- /EHs-c-)
+    target_compile_options(
+            ftl_check_vector_freestanding_link
+            PRIVATE
+            /O2
+            /EHs-c-
+    )
+else ()
+    target_compile_options(
+            ftl_check_vector_freestanding_link
+            PRIVATE
+            -O2
+            -fno-exceptions
+    )
 endif ()
 add_ftl_freestanding_link_check(random_freestanding_link
         checks/random_freestanding_link.cpp)
@@ -214,7 +252,19 @@ add_ftl_freestanding_link_check(deque_freestanding_link
         checks/deque_freestanding_link.cpp)
 target_compile_definitions(ftl_check_deque_freestanding_link PRIVATE FTL_NO_EXCEPTIONS)
 if (MSVC)
-    target_compile_options(ftl_check_deque_freestanding_link PRIVATE /O2 /GS- /EHs-c-)
+    target_compile_options(
+            ftl_check_deque_freestanding_link
+            PRIVATE
+            /O2
+            /EHs-c-
+    )
+else ()
+    target_compile_options(
+            ftl_check_deque_freestanding_link
+            PRIVATE
+            -O2
+            -fno-exceptions
+    )
 endif ()
 add_ftl_freestanding_link_check(forward_list_freestanding_link
         checks/forward_list_freestanding_link.cpp)
