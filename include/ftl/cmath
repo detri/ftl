@@ -4,12 +4,14 @@
 #define FTL_CMATH_HEADER
 
 #ifdef FTL_REPLACE_STL
+#include <bit>
 #include <limits>
 #include <type_traits>
 #include <detail/math_runtime>
 #define FTL_CMATH_BEGIN namespace std {
 #define FTL_CMATH_END }
 #else
+#include <ftl/bit>
 #include <ftl/limits>
 #include <ftl/type_traits>
 #include <ftl/detail/math_runtime>
@@ -34,9 +36,28 @@ FTL_CMATH_BEGIN
 using float_t = float;
 using double_t = double;
 
+inline float sqrt(float) noexcept;
+inline double sqrt(double) noexcept;
+inline long double sqrt(long double) noexcept;
+constexpr float fabs(float) noexcept;
+constexpr double fabs(double) noexcept;
+constexpr long double fabs(long double) noexcept;
+inline float atan(float) noexcept;
+inline double atan(double) noexcept;
+inline long double atan(long double) noexcept;
+inline float atanh(float) noexcept;
+inline double atanh(double) noexcept;
+inline long double atanh(long double) noexcept;
+constexpr bool isinf(float) noexcept;
+constexpr bool isinf(double) noexcept;
+constexpr bool isinf(long double) noexcept;
+
 namespace detail {
 template <class T>
 inline constexpr bool math_arithmetic_v = is_arithmetic_v<remove_cv_t<T>>;
+
+template <class T>
+inline T math_domain_error() { return sqrt(T{-1}); }
 
 template <class Left, class Right>
 using math_common_t = conditional_t<
@@ -48,6 +69,251 @@ using math_common_t = conditional_t<
                       is_integral_v<remove_cv_t<Left>> ||
                       is_integral_v<remove_cv_t<Right>>,
                   double, float>>;
+
+template <class T> constexpr T const_abs(T value) {
+  return value == T{} ? T{} : value < T{} ? -value : value;
+}
+template <class T> constexpr T const_fabs(T value) { return const_abs(value); }
+template <class T> constexpr bool const_isnan(T value) { return value != value; }
+template <class T> constexpr bool const_isinf(T value) {
+  return value == numeric_limits<T>::infinity() ||
+         value == -numeric_limits<T>::infinity();
+}
+template <class T> constexpr bool const_isfinite(T value) {
+  return !const_isnan(value) && !const_isinf(value);
+}
+template <class T> constexpr bool const_isnormal(T value) {
+  return const_isfinite(value) && const_abs(value) >= numeric_limits<T>::min();
+}
+template <class T> struct math_bytes { unsigned char value[sizeof(T)]; };
+template <class T> constexpr bool const_signbit(T value) {
+  const auto bytes = bit_cast<math_bytes<T>>(value);
+  if constexpr (sizeof(T) == 4) return (bytes.value[3] & 0x80u) != 0;
+  if constexpr (sizeof(T) == 8) return (bytes.value[7] & 0x80u) != 0;
+  return (bytes.value[9] & 0x80u) != 0;
+}
+template <class T> constexpr T const_copysign(T magnitude, T sign) {
+  return const_signbit(magnitude) == const_signbit(sign) ? magnitude : -magnitude;
+}
+template <class T> constexpr T const_trunc(T value) {
+  if (!const_isfinite(value) || value == T{}) return value;
+  constexpr T bound = T(numeric_limits<long long>::max());
+  if (value >= bound || value <= -bound) return value;
+  return T(static_cast<long long>(value));
+}
+template <class T> constexpr T const_floor(T value) {
+  const T integer = const_trunc(value);
+  return integer > value ? integer - T{1} : integer;
+}
+template <class T> constexpr T const_ceil(T value) {
+  const T integer = const_trunc(value);
+  return integer < value ? integer + T{1} : integer;
+}
+template <class T> constexpr T const_round(T value) {
+  return value < T{} ? const_ceil(value - T{0.5})
+                     : const_floor(value + T{0.5});
+}
+template <class T> constexpr T const_scalbn(T value, long exponent) {
+  if (!const_isfinite(value) || value == T{}) return value;
+  while (exponent > 0) { value *= T{2}; --exponent; }
+  while (exponent < 0) { value *= T{0.5}; ++exponent; }
+  return value;
+}
+template <class T> constexpr T const_frexp(T value, int *exponent) {
+  *exponent = 0;
+  if (!const_isfinite(value) || value == T{}) return value;
+  T magnitude = const_abs(value);
+  while (magnitude >= T{1}) { magnitude *= T{0.5}; ++*exponent; }
+  while (magnitude < T{0.5}) { magnitude *= T{2}; --*exponent; }
+  return const_copysign(magnitude, value);
+}
+template <class T> constexpr int const_ilogb(T value) {
+  if (value == T{}) return FP_ILOGB0;
+  if (const_isnan(value)) return FP_ILOGBNAN;
+  if (const_isinf(value)) return numeric_limits<int>::max();
+  int exponent{};
+  (void)const_frexp(value, &exponent);
+  return exponent - 1;
+}
+template <class T> constexpr T const_logb(T value) {
+  if (value == T{}) return -numeric_limits<T>::infinity();
+  if (const_isnan(value) || const_isinf(value)) return const_abs(value);
+  return T(const_ilogb(value));
+}
+template <class T> constexpr T const_fmod(T x, T y) {
+  if (const_isnan(x) || const_isnan(y) || y == T{} || const_isinf(x))
+    return numeric_limits<T>::quiet_NaN();
+  if (const_isinf(y)) return x;
+  return x - const_trunc(x / y) * y;
+}
+template <class T> constexpr T const_remainder(T x, T y,
+                                               long long *quotient = nullptr) {
+  if (const_isnan(x) || const_isnan(y) || y == T{} || const_isinf(x))
+    return numeric_limits<T>::quiet_NaN();
+  if (const_isinf(y)) { if (quotient) *quotient = 0; return x; }
+  const T ratio = x / y;
+  T nearest = const_trunc(ratio);
+  const T fraction = ratio - nearest;
+  if (fraction > T{0.5} ||
+      (fraction == T{0.5} && const_fmod(nearest, T{2}) != T{})) nearest += T{1};
+  else if (fraction < -T{0.5} ||
+           (fraction == -T{0.5} && const_fmod(nearest, T{2}) != T{})) nearest -= T{1};
+  if (quotient) *quotient = static_cast<long long>(nearest);
+  const T result = x - nearest * y;
+  return result == T{} ? const_copysign(T{}, x) : result;
+}
+template <class T, class U> constexpr T const_nextafter(T from, U to) {
+  if (const_isnan(from) || const_isnan(to)) return from + to;
+  if (from == to) return static_cast<T>(to);
+  if (from == T{})
+    return const_copysign(numeric_limits<T>::denorm_min(), static_cast<T>(to));
+  T magnitude = const_abs(from), ulp = numeric_limits<T>::denorm_min();
+  if (magnitude >= numeric_limits<T>::min()) {
+    int exponent{};
+    const T fraction = const_frexp(magnitude, &exponent);
+    ulp = const_scalbn(numeric_limits<T>::epsilon(), exponent - 1);
+    if ((to > from) == (from < T{}) && fraction == T{0.5}) ulp *= T{0.5};
+  }
+  return to > from ? from + ulp : from - ulp;
+}
+template <class T> constexpr T const_fdim(T x, T y) {
+  return const_isnan(x) || const_isnan(y) ? x + y : x > y ? x - y : T{};
+}
+template <class T> constexpr T const_fmax(T x, T y) {
+  if (const_isnan(x)) return y;
+  if (const_isnan(y)) return x;
+  if (x == y) return const_signbit(x) ? y : x;
+  return x > y ? x : y;
+}
+template <class T> constexpr T const_fmin(T x, T y) {
+  if (const_isnan(x)) return y;
+  if (const_isnan(y)) return x;
+  if (x == y) return const_signbit(x) ? x : y;
+  return x < y ? x : y;
+}
+template <class T> constexpr long const_lrint(T value) {
+  return static_cast<long>(const_round(value));
+}
+template <class T> constexpr long long const_llrint(T value) {
+  return static_cast<long long>(const_round(value));
+}
+template <class T> constexpr long const_lround(T value) {
+  return static_cast<long>(const_round(value));
+}
+template <class T> constexpr long long const_llround(T value) {
+  return static_cast<long long>(const_round(value));
+}
+
+// Adapted from Boost.Math 1.91.0 ellint_{rf,rd,rj}.hpp.
+// Copyright Xiaogang Zhang, John Maddock, and Matt Borland.
+// Distributed under the Boost Software License, Version 1.0.
+template <class T>
+inline T carlson_rf(T x, T y, T z) {
+  T a = (x + y + z) / T{3};
+  for (unsigned i = 0; i != 64; ++i) {
+    const T rx = sqrt(x), ry = sqrt(y), rz = sqrt(z);
+    const T lambda = rx * ry + rx * rz + ry * rz;
+    x = (x + lambda) / T{4};
+    y = (y + lambda) / T{4};
+    z = (z + lambda) / T{4};
+    a = (a + lambda) / T{4};
+    const T dx = (a - x) / a, dy = (a - y) / a;
+    const T dz = -dx - dy;
+    if (fabs(dx) < T{4} * numeric_limits<T>::epsilon() &&
+        fabs(dy) < T{4} * numeric_limits<T>::epsilon() &&
+        fabs(dz) < T{4} * numeric_limits<T>::epsilon()) {
+      const T e2 = dx * dy - dz * dz;
+      const T e3 = dx * dy * dz;
+      return (T{1} + e3 * (T{1} / T{14} + T{3} * e3 / T{104}) +
+              e2 * (-T{1} / T{10} + e2 / T{24} - T{3} * e3 / T{44} -
+                    T{5} * e2 * e2 / T{208} + e2 * e3 / T{16})) /
+             sqrt(a);
+    }
+  }
+  return numeric_limits<T>::quiet_NaN();
+}
+
+template <class T>
+inline T carlson_rd(T x, T y, T z) {
+  T sum{}, factor{1};
+  for (unsigned i = 0; i != 64; ++i) {
+    const T rx = sqrt(x), ry = sqrt(y), rz = sqrt(z);
+    const T lambda = rx * ry + rx * rz + ry * rz;
+    sum += factor / (rz * (z + lambda));
+    factor /= T{4};
+    x = (x + lambda) / T{4};
+    y = (y + lambda) / T{4};
+    z = (z + lambda) / T{4};
+    const T a = (x + y + T{3} * z) / T{5};
+    const T dx = (a - x) / a, dy = (a - y) / a;
+    const T dz = -(dx + dy) / T{3};
+    if (fabs(dx) < T{4} * numeric_limits<T>::epsilon() &&
+        fabs(dy) < T{4} * numeric_limits<T>::epsilon() &&
+        fabs(dz) < T{4} * numeric_limits<T>::epsilon()) {
+      const T e2 = dx * dy - T{6} * dz * dz;
+      const T e3 = (T{3} * dx * dy - T{8} * dz * dz) * dz;
+      const T e4 = T{3} * (dx * dy - dz * dz) * dz * dz;
+      const T e5 = dx * dy * dz * dz * dz;
+      const T poly = T{1} - T{3} * e2 / T{14} + e3 / T{6} +
+          T{9} * e2 * e2 / T{88} - T{3} * e4 / T{22} -
+          T{9} * e2 * e3 / T{52} + T{3} * e5 / T{26} -
+          e2 * e2 * e2 / T{16} + T{3} * e3 * e3 / T{40} +
+          T{3} * e2 * e4 / T{20} + T{45} * e2 * e2 * e3 / T{272} -
+          T{9} * (e3 * e4 + e2 * e5) / T{68};
+      return factor * poly / (a * sqrt(a)) + T{3} * sum;
+    }
+  }
+  return numeric_limits<T>::quiet_NaN();
+}
+
+template <class T>
+inline T carlson_rc(T x, T y) {
+  if (x == y) return T{1} / sqrt(x);
+  if (x == T{}) return T(1.570796326794896619231321691639751442L) / sqrt(y);
+  if (y > x) {
+    const T d = sqrt(y - x);
+    return atan(d / sqrt(x)) / d;
+  }
+  const T d = sqrt(x - y);
+  return atanh(d / sqrt(x)) / d;
+}
+
+template <class T>
+inline T carlson_rj(T x, T y, T z, T p) {
+  T sum{}, factor{1};
+  for (unsigned i = 0; i != 64; ++i) {
+    const T rx = sqrt(x), ry = sqrt(y), rz = sqrt(z), rp = sqrt(p);
+    const T lambda = rx * ry + rx * rz + ry * rz;
+    const T d = (rp + rx) * (rp + ry) * (rp + rz);
+    const T e = (p - x) * (p - y) * (p - z) / (d * d);
+    sum += factor * carlson_rc(T{1}, T{1} + e) / d;
+    factor /= T{4};
+    x = (x + lambda) / T{4};
+    y = (y + lambda) / T{4};
+    z = (z + lambda) / T{4};
+    p = (p + lambda) / T{4};
+    const T a = (x + y + z + T{2} * p) / T{5};
+    const T dx = (a - x) / a, dy = (a - y) / a, dz = (a - z) / a;
+    const T dp = -(dx + dy + dz) / T{2};
+    if (fabs(dx) < T{4} * numeric_limits<T>::epsilon() &&
+        fabs(dy) < T{4} * numeric_limits<T>::epsilon() &&
+        fabs(dz) < T{4} * numeric_limits<T>::epsilon() &&
+        fabs(dp) < T{4} * numeric_limits<T>::epsilon()) {
+      const T e2 = dx * dy + dx * dz + dy * dz - T{3} * dp * dp;
+      const T e3 = dx * dy * dz + T{2} * e2 * dp + T{4} * dp * dp * dp;
+      const T e4 = (T{2} * dx * dy * dz + e2 * dp + T{3} * dp * dp * dp) * dp;
+      const T e5 = dx * dy * dz * dp * dp;
+      const T poly = T{1} - T{3} * e2 / T{14} + e3 / T{6} +
+          T{9} * e2 * e2 / T{88} - T{3} * e4 / T{22} -
+          T{9} * e2 * e3 / T{52} + T{3} * e5 / T{26} -
+          e2 * e2 * e2 / T{16} + T{3} * e3 * e3 / T{40} +
+          T{3} * e2 * e4 / T{20} + T{45} * e2 * e2 * e3 / T{272} -
+          T{9} * (e3 * e4 + e2 * e5) / T{68};
+      return factor * poly / (a * sqrt(a)) + T{6} * sum;
+    }
+  }
+  return numeric_limits<T>::quiet_NaN();
+}
 } // namespace detail
 
 #define FTL_CMATH_UNARY(name)                                                 \
@@ -89,6 +355,57 @@ using math_common_t = conditional_t<
     return name(static_cast<common>(left), static_cast<common>(right));        \
   }
 
+#define FTL_CMATH_CONSTEXPR_UNARY(name)                                      \
+  constexpr float name(float value) noexcept {                               \
+    if consteval { return detail::const_##name(value); }                     \
+    return ::ftl_olm_##name##f(value);                                        \
+  }                                                                           \
+  constexpr double name(double value) noexcept {                             \
+    if consteval { return detail::const_##name(value); }                     \
+    return ::ftl_olm_##name(value);                                           \
+  }                                                                           \
+  constexpr long double name(long double value) noexcept {                   \
+    if consteval { return detail::const_##name(value); }                     \
+    return ::ftl_olm_##name##l(value);                                        \
+  }                                                                           \
+  constexpr float name##f(float value) noexcept { return name(value); }       \
+  constexpr long double name##l(long double value) noexcept {                \
+    return name(value);                                                       \
+  }                                                                           \
+  template <class Integer>                                                    \
+    requires is_integral_v<Integer>                                           \
+  constexpr double name(Integer value) noexcept {                            \
+    return name(static_cast<double>(value));                                  \
+  }
+
+#define FTL_CMATH_CONSTEXPR_BINARY(name)                                     \
+  constexpr float name(float left, float right) noexcept {                   \
+    if consteval { return detail::const_##name(left, right); }               \
+    return ::ftl_olm_##name##f(left, right);                                  \
+  }                                                                           \
+  constexpr double name(double left, double right) noexcept {                \
+    if consteval { return detail::const_##name(left, right); }               \
+    return ::ftl_olm_##name(left, right);                                     \
+  }                                                                           \
+  constexpr long double name(long double left, long double right) noexcept { \
+    if consteval { return detail::const_##name(left, right); }               \
+    return ::ftl_olm_##name##l(left, right);                                  \
+  }                                                                           \
+  constexpr float name##f(float left, float right) noexcept {                \
+    return name(left, right);                                                 \
+  }                                                                           \
+  constexpr long double name##l(long double left, long double right) noexcept { \
+    return name(left, right);                                                 \
+  }                                                                           \
+  template <class Left, class Right>                                          \
+    requires(detail::math_arithmetic_v<Left> &&                              \
+             detail::math_arithmetic_v<Right>)                               \
+  constexpr detail::math_common_t<Left, Right> name(Left left, Right right)  \
+      noexcept {                                                             \
+    using common = detail::math_common_t<Left, Right>;                        \
+    return name(static_cast<common>(left), static_cast<common>(right));       \
+  }
+
 FTL_CMATH_UNARY(acos)
 FTL_CMATH_UNARY(acosh)
 FTL_CMATH_UNARY(asin)
@@ -96,7 +413,7 @@ FTL_CMATH_UNARY(asinh)
 FTL_CMATH_UNARY(atan)
 FTL_CMATH_UNARY(atanh)
 FTL_CMATH_UNARY(cbrt)
-FTL_CMATH_UNARY(ceil)
+FTL_CMATH_CONSTEXPR_UNARY(ceil)
 FTL_CMATH_UNARY(cos)
 FTL_CMATH_UNARY(cosh)
 FTL_CMATH_UNARY(erf)
@@ -104,42 +421,52 @@ FTL_CMATH_UNARY(erfc)
 FTL_CMATH_UNARY(exp)
 FTL_CMATH_UNARY(exp2)
 FTL_CMATH_UNARY(expm1)
-FTL_CMATH_UNARY(fabs)
-FTL_CMATH_UNARY(floor)
+FTL_CMATH_CONSTEXPR_UNARY(fabs)
+FTL_CMATH_CONSTEXPR_UNARY(floor)
 FTL_CMATH_UNARY(lgamma)
 FTL_CMATH_UNARY(log)
 FTL_CMATH_UNARY(log10)
 FTL_CMATH_UNARY(log1p)
 FTL_CMATH_UNARY(log2)
-FTL_CMATH_UNARY(logb)
+FTL_CMATH_CONSTEXPR_UNARY(logb)
 FTL_CMATH_UNARY(nearbyint)
 FTL_CMATH_UNARY(rint)
-FTL_CMATH_UNARY(round)
+FTL_CMATH_CONSTEXPR_UNARY(round)
 FTL_CMATH_UNARY(sin)
 FTL_CMATH_UNARY(sinh)
 FTL_CMATH_UNARY(sqrt)
 FTL_CMATH_UNARY(tan)
 FTL_CMATH_UNARY(tanh)
 FTL_CMATH_UNARY(tgamma)
-FTL_CMATH_UNARY(trunc)
+FTL_CMATH_CONSTEXPR_UNARY(trunc)
 
 FTL_CMATH_BINARY(atan2)
-FTL_CMATH_BINARY(copysign)
-FTL_CMATH_BINARY(fdim)
-FTL_CMATH_BINARY(fmax)
-FTL_CMATH_BINARY(fmin)
-FTL_CMATH_BINARY(fmod)
+FTL_CMATH_CONSTEXPR_BINARY(copysign)
+FTL_CMATH_CONSTEXPR_BINARY(fdim)
+FTL_CMATH_CONSTEXPR_BINARY(fmax)
+FTL_CMATH_CONSTEXPR_BINARY(fmin)
+FTL_CMATH_CONSTEXPR_BINARY(fmod)
 FTL_CMATH_BINARY(hypot)
-FTL_CMATH_BINARY(nextafter)
+FTL_CMATH_CONSTEXPR_BINARY(nextafter)
 FTL_CMATH_BINARY(pow)
-FTL_CMATH_BINARY(remainder)
+FTL_CMATH_CONSTEXPR_BINARY(remainder)
 
 #undef FTL_CMATH_UNARY
 #undef FTL_CMATH_BINARY
+#undef FTL_CMATH_CONSTEXPR_UNARY
+#undef FTL_CMATH_CONSTEXPR_BINARY
 
-inline float abs(float value) noexcept { return fabs(value); }
-inline double abs(double value) noexcept { return fabs(value); }
-inline long double abs(long double value) noexcept { return fabs(value); }
+constexpr float abs(float value) noexcept { return fabs(value); }
+constexpr double abs(double value) noexcept { return fabs(value); }
+constexpr long double abs(long double value) noexcept { return fabs(value); }
+#ifndef FTL_INTEGER_ABS_DEFINED
+#define FTL_INTEGER_ABS_DEFINED
+constexpr int abs(int value) { return value < 0 ? -value : value; }
+constexpr long abs(long value) { return value < 0 ? -value : value; }
+constexpr long long abs(long long value) {
+  return value < 0 ? -value : value;
+}
+#endif
 
 template <class T>
   requires is_floating_point_v<T>
@@ -152,6 +479,18 @@ inline T hypot(T x, T y, T z) noexcept {
   z /= maximum;
   return maximum * sqrt(x * x + y * y + z * z);
 }
+template <class X, class Y, class Z>
+  requires(detail::math_arithmetic_v<X> && detail::math_arithmetic_v<Y> &&
+           detail::math_arithmetic_v<Z> &&
+           !(is_same_v<remove_cv_t<X>, remove_cv_t<Y>> &&
+             is_same_v<remove_cv_t<X>, remove_cv_t<Z>> &&
+             is_floating_point_v<remove_cv_t<X>>))
+inline auto hypot(X x, Y y, Z z) noexcept {
+  using xy = detail::math_common_t<X, Y>;
+  using common = detail::math_common_t<xy, Z>;
+  return hypot(static_cast<common>(x), static_cast<common>(y),
+               static_cast<common>(z));
+}
 
 template <class T>
   requires is_floating_point_v<T>
@@ -163,26 +502,59 @@ constexpr T lerp(T a, T b, T t) noexcept {
   return (t > T{1}) == (b > a) ? (result < b ? b : result)
                                 : (result > b ? b : result);
 }
+template <class A, class B, class C>
+  requires(detail::math_arithmetic_v<A> && detail::math_arithmetic_v<B> &&
+           detail::math_arithmetic_v<C> &&
+           !(is_same_v<remove_cv_t<A>, remove_cv_t<B>> &&
+             is_same_v<remove_cv_t<A>, remove_cv_t<C>> &&
+             is_floating_point_v<remove_cv_t<A>>))
+constexpr auto lerp(A a, B b, C t) noexcept {
+  using ab = detail::math_common_t<A, B>;
+  using common = detail::math_common_t<ab, C>;
+  return lerp(static_cast<common>(a), static_cast<common>(b),
+              static_cast<common>(t));
+}
 
-inline float fma(float x, float y, float z) noexcept {
+constexpr float fma(float x, float y, float z) noexcept {
+  if consteval {
+#ifdef __clang__
+    return __builtin_elementwise_fma(x, y, z);
+#else
+    return __builtin_fmaf(x, y, z);
+#endif
+  }
   return ::ftl_olm_fmaf(x, y, z);
 }
-inline double fma(double x, double y, double z) noexcept {
+constexpr double fma(double x, double y, double z) noexcept {
+  if consteval {
+#ifdef __clang__
+    return __builtin_elementwise_fma(x, y, z);
+#else
+    return __builtin_fma(x, y, z);
+#endif
+  }
   return ::ftl_olm_fma(x, y, z);
 }
-inline long double fma(long double x, long double y,
-                       long double z) noexcept {
+constexpr long double fma(long double x, long double y,
+                          long double z) noexcept {
+  if consteval {
+#ifdef __clang__
+    return __builtin_elementwise_fma(x, y, z);
+#else
+    return __builtin_fmal(x, y, z);
+#endif
+  }
   return ::ftl_olm_fmal(x, y, z);
 }
-inline float fmaf(float x, float y, float z) noexcept { return fma(x, y, z); }
-inline long double fmal(long double x, long double y,
-                        long double z) noexcept {
+constexpr float fmaf(float x, float y, float z) noexcept { return fma(x, y, z); }
+constexpr long double fmal(long double x, long double y,
+                           long double z) noexcept {
   return fma(x, y, z);
 }
 template <class X, class Y, class Z>
   requires(detail::math_arithmetic_v<X> && detail::math_arithmetic_v<Y> &&
            detail::math_arithmetic_v<Z>)
-inline auto fma(X x, Y y, Z z) noexcept {
+constexpr auto fma(X x, Y y, Z z) noexcept {
   using xy = detail::math_common_t<X, Y>;
   using common = detail::math_common_t<xy, Z>;
   return fma(static_cast<common>(x), static_cast<common>(y),
@@ -190,59 +562,73 @@ inline auto fma(X x, Y y, Z z) noexcept {
 }
 
 #define FTL_CMATH_DECOMPOSE(name)                                             \
-  inline float name(float value, int *exponent) noexcept {                    \
+  constexpr float name(float value, int *exponent) noexcept {                 \
+    if consteval { return detail::const_frexp(value, exponent); }             \
     return ::ftl_olm_##name##f(value, exponent);                              \
   }                                                                           \
-  inline double name(double value, int *exponent) noexcept {                  \
+  constexpr double name(double value, int *exponent) noexcept {               \
+    if consteval { return detail::const_frexp(value, exponent); }             \
     return ::ftl_olm_##name(value, exponent);                                 \
   }                                                                           \
-  inline long double name(long double value, int *exponent) noexcept {        \
+  constexpr long double name(long double value, int *exponent) noexcept {     \
+    if consteval { return detail::const_frexp(value, exponent); }             \
     return ::ftl_olm_##name##l(value, exponent);                              \
   }                                                                           \
-  inline float name##f(float value, int *exponent) noexcept {                 \
+  constexpr float name##f(float value, int *exponent) noexcept {              \
     return name(value, exponent);                                             \
   }                                                                           \
-  inline long double name##l(long double value, int *exponent) noexcept {     \
+  constexpr long double name##l(long double value, int *exponent) noexcept {  \
     return name(value, exponent);                                             \
+  }                                                                           \
+  template <class Integer>                                                    \
+    requires is_integral_v<Integer>                                           \
+  constexpr double name(Integer value, int *exponent) noexcept {              \
+    return name(static_cast<double>(value), exponent);                        \
   }
 
 FTL_CMATH_DECOMPOSE(frexp)
 #undef FTL_CMATH_DECOMPOSE
 
-inline float modf(float value, float *integer) noexcept {
+constexpr float modf(float value, float *integer) noexcept {
+  if consteval { *integer = detail::const_trunc(value); return detail::const_isinf(value) ? detail::const_copysign(0.0f, value) : value - *integer; }
   return ::ftl_olm_modff(value, integer);
 }
-inline double modf(double value, double *integer) noexcept {
+constexpr double modf(double value, double *integer) noexcept {
+  if consteval { *integer = detail::const_trunc(value); return detail::const_isinf(value) ? detail::const_copysign(0.0, value) : value - *integer; }
   return ::ftl_olm_modf(value, integer);
 }
-inline long double modf(long double value, long double *integer) noexcept {
+constexpr long double modf(long double value, long double *integer) noexcept {
+  if consteval { *integer = detail::const_trunc(value); return detail::const_isinf(value) ? detail::const_copysign(0.0L, value) : value - *integer; }
   return ::ftl_olm_modfl(value, integer);
 }
-inline float modff(float value, float *integer) noexcept {
+constexpr float modff(float value, float *integer) noexcept {
   return modf(value, integer);
 }
-inline long double modfl(long double value, long double *integer) noexcept {
+constexpr long double modfl(long double value, long double *integer) noexcept {
   return modf(value, integer);
 }
 
 #define FTL_CMATH_SCALE(name, exponent_type)                                  \
-  inline float name(float value, exponent_type exponent) noexcept {           \
+  constexpr float name(float value, exponent_type exponent) noexcept {        \
+    if consteval { return detail::const_scalbn(value, exponent); }            \
     return ::ftl_olm_##name##f(value, exponent);                              \
   }                                                                           \
-  inline double name(double value, exponent_type exponent) noexcept {         \
+  constexpr double name(double value, exponent_type exponent) noexcept {      \
+    if consteval { return detail::const_scalbn(value, exponent); }            \
     return ::ftl_olm_##name(value, exponent);                                 \
   }                                                                           \
-  inline long double name(long double value, exponent_type exponent) noexcept { \
+  constexpr long double name(long double value, exponent_type exponent) noexcept { \
+    if consteval { return detail::const_scalbn(value, exponent); }            \
     return ::ftl_olm_##name##l(value, exponent);                              \
   }                                                                           \
-  inline float name##f(float value, exponent_type exponent) noexcept {        \
+  constexpr float name##f(float value, exponent_type exponent) noexcept {     \
     return name(value, exponent);                                             \
   }                                                                           \
-  inline long double name##l(long double value, exponent_type exponent)       \
+  constexpr long double name##l(long double value, exponent_type exponent)    \
       noexcept { return name(value, exponent); }                              \
   template <class Integer>                                                    \
     requires is_integral_v<Integer>                                           \
-  inline double name(Integer value, exponent_type exponent) noexcept {        \
+  constexpr double name(Integer value, exponent_type exponent) noexcept {     \
     return name(static_cast<double>(value), exponent);                        \
   }
 
@@ -252,20 +638,23 @@ FTL_CMATH_SCALE(scalbln, long)
 #undef FTL_CMATH_SCALE
 
 #define FTL_CMATH_INTEGER_RESULT(name, result_type)                           \
-  inline result_type name(float value) noexcept {                             \
+  constexpr result_type name(float value) noexcept {                          \
+    if consteval { return detail::const_##name(value); }                      \
     return ::ftl_olm_##name##f(value);                                        \
   }                                                                           \
-  inline result_type name(double value) noexcept {                            \
+  constexpr result_type name(double value) noexcept {                         \
+    if consteval { return detail::const_##name(value); }                      \
     return ::ftl_olm_##name(value);                                           \
   }                                                                           \
-  inline result_type name(long double value) noexcept {                       \
+  constexpr result_type name(long double value) noexcept {                    \
+    if consteval { return detail::const_##name(value); }                      \
     return ::ftl_olm_##name##l(value);                                        \
   }                                                                           \
-  inline result_type name##f(float value) noexcept { return name(value); }    \
-  inline result_type name##l(long double value) noexcept { return name(value); } \
+  constexpr result_type name##f(float value) noexcept { return name(value); } \
+  constexpr result_type name##l(long double value) noexcept { return name(value); } \
   template <class Integer>                                                    \
     requires is_integral_v<Integer>                                           \
-  inline result_type name(Integer value) noexcept {                           \
+  constexpr result_type name(Integer value) noexcept {                        \
     return name(static_cast<double>(value));                                  \
   }
 
@@ -276,63 +665,90 @@ FTL_CMATH_INTEGER_RESULT(lround, long)
 FTL_CMATH_INTEGER_RESULT(llround, long long)
 #undef FTL_CMATH_INTEGER_RESULT
 
-inline double nexttoward(double from, long double to) noexcept {
+constexpr double nexttoward(double from, long double to) noexcept {
+  if consteval { return detail::const_nextafter(from, to); }
   return ::ftl_olm_nexttoward(from, to);
 }
-inline float nexttoward(float from, long double to) noexcept {
+constexpr float nexttoward(float from, long double to) noexcept {
+  if consteval { return detail::const_nextafter(from, to); }
   return ::ftl_olm_nexttowardf(from, to);
 }
-inline long double nexttoward(long double from, long double to) noexcept {
+constexpr long double nexttoward(long double from, long double to) noexcept {
+  if consteval { return detail::const_nextafter(from, to); }
   return ::ftl_olm_nexttowardl(from, to);
 }
-inline float nexttowardf(float from, long double to) noexcept {
+constexpr float nexttowardf(float from, long double to) noexcept {
   return nexttoward(from, to);
 }
-inline long double nexttowardl(long double from, long double to) noexcept {
+constexpr long double nexttowardl(long double from, long double to) noexcept {
   return nexttoward(from, to);
+}
+template <class Integer>
+  requires is_integral_v<Integer>
+constexpr double nexttoward(Integer from, long double to) noexcept {
+  return nexttoward(static_cast<double>(from), to);
 }
 
-inline float remquo(float x, float y, int *quotient) noexcept {
+constexpr float remquo(float x, float y, int *quotient) noexcept {
+  if consteval { long long q{}; const float r = detail::const_remainder(x, y, &q); *quotient = static_cast<int>(q); return r; }
   return ::ftl_olm_remquof(x, y, quotient);
 }
-inline double remquo(double x, double y, int *quotient) noexcept {
+constexpr double remquo(double x, double y, int *quotient) noexcept {
+  if consteval { long long q{}; const double r = detail::const_remainder(x, y, &q); *quotient = static_cast<int>(q); return r; }
   return ::ftl_olm_remquo(x, y, quotient);
 }
-inline long double remquo(long double x, long double y,
-                          int *quotient) noexcept {
+constexpr long double remquo(long double x, long double y,
+                             int *quotient) noexcept {
+  if consteval { long long q{}; const long double r = detail::const_remainder(x, y, &q); *quotient = static_cast<int>(q); return r; }
   return ::ftl_olm_remquol(x, y, quotient);
 }
-inline float remquof(float x, float y, int *quotient) noexcept {
+constexpr float remquof(float x, float y, int *quotient) noexcept {
   return remquo(x, y, quotient);
 }
-inline long double remquol(long double x, long double y,
-                           int *quotient) noexcept {
+constexpr long double remquol(long double x, long double y,
+                              int *quotient) noexcept {
   return remquo(x, y, quotient);
+}
+template <class Left, class Right>
+  requires(detail::math_arithmetic_v<Left> &&
+           detail::math_arithmetic_v<Right> &&
+           !(is_same_v<remove_cv_t<Left>, remove_cv_t<Right>> &&
+             is_floating_point_v<remove_cv_t<Left>>))
+constexpr detail::math_common_t<Left, Right> remquo(Left x, Right y,
+                                                    int *quotient) noexcept {
+  using common = detail::math_common_t<Left, Right>;
+  return remquo(static_cast<common>(x), static_cast<common>(y), quotient);
 }
 
-inline int fpclassify(float value) noexcept {
+constexpr int fpclassify(float value) noexcept {
+  if consteval { return detail::const_isnan(value) ? FP_NAN : detail::const_isinf(value) ? FP_INFINITE : value == 0 ? FP_ZERO : detail::const_abs(value) < numeric_limits<float>::min() ? FP_SUBNORMAL : FP_NORMAL; }
   return ::ftl_olm___fpclassifyf(value);
 }
-inline int fpclassify(double value) noexcept {
+constexpr int fpclassify(double value) noexcept {
+  if consteval { return detail::const_isnan(value) ? FP_NAN : detail::const_isinf(value) ? FP_INFINITE : value == 0 ? FP_ZERO : detail::const_abs(value) < numeric_limits<double>::min() ? FP_SUBNORMAL : FP_NORMAL; }
   return ::ftl_olm___fpclassifyd(value);
 }
-inline int fpclassify(long double value) noexcept {
+constexpr int fpclassify(long double value) noexcept {
+  if consteval { return detail::const_isnan(value) ? FP_NAN : detail::const_isinf(value) ? FP_INFINITE : value == 0 ? FP_ZERO : detail::const_abs(value) < numeric_limits<long double>::min() ? FP_SUBNORMAL : FP_NORMAL; }
   return ::ftl_olm___fpclassifyl(value);
 }
 template <class Integer>
   requires is_integral_v<Integer>
-inline int fpclassify(Integer value) noexcept {
+constexpr int fpclassify(Integer value) noexcept {
   return value == 0 ? FP_ZERO : FP_NORMAL;
 }
 
 #define FTL_CMATH_PREDICATE(name, double_name)                                \
-  inline bool name(float value) noexcept {                                    \
+  constexpr bool name(float value) noexcept {                                 \
+    if consteval { return detail::const_##name(value); }                      \
     return ::ftl_olm___##name##f(value) != 0;                                 \
   }                                                                           \
-  inline bool name(double value) noexcept {                                   \
+  constexpr bool name(double value) noexcept {                                \
+    if consteval { return detail::const_##name(value); }                      \
     return ::double_name(value) != 0;                                         \
   }                                                                           \
-  inline bool name(long double value) noexcept {                              \
+  constexpr bool name(long double value) noexcept {                           \
+    if consteval { return detail::const_##name(value); }                      \
     return ::ftl_olm___##name##l(value) != 0;                                 \
   }
 
@@ -342,35 +758,56 @@ FTL_CMATH_PREDICATE(isnormal, ftl_olm___isnormal)
 
 template <class Integer>
   requires is_integral_v<Integer>
-inline bool isfinite(Integer) noexcept { return true; }
+constexpr bool isfinite(Integer) noexcept { return true; }
 template <class Integer>
   requires is_integral_v<Integer>
-inline bool isnormal(Integer value) noexcept { return value != 0; }
+constexpr bool isnormal(Integer value) noexcept { return value != 0; }
 
-inline bool isinf(float value) noexcept { return ::ftl_olm___isinff(value); }
-inline bool isinf(double value) noexcept { return ::ftl_olm_isinf(value); }
-inline bool isinf(long double value) noexcept {
+constexpr bool isinf(float value) noexcept {
+  if consteval { return detail::const_isinf(value); }
+  return ::ftl_olm___isinff(value);
+}
+constexpr bool isinf(double value) noexcept {
+  if consteval { return detail::const_isinf(value); }
+  return ::ftl_olm_isinf(value);
+}
+constexpr bool isinf(long double value) noexcept {
+  if consteval { return detail::const_isinf(value); }
   return ::ftl_olm___isinfl(value);
 }
-inline bool isnan(float value) noexcept { return ::ftl_olm___isnanf(value); }
-inline bool isnan(double value) noexcept { return ::ftl_olm_isnan(value); }
-inline bool isnan(long double value) noexcept {
+constexpr bool isnan(float value) noexcept {
+  if consteval { return detail::const_isnan(value); }
+  return ::ftl_olm___isnanf(value);
+}
+constexpr bool isnan(double value) noexcept {
+  if consteval { return detail::const_isnan(value); }
+  return ::ftl_olm_isnan(value);
+}
+constexpr bool isnan(long double value) noexcept {
+  if consteval { return detail::const_isnan(value); }
   return ::ftl_olm___isnanl(value);
 }
-inline bool signbit(float value) noexcept { return ::ftl_olm___signbitf(value); }
-inline bool signbit(double value) noexcept { return ::ftl_olm___signbit(value); }
-inline bool signbit(long double value) noexcept {
+constexpr bool signbit(float value) noexcept {
+  if consteval { return detail::const_signbit(value); }
+  return ::ftl_olm___signbitf(value);
+}
+constexpr bool signbit(double value) noexcept {
+  if consteval { return detail::const_signbit(value); }
+  return ::ftl_olm___signbit(value);
+}
+constexpr bool signbit(long double value) noexcept {
+  if consteval { return detail::const_signbit(value); }
   return ::ftl_olm___signbitl(value);
 }
 template <class Integer>
   requires is_integral_v<Integer>
-inline bool isinf(Integer) noexcept { return false; }
+constexpr bool isinf(Integer) noexcept { return false; }
 template <class Integer>
   requires is_integral_v<Integer>
-inline bool isnan(Integer) noexcept { return false; }
+constexpr bool isnan(Integer) noexcept { return false; }
 template <class Integer>
   requires is_integral_v<Integer>
-inline bool signbit(Integer value) noexcept {
+constexpr bool signbit(Integer value) noexcept {
   if constexpr (is_signed_v<Integer>)
     return value < 0;
   else
@@ -379,26 +816,26 @@ inline bool signbit(Integer value) noexcept {
 
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-inline bool isgreater(Left left, Right right) noexcept { return left > right; }
+constexpr bool isgreater(Left left, Right right) noexcept { return left > right; }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-inline bool isgreaterequal(Left left, Right right) noexcept {
+constexpr bool isgreaterequal(Left left, Right right) noexcept {
   return left >= right;
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-inline bool isless(Left left, Right right) noexcept { return left < right; }
+constexpr bool isless(Left left, Right right) noexcept { return left < right; }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-inline bool islessequal(Left left, Right right) noexcept { return left <= right; }
+constexpr bool islessequal(Left left, Right right) noexcept { return left <= right; }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-inline bool islessgreater(Left left, Right right) noexcept {
+constexpr bool islessgreater(Left left, Right right) noexcept {
   return left < right || left > right;
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-inline bool isunordered(Left left, Right right) noexcept {
+constexpr bool isunordered(Left left, Right right) noexcept {
   return isnan(left) || isnan(right);
 }
 
@@ -416,9 +853,12 @@ inline long double nanl(const char *tag) noexcept {
 
 // Polynomial recurrences adapted from Boost.Math 1.91.0:
 // boost/math/special_functions/{laguerre,legendre,hermite}.hpp (BSL-1.0).
+// Copyright John Maddock 2006; Copyright Matt Borland 2024.
 template <class T>
   requires is_floating_point_v<T>
 inline T assoc_laguerre(unsigned n, unsigned m, T x) {
+  if (isnan(x)) return x;
+  if (x < T{}) return detail::math_domain_error<T>();
   if (n == 0) return T{1};
   T previous = T{1};
   T current = T(m + 1) - x;
@@ -467,6 +907,8 @@ inline long double hermitel(unsigned n, long double x) {
 template <class T>
   requires is_floating_point_v<T>
 inline T legendre(unsigned l, T x) {
+  if (isnan(x)) return x;
+  if (fabs(x) > T{1}) return detail::math_domain_error<T>();
   if (l == 0) return T{1};
   T previous = T{1};
   T current = x;
@@ -486,13 +928,15 @@ inline long double legendrel(unsigned l, long double x) {
 template <class T>
   requires is_floating_point_v<T>
 inline T assoc_legendre(unsigned l, unsigned m, T x) {
+  if (isnan(x)) return x;
+  if (fabs(x) > T{1}) return detail::math_domain_error<T>();
   if (m > l) return T{};
   T pmm = T{1};
   if (m != 0) {
     const T root = sqrt((T{1} - x) * (T{1} + x));
     T factor = T{1};
     for (unsigned i = 1; i <= m; ++i) {
-      pmm *= -factor * root;
+      pmm *= factor * root;
       factor += T{2};
     }
   }
@@ -516,23 +960,658 @@ inline long double assoc_legendrel(unsigned l, unsigned m, long double x) {
 
 // Adapted from Boost.Math beta.hpp: evaluate through log-gamma to avoid the
 // premature overflow of tgamma(x) * tgamma(y).
+// Copyright John Maddock 2006; Copyright Matt Borland 2024 (BSL-1.0).
 template <class T>
   requires is_floating_point_v<T>
 inline T beta(T x, T y) {
+  if (isnan(x) || isnan(y)) return x + y;
+  if (x <= T{} || y <= T{}) return detail::math_domain_error<T>();
   return exp(lgamma(x) + lgamma(y) - lgamma(x + y));
 }
 inline float betaf(float x, float y) { return beta(x, y); }
 inline long double betal(long double x, long double y) { return beta(x, y); }
 
+template <class T>
+  requires is_floating_point_v<T>
+inline T comp_ellint_1(T k) {
+  if (isnan(k)) return k;
+  if (fabs(k) > T{1}) return detail::math_domain_error<T>();
+  if (fabs(k) == T{1}) return numeric_limits<T>::infinity();
+  return detail::carlson_rf(T{}, T{1} - k * k, T{1});
+}
+inline float comp_ellint_1f(float k) { return comp_ellint_1(k); }
+inline long double comp_ellint_1l(long double k) { return comp_ellint_1(k); }
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T comp_ellint_2(T k) {
+  if (isnan(k)) return k;
+  if (fabs(k) > T{1}) return detail::math_domain_error<T>();
+  const T kk = k * k;
+  if (kk == T{1}) return T{1};
+  return detail::carlson_rf(T{}, T{1} - kk, T{1}) -
+         kk * detail::carlson_rd(T{}, T{1} - kk, T{1}) / T{3};
+}
+inline float comp_ellint_2f(float k) { return comp_ellint_2(k); }
+inline long double comp_ellint_2l(long double k) { return comp_ellint_2(k); }
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T comp_ellint_3(T k, T nu) {
+  if (isnan(k) || isnan(nu)) return k + nu;
+  if (fabs(k) > T{1} || nu >= T{1}) return detail::math_domain_error<T>();
+  if (fabs(k) == T{1}) return numeric_limits<T>::infinity();
+  const T y = T{1} - k * k;
+  return detail::carlson_rf(T{}, y, T{1}) +
+         nu * detail::carlson_rj(T{}, y, T{1}, T{1} - nu) / T{3};
+}
+inline float comp_ellint_3f(float k, float nu) { return comp_ellint_3(k, nu); }
+inline long double comp_ellint_3l(long double k, long double nu) {
+  return comp_ellint_3(k, nu);
+}
+
+namespace detail {
+template <class T>
+inline T elliptic_reduce(T phi, T complete, T &reduced) {
+  const T half_pi = T(1.570796326794896619231321691639751442L);
+  const T n = floor(phi / T(3.141592653589793238462643383279502884L) + T{0.5});
+  reduced = phi - n * T(3.141592653589793238462643383279502884L);
+  if (reduced > half_pi) reduced -= T{2} * half_pi;
+  if (reduced < -half_pi) reduced += T{2} * half_pi;
+  return n == T{} ? T{} : T{2} * n * complete;
+}
+} // namespace detail
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T ellint_1(T k, T phi) {
+  if (isnan(k) || isnan(phi)) return k + phi;
+  if (fabs(k) > T{1}) return detail::math_domain_error<T>();
+  T p;
+  const T offset = detail::elliptic_reduce(phi, comp_ellint_1(k), p);
+  const T s = sin(p), c = cos(p), ss = s * s;
+  return offset + s * detail::carlson_rf(c * c, T{1} - k * k * ss, T{1});
+}
+inline float ellint_1f(float k, float phi) { return ellint_1(k, phi); }
+inline long double ellint_1l(long double k, long double phi) {
+  return ellint_1(k, phi);
+}
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T ellint_2(T k, T phi) {
+  if (isnan(k) || isnan(phi)) return k + phi;
+  if (fabs(k) > T{1}) return detail::math_domain_error<T>();
+  T p;
+  const T offset = detail::elliptic_reduce(phi, comp_ellint_2(k), p);
+  const T s = sin(p), c = cos(p), ss = s * s, kk = k * k;
+  return offset + s * detail::carlson_rf(c * c, T{1} - kk * ss, T{1}) -
+         kk * s * ss * detail::carlson_rd(c * c, T{1} - kk * ss, T{1}) / T{3};
+}
+inline float ellint_2f(float k, float phi) { return ellint_2(k, phi); }
+inline long double ellint_2l(long double k, long double phi) {
+  return ellint_2(k, phi);
+}
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T ellint_3(T k, T nu, T phi) {
+  if (isnan(k) || isnan(nu) || isnan(phi)) return k + nu + phi;
+  if (fabs(k) > T{1}) return detail::math_domain_error<T>();
+  const T pi = T(3.141592653589793238462643383279502884L);
+  const T n = floor(phi / pi + T{0.5});
+  T p = phi - n * pi;
+  const T offset = n == T{} ? T{} : T{2} * n * comp_ellint_3(k, nu);
+  const T s = sin(p), c = cos(p), ss = s * s;
+  const T y = T{1} - k * k * ss, q = T{1} - nu * ss;
+  if (n != T{} || q <= T{}) {
+    if (nu >= T{1}) return detail::math_domain_error<T>();
+  }
+  return offset + s * detail::carlson_rf(c * c, y, T{1}) +
+         nu * s * ss * detail::carlson_rj(c * c, y, T{1}, q) / T{3};
+}
+inline float ellint_3f(float k, float nu, float phi) {
+  return ellint_3(k, nu, phi);
+}
+inline long double ellint_3l(long double k, long double nu, long double phi) {
+  return ellint_3(k, nu, phi);
+}
+
+namespace detail {
+// Series and large-argument expansions adapted from Boost.Math 1.91.0
+// bessel_jy_series.hpp, bessel_jy_asym.hpp, and bessel_ik.hpp (BSL-1.0).
+// Copyright Xiaogang Zhang 2006; Copyright Matt Borland 2024.
+template <class T>
+inline T bessel_series(T nu, T x, bool modified) {
+  if (x == T{}) return nu == T{} ? T{1} : T{};
+  T term = pow(x / T{2}, nu) / tgamma(nu + T{1});
+  T sum = term;
+  const T q = (modified ? T{1} : -T{1}) * x * x / T{4};
+  for (unsigned k = 1; k != 512; ++k) {
+    term *= q / (T(k) * (nu + T(k)));
+    sum += term;
+    if (fabs(term) <= fabs(sum) * numeric_limits<T>::epsilon()) break;
+  }
+  return sum;
+}
+
+template <class T>
+inline T bessel_j_asym(T nu, T x) {
+  const T mu = T{4} * nu * nu;
+  T p{1}, q{}, term{1};
+  for (unsigned k = 1; k != 24; ++k) {
+    term *= -(mu - T((2 * k - 1) * (2 * k - 1))) /
+            (T(k) * T{8} * x);
+    if (k & 1) q += (k & 2) ? -term : term;
+    else p += (k & 2) ? -term : term;
+    if (fabs(term) < numeric_limits<T>::epsilon() * (fabs(p) + fabs(q))) break;
+  }
+  const T phase = x - nu * T(1.570796326794896619231321691639751442L) -
+                  T(0.785398163397448309615660845819875721L);
+  return sqrt(T{2} / (T(3.141592653589793238462643383279502884L) * x)) *
+         (cos(phase) * p - sin(phase) * q);
+}
+
+template <class T>
+inline void bessel_jy_cf1(T v, T x, T &ratio, int &sign) {
+  const T tiny = sqrt(numeric_limits<T>::min());
+  T c = tiny, d{}, f = tiny;
+  sign = 1;
+  for (unsigned k = 1; k != 16384; ++k) {
+    const T b = T{2} * (v + T(k)) / x;
+    c = b - T{1} / c;
+    d = b - d;
+    if (c == T{}) c = tiny;
+    if (d == T{}) d = tiny;
+    d = T{1} / d;
+    const T delta = c * d;
+    f *= delta;
+    if (d < T{}) sign = -sign;
+    if (fabs(delta - T{1}) < T{2} * numeric_limits<T>::epsilon()) break;
+  }
+  ratio = -f;
+}
+
+template <class T>
+inline void bessel_jy_cf2(T v, T x, T &p, T &q) {
+  const T tiny = sqrt(numeric_limits<T>::min());
+  T cr = -T{0.5} / x, ci = T{1}, fr = cr, fi = ci;
+  const T v2 = v * v;
+  T a = (T{0.25} - v2) / x, br = T{2} * x, bi = T{2};
+  T temp = cr * cr + T{1};
+  ci = bi + a * cr / temp;
+  cr = br + a / temp;
+  T dr = br, di = bi;
+  if (fabs(cr) + fabs(ci) < tiny) cr = tiny;
+  temp = dr * dr + di * di;
+  dr /= temp;
+  di = -di / temp;
+  T delta_r = cr * dr - ci * di, delta_i = ci * dr + cr * di;
+  temp = fr;
+  fr = temp * delta_r - fi * delta_i;
+  fi = temp * delta_i + fi * delta_r;
+  for (unsigned k = 2; k != 1024; ++k) {
+    a = (T(k) - T{0.5}) * (T(k) - T{0.5}) - v2;
+    bi += T{2};
+    temp = cr * cr + ci * ci;
+    cr = br + a * cr / temp;
+    ci = bi - a * ci / temp;
+    dr = br + a * dr;
+    di = bi + a * di;
+    if (fabs(cr) + fabs(ci) < tiny) cr = tiny;
+    if (fabs(dr) + fabs(di) < tiny) dr = tiny;
+    temp = dr * dr + di * di;
+    dr /= temp;
+    di = -di / temp;
+    delta_r = cr * dr - ci * di;
+    delta_i = ci * dr + cr * di;
+    temp = fr;
+    fr = temp * delta_r - fi * delta_i;
+    fi = temp * delta_i + fi * delta_r;
+    if (fabs(delta_r - T{1}) + fabs(delta_i) <
+        T{2} * numeric_limits<T>::epsilon()) break;
+  }
+  p = fr;
+  q = fi;
+}
+
+template <class T>
+inline void bessel_jy_temme(T v, T x, T &y, T &y1) {
+  const T pi = T(3.141592653589793238462643383279502884L);
+  const T euler = T(0.577215664901532860606512090082402431L);
+  const T gp = expm1(lgamma(T{1} + v));
+  const T gm = expm1(lgamma(T{1} - v));
+  const T spv = sin(pi * v), spv2 = sin(pi * v / T{2});
+  const T xp = pow(x / T{2}, v), a = log(x / T{2}), sigma = -a * v;
+  const T d = fabs(sigma) < numeric_limits<T>::epsilon()
+                  ? T{1} : sinh(sigma) / sigma;
+  const T e = fabs(v) < numeric_limits<T>::epsilon()
+                  ? v * pi * pi / T{2} : T{2} * spv2 * spv2 / v;
+  const T g1 = v == T{} ? -euler
+      : (gp - gm) / ((T{1} + gp) * (T{1} + gm) * T{2} * v);
+  const T g2 = (T{2} + gp + gm) /
+               ((T{1} + gp) * (T{1} + gm) * T{2});
+  const T vspv = fabs(v) < numeric_limits<T>::epsilon() ? T{1} / pi : v / spv;
+  T f = (g1 * cosh(sigma) - g2 * a * d) * T{2} * vspv;
+  T p = vspv / (xp * (T{1} + gm));
+  T q = vspv * xp / (T{1} + gp);
+  T g = f + e * q, h = p, coefficient{1};
+  T sum = g, sum1 = h;
+  for (unsigned k = 1; k != 1024; ++k) {
+    f = (T(k) * f + p + q) / (T(k * k) - v * v);
+    p /= T(k) - v;
+    q /= T(k) + v;
+    g = f + e * q;
+    h = p - T(k) * g;
+    coefficient *= -x * x / (T{4} * T(k));
+    sum += coefficient * g;
+    sum1 += coefficient * h;
+    if (fabs(coefficient * g) <= fabs(sum) * numeric_limits<T>::epsilon()) break;
+  }
+  y = -sum;
+  y1 = -T{2} * sum1 / x;
+}
+
+template <class T>
+inline void bessel_jy_pair(T v, T x, T &j, T &y) {
+  const unsigned n = static_cast<unsigned>(round(v));
+  const T u = v - T(n);
+  const T wronskian = T{2} /
+      (x * T(3.141592653589793238462643383279502884L));
+  T fv{};
+  int sign{};
+  bessel_jy_cf1(v, x, fv, sign);
+  if (x <= T{2}) {
+    T yu{}, yu1{};
+    bessel_jy_temme(u, x, yu, yu1);
+    T previous = yu, current = yu1;
+    for (unsigned k = 1; k <= n; ++k) {
+      const T next = T{2} * (u + T(k)) * current / x - previous;
+      previous = current;
+      current = next;
+    }
+    y = previous;
+    j = wronskian / (y * fv - current);
+    return;
+  }
+  const T init = sqrt(numeric_limits<T>::min());
+  T previous = fv * T(sign) * init, current = T(sign) * init;
+  for (unsigned k = n; k > 0; --k) {
+    T next = T{2} * (u + T(k)) * current / x - previous;
+    if (next == T{}) next = previous * numeric_limits<T>::epsilon() / T{2};
+    previous = current;
+    current = next;
+  }
+  const T scale = T(sign) * init / current;
+  const T fu = previous / current;
+  T p{}, q{};
+  bessel_jy_cf2(u, x, p, q);
+  const T t = u / x - fu;
+  T gamma = (p - t) / q;
+  if (gamma == T{}) gamma = u * numeric_limits<T>::epsilon() / x;
+  const T ju = (current < T{} ? -T{1} : T{1}) *
+               sqrt(wronskian / (q + gamma * (p - t)));
+  j = ju * scale;
+  T yu = gamma * ju;
+  T yu1 = yu * (u / x - p - q / gamma);
+  previous = yu;
+  current = yu1;
+  for (unsigned k = 1; k <= n; ++k) {
+    const T next = T{2} * (u + T(k)) * current / x - previous;
+    previous = current;
+    current = next;
+  }
+  y = previous;
+}
+
+template <class T>
+inline T bessel_j(T nu, T x) {
+  if (x < T{5} || nu > x * x / T{4}) return bessel_series(nu, x, false);
+  T j{}, y{};
+  bessel_jy_pair(nu, x, j, y);
+  return j;
+}
+
+template <class T>
+inline T bessel_y(T nu, T x) {
+  T j{}, y{};
+  bessel_jy_pair(nu, x, j, y);
+  return y;
+}
+
+template <class T>
+inline void bessel_ik_temme(T v, T x, T &k0, T &k1) {
+  const T pi = T(3.141592653589793238462643383279502884L);
+  const T euler = T(0.577215664901532860606512090082402431L);
+  const T gp = expm1(lgamma(T{1} + v));
+  const T gm = expm1(lgamma(T{1} - v));
+  const T a = log(x / T{2}), b = exp(v * a), sigma = -a * v;
+  const T c = fabs(v) < numeric_limits<T>::epsilon()
+                  ? T{1} : sin(pi * v) / (v * pi);
+  const T d = fabs(sigma) < numeric_limits<T>::epsilon()
+                  ? T{1} : sinh(sigma) / sigma;
+  const T gamma1 = fabs(v) < numeric_limits<T>::epsilon()
+                  ? -euler : (gp - gm) * c / (T{2} * v);
+  const T gamma2 = (T{2} + gp + gm) * c / T{2};
+  T p = (gp + T{1}) / (T{2} * b), q = (T{1} + gm) * b / T{2};
+  T f = (cosh(sigma) * gamma1 - a * d * gamma2) / c;
+  T h = p, coefficient{1}, sum = f, sum1 = h;
+  for (unsigned n = 1; n != 1024; ++n) {
+    f = (T(n) * f + p + q) / (T(n * n) - v * v);
+    p /= T(n) - v;
+    q /= T(n) + v;
+    h = p - T(n) * f;
+    coefficient *= x * x / (T{4} * T(n));
+    sum += coefficient * f;
+    sum1 += coefficient * h;
+    if (fabs(coefficient * f) <= fabs(sum) * numeric_limits<T>::epsilon()) break;
+  }
+  k0 = sum;
+  k1 = T{2} * sum1 / x;
+}
+
+template <class T>
+inline void bessel_ik_cf2(T v, T x, T &k0, T &k1) {
+  const T epsilon = numeric_limits<T>::epsilon();
+  T a = v * v - T{0.25}, b = T{2} * (x + T{1});
+  T d = T{1} / b, f = d, delta = d;
+  T previous{}, current{1}, big_q = -a, c = -a, sum = T{1} + big_q * delta;
+  for (unsigned n = 2; n != 2048; ++n) {
+    a -= T{2} * T(n - 1);
+    b += T{2};
+    d = T{1} / (b + a * d);
+    delta *= b * d - T{1};
+    f += delta;
+    T q = (previous - (b - T{2}) * current) / a;
+    previous = current;
+    current = q;
+    c *= -a / T(n);
+    big_q += c * q;
+    sum += big_q * delta;
+    if (fabs(q) < epsilon && q != T{}) {
+      c *= q;
+      previous /= q;
+      current /= q;
+    }
+    if (fabs(big_q * delta) < fabs(sum) * epsilon) break;
+  }
+  const T pi = T(3.141592653589793238462643383279502884L);
+  k0 = sqrt(pi / (T{2} * x)) * exp(-x) / sum;
+  k1 = k0 * (T{0.5} + v + x + (v * v - T{0.25}) * f) / x;
+}
+
+template <class T>
+inline T bessel_k_core(T v, T x) {
+  const unsigned n = static_cast<unsigned>(round(v));
+  const T u = v - T(n);
+  T previous{}, current{};
+  if (x <= T{2}) bessel_ik_temme(u, x, previous, current);
+  else bessel_ik_cf2(u, x, previous, current);
+  for (unsigned i = 1; i <= n; ++i) {
+    const T next = T{2} * (u + T(i)) * current / x + previous;
+    previous = current;
+    current = next;
+  }
+  return previous;
+}
+
+template <class T>
+inline T bessel_k(T nu, T x) {
+  const T asymmetry = fabs(T{4} * nu * nu - T{25}) / (T{8} * x);
+  if (x > T{100} && asymmetry < sqrt(sqrt(numeric_limits<T>::epsilon()))) {
+    T term{1}, sum{1};
+    const T mu = T{4} * nu * nu;
+    for (unsigned k = 1; k != 32; ++k) {
+      term *= (mu - T((2 * k - 1) * (2 * k - 1))) /
+              (T(k) * T{8} * x);
+      if (fabs(term) > fabs(sum) && k > 2) break;
+      sum += term;
+      if (fabs(term) <= fabs(sum) * numeric_limits<T>::epsilon()) break;
+    }
+    return sqrt(T(3.141592653589793238462643383279502884L) / (T{2} * x)) *
+           exp(-x) * sum;
+  }
+  const T nearest = round(nu);
+  if (x <= T{2} && nu == nearest && nearest >= T{} && nearest < T{128}) {
+    const unsigned n = static_cast<unsigned>(nearest);
+    const T q = x * x / T{4};
+    T term{1}, harmonic{}, series{}, derivative{};
+    for (unsigned k = 1; k != 256; ++k) {
+      harmonic += T{1} / T(k);
+      term *= q / (T(k) * T(k));
+      series += harmonic * term;
+      derivative += harmonic * term * T(2 * k) / x;
+      if (fabs(term) <= numeric_limits<T>::epsilon() * (fabs(series) + T{1})) break;
+    }
+    const T logarithm = log(x / T{2}) + T(0.577215664901532860606512090082402431L);
+    T previous = -logarithm * bessel_series(T{}, x, true) + series;
+    if (n == 0) return previous;
+    T current = bessel_series(T{}, x, true) / x +
+                logarithm * bessel_series(T{1}, x, true) - derivative;
+    for (unsigned k = 1; k < n; ++k) {
+      const T next = previous + T(2 * k) * current / x;
+      previous = current;
+      current = next;
+    }
+    return current;
+  }
+  return bessel_k_core(nu, x);
+}
+} // namespace detail
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T cyl_bessel_i(T nu, T x) {
+  if (isnan(nu) || isnan(x)) return nu + x;
+  if (x < T{}) return detail::math_domain_error<T>();
+  if (isinf(x)) return numeric_limits<T>::infinity();
+  if (isinf(nu) && nu < T{}) return detail::math_domain_error<T>();
+  if (nu >= T{}) return detail::bessel_series(nu, x, true);
+  const T positive = -nu;
+  if (positive == round(positive))
+    return detail::bessel_series(positive, x, true);
+  const T pi = T(3.141592653589793238462643383279502884L);
+  return detail::bessel_series(positive, x, true) +
+         T{2} * sin(pi * positive) * detail::bessel_k(positive, x) / pi;
+}
+inline float cyl_bessel_if(float nu, float x) { return cyl_bessel_i(nu, x); }
+inline long double cyl_bessel_il(long double nu, long double x) {
+  return cyl_bessel_i(nu, x);
+}
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T cyl_bessel_j(T nu, T x) {
+  if (isnan(nu) || isnan(x)) return nu + x;
+  if (x < T{}) return detail::math_domain_error<T>();
+  if (isinf(x)) return T{};
+  if (isinf(nu) && nu < T{}) return detail::math_domain_error<T>();
+  if (nu >= T{}) return detail::bessel_j(nu, x);
+  const T positive = -nu;
+  if (positive == round(positive))
+    return (static_cast<long long>(positive) & 1) ?
+        -detail::bessel_j(positive, x) : detail::bessel_j(positive, x);
+  const T angle = T(3.141592653589793238462643383279502884L) * positive;
+  return cos(angle) * detail::bessel_j(positive, x) -
+         sin(angle) * detail::bessel_y(positive, x);
+}
+inline float cyl_bessel_jf(float nu, float x) { return cyl_bessel_j(nu, x); }
+inline long double cyl_bessel_jl(long double nu, long double x) {
+  return cyl_bessel_j(nu, x);
+}
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T cyl_bessel_k(T nu, T x) {
+  if (isnan(nu) || isnan(x)) return nu + x;
+  if (x < T{}) return detail::math_domain_error<T>();
+  if (x == T{}) return numeric_limits<T>::infinity();
+  if (isinf(x)) return T{};
+  if (isinf(nu) && nu < T{}) return detail::math_domain_error<T>();
+  return detail::bessel_k(fabs(nu), x);
+}
+inline float cyl_bessel_kf(float nu, float x) { return cyl_bessel_k(nu, x); }
+inline long double cyl_bessel_kl(long double nu, long double x) {
+  return cyl_bessel_k(nu, x);
+}
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T cyl_neumann(T nu, T x) {
+  if (isnan(nu) || isnan(x)) return nu + x;
+  if (x < T{}) return detail::math_domain_error<T>();
+  if (x == T{}) return -numeric_limits<T>::infinity();
+  if (isinf(x)) return T{};
+  if (isinf(nu) && nu < T{}) return detail::math_domain_error<T>();
+  if (nu >= T{}) return detail::bessel_y(nu, x);
+  const T positive = -nu;
+  if (positive == round(positive))
+    return (static_cast<long long>(positive) & 1) ?
+        -detail::bessel_y(positive, x) : detail::bessel_y(positive, x);
+  const T angle = T(3.141592653589793238462643383279502884L) * positive;
+  return cos(angle) * detail::bessel_y(positive, x) +
+         sin(angle) * detail::bessel_j(positive, x);
+}
+inline float cyl_neumannf(float nu, float x) { return cyl_neumann(nu, x); }
+inline long double cyl_neumannl(long double nu, long double x) {
+  return cyl_neumann(nu, x);
+}
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T sph_bessel(unsigned n, T x) {
+  if (isnan(x)) return x;
+  if (x < T{}) return detail::math_domain_error<T>();
+  if (x == T{}) return n == 0 ? T{1} : T{};
+  return sqrt(T(1.570796326794896619231321691639751442L) / x) *
+         cyl_bessel_j(T(n) + T{0.5}, x);
+}
+inline float sph_besself(unsigned n, float x) { return sph_bessel(n, x); }
+inline long double sph_bessell(unsigned n, long double x) {
+  return sph_bessel(n, x);
+}
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T sph_neumann(unsigned n, T x) {
+  if (isnan(x)) return x;
+  if (x < T{}) return detail::math_domain_error<T>();
+  if (x == T{}) return -numeric_limits<T>::infinity();
+  return sqrt(T(1.570796326794896619231321691639751442L) / x) *
+         cyl_neumann(T(n) + T{0.5}, x);
+}
+inline float sph_neumannf(unsigned n, float x) { return sph_neumann(n, x); }
+inline long double sph_neumannl(unsigned n, long double x) {
+  return sph_neumann(n, x);
+}
+
+namespace detail {
+// Adapted from Boost.Math 1.91.0 expint.hpp and zeta.hpp (BSL-1.0).
+// Copyright John Maddock 2007, 2014; Copyright Matt Borland 2024.
+template <class T>
+inline T expint_e1(T x) {
+  if (x <= T{1}) {
+    T term = -x, sum = term;
+    for (unsigned k = 2; k != 256; ++k) {
+      term *= -x / T(k);
+      const T add = term / T(k);
+      sum += add;
+      if (fabs(add) <= fabs(sum) * numeric_limits<T>::epsilon()) break;
+    }
+    return -T(0.577215664901532860606512090082402431L) - log(x) - sum;
+  }
+  T b = x + T{1}, c = T{1} / numeric_limits<T>::min(), d = T{1} / b;
+  T h = d;
+  for (unsigned i = 1; i != 256; ++i) {
+    const T a = -T(i * i);
+    b += T{2};
+    d = T{1} / (a * d + b);
+    c = b + a / c;
+    const T delta = c * d;
+    h *= delta;
+    if (fabs(delta - T{1}) <= T{4} * numeric_limits<T>::epsilon()) break;
+  }
+  return h * exp(-x);
+}
+} // namespace detail
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T expint(T x) {
+  if (isnan(x)) return x;
+  if (isinf(x)) return x > T{} ? x : -T{};
+  if (x == T{}) return -numeric_limits<T>::infinity();
+  if (x < T{}) return -detail::expint_e1(-x);
+  if (x > T{40}) {
+    T term{1}, sum{1};
+    for (unsigned k = 1; k != 128; ++k) {
+      term *= T(k) / x;
+      if (term > sum && k > 2) break;
+      sum += term;
+      if (term <= sum * numeric_limits<T>::epsilon()) break;
+    }
+    return exp(x) * sum / x;
+  }
+  T term = x, sum = term;
+  for (unsigned k = 2; k != 512; ++k) {
+    term *= x / T(k);
+    const T add = term / T(k);
+    sum += add;
+    if (fabs(add) <= fabs(sum) * numeric_limits<T>::epsilon()) break;
+  }
+  return T(0.577215664901532860606512090082402431L) + log(x) + sum;
+}
+inline float expintf(float x) { return expint(x); }
+inline long double expintl(long double x) { return expint(x); }
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T riemann_zeta(T s) {
+  if (isnan(s)) return s;
+  if (isinf(s))
+    return s > T{} ? T{1} : detail::math_domain_error<T>();
+  if (s == T{1}) return numeric_limits<T>::infinity();
+  if (s < T{}) {
+    if (s == floor(s / T{2}) * T{2}) return T{};
+    const T pi = T(3.141592653589793238462643383279502884L);
+    return pow(T{2}, s) * pow(pi, s - T{1}) * sin(pi * s / T{2}) *
+           tgamma(T{1} - s) * riemann_zeta(T{1} - s);
+  }
+  const T n = T{24};
+  T sum{};
+  for (unsigned k = 1; k <= 24; ++k) sum += pow(T(k), -s);
+  T rising{1}, power = pow(n, -s);
+  sum += n * power / (s - T{1}) - power / T{2};
+  constexpr long double coeff[] = {
+      1.0L / 12, -1.0L / 720, 1.0L / 30240, -1.0L / 1209600,
+      1.0L / 47900160, -691.0L / 1307674368000.0L,
+      7.0L / 523069747200.0L, -3617.0L / 10670622842880000.0L};
+  for (unsigned k = 1; k <= 8; ++k) {
+    if (k == 1) rising = s;
+    else rising *= (s + T(2 * k - 3)) * (s + T(2 * k - 2));
+    power /= n * n;
+    const T add = T(coeff[k - 1]) * rising * n * power;
+    sum += add;
+    if (fabs(add) <= fabs(sum) * numeric_limits<T>::epsilon()) break;
+  }
+  return sum;
+}
+inline float riemann_zetaf(float x) { return riemann_zeta(x); }
+inline long double riemann_zetal(long double x) { return riemann_zeta(x); }
+
 // Boost.Math spherical_harmonic.hpp normalization at azimuth zero.
+// Copyright John Maddock 2006 (BSL-1.0).
 template <class T>
   requires is_floating_point_v<T>
 inline T sph_legendre(unsigned l, unsigned m, T theta) {
+  if (isnan(theta)) return theta;
+  const T pi = T(3.141592653589793238462643383279502884L);
+  if (theta < T{} || theta > pi) return detail::math_domain_error<T>();
   if (m > l) return T{};
   T ratio = T{1};
   for (unsigned k = l - m + 1; k <= l + m; ++k) ratio /= T(k);
-  const T pi = T(3.141592653589793238462643383279502884L);
-  return sqrt(T(2 * l + 1) * ratio / (T{4} * pi)) *
+  const T phase = (m & 1u) ? T{-1} : T{1};
+  return phase * sqrt(T(2 * l + 1) * ratio / (T{4} * pi)) *
          assoc_legendre(l, m, cos(theta));
 }
 inline float sph_legendref(unsigned l, unsigned m, float theta) {
@@ -541,6 +1620,100 @@ inline float sph_legendref(unsigned l, unsigned m, float theta) {
 inline long double sph_legendrel(unsigned l, unsigned m, long double theta) {
   return sph_legendre(l, m, theta);
 }
+
+// [cmath.syn]/3: arithmetic arguments use the greatest floating-point rank;
+// integer arguments have the rank of double.
+#define FTL_SPECIAL_UNARY_ARITHMETIC(name)                                   \
+  template <class Arithmetic>                                                \
+    requires is_integral_v<remove_cv_t<Arithmetic>>                          \
+  inline double name(Arithmetic value) { return name(static_cast<double>(value)); }
+
+#define FTL_SPECIAL_BINARY_ARITHMETIC(name)                                  \
+  template <class Left, class Right>                                         \
+    requires(detail::math_arithmetic_v<Left> &&                              \
+             detail::math_arithmetic_v<Right> &&                             \
+             !(is_same_v<remove_cv_t<Left>, remove_cv_t<Right>> &&           \
+               is_floating_point_v<remove_cv_t<Left>>))                      \
+  inline detail::math_common_t<Left, Right> name(Left left, Right right) {    \
+    using result_type = detail::math_common_t<Left, Right>;                  \
+    return name(static_cast<result_type>(left), static_cast<result_type>(right)); \
+  }
+
+#define FTL_SPECIAL_TERNARY_ARITHMETIC(name)                                 \
+  template <class First, class Second, class Third>                          \
+    requires(detail::math_arithmetic_v<First> &&                             \
+             detail::math_arithmetic_v<Second> &&                            \
+             detail::math_arithmetic_v<Third> &&                             \
+             !(is_same_v<remove_cv_t<First>, remove_cv_t<Second>> &&         \
+               is_same_v<remove_cv_t<First>, remove_cv_t<Third>> &&          \
+               is_floating_point_v<remove_cv_t<First>>))                     \
+  inline detail::math_common_t<detail::math_common_t<First, Second>, Third>  \
+  name(First first, Second second, Third third) {                             \
+    using result_type =                                                      \
+        detail::math_common_t<detail::math_common_t<First, Second>, Third>;   \
+    return name(static_cast<result_type>(first),                             \
+                static_cast<result_type>(second),                            \
+                static_cast<result_type>(third));                            \
+  }
+
+FTL_SPECIAL_UNARY_ARITHMETIC(comp_ellint_1)
+FTL_SPECIAL_UNARY_ARITHMETIC(comp_ellint_2)
+FTL_SPECIAL_UNARY_ARITHMETIC(expint)
+FTL_SPECIAL_UNARY_ARITHMETIC(riemann_zeta)
+FTL_SPECIAL_BINARY_ARITHMETIC(beta)
+FTL_SPECIAL_BINARY_ARITHMETIC(comp_ellint_3)
+FTL_SPECIAL_BINARY_ARITHMETIC(cyl_bessel_i)
+FTL_SPECIAL_BINARY_ARITHMETIC(cyl_bessel_j)
+FTL_SPECIAL_BINARY_ARITHMETIC(cyl_bessel_k)
+FTL_SPECIAL_BINARY_ARITHMETIC(cyl_neumann)
+FTL_SPECIAL_BINARY_ARITHMETIC(ellint_1)
+FTL_SPECIAL_BINARY_ARITHMETIC(ellint_2)
+FTL_SPECIAL_TERNARY_ARITHMETIC(ellint_3)
+
+template <class Arithmetic>
+  requires is_integral_v<remove_cv_t<Arithmetic>>
+inline double assoc_laguerre(unsigned n, unsigned m, Arithmetic x) {
+  return assoc_laguerre(n, m, static_cast<double>(x));
+}
+template <class Arithmetic>
+  requires is_integral_v<remove_cv_t<Arithmetic>>
+inline double assoc_legendre(unsigned l, unsigned m, Arithmetic x) {
+  return assoc_legendre(l, m, static_cast<double>(x));
+}
+template <class Arithmetic>
+  requires is_integral_v<remove_cv_t<Arithmetic>>
+inline double hermite(unsigned n, Arithmetic x) {
+  return hermite(n, static_cast<double>(x));
+}
+template <class Arithmetic>
+  requires is_integral_v<remove_cv_t<Arithmetic>>
+inline double laguerre(unsigned n, Arithmetic x) {
+  return laguerre(n, static_cast<double>(x));
+}
+template <class Arithmetic>
+  requires is_integral_v<remove_cv_t<Arithmetic>>
+inline double legendre(unsigned l, Arithmetic x) {
+  return legendre(l, static_cast<double>(x));
+}
+template <class Arithmetic>
+  requires is_integral_v<remove_cv_t<Arithmetic>>
+inline double sph_bessel(unsigned n, Arithmetic x) {
+  return sph_bessel(n, static_cast<double>(x));
+}
+template <class Arithmetic>
+  requires is_integral_v<remove_cv_t<Arithmetic>>
+inline double sph_legendre(unsigned l, unsigned m, Arithmetic theta) {
+  return sph_legendre(l, m, static_cast<double>(theta));
+}
+template <class Arithmetic>
+  requires is_integral_v<remove_cv_t<Arithmetic>>
+inline double sph_neumann(unsigned n, Arithmetic x) {
+  return sph_neumann(n, static_cast<double>(x));
+}
+
+#undef FTL_SPECIAL_TERNARY_ARITHMETIC
+#undef FTL_SPECIAL_BINARY_ARITHMETIC
+#undef FTL_SPECIAL_UNARY_ARITHMETIC
 
 FTL_CMATH_END
 

@@ -30,6 +30,17 @@ extern "C" int ftl_entry() {
   result += std::nexttoward(x, z);
   long double integral;
   result += static_cast<double>(std::modf(z, &integral));
+  result += std::assoc_laguerre(2, 1, x) + std::assoc_legendre(2, 1, x);
+  result += std::beta(x, y) + std::comp_ellint_1(x) +
+            std::comp_ellint_2(x) + std::comp_ellint_3(x, x);
+  result += std::cyl_bessel_i(x, y) + std::cyl_bessel_j(x, y) +
+            std::cyl_bessel_k(x, y) + std::cyl_neumann(x, y);
+  result += std::ellint_1(x, y) + std::ellint_2(x, y) +
+            std::ellint_3(x, x, y) + std::expint(x);
+  result += std::hermite(2, x) + std::laguerre(2, x) +
+            std::legendre(2, x) + std::riemann_zeta(y);
+  result += std::sph_bessel(2, y) + std::sph_legendre(2, 1, x) +
+            std::sph_neumann(2, y);
   result += static_cast<double>(
       std::acos(z) + std::asin(z) + std::atan(z) + std::atan2(z, z) +
       std::acosh(z + 1) + std::asinh(z) + std::atanh(z) + std::cbrt(z) +

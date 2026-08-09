@@ -14,8 +14,46 @@ static_assert(tested::is_same_v<decltype(tested::sqrt(4.0f)), float>);
 static_assert(tested::is_same_v<decltype(tested::sqrt(4)), double>);
 static_assert(tested::is_same_v<decltype(tested::pow(2.0L, 3)), long double>);
 static_assert(tested::is_same_v<decltype(tested::fma(1.0f, 2.0, 3)), double>);
+static_assert(tested::is_same_v<decltype(tested::comp_ellint_1(0.5f)), float>);
+static_assert(tested::is_same_v<decltype(tested::ellint_3(0.5L, 0.25L, 0.5L)), long double>);
+static_assert(tested::is_same_v<decltype(tested::cyl_bessel_j(0.5, 1.0)), double>);
+static_assert(tested::is_same_v<decltype(tested::sph_neumann(2, 1.0f)), float>);
+static_assert(tested::is_same_v<decltype(tested::expintf(1.0f)), float>);
+static_assert(tested::is_same_v<decltype(tested::riemann_zetal(2.0L)), long double>);
+static_assert(tested::is_same_v<decltype(tested::beta(1.0f, 2)), double>);
+static_assert(tested::is_same_v<decltype(tested::ellint_3(0.5f, 0.25, 1.0L)), long double>);
+static_assert(tested::is_same_v<decltype(tested::expint(1)), double>);
+static_assert(tested::is_same_v<decltype(tested::sph_bessel(2, 1)), double>);
+static_assert(tested::is_same_v<decltype(tested::abs(1L)), long>);
+static_assert(tested::is_same_v<decltype(tested::frexp(4, static_cast<int *>(nullptr))), double>);
+static_assert(tested::is_same_v<decltype(tested::hypot(1.0f, 2.0, 3)), double>);
+static_assert(tested::is_same_v<decltype(tested::lerp(1.0f, 2.0L, 3)), long double>);
 static_assert(FP_INFINITE != FP_NAN && FP_ZERO != FP_NORMAL);
 static_assert(MATH_ERREXCEPT != 0);
+
+constexpr bool constexpr_cmath() {
+  int exponent{}, quotient{};
+  double integer{};
+  return tested::abs(-2.0) == 2.0 && tested::fabs(-0.0) == 0.0 &&
+         tested::ceil(1.25) == 2.0 && tested::floor(1.75) == 1.0 &&
+         tested::trunc(-1.75) == -1.0 && tested::round(-1.5) == -2.0 &&
+         tested::frexp(8.0, &exponent) == 0.5 && exponent == 4 &&
+         tested::ilogb(8.0) == 3 && tested::logb(8.0) == 3.0 &&
+         tested::ldexp(0.5, 4) == 8.0 && tested::scalbn(1.0, 3) == 8.0 &&
+         tested::modf(2.25, &integer) == 0.25 && integer == 2.0 &&
+         tested::fmod(7.0, 2.0) == 1.0 &&
+         tested::remainder(7.0, 2.0) == -1.0 &&
+         tested::remquo(7.0, 2.0, &quotient) == -1.0 && quotient == 4 &&
+         tested::copysign(1.0, -0.0) == -1.0 &&
+         tested::nextafter(1.0, 2.0) > 1.0 &&
+         tested::fdim(3.0, 2.0) == 1.0 && tested::fmax(1.0, 2.0) == 2.0 &&
+         tested::fmin(1.0, 2.0) == 1.0 && tested::fma(2.0, 3.0, 1.0) == 7.0 &&
+         tested::fpclassify(0.0) == FP_ZERO && tested::isfinite(1.0) &&
+         !tested::isinf(1.0) && !tested::isnan(1.0) && tested::isnormal(1.0) &&
+         tested::signbit(-0.0) && tested::isless(1.0, 2.0) &&
+         tested::isunordered(tested::numeric_limits<double>::quiet_NaN(), 1.0);
+}
+static_assert(constexpr_cmath());
 
 bool ftl_test() {
   tested::fenv_t environment{};
@@ -38,6 +76,14 @@ bool ftl_test() {
   const double significand = tested::frexp(8.0, &exponent);
   const double remainder = tested::remquo(7.0, 2.0, &quotient);
   const auto quiet_nan = tested::nan("");
+  tested::feclearexcept(FE_ALL_EXCEPT);
+  const double special_domain = tested::beta(-1.0, 1.0);
+  const bool special_reports_domain = tested::isnan(special_domain) &&
+      (tested::fetestexcept(FE_INVALID) & FE_INVALID) != 0;
+  tested::feclearexcept(FE_ALL_EXCEPT);
+  const bool special_propagates_nan =
+      tested::isnan(tested::comp_ellint_1(quiet_nan)) &&
+      (tested::fetestexcept(FE_INVALID) & FE_INVALID) == 0;
 
   return nearby_is_quiet && rint_is_inexact &&
          tested::sqrt(4.0) == 2.0 && tested::cbrt(8.0) == 2.0 &&
@@ -50,5 +96,8 @@ bool ftl_test() {
          tested::fpclassify(0.0) == FP_ZERO && tested::isfinite(1) &&
          !tested::isnormal(0) && tested::signbit(-0.0) &&
          tested::nextafter(1.0, 2.0) > 1.0 &&
-         tested::scalbn(1.0, 4) == 16.0 && tested::round(1.5) == 2.0;
+         tested::scalbn(1.0, 4) == 16.0 && tested::round(1.5) == 2.0 &&
+         special_reports_domain && special_propagates_nan &&
+         tested::isinf(tested::cyl_bessel_k(0.0, 0.0)) &&
+         tested::isinf(tested::cyl_neumann(0.0, 0.0));
 }

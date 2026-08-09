@@ -19,6 +19,12 @@
 
 FTL_COMPLEX_BEGIN
 
+namespace detail {
+template <class T>
+inline constexpr int complex_conversion_rank =
+    is_same_v<T, long double> ? 3 : is_same_v<T, double> ? 2 : 1;
+}
+
 template <class T> class complex {
 public:
   using value_type = T;
@@ -27,7 +33,9 @@ public:
       : real_(real), imaginary_(imaginary) {}
 
   template <class U>
-  explicit(!is_convertible_v<U, T>) constexpr complex(const complex<U> &other)
+  explicit(detail::complex_conversion_rank<T> <
+           detail::complex_conversion_rank<U>)
+  constexpr complex(const complex<U> &other)
       : real_(static_cast<T>(other.real())),
         imaginary_(static_cast<T>(other.imag())) {}
 
@@ -177,22 +185,36 @@ template <class T> constexpr complex<T> conj(const complex<T> &value) {
 }
 template <class Arithmetic>
   requires is_arithmetic_v<Arithmetic>
-constexpr Arithmetic real(Arithmetic value) { return value; }
-template <class Arithmetic>
-  requires is_arithmetic_v<Arithmetic>
-constexpr Arithmetic imag(Arithmetic) { return Arithmetic{}; }
-template <class Arithmetic>
-  requires is_arithmetic_v<Arithmetic>
-constexpr auto norm(Arithmetic value) { return value * value; }
-template <class Arithmetic>
-  requires is_arithmetic_v<Arithmetic>
-inline double arg(Arithmetic value) {
-  return signbit(value) ? 3.141592653589793238462643383279502884 : 0.0;
+constexpr auto real(Arithmetic value) {
+  using result_type = conditional_t<is_integral_v<Arithmetic>, double, Arithmetic>;
+  return static_cast<result_type>(value);
 }
 template <class Arithmetic>
   requires is_arithmetic_v<Arithmetic>
-constexpr complex<double> conj(Arithmetic value) {
-  return {static_cast<double>(value), -0.0};
+constexpr auto imag(Arithmetic) {
+  using result_type = conditional_t<is_integral_v<Arithmetic>, double, Arithmetic>;
+  return result_type{};
+}
+template <class Arithmetic>
+  requires is_arithmetic_v<Arithmetic>
+constexpr auto norm(Arithmetic value) {
+  using result_type = conditional_t<is_integral_v<Arithmetic>, double, Arithmetic>;
+  const result_type promoted = static_cast<result_type>(value);
+  return promoted * promoted;
+}
+template <class Arithmetic>
+  requires is_arithmetic_v<Arithmetic>
+inline auto arg(Arithmetic value) {
+  using result_type = conditional_t<is_integral_v<Arithmetic>, double, Arithmetic>;
+  return signbit(value)
+      ? result_type(3.141592653589793238462643383279502884L)
+      : result_type{};
+}
+template <class Arithmetic>
+  requires is_arithmetic_v<Arithmetic>
+constexpr auto conj(Arithmetic value) {
+  using result_type = conditional_t<is_integral_v<Arithmetic>, double, Arithmetic>;
+  return complex<result_type>{static_cast<result_type>(value), -result_type{}};
 }
 
 #define FTL_COMPLEX_RUNTIME_UNARY(name)                                       \
@@ -227,6 +249,13 @@ FTL_COMPLEX_RUNTIME_UNARY(sqrt)
 FTL_COMPLEX_RUNTIME_UNARY(proj)
 
 #undef FTL_COMPLEX_RUNTIME_UNARY
+
+template <class Arithmetic>
+  requires is_arithmetic_v<Arithmetic>
+inline auto proj(Arithmetic value) {
+  using result_type = conditional_t<is_integral_v<Arithmetic>, double, Arithmetic>;
+  return proj(complex<result_type>(static_cast<result_type>(value)));
+}
 
 inline float abs(const complex<float> &value) {
   return ::ftl_olm_cabsf(detail::complex_to_abi(value));
@@ -267,13 +296,25 @@ inline complex<long double> pow(const complex<long double> &left,
   return detail::complex_from_abi(::ftl_olm_cpowl(
       detail::complex_to_abi(left), detail::complex_to_abi(right)));
 }
-template <class T> inline complex<T> pow(const complex<T> &left,
-                                         const T &right) {
-  return pow(left, complex<T>(right));
+template <class T1, class T2>
+inline complex<common_type_t<T1, T2>> pow(const complex<T1> &left,
+                                          const complex<T2> &right) {
+  using result_type = common_type_t<T1, T2>;
+  return pow(complex<result_type>(left), complex<result_type>(right));
 }
-template <class T> inline complex<T> pow(const T &left,
-                                         const complex<T> &right) {
-  return pow(complex<T>(left), right);
+template <class T1, class T2>
+  requires is_arithmetic_v<T2>
+inline complex<common_type_t<T1, T2>> pow(const complex<T1> &left,
+                                          const T2 &right) {
+  using result_type = common_type_t<T1, T2>;
+  return pow(complex<result_type>(left), complex<result_type>(right));
+}
+template <class T1, class T2>
+  requires is_arithmetic_v<T1>
+inline complex<common_type_t<T1, T2>> pow(const T1 &left,
+                                          const complex<T2> &right) {
+  using result_type = common_type_t<T1, T2>;
+  return pow(complex<result_type>(left), complex<result_type>(right));
 }
 
 inline complex<float> log10(const complex<float> &value) {

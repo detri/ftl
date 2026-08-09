@@ -645,6 +645,12 @@
 #define __cpp_lib_interpolate 201902L
 #endif
 
+#if !defined(__cpp_lib_math_special_functions) ||                       \
+    __cpp_lib_math_special_functions < 201603L
+#undef __cpp_lib_math_special_functions
+#define __cpp_lib_math_special_functions 201603L
+#endif
+
 #if !defined(__cpp_lib_ranges_iota) || __cpp_lib_ranges_iota < 202202L
 #undef __cpp_lib_ranges_iota
 #define __cpp_lib_ranges_iota 202202L

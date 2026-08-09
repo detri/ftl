@@ -23,6 +23,20 @@ static_assert(tested::is_same_v<decltype(2.0il), complex<long double>>);
 static_assert(tested::is_trivially_copyable_v<complex<float>>);
 static_assert(tested::is_trivially_copyable_v<complex<double>>);
 static_assert(tested::is_trivially_copyable_v<complex<long double>>);
+static_assert(tested::is_convertible_v<complex<float>, complex<double>>);
+static_assert(tested::is_convertible_v<complex<double>, complex<long double>>);
+static_assert(!tested::is_convertible_v<complex<double>, complex<float>>);
+static_assert(!tested::is_convertible_v<complex<long double>, complex<double>>);
+static_assert(tested::is_same_v<decltype(tested::real(1)), double>);
+static_assert(tested::is_same_v<decltype(tested::imag(1.0f)), float>);
+static_assert(tested::is_same_v<decltype(tested::norm(1)), double>);
+static_assert(tested::is_same_v<decltype(tested::conj(1.0f)), complex<float>>);
+static_assert(tested::is_same_v<decltype(tested::proj(1)), complex<double>>);
+static_assert(tested::is_same_v<decltype(tested::pow(complex<float>{}, 2.0)),
+                                complex<double>>);
+static_assert(tested::is_same_v<decltype(tested::pow(complex<float>{},
+                                                     complex<long double>{})),
+                                complex<long double>>);
 
 bool ftl_test() {
   const complex<double> value{3.0, 4.0};

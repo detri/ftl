@@ -423,10 +423,11 @@ Take these closures in order:
    `<ratio>` and `<ctime>` complete
 2. `<system_error>` + `<stdexcept>` + `<stacktrace>` — **runtime closure
    complete**
-3. `<cfenv>` + `<cmath>` + `<numbers>` + `<complex>` — **`<numbers>`
-   complete; OpenLibm real/complex core complete and locally validated on
-   MSVC, ClangCL, GCC, and Clang; Apple AArch64 CI and the remaining
-   Boost.Math special functions are pending**
+3. `<cfenv>` + `<cmath>` + `<numbers>` + `<complex>` — **OpenLibm real/complex
+   core and the Boost.Math-derived C++23 special functions complete; the N4950
+   synopsis audit is complete, the local MSVC, ClangCL, GCC, and Clang matrix
+   is green across all supported floating-point formats, and the Apple AArch64
+   runtime core is CI-validated**
 4. `<random>` + `<valarray>`
 
 **Exit:** numeric and time facilities have specified edge behavior and do not
@@ -494,6 +495,13 @@ Stage 5.3 attribution file. Completion requires normal and `FTL_REPLACE_STL`
 public-header checks, freestanding linkage, rounding-mode/exception tests, and
 an accuracy suite measured in ULPs against high-precision reference vectors on
 every supported floating-point format.
+
+The N4950 audit covers the complete `<numbers>` and `<cfenv>` synopses,
+`<cmath>` including arithmetic promotions, C++23 `constexpr` functions, and all
+21 special-function families, and `<complex>` including conversion-rank and
+mixed-arithmetic rules. The two `<complex>` stream operators remain staged with
+Stage 7's stream closure so this freestanding header does not import an
+incomplete I/O dependency.
 
 ### Stage 6 — Concurrency
 

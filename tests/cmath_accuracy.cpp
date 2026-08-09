@@ -59,8 +59,64 @@ bool boost_vectors() {
              T(0.4995191927549702690317156359141295568104L), 5);
 }
 
+template <class T>
+bool special_vectors() {
+  const T pi = T(3.141592653589793238462643383279502884L);
+  const auto close = [](T actual, T expected) {
+    // Decimal donors are rounded to binary64, so binary80 permits the
+    // corresponding half-double-ULP reference uncertainty.
+    return within_ulps(actual, expected, 8192);
+  };
+  return close(tested::comp_ellint_1(T{}), pi / T{2}) &&
+         close(tested::assoc_legendre(1, 1, T(0.5L)),
+               T(0.866025403784438646763723170752936183L)) &&
+         tested::sph_legendre(1, 1, T(0.5L)) < T{} &&
+         close(tested::comp_ellint_2(T{}), pi / T{2}) &&
+         close(tested::comp_ellint_3(T{}, T{}), pi / T{2}) &&
+         close(tested::ellint_1(T{}, T(0.7L)), T(0.7L)) &&
+         close(tested::ellint_2(T{}, T(0.7L)), T(0.7L)) &&
+         close(tested::ellint_3(T{}, T{}, T(0.7L)), T(0.7L)) &&
+         close(tested::cyl_bessel_i(T{}, T{1}),
+               T(1.266065877752008335598244625214717537L)) &&
+         close(tested::cyl_bessel_j(T{}, T{1}),
+               T(0.765197686557966551449717526102663221L)) &&
+         close(tested::cyl_bessel_k(T{}, T{1}),
+               T(0.421024438240708333335627379212609037L)) &&
+         close(tested::cyl_neumann(T{}, T{1}),
+               T(0.0882569642156769579829267660235151628L)) &&
+         close(tested::cyl_bessel_i(T(5.5L), T{10}),
+               T(597.577653628482380554L)) &&
+         close(tested::cyl_bessel_j(T(20.25L), T{20}),
+               T(0.150604808827436348340L)) &&
+         close(tested::cyl_bessel_k(T(5.5L), T{10}),
+               T(0.0000733045300798502140211L)) &&
+         close(tested::cyl_neumann(T(20.25L), T{20}),
+               T(-0.309187670622299848322L)) &&
+         close(tested::cyl_bessel_j(T(-0.5L), T{1}),
+               tested::cos(T(1)) * tested::sqrt(T{2} / pi)) &&
+         close(tested::cyl_neumann(T(-0.5L), T{1}),
+               tested::sin(T(1)) * tested::sqrt(T{2} / pi)) &&
+         close(tested::ellint_1(T(0.9L), T(0.7L)),
+               T(0.750265780142851390622L)) &&
+         close(tested::ellint_2(T(0.9L), T(0.7L)),
+               T(0.655523111540768588235L)) &&
+         close(tested::ellint_3(T(0.9L), T(0.5L), T(0.7L)),
+               T(0.817830442339514740446L)) &&
+         close(tested::expint(T{1}),
+               T(1.89511781635593675546652093433163427L)) &&
+         close(tested::expint(T{-20}),
+               T(-9.83552529064988153984e-11L)) &&
+         close(tested::riemann_zeta(T{2}), pi * pi / T{6}) &&
+         close(tested::riemann_zeta(T(-3.5L)),
+               T(0.00444101133547943408009L)) &&
+         close(tested::sph_bessel(0, T{1}), tested::sin(T{1})) &&
+         close(tested::sph_neumann(0, T{1}), -tested::cos(T{1}));
+}
+
 bool ftl_test() {
   return elementary_vectors<float>() && elementary_vectors<double>() &&
          elementary_vectors<long double>() && boost_vectors<float>() &&
-         boost_vectors<double>() && boost_vectors<long double>();
+         boost_vectors<double>() && boost_vectors<long double>() &&
+         special_vectors<float>() && special_vectors<double>() &&
+         special_vectors<long double>();
 }

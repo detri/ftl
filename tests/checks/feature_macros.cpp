@@ -64,6 +64,9 @@
 #if __cpp_lib_math_constants < 201907L
 #error <numbers> must advertise mathematical constants
 #endif
+#if __cpp_lib_math_special_functions < 201603L
+#error <cmath> must advertise mathematical special functions
+#endif
 #if __cpp_lib_hardware_interference_size < 201703L ||                         \
     __cpp_lib_launder < 201606L || __cpp_lib_uncaught_exceptions < 201411L
 #error Stage 1.4 language-support feature macros are incomplete
