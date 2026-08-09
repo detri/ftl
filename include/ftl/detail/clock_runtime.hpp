@@ -53,8 +53,8 @@ inline long long steady_nanoseconds() noexcept {
   timebase_info info{};
   mach_timebase_info(&info);
   const auto ticks = mach_absolute_time();
-  return long long(ticks / info.denom * info.numer +
-                   ticks % info.denom * info.numer / info.denom);
+  return static_cast<long long>(ticks / info.denom * info.numer +
+                                ticks % info.denom * info.numer / info.denom);
 }
 #else
 struct timespec {

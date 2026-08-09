@@ -156,6 +156,15 @@ using duration_common_t = duration<
     ratio<detail::ratio_gcd(P1::num, P2::num),
           intmax_t(P1::den / detail::ratio_gcd(P1::den, P2::den) * P2::den)>>;
 
+} // namespace chrono
+
+template <class R1, class P1, class R2, class P2>
+struct common_type<chrono::duration<R1, P1>, chrono::duration<R2, P2>> {
+  using type = chrono::duration_common_t<R1, P1, R2, P2>;
+};
+
+namespace chrono {
+
 #define FTL_DURATION_BINARY(OP)                                                \
   template <class R1, class P1, class R2, class P2>                            \
   constexpr auto operator OP(duration<R1, P1> a, duration<R2, P2> b) {         \
@@ -1344,10 +1353,6 @@ constexpr duration<long double, nano> operator""ns(long double v) {
 } // namespace literals
 } // namespace chrono
 
-template <class R1, class P1, class R2, class P2>
-struct common_type<chrono::duration<R1, P1>, chrono::duration<R2, P2>> {
-  using type = chrono::duration_common_t<R1, P1, R2, P2>;
-};
 template <class C, class D1, class D2>
 struct common_type<chrono::time_point<C, D1>, chrono::time_point<C, D2>> {
   using type = chrono::time_point<C, common_type_t<D1, D2>>;
