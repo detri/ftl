@@ -1,0 +1,317 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_COMPLEX_HEADER
+#define FTL_COMPLEX_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <cmath>
+#include <type_traits>
+#include <detail/complex_runtime>
+#define FTL_COMPLEX_BEGIN namespace std {
+#define FTL_COMPLEX_END }
+#else
+#include <ftl/cmath>
+#include <ftl/type_traits>
+#include <ftl/detail/complex_runtime>
+#define FTL_COMPLEX_BEGIN namespace ftl {
+#define FTL_COMPLEX_END }
+#endif
+
+FTL_COMPLEX_BEGIN
+
+template <class T> class complex {
+public:
+  using value_type = T;
+
+  constexpr complex(const T &real = T{}, const T &imaginary = T{})
+      : real_(real), imaginary_(imaginary) {}
+
+  template <class U>
+  explicit(!is_convertible_v<U, T>) constexpr complex(const complex<U> &other)
+      : real_(static_cast<T>(other.real())),
+        imaginary_(static_cast<T>(other.imag())) {}
+
+  constexpr T real() const { return real_; }
+  constexpr void real(T value) { real_ = value; }
+  constexpr T imag() const { return imaginary_; }
+  constexpr void imag(T value) { imaginary_ = value; }
+
+  constexpr complex &operator=(const T &value) {
+    real_ = value;
+    imaginary_ = T{};
+    return *this;
+  }
+  constexpr complex &operator+=(const T &value) {
+    real_ += value;
+    return *this;
+  }
+  constexpr complex &operator-=(const T &value) {
+    real_ -= value;
+    return *this;
+  }
+  constexpr complex &operator*=(const T &value) {
+    real_ *= value;
+    imaginary_ *= value;
+    return *this;
+  }
+  constexpr complex &operator/=(const T &value) {
+    real_ /= value;
+    imaginary_ /= value;
+    return *this;
+  }
+
+  template <class U> constexpr complex &operator+=(const complex<U> &other) {
+    real_ += static_cast<T>(other.real());
+    imaginary_ += static_cast<T>(other.imag());
+    return *this;
+  }
+  template <class U> constexpr complex &operator-=(const complex<U> &other) {
+    real_ -= static_cast<T>(other.real());
+    imaginary_ -= static_cast<T>(other.imag());
+    return *this;
+  }
+  template <class U> constexpr complex &operator*=(const complex<U> &other) {
+    const T other_real = static_cast<T>(other.real());
+    const T new_real = real_ * other_real -
+                       imaginary_ * static_cast<T>(other.imag());
+    imaginary_ = real_ * static_cast<T>(other.imag()) +
+                 imaginary_ * other_real;
+    real_ = new_real;
+    return *this;
+  }
+  template <class U> constexpr complex &operator/=(const complex<U> &other) {
+    const T other_real = static_cast<T>(other.real());
+    const T other_imaginary = static_cast<T>(other.imag());
+    const T abs_real = other_real < T{} ? -other_real : other_real;
+    const T abs_imaginary =
+        other_imaginary < T{} ? -other_imaginary : other_imaginary;
+    if (abs_real < abs_imaginary) {
+      const T ratio = other_real / other_imaginary;
+      const T denominator = other_real * ratio + other_imaginary;
+      const T new_real = (real_ * ratio + imaginary_) / denominator;
+      imaginary_ = (imaginary_ * ratio - real_) / denominator;
+      real_ = new_real;
+    } else {
+      const T ratio = other_imaginary / other_real;
+      const T denominator = other_imaginary * ratio + other_real;
+      const T new_real = (imaginary_ * ratio + real_) / denominator;
+      imaginary_ = (imaginary_ - real_ * ratio) / denominator;
+      real_ = new_real;
+    }
+    return *this;
+  }
+
+private:
+  T real_;
+  T imaginary_;
+};
+
+template <class T> constexpr complex<T> operator+(const complex<T> &value) {
+  return value;
+}
+template <class T> constexpr complex<T> operator-(const complex<T> &value) {
+  return {-value.real(), -value.imag()};
+}
+
+#define FTL_COMPLEX_OPERATOR(symbol, assignment)                              \
+  template <class T>                                                          \
+  constexpr complex<T> operator symbol(complex<T> left,                      \
+                                        const complex<T> &right) {            \
+    return left assignment right;                                             \
+  }                                                                           \
+  template <class T>                                                          \
+  constexpr complex<T> operator symbol(complex<T> left, const T &right) {     \
+    return left assignment right;                                             \
+  }                                                                           \
+  template <class T>                                                          \
+  constexpr complex<T> operator symbol(const T &left, complex<T> right) {     \
+    if constexpr (#symbol[0] == '-')                                          \
+      return complex<T>(left) assignment right;                               \
+    else if constexpr (#symbol[0] == '/')                                     \
+      return complex<T>(left) assignment right;                               \
+    else                                                                      \
+      return right assignment left;                                           \
+  }
+
+FTL_COMPLEX_OPERATOR(+, +=)
+FTL_COMPLEX_OPERATOR(-, -=)
+FTL_COMPLEX_OPERATOR(*, *=)
+FTL_COMPLEX_OPERATOR(/, /=)
+#undef FTL_COMPLEX_OPERATOR
+
+template <class T>
+constexpr bool operator==(const complex<T> &left, const complex<T> &right) {
+  return left.real() == right.real() && left.imag() == right.imag();
+}
+template <class T>
+constexpr bool operator==(const complex<T> &left, const T &right) {
+  return left.real() == right && left.imag() == T{};
+}
+template <class T>
+constexpr bool operator==(const T &left, const complex<T> &right) {
+  return right == left;
+}
+
+namespace detail {
+template <class T>
+constexpr ftl_olm_complex<T> complex_to_abi(const complex<T> &value) {
+  return {value.real(), value.imag()};
+}
+template <class T>
+constexpr complex<T> complex_from_abi(ftl_olm_complex<T> value) {
+  return {value.real, value.imag};
+}
+} // namespace detail
+
+template <class T> constexpr T real(const complex<T> &value) {
+  return value.real();
+}
+template <class T> constexpr T imag(const complex<T> &value) {
+  return value.imag();
+}
+template <class T> constexpr T norm(const complex<T> &value) {
+  return value.real() * value.real() + value.imag() * value.imag();
+}
+template <class T> constexpr complex<T> conj(const complex<T> &value) {
+  return {value.real(), -value.imag()};
+}
+template <class Arithmetic>
+  requires is_arithmetic_v<Arithmetic>
+constexpr Arithmetic real(Arithmetic value) { return value; }
+template <class Arithmetic>
+  requires is_arithmetic_v<Arithmetic>
+constexpr Arithmetic imag(Arithmetic) { return Arithmetic{}; }
+template <class Arithmetic>
+  requires is_arithmetic_v<Arithmetic>
+constexpr auto norm(Arithmetic value) { return value * value; }
+template <class Arithmetic>
+  requires is_arithmetic_v<Arithmetic>
+inline double arg(Arithmetic value) {
+  return signbit(value) ? 3.141592653589793238462643383279502884 : 0.0;
+}
+template <class Arithmetic>
+  requires is_arithmetic_v<Arithmetic>
+constexpr complex<double> conj(Arithmetic value) {
+  return {static_cast<double>(value), -0.0};
+}
+
+#define FTL_COMPLEX_RUNTIME_UNARY(name)                                       \
+  inline complex<float> name(const complex<float> &value) {                   \
+    return detail::complex_from_abi(                                          \
+        ::ftl_olm_c##name##f(detail::complex_to_abi(value)));                 \
+  }                                                                           \
+  inline complex<double> name(const complex<double> &value) {                 \
+    return detail::complex_from_abi(                                          \
+        ::ftl_olm_c##name(detail::complex_to_abi(value)));                    \
+  }                                                                           \
+  inline complex<long double> name(const complex<long double> &value) {       \
+    return detail::complex_from_abi(                                          \
+        ::ftl_olm_c##name##l(detail::complex_to_abi(value)));                 \
+  }
+
+FTL_COMPLEX_RUNTIME_UNARY(acos)
+FTL_COMPLEX_RUNTIME_UNARY(asin)
+FTL_COMPLEX_RUNTIME_UNARY(atan)
+FTL_COMPLEX_RUNTIME_UNARY(cos)
+FTL_COMPLEX_RUNTIME_UNARY(sin)
+FTL_COMPLEX_RUNTIME_UNARY(tan)
+FTL_COMPLEX_RUNTIME_UNARY(acosh)
+FTL_COMPLEX_RUNTIME_UNARY(asinh)
+FTL_COMPLEX_RUNTIME_UNARY(atanh)
+FTL_COMPLEX_RUNTIME_UNARY(cosh)
+FTL_COMPLEX_RUNTIME_UNARY(sinh)
+FTL_COMPLEX_RUNTIME_UNARY(tanh)
+FTL_COMPLEX_RUNTIME_UNARY(exp)
+FTL_COMPLEX_RUNTIME_UNARY(log)
+FTL_COMPLEX_RUNTIME_UNARY(sqrt)
+FTL_COMPLEX_RUNTIME_UNARY(proj)
+
+#undef FTL_COMPLEX_RUNTIME_UNARY
+
+inline float abs(const complex<float> &value) {
+  return ::ftl_olm_cabsf(detail::complex_to_abi(value));
+}
+inline double abs(const complex<double> &value) {
+  return ::ftl_olm_cabs(detail::complex_to_abi(value));
+}
+inline long double abs(const complex<long double> &value) {
+  return ::ftl_olm_cabsl(detail::complex_to_abi(value));
+}
+inline float arg(const complex<float> &value) {
+  return ::ftl_olm_cargf(detail::complex_to_abi(value));
+}
+inline double arg(const complex<double> &value) {
+  return ::ftl_olm_carg(detail::complex_to_abi(value));
+}
+inline long double arg(const complex<long double> &value) {
+  return ::ftl_olm_cargl(detail::complex_to_abi(value));
+}
+
+template <class T> inline complex<T> polar(const T &magnitude,
+                                            const T &angle = T{}) {
+  return {magnitude * cos(angle), magnitude * sin(angle)};
+}
+
+inline complex<float> pow(const complex<float> &left,
+                          const complex<float> &right) {
+  return detail::complex_from_abi(::ftl_olm_cpowf(
+      detail::complex_to_abi(left), detail::complex_to_abi(right)));
+}
+inline complex<double> pow(const complex<double> &left,
+                           const complex<double> &right) {
+  return detail::complex_from_abi(::ftl_olm_cpow(
+      detail::complex_to_abi(left), detail::complex_to_abi(right)));
+}
+inline complex<long double> pow(const complex<long double> &left,
+                                const complex<long double> &right) {
+  return detail::complex_from_abi(::ftl_olm_cpowl(
+      detail::complex_to_abi(left), detail::complex_to_abi(right)));
+}
+template <class T> inline complex<T> pow(const complex<T> &left,
+                                         const T &right) {
+  return pow(left, complex<T>(right));
+}
+template <class T> inline complex<T> pow(const T &left,
+                                         const complex<T> &right) {
+  return pow(complex<T>(left), right);
+}
+
+inline complex<float> log10(const complex<float> &value) {
+  return log(value) / log(10.0f);
+}
+inline complex<double> log10(const complex<double> &value) {
+  return log(value) / log(10.0);
+}
+inline complex<long double> log10(const complex<long double> &value) {
+  return log(value) / log(10.0L);
+}
+
+namespace literals::complex_literals {
+constexpr complex<double> operator""i(long double value) {
+  return {0.0, static_cast<double>(value)};
+}
+constexpr complex<double> operator""i(unsigned long long value) {
+  return {0.0, static_cast<double>(value)};
+}
+constexpr complex<float> operator""if(long double value) {
+  return {0.0f, static_cast<float>(value)};
+}
+constexpr complex<float> operator""if(unsigned long long value) {
+  return {0.0f, static_cast<float>(value)};
+}
+constexpr complex<long double> operator""il(long double value) {
+  return {0.0L, value};
+}
+constexpr complex<long double> operator""il(unsigned long long value) {
+  return {0.0L, static_cast<long double>(value)};
+}
+} // namespace literals::complex_literals
+
+namespace complex_literals = literals::complex_literals;
+namespace literals { using namespace complex_literals; }
+
+FTL_COMPLEX_END
+
+#undef FTL_COMPLEX_BEGIN
+#undef FTL_COMPLEX_END
+#endif

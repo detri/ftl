@@ -157,9 +157,6 @@ using ::aligned_alloc;
 constexpr int abs(int value) { return value < 0 ? -value : value; }
 constexpr long abs(long value) { return value < 0 ? -value : value; }
 constexpr long long abs(long long value) { return value < 0 ? -value : value; }
-constexpr float abs(float value) { return value < 0 ? -value : value; }
-constexpr double abs(double value) { return value < 0 ? -value : value; }
-constexpr long double abs(long double value) { return value < 0 ? -value : value; }
 constexpr long labs(long value) { return abs(value); }
 constexpr long long llabs(long long value) { return abs(value); }
 constexpr div_t div(int numer, int denom) { return {numer / denom, numer % denom}; }

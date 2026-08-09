@@ -1,0 +1,563 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CMATH_HEADER
+#define FTL_CMATH_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <limits>
+#include <type_traits>
+#include <detail/math_runtime>
+#define FTL_CMATH_BEGIN namespace std {
+#define FTL_CMATH_END }
+#else
+#include <ftl/limits>
+#include <ftl/type_traits>
+#include <ftl/detail/math_runtime>
+#define FTL_CMATH_BEGIN namespace ftl {
+#define FTL_CMATH_END }
+#endif
+
+#define FP_INFINITE 0x01
+#define FP_NAN 0x02
+#define FP_NORMAL 0x04
+#define FP_SUBNORMAL 0x08
+#define FP_ZERO 0x10
+
+#define FP_ILOGB0 (-2147483647)
+#define FP_ILOGBNAN 2147483647
+#define MATH_ERRNO 1
+#define MATH_ERREXCEPT 2
+#define math_errhandling MATH_ERREXCEPT
+
+FTL_CMATH_BEGIN
+
+using float_t = float;
+using double_t = double;
+
+namespace detail {
+template <class T>
+inline constexpr bool math_arithmetic_v = is_arithmetic_v<remove_cv_t<T>>;
+
+template <class Left, class Right>
+using math_common_t = conditional_t<
+    is_same_v<remove_cv_t<Left>, long double> ||
+        is_same_v<remove_cv_t<Right>, long double>,
+    long double,
+    conditional_t<is_same_v<remove_cv_t<Left>, double> ||
+                      is_same_v<remove_cv_t<Right>, double> ||
+                      is_integral_v<remove_cv_t<Left>> ||
+                      is_integral_v<remove_cv_t<Right>>,
+                  double, float>>;
+} // namespace detail
+
+#define FTL_CMATH_UNARY(name)                                                 \
+  inline float name(float value) noexcept { return ::ftl_olm_##name##f(value); } \
+  inline double name(double value) noexcept { return ::ftl_olm_##name(value); } \
+  inline long double name(long double value) noexcept {                       \
+    return ::ftl_olm_##name##l(value);                                        \
+  }                                                                           \
+  inline float name##f(float value) noexcept { return name(value); }           \
+  inline long double name##l(long double value) noexcept { return name(value); } \
+  template <class Integer>                                                    \
+    requires is_integral_v<Integer>                                           \
+  inline double name(Integer value) noexcept {                                \
+    return name(static_cast<double>(value));                                  \
+  }
+
+#define FTL_CMATH_BINARY(name)                                                \
+  inline float name(float left, float right) noexcept {                       \
+    return ::ftl_olm_##name##f(left, right);                                  \
+  }                                                                           \
+  inline double name(double left, double right) noexcept {                    \
+    return ::ftl_olm_##name(left, right);                                     \
+  }                                                                           \
+  inline long double name(long double left, long double right) noexcept {     \
+    return ::ftl_olm_##name##l(left, right);                                  \
+  }                                                                           \
+  inline float name##f(float left, float right) noexcept {                    \
+    return name(left, right);                                                 \
+  }                                                                           \
+  inline long double name##l(long double left, long double right) noexcept {  \
+    return name(left, right);                                                 \
+  }                                                                           \
+  template <class Left, class Right>                                          \
+    requires(detail::math_arithmetic_v<Left> &&                               \
+             detail::math_arithmetic_v<Right>)                                \
+  inline detail::math_common_t<Left, Right> name(Left left, Right right)       \
+      noexcept {                                                              \
+    using common = detail::math_common_t<Left, Right>;                         \
+    return name(static_cast<common>(left), static_cast<common>(right));        \
+  }
+
+FTL_CMATH_UNARY(acos)
+FTL_CMATH_UNARY(acosh)
+FTL_CMATH_UNARY(asin)
+FTL_CMATH_UNARY(asinh)
+FTL_CMATH_UNARY(atan)
+FTL_CMATH_UNARY(atanh)
+FTL_CMATH_UNARY(cbrt)
+FTL_CMATH_UNARY(ceil)
+FTL_CMATH_UNARY(cos)
+FTL_CMATH_UNARY(cosh)
+FTL_CMATH_UNARY(erf)
+FTL_CMATH_UNARY(erfc)
+FTL_CMATH_UNARY(exp)
+FTL_CMATH_UNARY(exp2)
+FTL_CMATH_UNARY(expm1)
+FTL_CMATH_UNARY(fabs)
+FTL_CMATH_UNARY(floor)
+FTL_CMATH_UNARY(lgamma)
+FTL_CMATH_UNARY(log)
+FTL_CMATH_UNARY(log10)
+FTL_CMATH_UNARY(log1p)
+FTL_CMATH_UNARY(log2)
+FTL_CMATH_UNARY(logb)
+FTL_CMATH_UNARY(nearbyint)
+FTL_CMATH_UNARY(rint)
+FTL_CMATH_UNARY(round)
+FTL_CMATH_UNARY(sin)
+FTL_CMATH_UNARY(sinh)
+FTL_CMATH_UNARY(sqrt)
+FTL_CMATH_UNARY(tan)
+FTL_CMATH_UNARY(tanh)
+FTL_CMATH_UNARY(tgamma)
+FTL_CMATH_UNARY(trunc)
+
+FTL_CMATH_BINARY(atan2)
+FTL_CMATH_BINARY(copysign)
+FTL_CMATH_BINARY(fdim)
+FTL_CMATH_BINARY(fmax)
+FTL_CMATH_BINARY(fmin)
+FTL_CMATH_BINARY(fmod)
+FTL_CMATH_BINARY(hypot)
+FTL_CMATH_BINARY(nextafter)
+FTL_CMATH_BINARY(pow)
+FTL_CMATH_BINARY(remainder)
+
+#undef FTL_CMATH_UNARY
+#undef FTL_CMATH_BINARY
+
+inline float abs(float value) noexcept { return fabs(value); }
+inline double abs(double value) noexcept { return fabs(value); }
+inline long double abs(long double value) noexcept { return fabs(value); }
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T hypot(T x, T y, T z) noexcept {
+  const T maximum = fmax(fabs(x), fmax(fabs(y), fabs(z)));
+  if (isinf(maximum)) return maximum;
+  if (maximum == T{}) return maximum;
+  x /= maximum;
+  y /= maximum;
+  z /= maximum;
+  return maximum * sqrt(x * x + y * y + z * z);
+}
+
+template <class T>
+  requires is_floating_point_v<T>
+constexpr T lerp(T a, T b, T t) noexcept {
+  if ((a <= T{} && b >= T{}) || (a >= T{} && b <= T{}))
+    return t * b + (T{1} - t) * a;
+  if (t == T{1}) return b;
+  const T result = a + t * (b - a);
+  return (t > T{1}) == (b > a) ? (result < b ? b : result)
+                                : (result > b ? b : result);
+}
+
+inline float fma(float x, float y, float z) noexcept {
+  return ::ftl_olm_fmaf(x, y, z);
+}
+inline double fma(double x, double y, double z) noexcept {
+  return ::ftl_olm_fma(x, y, z);
+}
+inline long double fma(long double x, long double y,
+                       long double z) noexcept {
+  return ::ftl_olm_fmal(x, y, z);
+}
+inline float fmaf(float x, float y, float z) noexcept { return fma(x, y, z); }
+inline long double fmal(long double x, long double y,
+                        long double z) noexcept {
+  return fma(x, y, z);
+}
+template <class X, class Y, class Z>
+  requires(detail::math_arithmetic_v<X> && detail::math_arithmetic_v<Y> &&
+           detail::math_arithmetic_v<Z>)
+inline auto fma(X x, Y y, Z z) noexcept {
+  using xy = detail::math_common_t<X, Y>;
+  using common = detail::math_common_t<xy, Z>;
+  return fma(static_cast<common>(x), static_cast<common>(y),
+             static_cast<common>(z));
+}
+
+#define FTL_CMATH_DECOMPOSE(name)                                             \
+  inline float name(float value, int *exponent) noexcept {                    \
+    return ::ftl_olm_##name##f(value, exponent);                              \
+  }                                                                           \
+  inline double name(double value, int *exponent) noexcept {                  \
+    return ::ftl_olm_##name(value, exponent);                                 \
+  }                                                                           \
+  inline long double name(long double value, int *exponent) noexcept {        \
+    return ::ftl_olm_##name##l(value, exponent);                              \
+  }                                                                           \
+  inline float name##f(float value, int *exponent) noexcept {                 \
+    return name(value, exponent);                                             \
+  }                                                                           \
+  inline long double name##l(long double value, int *exponent) noexcept {     \
+    return name(value, exponent);                                             \
+  }
+
+FTL_CMATH_DECOMPOSE(frexp)
+#undef FTL_CMATH_DECOMPOSE
+
+inline float modf(float value, float *integer) noexcept {
+  return ::ftl_olm_modff(value, integer);
+}
+inline double modf(double value, double *integer) noexcept {
+  return ::ftl_olm_modf(value, integer);
+}
+inline long double modf(long double value, long double *integer) noexcept {
+  return ::ftl_olm_modfl(value, integer);
+}
+inline float modff(float value, float *integer) noexcept {
+  return modf(value, integer);
+}
+inline long double modfl(long double value, long double *integer) noexcept {
+  return modf(value, integer);
+}
+
+#define FTL_CMATH_SCALE(name, exponent_type)                                  \
+  inline float name(float value, exponent_type exponent) noexcept {           \
+    return ::ftl_olm_##name##f(value, exponent);                              \
+  }                                                                           \
+  inline double name(double value, exponent_type exponent) noexcept {         \
+    return ::ftl_olm_##name(value, exponent);                                 \
+  }                                                                           \
+  inline long double name(long double value, exponent_type exponent) noexcept { \
+    return ::ftl_olm_##name##l(value, exponent);                              \
+  }                                                                           \
+  inline float name##f(float value, exponent_type exponent) noexcept {        \
+    return name(value, exponent);                                             \
+  }                                                                           \
+  inline long double name##l(long double value, exponent_type exponent)       \
+      noexcept { return name(value, exponent); }                              \
+  template <class Integer>                                                    \
+    requires is_integral_v<Integer>                                           \
+  inline double name(Integer value, exponent_type exponent) noexcept {        \
+    return name(static_cast<double>(value), exponent);                        \
+  }
+
+FTL_CMATH_SCALE(ldexp, int)
+FTL_CMATH_SCALE(scalbn, int)
+FTL_CMATH_SCALE(scalbln, long)
+#undef FTL_CMATH_SCALE
+
+#define FTL_CMATH_INTEGER_RESULT(name, result_type)                           \
+  inline result_type name(float value) noexcept {                             \
+    return ::ftl_olm_##name##f(value);                                        \
+  }                                                                           \
+  inline result_type name(double value) noexcept {                            \
+    return ::ftl_olm_##name(value);                                           \
+  }                                                                           \
+  inline result_type name(long double value) noexcept {                       \
+    return ::ftl_olm_##name##l(value);                                        \
+  }                                                                           \
+  inline result_type name##f(float value) noexcept { return name(value); }    \
+  inline result_type name##l(long double value) noexcept { return name(value); } \
+  template <class Integer>                                                    \
+    requires is_integral_v<Integer>                                           \
+  inline result_type name(Integer value) noexcept {                           \
+    return name(static_cast<double>(value));                                  \
+  }
+
+FTL_CMATH_INTEGER_RESULT(ilogb, int)
+FTL_CMATH_INTEGER_RESULT(lrint, long)
+FTL_CMATH_INTEGER_RESULT(llrint, long long)
+FTL_CMATH_INTEGER_RESULT(lround, long)
+FTL_CMATH_INTEGER_RESULT(llround, long long)
+#undef FTL_CMATH_INTEGER_RESULT
+
+inline double nexttoward(double from, long double to) noexcept {
+  return ::ftl_olm_nexttoward(from, to);
+}
+inline float nexttoward(float from, long double to) noexcept {
+  return ::ftl_olm_nexttowardf(from, to);
+}
+inline long double nexttoward(long double from, long double to) noexcept {
+  return ::ftl_olm_nexttowardl(from, to);
+}
+inline float nexttowardf(float from, long double to) noexcept {
+  return nexttoward(from, to);
+}
+inline long double nexttowardl(long double from, long double to) noexcept {
+  return nexttoward(from, to);
+}
+
+inline float remquo(float x, float y, int *quotient) noexcept {
+  return ::ftl_olm_remquof(x, y, quotient);
+}
+inline double remquo(double x, double y, int *quotient) noexcept {
+  return ::ftl_olm_remquo(x, y, quotient);
+}
+inline long double remquo(long double x, long double y,
+                          int *quotient) noexcept {
+  return ::ftl_olm_remquol(x, y, quotient);
+}
+inline float remquof(float x, float y, int *quotient) noexcept {
+  return remquo(x, y, quotient);
+}
+inline long double remquol(long double x, long double y,
+                           int *quotient) noexcept {
+  return remquo(x, y, quotient);
+}
+
+inline int fpclassify(float value) noexcept {
+  return ::ftl_olm___fpclassifyf(value);
+}
+inline int fpclassify(double value) noexcept {
+  return ::ftl_olm___fpclassifyd(value);
+}
+inline int fpclassify(long double value) noexcept {
+  return ::ftl_olm___fpclassifyl(value);
+}
+template <class Integer>
+  requires is_integral_v<Integer>
+inline int fpclassify(Integer value) noexcept {
+  return value == 0 ? FP_ZERO : FP_NORMAL;
+}
+
+#define FTL_CMATH_PREDICATE(name, double_name)                                \
+  inline bool name(float value) noexcept {                                    \
+    return ::ftl_olm___##name##f(value) != 0;                                 \
+  }                                                                           \
+  inline bool name(double value) noexcept {                                   \
+    return ::double_name(value) != 0;                                         \
+  }                                                                           \
+  inline bool name(long double value) noexcept {                              \
+    return ::ftl_olm___##name##l(value) != 0;                                 \
+  }
+
+FTL_CMATH_PREDICATE(isfinite, ftl_olm___isfinite)
+FTL_CMATH_PREDICATE(isnormal, ftl_olm___isnormal)
+#undef FTL_CMATH_PREDICATE
+
+template <class Integer>
+  requires is_integral_v<Integer>
+inline bool isfinite(Integer) noexcept { return true; }
+template <class Integer>
+  requires is_integral_v<Integer>
+inline bool isnormal(Integer value) noexcept { return value != 0; }
+
+inline bool isinf(float value) noexcept { return ::ftl_olm___isinff(value); }
+inline bool isinf(double value) noexcept { return ::ftl_olm_isinf(value); }
+inline bool isinf(long double value) noexcept {
+  return ::ftl_olm___isinfl(value);
+}
+inline bool isnan(float value) noexcept { return ::ftl_olm___isnanf(value); }
+inline bool isnan(double value) noexcept { return ::ftl_olm_isnan(value); }
+inline bool isnan(long double value) noexcept {
+  return ::ftl_olm___isnanl(value);
+}
+inline bool signbit(float value) noexcept { return ::ftl_olm___signbitf(value); }
+inline bool signbit(double value) noexcept { return ::ftl_olm___signbit(value); }
+inline bool signbit(long double value) noexcept {
+  return ::ftl_olm___signbitl(value);
+}
+template <class Integer>
+  requires is_integral_v<Integer>
+inline bool isinf(Integer) noexcept { return false; }
+template <class Integer>
+  requires is_integral_v<Integer>
+inline bool isnan(Integer) noexcept { return false; }
+template <class Integer>
+  requires is_integral_v<Integer>
+inline bool signbit(Integer value) noexcept {
+  if constexpr (is_signed_v<Integer>)
+    return value < 0;
+  else
+    return false;
+}
+
+template <class Left, class Right>
+  requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
+inline bool isgreater(Left left, Right right) noexcept { return left > right; }
+template <class Left, class Right>
+  requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
+inline bool isgreaterequal(Left left, Right right) noexcept {
+  return left >= right;
+}
+template <class Left, class Right>
+  requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
+inline bool isless(Left left, Right right) noexcept { return left < right; }
+template <class Left, class Right>
+  requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
+inline bool islessequal(Left left, Right right) noexcept { return left <= right; }
+template <class Left, class Right>
+  requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
+inline bool islessgreater(Left left, Right right) noexcept {
+  return left < right || left > right;
+}
+template <class Left, class Right>
+  requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
+inline bool isunordered(Left left, Right right) noexcept {
+  return isnan(left) || isnan(right);
+}
+
+inline float nanf(const char *) noexcept {
+  return numeric_limits<float>::quiet_NaN();
+}
+inline double nan(const char *) noexcept {
+  return numeric_limits<double>::quiet_NaN();
+}
+inline long double nanl(const char *tag) noexcept {
+  (void)tag;
+  return numeric_limits<long double>::quiet_NaN();
+}
+
+
+// Polynomial recurrences adapted from Boost.Math 1.91.0:
+// boost/math/special_functions/{laguerre,legendre,hermite}.hpp (BSL-1.0).
+template <class T>
+  requires is_floating_point_v<T>
+inline T assoc_laguerre(unsigned n, unsigned m, T x) {
+  if (n == 0) return T{1};
+  T previous = T{1};
+  T current = T(m + 1) - x;
+  for (unsigned k = 1; k < n; ++k) {
+    const T next = ((T(2 * k + m + 1) - x) * current -
+                    T(k + m) * previous) /
+                   T(k + 1);
+    previous = current;
+    current = next;
+  }
+  return current;
+}
+inline float assoc_laguerref(unsigned n, unsigned m, float x) {
+  return assoc_laguerre(n, m, x);
+}
+inline long double assoc_laguerrel(unsigned n, unsigned m, long double x) {
+  return assoc_laguerre(n, m, x);
+}
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T laguerre(unsigned n, T x) { return assoc_laguerre(n, 0, x); }
+inline float laguerref(unsigned n, float x) { return laguerre(n, x); }
+inline long double laguerrel(unsigned n, long double x) {
+  return laguerre(n, x);
+}
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T hermite(unsigned n, T x) {
+  if (n == 0) return T{1};
+  T previous = T{1};
+  T current = T{2} * x;
+  for (unsigned k = 1; k < n; ++k) {
+    const T next = T{2} * x * current - T(2 * k) * previous;
+    previous = current;
+    current = next;
+  }
+  return current;
+}
+inline float hermitef(unsigned n, float x) { return hermite(n, x); }
+inline long double hermitel(unsigned n, long double x) {
+  return hermite(n, x);
+}
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T legendre(unsigned l, T x) {
+  if (l == 0) return T{1};
+  T previous = T{1};
+  T current = x;
+  for (unsigned n = 1; n < l; ++n) {
+    const T next = (T(2 * n + 1) * x * current - T(n) * previous) /
+                   T(n + 1);
+    previous = current;
+    current = next;
+  }
+  return current;
+}
+inline float legendref(unsigned l, float x) { return legendre(l, x); }
+inline long double legendrel(unsigned l, long double x) {
+  return legendre(l, x);
+}
+
+template <class T>
+  requires is_floating_point_v<T>
+inline T assoc_legendre(unsigned l, unsigned m, T x) {
+  if (m > l) return T{};
+  T pmm = T{1};
+  if (m != 0) {
+    const T root = sqrt((T{1} - x) * (T{1} + x));
+    T factor = T{1};
+    for (unsigned i = 1; i <= m; ++i) {
+      pmm *= -factor * root;
+      factor += T{2};
+    }
+  }
+  if (l == m) return pmm;
+  T previous = pmm;
+  T current = T(2 * m + 1) * x * pmm;
+  for (unsigned n = m + 1; n < l; ++n) {
+    const T next = (T(2 * n + 1) * x * current - T(n + m) * previous) /
+                   T(n - m + 1);
+    previous = current;
+    current = next;
+  }
+  return current;
+}
+inline float assoc_legendref(unsigned l, unsigned m, float x) {
+  return assoc_legendre(l, m, x);
+}
+inline long double assoc_legendrel(unsigned l, unsigned m, long double x) {
+  return assoc_legendre(l, m, x);
+}
+
+// Adapted from Boost.Math beta.hpp: evaluate through log-gamma to avoid the
+// premature overflow of tgamma(x) * tgamma(y).
+template <class T>
+  requires is_floating_point_v<T>
+inline T beta(T x, T y) {
+  return exp(lgamma(x) + lgamma(y) - lgamma(x + y));
+}
+inline float betaf(float x, float y) { return beta(x, y); }
+inline long double betal(long double x, long double y) { return beta(x, y); }
+
+// Boost.Math spherical_harmonic.hpp normalization at azimuth zero.
+template <class T>
+  requires is_floating_point_v<T>
+inline T sph_legendre(unsigned l, unsigned m, T theta) {
+  if (m > l) return T{};
+  T ratio = T{1};
+  for (unsigned k = l - m + 1; k <= l + m; ++k) ratio /= T(k);
+  const T pi = T(3.141592653589793238462643383279502884L);
+  return sqrt(T(2 * l + 1) * ratio / (T{4} * pi)) *
+         assoc_legendre(l, m, cos(theta));
+}
+inline float sph_legendref(unsigned l, unsigned m, float theta) {
+  return sph_legendre(l, m, theta);
+}
+inline long double sph_legendrel(unsigned l, unsigned m, long double theta) {
+  return sph_legendre(l, m, theta);
+}
+
+FTL_CMATH_END
+
+#ifdef FTL_REPLACE_STL
+#define HUGE_VAL (::std::numeric_limits<double>::infinity())
+#define HUGE_VALF (::std::numeric_limits<float>::infinity())
+#define HUGE_VALL (::std::numeric_limits<long double>::infinity())
+#define INFINITY (::std::numeric_limits<float>::infinity())
+#define NAN (::std::numeric_limits<float>::quiet_NaN())
+#else
+#define HUGE_VAL (::ftl::numeric_limits<double>::infinity())
+#define HUGE_VALF (::ftl::numeric_limits<float>::infinity())
+#define HUGE_VALL (::ftl::numeric_limits<long double>::infinity())
+#define INFINITY (::ftl::numeric_limits<float>::infinity())
+#define NAN (::ftl::numeric_limits<float>::quiet_NaN())
+#endif
+
+#undef FTL_CMATH_BEGIN
+#undef FTL_CMATH_END
+#endif

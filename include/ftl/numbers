@@ -1,0 +1,50 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_NUMBERS_HEADER
+#define FTL_NUMBERS_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <type_traits>
+#else
+#include <ftl/type_traits>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+namespace numbers {
+namespace detail {
+template <class T> constexpr T constant(long double value) noexcept {
+  static_assert(is_floating_point_v<T>,
+                "mathematical constants require a floating-point type");
+  return static_cast<T>(value);
+}
+} // namespace detail
+
+#define FTL_MATH_CONSTANT(name, value)                                        \
+  template <class T> inline constexpr T name##_v = detail::constant<T>(value); \
+  inline constexpr double name = name##_v<double>
+
+FTL_MATH_CONSTANT(e, 2.718281828459045235360287471352662498L);
+FTL_MATH_CONSTANT(log2e, 1.442695040888963407359924681001892137L);
+FTL_MATH_CONSTANT(log10e, 0.434294481903251827651128918916605082L);
+FTL_MATH_CONSTANT(pi, 3.141592653589793238462643383279502884L);
+FTL_MATH_CONSTANT(inv_pi, 0.318309886183790671537767526745028724L);
+FTL_MATH_CONSTANT(inv_sqrtpi, 0.564189583547756286948079451560772586L);
+FTL_MATH_CONSTANT(ln2, 0.693147180559945309417232121458176568L);
+FTL_MATH_CONSTANT(ln10, 2.302585092994045684017991454684364208L);
+FTL_MATH_CONSTANT(sqrt2, 1.414213562373095048801688724209698079L);
+FTL_MATH_CONSTANT(sqrt3, 1.732050807568877293527446341505872367L);
+FTL_MATH_CONSTANT(inv_sqrt3, 0.577350269189625764509148780501957456L);
+FTL_MATH_CONSTANT(egamma, 0.577215664901532860606512090082402431L);
+FTL_MATH_CONSTANT(phi, 1.618033988749894848204586834365638118L);
+
+#undef FTL_MATH_CONSTANT
+} // namespace numbers
+
+#if !defined(__cpp_lib_math_constants) || __cpp_lib_math_constants < 201907L
+#undef __cpp_lib_math_constants
+#define __cpp_lib_math_constants 201907L
+#endif
+
+FTL_END_NAMESPACE
+#endif

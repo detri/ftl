@@ -46,6 +46,7 @@ function(add_ftl_test header)
             add_executable(${target} gtest_driver.cpp $<TARGET_OBJECTS:${object}>)
             target_link_libraries(${target} PRIVATE GTest::gtest_main)
         endif ()
+        target_link_libraries(${target} PRIVATE ftl)
         target_compile_options(${target} PRIVATE "$<$<CXX_COMPILER_ID:MSVC>:/EHsc>")
         add_test(NAME "${mode}.${header}" COMMAND ${target})
     endforeach ()
@@ -166,6 +167,25 @@ add_ftl_standalone_check(feature_macros checks/feature_macros.cpp)
 add_ftl_standalone_check(no_allocation checks/no_allocation.cpp)
 add_ftl_freestanding_link_check(freestanding_link checks/freestanding_link.cpp)
 add_ftl_freestanding_link_check(
+        fenv_freestanding_link
+        checks/fenv_freestanding_link.cpp
+)
+add_ftl_freestanding_link_check(
+        cmath_freestanding_link
+        checks/cmath_freestanding_link.cpp
+)
+target_link_libraries(ftl_check_cmath_freestanding_link PRIVATE ftl)
+if (MSVC)
+    target_compile_options(ftl_check_fenv_freestanding_link PRIVATE /O2 /GS-)
+    target_compile_options(ftl_check_cmath_freestanding_link PRIVATE /O2 /GS-)
+else ()
+    target_compile_options(ftl_check_fenv_freestanding_link
+            PRIVATE -O2 -fno-stack-protector)
+    target_compile_options(ftl_check_cmath_freestanding_link
+            PRIVATE -O2 -fno-stack-protector -fno-exceptions
+            -fno-unwind-tables -fno-asynchronous-unwind-tables)
+endif ()
+add_ftl_freestanding_link_check(
         cstring_freestanding_link
         checks/cstring_freestanding_link.cpp
 )
@@ -282,6 +302,7 @@ foreach (header IN ITEMS
         bitset
         limits
         ratio
+        numbers
         ctime
         chrono
         version
@@ -290,6 +311,10 @@ foreach (header IN ITEMS
         cassert
         cerrno
         cfloat
+        cfenv
+        cmath
+        cmath_accuracy
+        complex
         climits
         cstdarg
         csetjmp

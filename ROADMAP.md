@@ -423,7 +423,10 @@ Take these closures in order:
    `<ratio>` and `<ctime>` complete
 2. `<system_error>` + `<stdexcept>` + `<stacktrace>` — **runtime closure
    complete**
-3. `<cfenv>` + `<cmath>` + `<numbers>` + `<complex>`
+3. `<cfenv>` + `<cmath>` + `<numbers>` + `<complex>` — **`<numbers>`
+   complete; OpenLibm real/complex core complete and locally validated on
+   MSVC, ClangCL, GCC, and Clang; Apple AArch64 CI and the remaining
+   Boost.Math special functions are pending**
 4. `<random>` + `<valarray>`
 
 **Exit:** numeric and time facilities have specified edge behavior and do not
@@ -466,6 +469,31 @@ The `<stacktrace>` stream insertion and formatter specializations depend on
 Stage 7's `<ostream>` and `<format>` closures. They, and the
 `__cpp_lib_stacktrace` advertisement, remain deferred until those headers are
 complete; the runtime surface does not import vendor C++ library APIs.
+
+Stage 5.3 starts with the freestanding, header-only C++23 `<numbers>` surface.
+The remaining closure will be taken in dependency order:
+
+1. Own `<fenv.h>` and `<cfenv>` surfaces over a private environment layer.
+   x86-64 saves and restores both MXCSR and the x87 control/status state;
+   AArch64 uses FPCR/FPSR. Compiler barriers surround environment mutations.
+2. Adapt OpenLibm's MIT-licensed binary32/binary64 kernels and C99 complex
+   functions into FTL-owned detail code, retaining upstream notices and file
+   provenance. Add only the x86-64 and AArch64 selection needed by the
+   supported matrix, plus x86 binary80 operations where `long double` uses it.
+3. Build the `<cmath>` overload and classification surface over those kernels,
+   then adapt the C++23 special mathematical functions from Boost.Math under
+   the Boost Software License 1.0. Keep Boost policy/template machinery out of
+   the public implementation unless a required function genuinely needs it.
+4. Implement `<complex>` last: the value type and elementary arithmetic are
+   local and header-only; transcendental functions route through the completed
+   real kernels or adapted OpenLibm complex routines so branch cuts, signed
+   zero, infinities, and NaNs have one source of truth.
+
+Each imported source keeps its upstream license header and is listed in a
+Stage 5.3 attribution file. Completion requires normal and `FTL_REPLACE_STL`
+public-header checks, freestanding linkage, rounding-mode/exception tests, and
+an accuracy suite measured in ULPs against high-precision reference vectors on
+every supported floating-point format.
 
 ### Stage 6 — Concurrency
 

@@ -1,0 +1,18 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_DETAIL_COMPLEX_ABI_HEADER
+#define FTL_DETAIL_COMPLEX_ABI_HEADER
+
+template <class T> struct ftl_olm_complex {
+  T real;
+  T imag;
+
+  constexpr ftl_olm_complex(T real_value = T{}, T imag_value = T{})
+      : real(real_value), imag(imag_value) {}
+
+  template <class U>
+  constexpr ftl_olm_complex(const ftl_olm_complex<U> &other)
+      : real(static_cast<T>(other.real)), imag(static_cast<T>(other.imag)) {}
+};
+
+#endif
