@@ -79,6 +79,7 @@ function(add_ftl_freestanding_link_check name source)
     target_compile_features(ftl_check_${name} PRIVATE cxx_std_23)
     target_compile_definitions(ftl_check_${name} PRIVATE FTL_REPLACE_STL)
     target_include_directories(ftl_check_${name} PRIVATE ../include/ftl)
+    target_link_libraries(ftl_check_${name} PRIVATE ftl_compiler_runtime)
 
     if (MSVC)
         target_compile_options(
