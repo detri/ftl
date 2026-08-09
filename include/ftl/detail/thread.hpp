@@ -11,14 +11,6 @@
 #include <ftl/cstdint>
 #endif
 
-#if defined(__linux__) || defined(__APPLE__)
-#include <errno.h>
-#include <pthread.h>
-#include <sched.h>
-#include <time.h>
-#include <unistd.h>
-#endif
-
 #ifdef FTL_REPLACE_STL
 #define FTL_THREAD_DETAIL_BEGIN_NAMESPACE namespace std::detail {
 #define FTL_THREAD_DETAIL_END_NAMESPACE }
@@ -142,76 +134,155 @@ inline unsigned int native_thread_hardware_concurrency() noexcept {
 
 #elif defined(__linux__) || defined(__APPLE__)
 
-using native_thread_handle = pthread_t;
+// pthread_t is opaque at the C++ library boundary.
+//
+// FTL currently targets 64-bit Darwin/Linux. Both supported ABIs
+// represent pthread_t in one pointer-sized machine word. Keeping the
+// representation as uintptr_t prevents hosted pthread headers from
+// leaking their C header dependency graph into FTL.
+using native_thread_handle = uintptr_t;
 using native_thread_id = uintptr_t;
 
-inline native_thread_id
-native_thread_id_from_handle(native_thread_handle handle) noexcept {
+using posix_thread_entry = void* (*)(void*);
+
+extern "C" int pthread_create(
+    native_thread_handle*,
+    const void*,
+    posix_thread_entry,
+    void*);
+
+extern "C" int pthread_join(
+    native_thread_handle,
+    void**);
+
+extern "C" int pthread_detach(
+    native_thread_handle);
+
+extern "C" native_thread_handle pthread_self();
+
+extern "C" int sched_yield();
+
+struct native_timespec {
+    long tv_sec;
+    long tv_nsec;
+};
+
+extern "C" int nanosleep(
+    const native_timespec*,
+    native_timespec*);
+
 #if defined(__APPLE__)
-  return reinterpret_cast<native_thread_id>(handle);
+
+extern "C" int* __error();
+
+inline int native_errno() noexcept {
+    return *__error();
+}
+
 #else
-  return static_cast<native_thread_id>(handle);
+
+extern "C" int* __errno_location();
+
+inline int native_errno() noexcept {
+    return *__errno_location();
+}
+
 #endif
+
+inline constexpr int native_eintr = 4;
+
+inline native_thread_id
+native_thread_id_from_handle(
+    native_thread_handle handle) noexcept {
+    return handle;
 }
 
-inline void *posix_thread_start(void *argument) noexcept {
-  auto *state = static_cast<thread_start_state *>(argument);
+inline void*
+posix_thread_start(void* argument) noexcept {
+    auto* state =
+        static_cast<thread_start_state*>(argument);
 
-  state->run_(state);
-  return nullptr;
+    state->run_(state);
+    return nullptr;
 }
 
-inline bool native_thread_create(native_thread_handle &handle,
-                                 native_thread_id &id,
-                                 thread_start_state *state) noexcept {
-  native_thread_handle created{};
+inline bool native_thread_create(
+    native_thread_handle& handle,
+    native_thread_id& id,
+    thread_start_state* state) noexcept {
+    native_thread_handle created = 0;
 
-  const int result =
-      pthread_create(&created, nullptr, &posix_thread_start, state);
+    const int result =
+        pthread_create(
+            &created,
+            nullptr,
+            &posix_thread_start,
+            state);
 
-  if (result != 0)
-    return false;
+    if (result != 0)
+        return false;
 
-  handle = created;
-  id = native_thread_id_from_handle(created);
+    handle = created;
+    id = native_thread_id_from_handle(
+        created);
 
-  return true;
+    return true;
 }
 
-inline bool native_thread_join(native_thread_handle handle) noexcept {
-  return pthread_join(handle, nullptr) == 0;
+inline bool native_thread_join(
+    native_thread_handle handle) noexcept {
+    return pthread_join(
+        handle,
+        nullptr) == 0;
 }
 
-inline bool native_thread_detach(native_thread_handle handle) noexcept {
-  return pthread_detach(handle) == 0;
+inline bool native_thread_detach(
+    native_thread_handle handle) noexcept {
+    return pthread_detach(handle) == 0;
 }
 
-inline native_thread_id native_this_thread_id() noexcept {
-  return native_thread_id_from_handle(pthread_self());
+inline native_thread_id
+native_this_thread_id() noexcept {
+    return native_thread_id_from_handle(
+        pthread_self());
 }
 
-inline void native_thread_yield() noexcept { (void)sched_yield(); }
-
-inline void native_thread_sleep(uint64_t nanoseconds) noexcept {
-  constexpr uint64_t nanoseconds_per_second = 1000000000ULL;
-
-  timespec requested{static_cast<time_t>(nanoseconds / nanoseconds_per_second),
-                     static_cast<long>(nanoseconds % nanoseconds_per_second)};
-
-  timespec remaining{};
-
-  while (nanosleep(&requested, &remaining) != 0) {
-    if (errno != EINTR)
-      return;
-
-    requested = remaining;
-  }
+inline void native_thread_yield() noexcept {
+    (void)sched_yield();
 }
 
-inline unsigned int native_thread_hardware_concurrency() noexcept {
-  const long count = sysconf(_SC_NPROCESSORS_ONLN);
+inline void native_thread_sleep(
+    uint64_t nanoseconds) noexcept {
+    constexpr uint64_t nanoseconds_per_second =
+        1000000000ULL;
 
-  return count > 0 ? static_cast<unsigned int>(count) : 0u;
+    native_timespec requested{
+        static_cast<long>(
+            nanoseconds / nanoseconds_per_second),
+        static_cast<long>(
+            nanoseconds % nanoseconds_per_second)
+    };
+
+    native_timespec remaining{};
+
+    while (nanosleep(
+        &requested,
+        &remaining) != 0) {
+        if (native_errno() != native_eintr)
+            return;
+
+        requested = remaining;
+    }
+}
+
+inline unsigned int
+native_thread_hardware_concurrency() noexcept {
+    // hardware_concurrency() is explicitly permitted to return
+    // zero when the implementation cannot compute the value.
+    //
+    // Keep the threading ABI shim independent of sysconf/sysctl
+    // until we add a proper platform system-information layer.
+    return 0;
 }
 
 #else
