@@ -154,6 +154,8 @@ dependency order, not hundreds of individual overloads.
 | `<flat_map>`         | Stage 4.3         |
 | `<ratio>`            | Stage 5.1         |
 | `<ctime>`            | Stage 5.1         |
+| `<stdexcept>`        | Stage 5.2         |
+| `<system_error>`     | Stage 5.2         |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -164,15 +166,15 @@ Normal namespace mode still provides and tests the library types directly.
 The following public headers exist but remain incomplete against their C++23
 synopses:
 
-| Header        | Implemented direction                                                                                            | Major remaining groups                                                                                             |
-|---------------|------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
-| `<atomic>`    | integral atomics and memory orders                                                                               | generic/pointer atomics, `atomic_ref`, flag, fences, wait/notify, lock-free rules                                  |
-| `<stdexcept>` | standard exception hierarchy, owned C-string messages, `basic_string` constructors, non-throwing copy operations | full synopsis and ABI/behavior audit                                                                               |
-| `<iosfwd>`    | `char_traits`, fundamental stream types, aliases, and stream-class forward declarations                          | complete C++23 forward-declaration and positioning-type inventory                                                  |
-| `<streambuf>` | input/get-area stream-buffer machinery needed by seeded input streams                                            | put area, positioning/seeking, locale, synchronization, putback, and complete synopsis                             |
-| `<ios>`       | stream state, buffer association, state observers, and boolean conversion                                        | full `ios_base`/`basic_ios` formatting, locales, callbacks, ties, exception masks, and synopsis                    |
-| `<istream>`   | core unformatted character input, bulk reads, stream-state propagation, and user-defined extraction integration  | sentry, formatted extraction, remaining unformatted overloads, positioning, synchronization, and complete synopsis |
-| `<chrono>`    | durations, time points, calendars, clocks, clock conversion, literals, and `hh_mm_ss`                               | tzdb; formatters, stream insertion, and `from_stream` after Stage 7                                                  |
+| Header         | Implemented direction                                                                                           | Major remaining groups                                                                                             |
+|----------------|-----------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
+| `<atomic>`     | integral atomics and memory orders                                                                              | generic/pointer atomics, `atomic_ref`, flag, fences, wait/notify, lock-free rules                                  |
+| `<stacktrace>` | native capture, entries, allocator-aware container, comparisons, strings, PMR, and hashes                       | stream insertion and formatters after Stage 7; feature-test advertisement                                          |
+| `<iosfwd>`     | `char_traits`, fundamental stream types, aliases, and stream-class forward declarations                         | complete C++23 forward-declaration and positioning-type inventory                                                  |
+| `<streambuf>`  | input/get-area stream-buffer machinery needed by seeded input streams                                           | put area, positioning/seeking, locale, synchronization, putback, and complete synopsis                             |
+| `<ios>`        | stream state, buffer association, state observers, and boolean conversion                                       | full `ios_base`/`basic_ios` formatting, locales, callbacks, ties, exception masks, and synopsis                    |
+| `<istream>`    | core unformatted character input, bulk reads, stream-state propagation, and user-defined extraction integration | sentry, formatted extraction, remaining unformatted overloads, positioning, synchronization, and complete synopsis |
+| `<chrono>`     | durations, time points, calendars, clocks, clock conversion, literals, and `hh_mm_ss`                           | tzdb; formatters, stream insertion, and `from_stream` after Stage 7                                                |
 
 `include/ftl/detail/rapidhash` is an implementation detail, not a standard
 header or roadmap milestone.
@@ -190,7 +192,7 @@ remain required when C++23 still specifies them; they are not silently dropped.
 |---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Algorithms/numerics       | `<numbers>`, `<random>`, `<valarray>`                                                                                                                              |
 | Text/encoding             | `<codecvt>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                               |
-| Errors/time/localization  | `<system_error>`, `<stacktrace>`, `<locale>`, `<clocale>`                                                                                                         |
+| Errors/time/localization  | `<locale>`, `<clocale>`                                                                                                                                            |
 | C numerics/text           | `<cfenv>`, `<cmath>`, `<complex>`                                                                                                                                  |
 | I/O/formatting/files      | `<cstdio>`, `<fstream>`, `<iomanip>`, `<iostream>`, `<ostream>`, `<sstream>`, `<spanstream>`, `<strstream>`, `<syncstream>`, `<filesystem>`, `<format>`, `<print>` |
 | Concurrency               | `<barrier>`, `<condition_variable>`, `<future>`, `<latch>`, `<mutex>`, `<semaphore>`, `<shared_mutex>`, `<stop_token>`, `<thread>`                                 |
@@ -419,7 +421,8 @@ Take these closures in order:
 
 1. `<ratio>` + `<chrono>` + `<ctime>` — **computational closure seeded**;
    `<ratio>` and `<ctime>` complete
-2. `<system_error>` + `<stdexcept>` + `<stacktrace>`
+2. `<system_error>` + `<stdexcept>` + `<stacktrace>` — **runtime closure
+   complete**
 3. `<cfenv>` + `<cmath>` + `<numbers>` + `<complex>`
 4. `<random>` + `<valarray>`
 
@@ -449,6 +452,20 @@ hosted-data undertaking. After Stage 7 completes `<locale>`, `<format>`, and the
 stream headers, return to `<chrono>` to add its formatters, stream insertion,
 and `from_stream` interfaces. Only then, and after the separate tzdb closure,
 can `<chrono>` move from seeded to complete.
+
+Stage 5.2 completes the independently usable C++23 `<system_error>` and
+`<stdexcept>` surfaces and the runtime `<stacktrace>` closure. Error codes,
+conditions, categories, portable `errc` mappings, `system_error`, comparisons,
+and rapid hashes follow N4950; category messages preserve `errno`. Stacktraces
+capture native frame addresses on Windows and POSIX hosts, honor allocator and
+skip/depth behavior, and provide the specified container, comparison, string,
+PMR, and hash interfaces. Native symbol/source lookup is allowed to report no
+information and currently does so.
+
+The `<stacktrace>` stream insertion and formatter specializations depend on
+Stage 7's `<ostream>` and `<format>` closures. They, and the
+`__cpp_lib_stacktrace` advertisement, remain deferred until those headers are
+complete; the runtime surface does not import vendor C++ library APIs.
 
 ### Stage 6 — Concurrency
 

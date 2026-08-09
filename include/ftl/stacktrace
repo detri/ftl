@@ -1,0 +1,259 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_STACKTRACE_HEADER
+#define FTL_STACKTRACE_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <compare>
+#include <cstdint>
+#include <functional>
+#include <iterator>
+#include <memory>
+#include <memory_resource>
+#include <stdexcept>
+#include <string>
+#include <vector>
+#else
+#include <ftl/compare>
+#include <ftl/cstdint>
+#include <ftl/functional>
+#include <ftl/iterator>
+#include <ftl/memory>
+#include <ftl/memory_resource>
+#include <ftl/stdexcept>
+#include <ftl/string>
+#include <ftl/vector>
+#endif
+
+#if defined(_WIN32)
+extern "C" unsigned short RtlCaptureStackBackTrace(unsigned long, unsigned long,
+                                                   void **, unsigned long *);
+#else
+extern "C" int backtrace(void **, int);
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+template <class Allocator> class basic_stacktrace;
+
+class stacktrace_entry {
+public:
+  using native_handle_type = void *;
+
+  constexpr stacktrace_entry() noexcept = default;
+  constexpr native_handle_type native_handle() const noexcept {
+    return address_;
+  }
+  constexpr explicit operator bool() const noexcept {
+    return address_ != nullptr;
+  }
+  string description() const { return {}; }
+  string source_file() const { return {}; }
+  uint_least32_t source_line() const { return 0; }
+
+  friend constexpr bool operator==(stacktrace_entry,
+                                   stacktrace_entry) noexcept = default;
+  friend constexpr strong_ordering
+  operator<=>(stacktrace_entry left, stacktrace_entry right) noexcept {
+    return compare_three_way{}(left.address_, right.address_);
+  }
+
+private:
+  explicit constexpr stacktrace_entry(void *address) noexcept
+      : address_(address) {}
+  template <class> friend class basic_stacktrace;
+  void *address_ = nullptr;
+};
+
+template <class Allocator> class basic_stacktrace {
+public:
+  using value_type = stacktrace_entry;
+  using const_reference = const value_type &;
+  using reference = value_type &;
+  using allocator_type = Allocator;
+  using storage_type = vector<value_type, allocator_type>;
+  using const_iterator = typename storage_type::const_iterator;
+  using iterator = const_iterator;
+  using reverse_iterator = typename storage_type::const_reverse_iterator;
+  using const_reverse_iterator = typename storage_type::const_reverse_iterator;
+  using difference_type = typename storage_type::difference_type;
+  using size_type = typename storage_type::size_type;
+
+  static basic_stacktrace current(
+      const allocator_type &allocator = allocator_type()) noexcept {
+    return current(0, static_cast<size_type>(128), allocator);
+  }
+  static basic_stacktrace current(
+      size_type skip,
+      const allocator_type &allocator = allocator_type()) noexcept {
+    return current(skip, static_cast<size_type>(128), allocator);
+  }
+  static basic_stacktrace current(size_type skip, size_type max_depth,
+                                  const allocator_type &allocator =
+                                      allocator_type()) noexcept {
+    basic_stacktrace result{allocator};
+    if (max_depth == 0)
+      return result;
+
+    void *addresses[128];
+    const size_type requested = max_depth < 128 ? max_depth : 128;
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+#if defined(_WIN32)
+      const auto count = static_cast<size_type>(RtlCaptureStackBackTrace(
+          static_cast<unsigned long>(skip + 1),
+          static_cast<unsigned long>(requested), addresses, nullptr));
+#else
+      const int captured = ::backtrace(addresses, static_cast<int>(requested));
+      const size_type first = skip + 1 < static_cast<size_type>(captured)
+                                  ? skip + 1
+                                  : static_cast<size_type>(captured);
+      const size_type count = static_cast<size_type>(captured) - first;
+      for (size_type index = 0; index < count; ++index)
+        addresses[index] = addresses[first + index];
+#endif
+      result.frames_.reserve(count);
+      for (size_type index = 0; index < count; ++index)
+        result.frames_.push_back(stacktrace_entry{addresses[index]});
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      result.frames_.clear();
+    }
+#endif
+    return result;
+  }
+
+  basic_stacktrace() noexcept(is_nothrow_default_constructible_v<allocator_type>) =
+      default;
+  explicit basic_stacktrace(const allocator_type &allocator) noexcept
+      : frames_(allocator) {}
+  basic_stacktrace(const basic_stacktrace &) = default;
+  basic_stacktrace(basic_stacktrace &&) noexcept = default;
+  basic_stacktrace(const basic_stacktrace &other, const allocator_type &allocator)
+      : frames_(other.frames_, allocator) {}
+  basic_stacktrace(basic_stacktrace &&other, const allocator_type &allocator)
+      : frames_(move(other.frames_), allocator) {}
+  basic_stacktrace &operator=(const basic_stacktrace &) = default;
+  basic_stacktrace &operator=(basic_stacktrace &&) noexcept(
+      allocator_traits<Allocator>::propagate_on_container_move_assignment::value ||
+      allocator_traits<Allocator>::is_always_equal::value) = default;
+
+  allocator_type get_allocator() const noexcept {
+    return frames_.get_allocator();
+  }
+  const_iterator begin() const noexcept { return frames_.begin(); }
+  const_iterator end() const noexcept { return frames_.end(); }
+  const_iterator cbegin() const noexcept { return frames_.cbegin(); }
+  const_iterator cend() const noexcept { return frames_.cend(); }
+  const_reverse_iterator rbegin() const noexcept {
+    return const_reverse_iterator{cend()};
+  }
+  const_reverse_iterator rend() const noexcept {
+    return const_reverse_iterator{cbegin()};
+  }
+  const_reverse_iterator crbegin() const noexcept { return rbegin(); }
+  const_reverse_iterator crend() const noexcept { return rend(); }
+  [[nodiscard]] bool empty() const noexcept { return frames_.empty(); }
+  size_type size() const noexcept { return frames_.size(); }
+  size_type max_size() const noexcept { return frames_.max_size(); }
+  const_reference operator[](size_type index) const { return frames_[index]; }
+  const_reference at(size_type index) const { return frames_.at(index); }
+
+  void swap(basic_stacktrace &other) noexcept(
+      allocator_traits<Allocator>::propagate_on_container_swap::value ||
+      allocator_traits<Allocator>::is_always_equal::value) {
+    frames_.swap(other.frames_);
+  }
+
+private:
+  template <class A, class B>
+  friend bool operator==(const basic_stacktrace<A> &,
+                         const basic_stacktrace<B> &) noexcept;
+  storage_type frames_;
+};
+
+template <class A, class B>
+bool operator==(const basic_stacktrace<A> &left,
+                const basic_stacktrace<B> &right) noexcept {
+  if (left.size() != right.size())
+    return false;
+  for (typename basic_stacktrace<A>::size_type index = 0; index < left.size();
+       ++index)
+    if (left[index] != right[index])
+      return false;
+  return true;
+}
+
+template <class A, class B>
+strong_ordering operator<=>(const basic_stacktrace<A> &left,
+                            const basic_stacktrace<B> &right) noexcept {
+  if (left.size() != right.size())
+    return left.size() < right.size() ? strong_ordering::less
+                                      : strong_ordering::greater;
+  for (typename basic_stacktrace<A>::size_type index = 0; index < left.size();
+       ++index)
+    if (auto result = left[index] <=> right[index];
+        result != strong_ordering::equal)
+      return result;
+  return strong_ordering::equal;
+}
+
+template <class Allocator>
+void swap(basic_stacktrace<Allocator> &left,
+          basic_stacktrace<Allocator> &right) noexcept(noexcept(left.swap(right))) {
+  left.swap(right);
+}
+
+inline string to_string(const stacktrace_entry &entry) {
+  if (!entry)
+    return {};
+  constexpr char digits[] = "0123456789abcdef";
+  uintptr_t value = reinterpret_cast<uintptr_t>(entry.native_handle());
+  char buffer[2 + sizeof(uintptr_t) * 2];
+  buffer[0] = '0';
+  buffer[1] = 'x';
+  for (size_t index = sizeof(uintptr_t) * 2; index != 0; --index) {
+    buffer[index + 1] = digits[value & 15];
+    value >>= 4;
+  }
+  return string{buffer, sizeof(buffer)};
+}
+
+template <class Allocator>
+string to_string(const basic_stacktrace<Allocator> &trace) {
+  string result;
+  for (const auto &entry : trace) {
+    if (!result.empty())
+      result += '\n';
+    result += to_string(entry);
+  }
+  return result;
+}
+
+using stacktrace = basic_stacktrace<allocator<stacktrace_entry>>;
+namespace pmr {
+using stacktrace = basic_stacktrace<polymorphic_allocator<stacktrace_entry>>;
+}
+
+template <> struct hash<stacktrace_entry> {
+  size_t operator()(stacktrace_entry value) const noexcept {
+    void *handle = value.native_handle();
+    return static_cast<size_t>(ftl_rapidhash::rapidhash(&handle, sizeof(handle)));
+  }
+};
+template <class Allocator> struct hash<basic_stacktrace<Allocator>> {
+  size_t operator()(const basic_stacktrace<Allocator> &value) const noexcept {
+    size_t result = 0;
+    for (const auto &entry : value) {
+      void *handle = entry.native_handle();
+      result = static_cast<size_t>(ftl_rapidhash::rapidhash_with_seed(
+          &handle, sizeof(handle), result));
+    }
+    return result;
+  }
+};
+
+FTL_END_NAMESPACE
+
+#endif

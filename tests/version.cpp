@@ -31,6 +31,9 @@
 #if __cpp_lib_constexpr_bitset < 202207L
 #error "__cpp_lib_constexpr_bitset must be defined"
 #endif
+#ifdef __cpp_lib_stacktrace
+#error "stacktrace remains unadvertised until Stage 7 formatting completes"
+#endif
 
 static_assert(__cpp_lib_execution >= 201902L);
 

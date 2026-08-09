@@ -1,0 +1,284 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_SYSTEM_ERROR_HEADER
+#define FTL_SYSTEM_ERROR_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <compare>
+#include <cstddef>
+#include <functional>
+#include <cerrno>
+#include <stdexcept>
+#include <string>
+#include <type_traits>
+#include <__system_error/errc.hpp>
+#else
+#include <ftl/compare>
+#include <ftl/cstddef>
+#include <ftl/functional>
+#include <ftl/cerrno>
+#include <ftl/stdexcept>
+#include <ftl/string>
+#include <ftl/type_traits>
+#include <ftl/__system_error/errc.hpp>
+#endif
+
+extern "C" char *strerror(int);
+
+FTL_BEGIN_NAMESPACE
+
+class error_code;
+class error_condition;
+
+template <class T> struct is_error_code_enum : false_type {};
+template <class T> struct is_error_condition_enum : false_type {};
+template <class T>
+inline constexpr bool is_error_code_enum_v = is_error_code_enum<T>::value;
+template <class T>
+inline constexpr bool is_error_condition_enum_v =
+    is_error_condition_enum<T>::value;
+template <> struct is_error_condition_enum<errc> : true_type {};
+
+class error_category {
+public:
+  constexpr error_category() noexcept = default;
+  virtual ~error_category() = default;
+  error_category(const error_category &) = delete;
+  error_category &operator=(const error_category &) = delete;
+
+  virtual const char *name() const noexcept = 0;
+  virtual error_condition default_error_condition(int) const noexcept;
+  virtual bool equivalent(int, const error_condition &) const noexcept;
+  virtual bool equivalent(const error_code &, int) const noexcept;
+  virtual string message(int) const = 0;
+
+  bool operator==(const error_category &other) const noexcept {
+    return this == &other;
+  }
+  strong_ordering operator<=>(const error_category &other) const noexcept {
+    return compare_three_way{}(this, &other);
+  }
+};
+
+const error_category &generic_category() noexcept;
+const error_category &system_category() noexcept;
+
+class error_code {
+public:
+  error_code() noexcept : value_(0), category_(&system_category()) {}
+  error_code(int value, const error_category &category) noexcept
+      : value_(value), category_(&category) {}
+
+  template <class ErrorCodeEnum>
+    requires is_error_code_enum_v<ErrorCodeEnum>
+  error_code(ErrorCodeEnum value) noexcept {
+    *this = make_error_code(value);
+  }
+
+  void assign(int value, const error_category &category) noexcept {
+    value_ = value;
+    category_ = &category;
+  }
+  template <class ErrorCodeEnum>
+    requires is_error_code_enum_v<ErrorCodeEnum>
+  error_code &operator=(ErrorCodeEnum value) noexcept {
+    *this = make_error_code(value);
+    return *this;
+  }
+  void clear() noexcept { assign(0, system_category()); }
+
+  int value() const noexcept { return value_; }
+  const error_category &category() const noexcept { return *category_; }
+  error_condition default_error_condition() const noexcept;
+  string message() const { return category().message(value()); }
+  explicit operator bool() const noexcept { return value_ != 0; }
+
+private:
+  int value_;
+  const error_category *category_;
+};
+
+class error_condition {
+public:
+  error_condition() noexcept : value_(0), category_(&generic_category()) {}
+  error_condition(int value, const error_category &category) noexcept
+      : value_(value), category_(&category) {}
+
+  template <class ErrorConditionEnum>
+    requires is_error_condition_enum_v<ErrorConditionEnum>
+  error_condition(ErrorConditionEnum value) noexcept {
+    *this = make_error_condition(value);
+  }
+
+  void assign(int value, const error_category &category) noexcept {
+    value_ = value;
+    category_ = &category;
+  }
+  template <class ErrorConditionEnum>
+    requires is_error_condition_enum_v<ErrorConditionEnum>
+  error_condition &operator=(ErrorConditionEnum value) noexcept {
+    *this = make_error_condition(value);
+    return *this;
+  }
+  void clear() noexcept { assign(0, generic_category()); }
+
+  int value() const noexcept { return value_; }
+  const error_category &category() const noexcept { return *category_; }
+  string message() const { return category().message(value()); }
+  explicit operator bool() const noexcept { return value_ != 0; }
+
+private:
+  int value_;
+  const error_category *category_;
+};
+
+bool operator==(const error_code &, const error_code &) noexcept;
+bool operator==(const error_code &, const error_condition &) noexcept;
+bool operator==(const error_condition &, const error_condition &) noexcept;
+
+inline error_condition
+error_category::default_error_condition(int value) const noexcept {
+  return {value, *this};
+}
+inline bool error_category::equivalent(
+    int value, const error_condition &condition) const noexcept {
+  return default_error_condition(value) == condition;
+}
+inline bool error_category::equivalent(const error_code &code,
+                                       int condition) const noexcept {
+  return *this == code.category() && code.value() == condition;
+}
+inline error_condition error_code::default_error_condition() const noexcept {
+  return category().default_error_condition(value());
+}
+
+namespace detail {
+struct errno_guard {
+  int value = errno;
+  ~errno_guard() { errno = value; }
+};
+
+class generic_error_category final : public error_category {
+public:
+  const char *name() const noexcept override { return "generic"; }
+  string message(int value) const override {
+    const errno_guard guard;
+    const char *text = ::strerror(value);
+    return text == nullptr ? string{"Unknown error"} : string{text};
+  }
+};
+
+class system_error_category final : public error_category {
+public:
+  const char *name() const noexcept override { return "system"; }
+  error_condition default_error_condition(int value) const noexcept override {
+    return value == 0 || detail::is_errc_value(value)
+               ? error_condition{value, generic_category()}
+               : error_condition{value, *this};
+  }
+  string message(int value) const override {
+    const errno_guard guard;
+    const char *text = ::strerror(value);
+    return text == nullptr ? string{"Unknown error"} : string{text};
+  }
+};
+} // namespace detail
+
+inline const error_category &generic_category() noexcept {
+  static detail::generic_error_category value;
+  return value;
+}
+inline const error_category &system_category() noexcept {
+  static detail::system_error_category value;
+  return value;
+}
+
+inline error_code make_error_code(errc value) noexcept {
+  return {static_cast<int>(value), generic_category()};
+}
+inline error_condition make_error_condition(errc value) noexcept {
+  return {static_cast<int>(value), generic_category()};
+}
+
+inline bool operator==(const error_code &left,
+                       const error_code &right) noexcept {
+  return left.category() == right.category() && left.value() == right.value();
+}
+inline bool operator==(const error_condition &left,
+                       const error_condition &right) noexcept {
+  return left.category() == right.category() && left.value() == right.value();
+}
+inline bool operator==(const error_code &code,
+                       const error_condition &condition) noexcept {
+  return code.category().equivalent(code.value(), condition) ||
+         condition.category().equivalent(code, condition.value());
+}
+inline strong_ordering operator<=>(const error_code &left,
+                                   const error_code &right) noexcept {
+  if (auto result = left.category() <=> right.category();
+      result != strong_ordering::equal)
+    return result;
+  return left.value() < right.value()   ? strong_ordering::less
+         : left.value() > right.value() ? strong_ordering::greater
+                                        : strong_ordering::equal;
+}
+inline strong_ordering operator<=>(const error_condition &left,
+                                   const error_condition &right) noexcept {
+  if (auto result = left.category() <=> right.category();
+      result != strong_ordering::equal)
+    return result;
+  return left.value() < right.value()   ? strong_ordering::less
+         : left.value() > right.value() ? strong_ordering::greater
+                                        : strong_ordering::equal;
+}
+
+class system_error : public runtime_error {
+public:
+  system_error(error_code code, const string &what_arg)
+      : system_error(code, what_arg.c_str()) {}
+  system_error(error_code code, const char *what_arg)
+      : runtime_error(compose(code, what_arg)), code_(code) {}
+  explicit system_error(error_code code)
+      : runtime_error(code.message()), code_(code) {}
+  system_error(int value, const error_category &category,
+               const string &what_arg)
+      : system_error(error_code{value, category}, what_arg) {}
+  system_error(int value, const error_category &category, const char *what_arg)
+      : system_error(error_code{value, category}, what_arg) {}
+  system_error(int value, const error_category &category)
+      : system_error(error_code{value, category}) {}
+
+  const error_code &code() const noexcept { return code_; }
+
+private:
+  static string compose(error_code code, const char *what_arg) {
+    string result{what_arg};
+    result += ": ";
+    result += code.message();
+    return result;
+  }
+  error_code code_;
+};
+
+template <> struct hash<error_code> {
+  size_t operator()(const error_code &value) const noexcept {
+    const error_category *pointer = &value.category();
+    const auto seed = ftl_rapidhash::rapidhash(&pointer, sizeof(pointer));
+    const int code = value.value();
+    return static_cast<size_t>(
+        ftl_rapidhash::rapidhash_with_seed(&code, sizeof(code), seed));
+  }
+};
+template <> struct hash<error_condition> {
+  size_t operator()(const error_condition &value) const noexcept {
+    const error_category *pointer = &value.category();
+    const auto seed = ftl_rapidhash::rapidhash(&pointer, sizeof(pointer));
+    const int condition = value.value();
+    return static_cast<size_t>(
+        ftl_rapidhash::rapidhash_with_seed(&condition, sizeof(condition), seed));
+  }
+};
+
+FTL_END_NAMESPACE
+
+#endif

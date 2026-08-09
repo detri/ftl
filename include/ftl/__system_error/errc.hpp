@@ -253,6 +253,16 @@ enum class errc {
 #undef FTL_DETAIL_ERRC_ENUM
 };
 
+namespace detail {
+constexpr bool is_errc_value(int value) noexcept {
+  return false
+#define FTL_DETAIL_ERRC_MATCH(name, number) || value == number
+      FTL_DETAIL_ERRC_VALUES(FTL_DETAIL_ERRC_MATCH)
+#undef FTL_DETAIL_ERRC_MATCH
+      ;
+}
+} // namespace detail
+
 #ifdef FTL_REPLACE_STL
 } // namespace std
 #else
