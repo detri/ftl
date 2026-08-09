@@ -199,6 +199,17 @@ target_compile_definitions(ftl_check_vector_freestanding_link PRIVATE FTL_NO_EXC
 if (MSVC)
     target_compile_options(ftl_check_vector_freestanding_link PRIVATE /O2 /GS- /EHs-c-)
 endif ()
+add_ftl_freestanding_link_check(random_freestanding_link
+        checks/random_freestanding_link.cpp)
+add_ftl_freestanding_link_check(valarray_freestanding_link
+        checks/valarray_freestanding_link.cpp)
+if (MSVC)
+    target_compile_options(ftl_check_random_freestanding_link PRIVATE /O2 /GS-)
+    target_compile_options(ftl_check_valarray_freestanding_link PRIVATE /O2 /GS-)
+else ()
+    target_compile_options(ftl_check_random_freestanding_link PRIVATE -fno-stack-protector)
+    target_compile_options(ftl_check_valarray_freestanding_link PRIVATE -fno-stack-protector)
+endif ()
 add_ftl_freestanding_link_check(deque_freestanding_link
         checks/deque_freestanding_link.cpp)
 target_compile_definitions(ftl_check_deque_freestanding_link PRIVATE FTL_NO_EXCEPTIONS)
@@ -415,6 +426,8 @@ foreach (header IN ITEMS
         algorithm_permutation
         algorithm_lexicographical
         algorithm_random
+        random
+        valarray
         numeric
         cstring_synopsis
         cwchar

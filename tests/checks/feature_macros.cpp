@@ -64,8 +64,13 @@
 #if __cpp_lib_math_constants < 201907L
 #error <numbers> must advertise mathematical constants
 #endif
-#if __cpp_lib_math_special_functions < 201603L
-#error <cmath> must advertise mathematical special functions
+#if __cpp_lib_constexpr_cmath < 202202L || __cpp_lib_hypot < 201603L ||      \
+    __cpp_lib_interpolate < 201902L ||                                      \
+    __cpp_lib_math_special_functions < 201603L
+#error <cmath> must advertise its completed facilities
+#endif
+#if __cpp_lib_complex_udls < 201309L || __cpp_lib_constexpr_complex < 201711L
+#error <complex> must advertise its completed facilities
 #endif
 #if __cpp_lib_hardware_interference_size < 201703L ||                         \
     __cpp_lib_launder < 201606L || __cpp_lib_uncaught_exceptions < 201411L

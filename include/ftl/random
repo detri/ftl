@@ -1,0 +1,1881 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_RANDOM_HEADER
+#define FTL_RANDOM_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <array>
+#include <cmath>
+#include <concepts>
+#include <cstddef>
+#include <cstdint>
+#include <initializer_list>
+#include <limits>
+#include <string>
+#include <stdexcept>
+#include <type_traits>
+#include <utility>
+#include <vector>
+#else
+#include <ftl/array>
+#include <ftl/cmath>
+#include <ftl/concepts>
+#include <ftl/cstddef>
+#include <ftl/cstdint>
+#include <ftl/initializer_list>
+#include <ftl/limits>
+#include <ftl/string>
+#include <ftl/stdexcept>
+#include <ftl/type_traits>
+#include <ftl/utility>
+#include <ftl/vector>
+#endif
+
+#if defined(_WIN32) && defined(_MSC_VER)
+#pragma comment(lib, "advapi32.lib")
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+template <class G>
+concept uniform_random_bit_generator =
+    invocable<G &> && unsigned_integral<invoke_result_t<G &>> && requires {
+      { G::min() } -> same_as<invoke_result_t<G &>>;
+      { G::max() } -> same_as<invoke_result_t<G &>>;
+      requires bool_constant<(G::min() < G::max())>::value;
+    };
+
+namespace detail {
+
+#if defined(_WIN32)
+extern "C" unsigned char __stdcall SystemFunction036(void *, unsigned long);
+#elif defined(__APPLE__)
+extern "C" void arc4random_buf(void *, size_t);
+#elif defined(__linux__) && defined(__x86_64__)
+inline long random_getrandom(void *buffer, size_t size) noexcept {
+  long result;
+  __asm__ volatile("syscall"
+                   : "=a"(result)
+                   : "a"(318L), "D"(buffer), "S"(size), "d"(0L)
+                   : "rcx", "r11", "memory");
+  return result;
+}
+#endif
+
+template <class T, size_t Bits> constexpr T random_mask() noexcept {
+  if constexpr (Bits == numeric_limits<T>::digits)
+    return numeric_limits<T>::max();
+  else
+    return static_cast<T>((T{1} << Bits) - 1);
+}
+
+template <class T> constexpr T random_add_mod(T x, T y, T modulus) noexcept {
+  if (modulus == 0)
+    return static_cast<T>(x + y);
+  return x >= modulus - y ? static_cast<T>(x - (modulus - y))
+                          : static_cast<T>(x + y);
+}
+
+template <class T> constexpr T random_multiply_mod(T x, T y,
+                                                   T modulus) noexcept {
+  if (modulus == 0)
+    return static_cast<T>(x * y);
+  T result = 0;
+  while (y != 0) {
+    if ((y & 1) != 0)
+      result = random_add_mod(result, x, modulus);
+    y >>= 1;
+    if (y != 0)
+      x = random_add_mod(x, x, modulus);
+  }
+  return result;
+}
+
+template <class T> constexpr size_t random_bit_width(T value) noexcept {
+  size_t result = 0;
+  while (value != 0) {
+    ++result;
+    value >>= 1;
+  }
+  return result;
+}
+
+template <class Sseq, class Engine>
+concept random_seed_sequence =
+    !same_as<remove_cvref_t<Sseq>, Engine> &&
+    requires(Sseq &sequence, uint32_t *first, uint32_t *last) {
+      sequence.generate(first, last);
+    };
+
+template <class T, size_t Count>
+constexpr T random_pack_words(const uint32_t *words, T modulus = 0) noexcept {
+  T result = 0;
+  T factor = 1;
+  for (size_t index = 0; index < Count; ++index) {
+    if (modulus == 0) {
+      if (index * 32 < numeric_limits<T>::digits)
+        result |= static_cast<T>(words[index]) << (index * 32);
+    } else {
+      result = random_add_mod(
+          result,
+          random_multiply_mod(static_cast<T>(words[index] % modulus), factor,
+                              modulus),
+          modulus);
+      for (int bit = 0; bit < 32; ++bit)
+        factor = random_add_mod(factor, factor, modulus);
+    }
+  }
+  return result;
+}
+
+} // namespace detail
+
+class seed_seq {
+public:
+  using result_type = uint32_t;
+
+  seed_seq() noexcept = default;
+
+  template <class T>
+    requires is_integral_v<T>
+  seed_seq(initializer_list<T> values) : seed_seq(values.begin(), values.end()) {}
+
+  template <class InputIterator>
+  seed_seq(InputIterator first, InputIterator last) {
+    for (; first != last; ++first)
+      seeds_.push_back(static_cast<result_type>(*first));
+  }
+
+  seed_seq(const seed_seq &) = delete;
+  seed_seq &operator=(const seed_seq &) = delete;
+
+  template <class RandomAccessIterator>
+  void generate(RandomAccessIterator first, RandomAccessIterator last) {
+    const size_t n = static_cast<size_t>(last - first);
+    if (n == 0)
+      return;
+    const size_t s = seeds_.size();
+    const size_t t = n >= 623 ? 11 : n >= 68 ? 7 : n >= 39 ? 5
+                                                       : n >= 7  ? 3
+                                                                 : (n - 1) / 2;
+    const size_t p = (n - t) / 2;
+    const size_t q = p + t;
+    const size_t m = n > s ? n : s + 1;
+    for (size_t i = 0; i < n; ++i)
+      first[i] = static_cast<typename iterator_traits<RandomAccessIterator>::value_type>(
+          0x8b8b8b8bu);
+    size_t k = 0;
+    for (; k < m; ++k) {
+      const result_type r1 = 1664525u *
+          (static_cast<result_type>(first[k % n]) ^
+           static_cast<result_type>(first[(k + p) % n]) ^
+           static_cast<result_type>(first[(k + n - 1) % n]) ^
+           ((static_cast<result_type>(first[k % n]) ^
+             static_cast<result_type>(first[(k + p) % n]) ^
+             static_cast<result_type>(first[(k + n - 1) % n])) >> 27));
+      const result_type offset = k == 0 ? static_cast<result_type>(s)
+                                 : k <= s ? static_cast<result_type>(k % n + seeds_[k - 1])
+                                          : static_cast<result_type>(k % n);
+      const result_type r2 = r1 + offset;
+      first[(k + p) % n] = static_cast<result_type>(first[(k + p) % n]) + r1;
+      first[(k + q) % n] = static_cast<result_type>(first[(k + q) % n]) + r2;
+      first[k % n] = r2;
+    }
+    for (; k < m + n; ++k) {
+      const result_type value = static_cast<result_type>(first[k % n]) +
+                                static_cast<result_type>(first[(k + p) % n]) +
+                                static_cast<result_type>(first[(k + n - 1) % n]);
+      const result_type r3 = 1566083941u * (value ^ (value >> 27));
+      const result_type r4 = r3 - static_cast<result_type>(k % n);
+      first[(k + p) % n] = static_cast<result_type>(first[(k + p) % n]) ^ r3;
+      first[(k + q) % n] = static_cast<result_type>(first[(k + q) % n]) ^ r4;
+      first[k % n] = r4;
+    }
+  }
+
+  template <class OutputIterator> void param(OutputIterator destination) const {
+    for (result_type value : seeds_)
+      *destination++ = value;
+  }
+
+  size_t size() const noexcept { return seeds_.size(); }
+
+private:
+  vector<result_type> seeds_;
+};
+
+template <class UIntType, UIntType a, UIntType c, UIntType m>
+class linear_congruential_engine {
+  static_assert(is_unsigned_v<UIntType>);
+  static_assert(m == 0 || (a < m && c < m));
+
+  static constexpr UIntType normalize(UIntType value) noexcept {
+    if constexpr (m != 0)
+      value %= m;
+    return c == 0 && value == 0 ? UIntType{1} : value;
+  }
+
+public:
+  using result_type = UIntType;
+  static constexpr result_type multiplier = a;
+  static constexpr result_type increment = c;
+  static constexpr result_type modulus = m;
+  static constexpr result_type default_seed = 1u;
+  static constexpr result_type min() noexcept { return c == 0 ? 1u : 0u; }
+  static constexpr result_type max() noexcept { return m - 1u; }
+
+  linear_congruential_engine() noexcept : state_(normalize(default_seed)) {}
+  explicit linear_congruential_engine(result_type value) noexcept
+      : state_(normalize(value)) {}
+
+  template <class Sseq>
+    requires detail::random_seed_sequence<Sseq, linear_congruential_engine>
+  explicit linear_congruential_engine(Sseq &sequence) { seed(sequence); }
+
+  void seed(result_type value = default_seed) noexcept { state_ = normalize(value); }
+
+  template <class Sseq>
+    requires detail::random_seed_sequence<Sseq, linear_congruential_engine>
+  void seed(Sseq &sequence) {
+    constexpr size_t k =
+        m == 0 ? (numeric_limits<result_type>::digits + 31) / 32
+               : (detail::random_bit_width(static_cast<result_type>(m - 1)) + 31) / 32;
+    uint32_t words[k + 3]{};
+    sequence.generate(words, words + k + 3);
+    state_ = normalize(detail::random_pack_words<result_type, k>(words + 3, m));
+  }
+
+  result_type operator()() noexcept {
+    state_ = detail::random_add_mod(
+        detail::random_multiply_mod(state_, a, m), c, m);
+    return state_;
+  }
+
+  void discard(unsigned long long count) noexcept {
+    while (count-- != 0)
+      operator()();
+  }
+
+  friend bool operator==(const linear_congruential_engine &,
+                         const linear_congruential_engine &) = default;
+
+private:
+  result_type state_;
+};
+
+template <class UIntType, size_t w, size_t n, size_t m, size_t r, UIntType a,
+          size_t u, UIntType d, size_t s, UIntType b, size_t t, UIntType c,
+          size_t l, UIntType f>
+class mersenne_twister_engine {
+  static_assert(is_unsigned_v<UIntType>);
+  static_assert(0 < m && m <= n && 2 < w && r <= w && u <= w && s <= w &&
+                t <= w && l <= w && w <= numeric_limits<UIntType>::digits);
+  static constexpr UIntType mask_ = detail::random_mask<UIntType, w>();
+  static constexpr UIntType lower_mask_ =
+      r == 0 ? UIntType{0} : detail::random_mask<UIntType, r>();
+  static constexpr UIntType upper_mask_ = mask_ & ~lower_mask_;
+
+public:
+  using result_type = UIntType;
+  static constexpr size_t word_size = w;
+  static constexpr size_t state_size = n;
+  static constexpr size_t shift_size = m;
+  static constexpr size_t mask_bits = r;
+  static constexpr result_type xor_mask = a;
+  static constexpr size_t tempering_u = u;
+  static constexpr result_type tempering_d = d;
+  static constexpr size_t tempering_s = s;
+  static constexpr result_type tempering_b = b;
+  static constexpr size_t tempering_t = t;
+  static constexpr result_type tempering_c = c;
+  static constexpr size_t tempering_l = l;
+  static constexpr result_type initialization_multiplier = f;
+  static constexpr result_type default_seed = 5489u;
+  static constexpr result_type min() noexcept { return 0; }
+  static constexpr result_type max() noexcept { return mask_; }
+
+  mersenne_twister_engine() { seed(); }
+  explicit mersenne_twister_engine(result_type value) { seed(value); }
+
+  template <class Sseq>
+    requires detail::random_seed_sequence<Sseq, mersenne_twister_engine>
+  explicit mersenne_twister_engine(Sseq &sequence) { seed(sequence); }
+
+  void seed(result_type value = default_seed) noexcept {
+    state_[0] = value & mask_;
+    for (size_t i = 1; i < n; ++i)
+      state_[i] = static_cast<result_type>(
+          f * (state_[i - 1] ^ (state_[i - 1] >> (w - 2))) + i) & mask_;
+    index_ = 0;
+  }
+
+  template <class Sseq>
+    requires detail::random_seed_sequence<Sseq, mersenne_twister_engine>
+  void seed(Sseq &sequence) {
+    constexpr size_t k = (w + 31) / 32;
+    uint32_t words[n * k]{};
+    sequence.generate(words, words + n * k);
+    result_type nonzero = 0;
+    for (size_t i = 0; i < n; ++i) {
+      state_[i] = detail::random_pack_words<result_type, k>(words + i * k) & mask_;
+      nonzero |= i == 0 ? state_[i] & upper_mask_ : state_[i];
+    }
+    if (nonzero == 0)
+      state_[0] = result_type{1} << (w - 1);
+    index_ = 0;
+  }
+
+  result_type operator()() noexcept {
+    const size_t next = (index_ + 1) % n;
+    const result_type y = (state_[index_] & upper_mask_) | (state_[next] & lower_mask_);
+    state_[index_] = (state_[(index_ + m) % n] ^ (y >> 1) ^
+                     ((y & 1) != 0 ? a : 0)) & mask_;
+    result_type value = state_[index_];
+    index_ = next;
+    value ^= (value >> u) & d;
+    value ^= (value << s) & b;
+    value ^= (value << t) & c;
+    value ^= value >> l;
+    return value & mask_;
+  }
+
+  void discard(unsigned long long count) noexcept {
+    while (count-- != 0)
+      operator()();
+  }
+
+  friend bool operator==(const mersenne_twister_engine &left,
+                         const mersenne_twister_engine &right) noexcept {
+    for (size_t i = 0; i < n; ++i)
+      if (left.state_[(left.index_ + i) % n] !=
+          right.state_[(right.index_ + i) % n])
+        return false;
+    return true;
+  }
+
+private:
+  result_type state_[n]{};
+  size_t index_ = 0;
+};
+
+template <class UIntType, size_t w, size_t s, size_t r>
+class subtract_with_carry_engine {
+  static_assert(is_unsigned_v<UIntType>);
+  static_assert(0 < s && s < r && 0 < w && w <= numeric_limits<UIntType>::digits);
+  static constexpr UIntType mask_value() noexcept {
+    return detail::random_mask<UIntType, w>();
+  }
+
+public:
+  using result_type = UIntType;
+  static constexpr size_t word_size = w;
+  static constexpr size_t short_lag = s;
+  static constexpr size_t long_lag = r;
+  static constexpr result_type default_seed = 19780503u;
+  static constexpr result_type min() noexcept { return 0; }
+  static constexpr result_type max() noexcept { return mask_value(); }
+
+  subtract_with_carry_engine() { seed(); }
+  explicit subtract_with_carry_engine(result_type value) { seed(value); }
+
+  template <class Sseq>
+    requires detail::random_seed_sequence<Sseq, subtract_with_carry_engine>
+  explicit subtract_with_carry_engine(Sseq &sequence) { seed(sequence); }
+
+  void seed(result_type value = default_seed) {
+    linear_congruential_engine<result_type, 40014u, 0u, 2147483563u> engine(
+        value == 0 ? default_seed : value);
+    constexpr size_t k = (w + 31) / 32;
+    for (size_t i = 0; i < r; ++i) {
+      uint32_t words[k]{};
+      for (size_t j = 0; j < k; ++j)
+        words[j] = static_cast<uint32_t>(engine());
+      state_[i] = detail::random_pack_words<result_type, k>(words) & mask_value();
+    }
+    carry_ = state_[r - 1] == 0;
+    index_ = 0;
+  }
+
+  template <class Sseq>
+    requires detail::random_seed_sequence<Sseq, subtract_with_carry_engine>
+  void seed(Sseq &sequence) {
+    constexpr size_t k = (w + 31) / 32;
+    uint32_t words[r * k]{};
+    sequence.generate(words, words + r * k);
+    for (size_t i = 0; i < r; ++i)
+      state_[i] = detail::random_pack_words<result_type, k>(words + i * k) & mask_value();
+    carry_ = state_[r - 1] == 0;
+    index_ = 0;
+  }
+
+  result_type operator()() noexcept {
+    const size_t short_index = (index_ + r - s) % r;
+    const result_type short_value = state_[short_index];
+    const result_type long_value = state_[index_];
+    const bool borrow = short_value < long_value ||
+                        (carry_ != 0 && short_value == long_value);
+    const result_type value = static_cast<result_type>(short_value - long_value - carry_) &
+                              mask_value();
+    state_[index_] = value;
+    carry_ = borrow;
+    index_ = (index_ + 1) % r;
+    return value;
+  }
+
+  void discard(unsigned long long count) noexcept {
+    while (count-- != 0)
+      operator()();
+  }
+
+  friend bool operator==(const subtract_with_carry_engine &left,
+                         const subtract_with_carry_engine &right) noexcept {
+    if (left.carry_ != right.carry_)
+      return false;
+    for (size_t i = 0; i < r; ++i)
+      if (left.state_[(left.index_ + i) % r] !=
+          right.state_[(right.index_ + i) % r])
+        return false;
+    return true;
+  }
+
+private:
+  result_type state_[r]{};
+  size_t index_ = 0;
+  unsigned int carry_ = 0;
+};
+
+template <class Engine, size_t p, size_t r> class discard_block_engine {
+  static_assert(0 < r && r <= p);
+
+public:
+  using result_type = typename Engine::result_type;
+  static constexpr size_t block_size = p;
+  static constexpr size_t used_block = r;
+  static constexpr result_type min() noexcept { return Engine::min(); }
+  static constexpr result_type max() noexcept { return Engine::max(); }
+
+  discard_block_engine() = default;
+  explicit discard_block_engine(const Engine &engine) : engine_(engine) {}
+  explicit discard_block_engine(Engine &&engine)
+      : engine_(static_cast<Engine &&>(engine)) {}
+  explicit discard_block_engine(result_type value) : engine_(value) {}
+
+  template <class Sseq>
+    requires detail::random_seed_sequence<Sseq, discard_block_engine>
+  explicit discard_block_engine(Sseq &sequence) : engine_(sequence) {}
+
+  void seed() {
+    engine_.seed();
+    used_ = 0;
+  }
+  void seed(result_type value) {
+    engine_.seed(value);
+    used_ = 0;
+  }
+  template <class Sseq>
+    requires detail::random_seed_sequence<Sseq, discard_block_engine>
+  void seed(Sseq &sequence) {
+    engine_.seed(sequence);
+    used_ = 0;
+  }
+
+  result_type operator()() {
+    if (used_ == r) {
+      engine_.discard(p - r);
+      used_ = 0;
+    }
+    ++used_;
+    return engine_();
+  }
+  void discard(unsigned long long count) {
+    while (count-- != 0)
+      operator()();
+  }
+  const Engine &base() const noexcept { return engine_; }
+
+  friend bool operator==(const discard_block_engine &left,
+                         const discard_block_engine &right) {
+    return left.engine_ == right.engine_ && left.used_ == right.used_;
+  }
+
+private:
+  Engine engine_{};
+  size_t used_ = 0;
+};
+
+template <class Engine, size_t w, class UIntType>
+class independent_bits_engine {
+  static_assert(is_unsigned_v<UIntType>);
+  static_assert(0 < w && w <= numeric_limits<UIntType>::digits);
+
+  using engine_result = typename Engine::result_type;
+  using engine_unsigned = make_unsigned_t<engine_result>;
+
+  static constexpr size_t source_bits() noexcept {
+    constexpr engine_unsigned span =
+        static_cast<engine_unsigned>(Engine::max()) -
+        static_cast<engine_unsigned>(Engine::min());
+    if constexpr (span == numeric_limits<engine_unsigned>::max())
+      return numeric_limits<engine_unsigned>::digits;
+    else
+      return detail::random_bit_width(static_cast<engine_unsigned>(span + 1)) - 1;
+  }
+
+  UIntType draw(size_t width) {
+    constexpr engine_unsigned span =
+        static_cast<engine_unsigned>(Engine::max()) -
+        static_cast<engine_unsigned>(Engine::min());
+    constexpr bool full_range = span == numeric_limits<engine_unsigned>::max();
+    engine_unsigned limit = 0;
+    if constexpr (!full_range) {
+      const engine_unsigned range = span + 1;
+      const engine_unsigned unit = engine_unsigned{1} << width;
+      limit = static_cast<engine_unsigned>((range / unit) * unit);
+    }
+    engine_unsigned value;
+    do {
+      value = static_cast<engine_unsigned>(engine_()) -
+              static_cast<engine_unsigned>(Engine::min());
+    } while (!full_range && value >= limit);
+    if (width == numeric_limits<UIntType>::digits)
+      return static_cast<UIntType>(value);
+    return static_cast<UIntType>(value & ((UIntType{1} << width) - 1));
+  }
+
+public:
+  using result_type = UIntType;
+  static constexpr result_type min() noexcept { return 0; }
+  static constexpr result_type max() noexcept {
+    return detail::random_mask<result_type, w>();
+  }
+
+  independent_bits_engine() = default;
+  explicit independent_bits_engine(const Engine &engine) : engine_(engine) {}
+  explicit independent_bits_engine(Engine &&engine)
+      : engine_(static_cast<Engine &&>(engine)) {}
+  explicit independent_bits_engine(result_type value) : engine_(value) {}
+  template <class Sseq>
+    requires detail::random_seed_sequence<Sseq, independent_bits_engine>
+  explicit independent_bits_engine(Sseq &sequence) : engine_(sequence) {}
+
+  void seed() { engine_.seed(); }
+  void seed(result_type value) { engine_.seed(value); }
+  template <class Sseq>
+    requires detail::random_seed_sequence<Sseq, independent_bits_engine>
+  void seed(Sseq &sequence) { engine_.seed(sequence); }
+
+  result_type operator()() {
+    constexpr size_t m = source_bits();
+    size_t count = (w + m - 1) / m;
+    size_t small_width = w / count;
+    size_t small_count = count - w % count;
+
+    constexpr engine_unsigned span =
+        static_cast<engine_unsigned>(Engine::max()) -
+        static_cast<engine_unsigned>(Engine::min());
+    if constexpr (span != numeric_limits<engine_unsigned>::max()) {
+      const engine_unsigned range = span + 1;
+      const engine_unsigned unit = engine_unsigned{1} << small_width;
+      const engine_unsigned y = static_cast<engine_unsigned>((range / unit) * unit);
+      if (range - y > y / count) {
+        ++count;
+        small_width = w / count;
+        small_count = count - w % count;
+      }
+    }
+
+    result_type result = 0;
+    for (size_t i = 0; i < count; ++i) {
+      const size_t width = i < small_count ? small_width : small_width + 1;
+      if (width == numeric_limits<result_type>::digits)
+        result = draw(width);
+      else
+        result = static_cast<result_type>((result << width) | draw(width));
+    }
+    return result;
+  }
+
+  void discard(unsigned long long count) {
+    while (count-- != 0)
+      operator()();
+  }
+  const Engine &base() const noexcept { return engine_; }
+  friend bool operator==(const independent_bits_engine &,
+                         const independent_bits_engine &) = default;
+
+private:
+  Engine engine_{};
+};
+
+template <class Engine, size_t k> class shuffle_order_engine {
+  static_assert(0 < k);
+
+public:
+  using result_type = typename Engine::result_type;
+  static constexpr size_t table_size = k;
+  static constexpr result_type min() noexcept { return Engine::min(); }
+  static constexpr result_type max() noexcept { return Engine::max(); }
+
+  shuffle_order_engine() { initialize(); }
+  explicit shuffle_order_engine(const Engine &engine) : engine_(engine) { initialize(); }
+  explicit shuffle_order_engine(Engine &&engine)
+      : engine_(static_cast<Engine &&>(engine)) { initialize(); }
+  explicit shuffle_order_engine(result_type value) : engine_(value) { initialize(); }
+  template <class Sseq>
+    requires detail::random_seed_sequence<Sseq, shuffle_order_engine>
+  explicit shuffle_order_engine(Sseq &sequence) : engine_(sequence) { initialize(); }
+
+  void seed() {
+    engine_.seed();
+    initialize();
+  }
+  void seed(result_type value) {
+    engine_.seed(value);
+    initialize();
+  }
+  template <class Sseq>
+    requires detail::random_seed_sequence<Sseq, shuffle_order_engine>
+  void seed(Sseq &sequence) {
+    engine_.seed(sequence);
+    initialize();
+  }
+
+  result_type operator()() {
+    const long double numerator = static_cast<long double>(k) *
+        (static_cast<long double>(value_) - static_cast<long double>(Engine::min()));
+    const long double denominator = static_cast<long double>(Engine::max()) -
+                                    static_cast<long double>(Engine::min()) + 1.0L;
+    const size_t index = static_cast<size_t>(numerator / denominator);
+    value_ = table_[index];
+    table_[index] = engine_();
+    return value_;
+  }
+  void discard(unsigned long long count) {
+    while (count-- != 0)
+      operator()();
+  }
+  const Engine &base() const noexcept { return engine_; }
+  friend bool operator==(const shuffle_order_engine &left,
+                         const shuffle_order_engine &right) {
+    if (!(left.engine_ == right.engine_) || left.value_ != right.value_)
+      return false;
+    for (size_t i = 0; i < k; ++i)
+      if (left.table_[i] != right.table_[i])
+        return false;
+    return true;
+  }
+
+private:
+  void initialize() {
+    for (size_t i = 0; i < k; ++i)
+      table_[i] = engine_();
+    value_ = engine_();
+  }
+
+  Engine engine_{};
+  result_type table_[k]{};
+  result_type value_{};
+};
+
+using minstd_rand0 = linear_congruential_engine<uint_fast32_t, 16807, 0, 2147483647>;
+using minstd_rand = linear_congruential_engine<uint_fast32_t, 48271, 0, 2147483647>;
+using mt19937 = mersenne_twister_engine<uint_fast32_t, 32, 624, 397, 31,
+    0x9908b0df, 11, 0xffffffff, 7, 0x9d2c5680, 15, 0xefc60000, 18, 1812433253>;
+using mt19937_64 = mersenne_twister_engine<uint_fast64_t, 64, 312, 156, 31,
+    0xb5026f5aa96619e9ULL, 29, 0x5555555555555555ULL, 17,
+    0x71d67fffeda60000ULL, 37, 0xfff7eee000000000ULL, 43, 6364136223846793005ULL>;
+using ranlux24_base = subtract_with_carry_engine<uint_fast32_t, 24, 10, 24>;
+using ranlux48_base = subtract_with_carry_engine<uint_fast64_t, 48, 5, 12>;
+using ranlux24 = discard_block_engine<ranlux24_base, 223, 23>;
+using ranlux48 = discard_block_engine<ranlux48_base, 389, 11>;
+using knuth_b = shuffle_order_engine<minstd_rand0, 256>;
+using default_random_engine = minstd_rand0;
+
+template <class RealType, size_t bits, class URBG>
+RealType generate_canonical(URBG &generator) {
+  const size_t target = bits < static_cast<size_t>(numeric_limits<RealType>::digits)
+                            ? bits
+                            : static_cast<size_t>(numeric_limits<RealType>::digits);
+  const RealType range = static_cast<RealType>(URBG::max()) -
+                         static_cast<RealType>(URBG::min()) + RealType{1};
+  RealType required = 1;
+  for (size_t i = 0; i < target; ++i)
+    required *= 2;
+  size_t draws = 1;
+  RealType scale = range;
+  while (scale < required) {
+    scale *= range;
+    ++draws;
+  }
+  RealType result = 0;
+  RealType factor = 1;
+  for (size_t i = 0; i < draws; ++i) {
+    result += (static_cast<RealType>(generator()) - static_cast<RealType>(URBG::min())) * factor;
+    factor *= range;
+  }
+  return result / factor;
+}
+
+namespace detail {
+
+template <class URBG> struct random_engine_reference {
+  using result_type = typename URBG::result_type;
+  URBG *engine;
+  static constexpr result_type min() noexcept { return URBG::min(); }
+  static constexpr result_type max() noexcept { return URBG::max(); }
+  result_type operator()() { return (*engine)(); }
+};
+
+template <class UInt, class URBG> UInt random_full_width(URBG &generator) {
+  using reference = random_engine_reference<URBG>;
+  independent_bits_engine<reference, numeric_limits<UInt>::digits, UInt> bits(
+      reference{&generator});
+  return bits();
+}
+
+template <class Int, class URBG>
+Int random_uniform_integer(URBG &generator, Int lower, Int upper) {
+  using UInt = make_unsigned_t<Int>;
+  const UInt lower_bits = static_cast<UInt>(lower);
+  const UInt count = static_cast<UInt>(upper) - lower_bits + UInt{1};
+  UInt offset;
+  if (count == 0) {
+    offset = random_full_width<UInt>(generator);
+  } else {
+    const UInt threshold = static_cast<UInt>(UInt{0} - count) % count;
+    do {
+      offset = random_full_width<UInt>(generator);
+    } while (offset < threshold);
+    offset %= count;
+  }
+  return static_cast<Int>(lower_bits + offset);
+}
+
+} // namespace detail
+
+class random_device {
+public:
+  using result_type = unsigned int;
+  random_device() = default;
+  explicit random_device(const string &) {}
+  random_device(const random_device &) = delete;
+  void operator=(const random_device &) = delete;
+  static constexpr result_type min() noexcept {
+    return numeric_limits<result_type>::min();
+  }
+  static constexpr result_type max() noexcept {
+    return numeric_limits<result_type>::max();
+  }
+  result_type operator()() {
+#if defined(_WIN32)
+    result_type value;
+    if (!detail::SystemFunction036(&value, sizeof(value)))
+      throw runtime_error("random_device entropy source failed");
+    return value;
+#elif defined(__APPLE__)
+    result_type value;
+    detail::arc4random_buf(&value, sizeof(value));
+    return value;
+#elif defined(__linux__) && defined(__x86_64__)
+    result_type value;
+    auto *current = reinterpret_cast<unsigned char *>(&value);
+    size_t remaining = sizeof(value);
+    while (remaining != 0) {
+      const long count = detail::random_getrandom(current, remaining);
+      if (count == -4)
+        continue;
+      if (count <= 0)
+        throw runtime_error("random_device entropy source failed");
+      current += count;
+      remaining -= static_cast<size_t>(count);
+    }
+    return value;
+#else
+    return detail::random_full_width<result_type>(engine_);
+#endif
+  }
+  double entropy() const noexcept {
+#if defined(_WIN32) || defined(__APPLE__) ||                              \
+    (defined(__linux__) && defined(__x86_64__))
+    return numeric_limits<result_type>::digits;
+#else
+    return 0.0;
+#endif
+  }
+private:
+  minstd_rand engine_{};
+};
+
+template <class IntType = int> class uniform_int_distribution {
+  static_assert(is_integral_v<IntType> && !is_same_v<remove_cv_t<IntType>, bool>);
+
+public:
+  using result_type = IntType;
+  class param_type {
+  public:
+    using distribution_type = uniform_int_distribution;
+    explicit param_type(result_type lower = 0,
+                        result_type upper = numeric_limits<result_type>::max())
+        : lower_(lower), upper_(upper) {}
+    result_type a() const noexcept { return lower_; }
+    result_type b() const noexcept { return upper_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+
+  private:
+    result_type lower_;
+    result_type upper_;
+  };
+
+  uniform_int_distribution() : uniform_int_distribution(0) {}
+  explicit uniform_int_distribution(
+      result_type lower,
+      result_type upper = numeric_limits<result_type>::max())
+      : parameters_(lower, upper) {}
+  explicit uniform_int_distribution(const param_type &parameters)
+      : parameters_(parameters) {}
+  void reset() noexcept {}
+
+  template <class URBG> result_type operator()(URBG &generator) {
+    return (*this)(generator, parameters_);
+  }
+  template <class URBG>
+  result_type operator()(URBG &generator, const param_type &parameters) {
+    return detail::random_uniform_integer(generator, parameters.a(), parameters.b());
+  }
+  result_type a() const noexcept { return parameters_.a(); }
+  result_type b() const noexcept { return parameters_.b(); }
+  param_type param() const noexcept { return parameters_; }
+  void param(const param_type &parameters) noexcept { parameters_ = parameters; }
+  result_type min() const noexcept { return a(); }
+  result_type max() const noexcept { return b(); }
+  friend bool operator==(const uniform_int_distribution &,
+                         const uniform_int_distribution &) = default;
+
+private:
+  param_type parameters_;
+};
+
+template <class RealType = double> class uniform_real_distribution {
+  static_assert(is_floating_point_v<RealType>);
+
+public:
+  using result_type = RealType;
+  class param_type {
+  public:
+    using distribution_type = uniform_real_distribution;
+    explicit param_type(result_type lower = 0, result_type upper = 1)
+        : lower_(lower), upper_(upper) {}
+    result_type a() const noexcept { return lower_; }
+    result_type b() const noexcept { return upper_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+
+  private:
+    result_type lower_;
+    result_type upper_;
+  };
+
+  uniform_real_distribution() : uniform_real_distribution(0) {}
+  explicit uniform_real_distribution(result_type lower, result_type upper = 1)
+      : parameters_(lower, upper) {}
+  explicit uniform_real_distribution(const param_type &parameters)
+      : parameters_(parameters) {}
+  void reset() noexcept {}
+
+  template <class URBG> result_type operator()(URBG &generator) {
+    return (*this)(generator, parameters_);
+  }
+  template <class URBG>
+  result_type operator()(URBG &generator, const param_type &parameters) {
+    if (parameters.a() == parameters.b())
+      return parameters.a();
+    const result_type value = parameters.a() +
+        (parameters.b() - parameters.a()) *
+            generate_canonical<result_type, numeric_limits<result_type>::digits>(generator);
+    return value < parameters.b() ? value
+                                  : nextafter(parameters.b(), parameters.a());
+  }
+  result_type a() const noexcept { return parameters_.a(); }
+  result_type b() const noexcept { return parameters_.b(); }
+  param_type param() const noexcept { return parameters_; }
+  void param(const param_type &parameters) noexcept { parameters_ = parameters; }
+  result_type min() const noexcept { return a(); }
+  result_type max() const noexcept { return b(); }
+  friend bool operator==(const uniform_real_distribution &,
+                         const uniform_real_distribution &) = default;
+
+private:
+  param_type parameters_;
+};
+
+namespace detail {
+template <class Real, class URBG> Real random_unit(URBG &generator) {
+  return generate_canonical<Real, numeric_limits<Real>::digits>(generator);
+}
+template <class Real, class URBG> Real random_open_unit(URBG &generator) {
+  Real value;
+  do {
+    value = random_unit<Real>(generator);
+  } while (value == Real{0});
+  return value;
+}
+} // namespace detail
+
+class bernoulli_distribution {
+public:
+  using result_type = bool;
+  class param_type {
+  public:
+    using distribution_type = bernoulli_distribution;
+    explicit param_type(double probability = 0.5) : probability_(probability) {}
+    double p() const noexcept { return probability_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    double probability_;
+  };
+
+  bernoulli_distribution() : bernoulli_distribution(0.5) {}
+  explicit bernoulli_distribution(double probability) : parameters_(probability) {}
+  explicit bernoulli_distribution(const param_type &parameters) : parameters_(parameters) {}
+  void reset() noexcept {}
+  template <class URBG> result_type operator()(URBG &generator) {
+    return (*this)(generator, parameters_);
+  }
+  template <class URBG>
+  result_type operator()(URBG &generator, const param_type &parameters) {
+    return detail::random_unit<double>(generator) < parameters.p();
+  }
+  double p() const noexcept { return parameters_.p(); }
+  param_type param() const noexcept { return parameters_; }
+  void param(const param_type &parameters) noexcept { parameters_ = parameters; }
+  result_type min() const noexcept { return false; }
+  result_type max() const noexcept { return true; }
+  friend bool operator==(const bernoulli_distribution &,
+                         const bernoulli_distribution &) = default;
+private:
+  param_type parameters_;
+};
+
+template <class IntType = int> class geometric_distribution {
+  static_assert(is_integral_v<IntType> && !is_same_v<remove_cv_t<IntType>, bool>);
+public:
+  using result_type = IntType;
+  class param_type {
+  public:
+    using distribution_type = geometric_distribution;
+    explicit param_type(double probability = 0.5) : probability_(probability) {}
+    double p() const noexcept { return probability_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    double probability_;
+  };
+  geometric_distribution() : geometric_distribution(0.5) {}
+  explicit geometric_distribution(double probability) : parameters_(probability) {}
+  explicit geometric_distribution(const param_type &parameters) : parameters_(parameters) {}
+  void reset() noexcept {}
+  template <class URBG> result_type operator()(URBG &generator) {
+    return (*this)(generator, parameters_);
+  }
+  template <class URBG>
+  result_type operator()(URBG &generator, const param_type &parameters) {
+    if (parameters.p() == 1.0)
+      return 0;
+    return static_cast<result_type>(
+        log(detail::random_open_unit<double>(generator)) / log(1.0 - parameters.p()));
+  }
+  double p() const noexcept { return parameters_.p(); }
+  param_type param() const noexcept { return parameters_; }
+  void param(const param_type &parameters) noexcept { parameters_ = parameters; }
+  result_type min() const noexcept { return 0; }
+  result_type max() const noexcept { return numeric_limits<result_type>::max(); }
+  friend bool operator==(const geometric_distribution &,
+                         const geometric_distribution &) = default;
+private:
+  param_type parameters_;
+};
+
+template <class RealType = double> class exponential_distribution {
+  static_assert(is_floating_point_v<RealType>);
+public:
+  using result_type = RealType;
+  class param_type {
+  public:
+    using distribution_type = exponential_distribution;
+    explicit param_type(result_type lambda = 1) : lambda_(lambda) {}
+    result_type lambda() const noexcept { return lambda_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    result_type lambda_;
+  };
+  exponential_distribution() : exponential_distribution(1) {}
+  explicit exponential_distribution(result_type lambda) : parameters_(lambda) {}
+  explicit exponential_distribution(const param_type &parameters) : parameters_(parameters) {}
+  void reset() noexcept {}
+  template <class URBG> result_type operator()(URBG &generator) {
+    return (*this)(generator, parameters_);
+  }
+  template <class URBG>
+  result_type operator()(URBG &generator, const param_type &parameters) {
+    return -log(detail::random_open_unit<result_type>(generator)) / parameters.lambda();
+  }
+  result_type lambda() const noexcept { return parameters_.lambda(); }
+  param_type param() const noexcept { return parameters_; }
+  void param(const param_type &parameters) noexcept { parameters_ = parameters; }
+  result_type min() const noexcept { return 0; }
+  result_type max() const noexcept { return numeric_limits<result_type>::max(); }
+  friend bool operator==(const exponential_distribution &,
+                         const exponential_distribution &) = default;
+private:
+  param_type parameters_;
+};
+
+template <class RealType = double> class normal_distribution {
+  static_assert(is_floating_point_v<RealType>);
+public:
+  using result_type = RealType;
+  class param_type {
+  public:
+    using distribution_type = normal_distribution;
+    explicit param_type(result_type mean = 0, result_type deviation = 1)
+        : mean_(mean), deviation_(deviation) {}
+    result_type mean() const noexcept { return mean_; }
+    result_type stddev() const noexcept { return deviation_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    result_type mean_;
+    result_type deviation_;
+  };
+  normal_distribution() : normal_distribution(0) {}
+  explicit normal_distribution(result_type mean, result_type deviation = 1)
+      : parameters_(mean, deviation) {}
+  explicit normal_distribution(const param_type &parameters) : parameters_(parameters) {}
+  void reset() noexcept { saved_ = false; }
+  template <class URBG> result_type operator()(URBG &generator) {
+    return (*this)(generator, parameters_);
+  }
+  template <class URBG>
+  result_type operator()(URBG &generator, const param_type &parameters) {
+    result_type standard;
+    if (saved_) {
+      standard = saved_value_;
+      saved_ = false;
+    } else {
+      result_type x;
+      result_type y;
+      result_type radius;
+      do {
+        x = result_type{2} * detail::random_unit<result_type>(generator) - result_type{1};
+        y = result_type{2} * detail::random_unit<result_type>(generator) - result_type{1};
+        radius = x * x + y * y;
+      } while (radius == result_type{0} || radius >= result_type{1});
+      const result_type factor = sqrt(result_type{-2} * log(radius) / radius);
+      standard = x * factor;
+      saved_value_ = y * factor;
+      saved_ = true;
+    }
+    return parameters.mean() + parameters.stddev() * standard;
+  }
+  result_type mean() const noexcept { return parameters_.mean(); }
+  result_type stddev() const noexcept { return parameters_.stddev(); }
+  param_type param() const noexcept { return parameters_; }
+  void param(const param_type &parameters) noexcept { parameters_ = parameters; }
+  result_type min() const noexcept { return numeric_limits<result_type>::lowest(); }
+  result_type max() const noexcept { return numeric_limits<result_type>::max(); }
+  friend bool operator==(const normal_distribution &left,
+                         const normal_distribution &right) {
+    return left.parameters_ == right.parameters_ && left.saved_ == right.saved_ &&
+           (!left.saved_ || left.saved_value_ == right.saved_value_);
+  }
+private:
+  param_type parameters_;
+  result_type saved_value_{};
+  bool saved_ = false;
+};
+
+template <class RealType = double> class gamma_distribution {
+  static_assert(is_floating_point_v<RealType>);
+public:
+  using result_type = RealType;
+  class param_type {
+  public:
+    using distribution_type = gamma_distribution;
+    explicit param_type(result_type alpha = 1, result_type beta = 1)
+        : alpha_(alpha), beta_(beta) {}
+    result_type alpha() const noexcept { return alpha_; }
+    result_type beta() const noexcept { return beta_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    result_type alpha_;
+    result_type beta_;
+  };
+  gamma_distribution() : gamma_distribution(1) {}
+  explicit gamma_distribution(result_type alpha, result_type beta = 1)
+      : parameters_(alpha, beta) {}
+  explicit gamma_distribution(const param_type &parameters) : parameters_(parameters) {}
+  void reset() noexcept {}
+  template <class URBG> result_type operator()(URBG &generator) {
+    return (*this)(generator, parameters_);
+  }
+  template <class URBG>
+  result_type operator()(URBG &generator, const param_type &parameters) {
+    return sample(generator, parameters.alpha()) * parameters.beta();
+  }
+  result_type alpha() const noexcept { return parameters_.alpha(); }
+  result_type beta() const noexcept { return parameters_.beta(); }
+  param_type param() const noexcept { return parameters_; }
+  void param(const param_type &parameters) noexcept { parameters_ = parameters; }
+  result_type min() const noexcept { return 0; }
+  result_type max() const noexcept { return numeric_limits<result_type>::max(); }
+  friend bool operator==(const gamma_distribution &,
+                         const gamma_distribution &) = default;
+private:
+  template <class URBG> static result_type sample(URBG &generator, result_type alpha) {
+    if (alpha < result_type{1})
+      return sample(generator, alpha + result_type{1}) *
+             pow(detail::random_open_unit<result_type>(generator), result_type{1} / alpha);
+    const result_type d = alpha - result_type{1} / result_type{3};
+    const result_type c = result_type{1} / sqrt(result_type{9} * d);
+    normal_distribution<result_type> normal;
+    for (;;) {
+      const result_type x = normal(generator);
+      result_type v = result_type{1} + c * x;
+      if (v <= result_type{0})
+        continue;
+      v = v * v * v;
+      const result_type u = detail::random_unit<result_type>(generator);
+      if (u < result_type{1} - result_type{0.0331} * x * x * x * x ||
+          log(u) < result_type{0.5} * x * x + d * (result_type{1} - v + log(v)))
+        return d * v;
+    }
+  }
+  param_type parameters_;
+};
+
+template <class RealType = double> class lognormal_distribution {
+  static_assert(is_floating_point_v<RealType>);
+public:
+  using result_type = RealType;
+  class param_type {
+  public:
+    using distribution_type = lognormal_distribution;
+    explicit param_type(result_type mean = 0, result_type deviation = 1)
+        : mean_(mean), deviation_(deviation) {}
+    result_type m() const noexcept { return mean_; }
+    result_type s() const noexcept { return deviation_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    result_type mean_;
+    result_type deviation_;
+  };
+  lognormal_distribution() : lognormal_distribution(0) {}
+  explicit lognormal_distribution(result_type mean, result_type deviation = 1)
+      : parameters_(mean, deviation) {}
+  explicit lognormal_distribution(const param_type &parameters) : parameters_(parameters) {}
+  void reset() noexcept { normal_.reset(); }
+  template <class URBG> result_type operator()(URBG &generator) {
+    return (*this)(generator, parameters_);
+  }
+  template <class URBG>
+  result_type operator()(URBG &generator, const param_type &parameters) {
+    return exp(normal_(generator,
+        typename normal_distribution<result_type>::param_type(parameters.m(), parameters.s())));
+  }
+  result_type m() const noexcept { return parameters_.m(); }
+  result_type s() const noexcept { return parameters_.s(); }
+  param_type param() const noexcept { return parameters_; }
+  void param(const param_type &parameters) noexcept { parameters_ = parameters; }
+  result_type min() const noexcept { return 0; }
+  result_type max() const noexcept { return numeric_limits<result_type>::max(); }
+  friend bool operator==(const lognormal_distribution &left,
+                         const lognormal_distribution &right) {
+    return left.parameters_ == right.parameters_ && left.normal_ == right.normal_;
+  }
+private:
+  param_type parameters_;
+  normal_distribution<result_type> normal_{};
+};
+
+template <class RealType = double> class weibull_distribution {
+  static_assert(is_floating_point_v<RealType>);
+public:
+  using result_type = RealType;
+  class param_type {
+  public:
+    using distribution_type = weibull_distribution;
+    explicit param_type(result_type shape = 1, result_type scale = 1)
+        : shape_(shape), scale_(scale) {}
+    result_type a() const noexcept { return shape_; }
+    result_type b() const noexcept { return scale_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    result_type shape_;
+    result_type scale_;
+  };
+  weibull_distribution() : weibull_distribution(1) {}
+  explicit weibull_distribution(result_type shape, result_type scale = 1)
+      : parameters_(shape, scale) {}
+  explicit weibull_distribution(const param_type &parameters) : parameters_(parameters) {}
+  void reset() noexcept {}
+  template <class URBG> result_type operator()(URBG &generator) { return (*this)(generator, parameters_); }
+  template <class URBG> result_type operator()(URBG &generator, const param_type &p) {
+    return p.b() * pow(-log(detail::random_open_unit<result_type>(generator)),
+                       result_type{1} / p.a());
+  }
+  result_type a() const noexcept { return parameters_.a(); }
+  result_type b() const noexcept { return parameters_.b(); }
+  param_type param() const noexcept { return parameters_; }
+  void param(const param_type &p) noexcept { parameters_ = p; }
+  result_type min() const noexcept { return 0; }
+  result_type max() const noexcept { return numeric_limits<result_type>::max(); }
+  friend bool operator==(const weibull_distribution &,
+                         const weibull_distribution &) = default;
+private:
+  param_type parameters_;
+};
+
+template <class RealType = double> class extreme_value_distribution {
+  static_assert(is_floating_point_v<RealType>);
+public:
+  using result_type = RealType;
+  class param_type {
+  public:
+    using distribution_type = extreme_value_distribution;
+    explicit param_type(result_type location = 0, result_type scale = 1)
+        : location_(location), scale_(scale) {}
+    result_type a() const noexcept { return location_; }
+    result_type b() const noexcept { return scale_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    result_type location_;
+    result_type scale_;
+  };
+  extreme_value_distribution() : extreme_value_distribution(0) {}
+  explicit extreme_value_distribution(result_type location, result_type scale = 1)
+      : parameters_(location, scale) {}
+  explicit extreme_value_distribution(const param_type &parameters) : parameters_(parameters) {}
+  void reset() noexcept {}
+  template <class URBG> result_type operator()(URBG &generator) { return (*this)(generator, parameters_); }
+  template <class URBG> result_type operator()(URBG &generator, const param_type &p) {
+    return p.a() - p.b() * log(-log(detail::random_open_unit<result_type>(generator)));
+  }
+  result_type a() const noexcept { return parameters_.a(); }
+  result_type b() const noexcept { return parameters_.b(); }
+  param_type param() const noexcept { return parameters_; }
+  void param(const param_type &p) noexcept { parameters_ = p; }
+  result_type min() const noexcept { return numeric_limits<result_type>::lowest(); }
+  result_type max() const noexcept { return numeric_limits<result_type>::max(); }
+  friend bool operator==(const extreme_value_distribution &,
+                         const extreme_value_distribution &) = default;
+private:
+  param_type parameters_;
+};
+
+template <class RealType = double> class cauchy_distribution {
+  static_assert(is_floating_point_v<RealType>);
+public:
+  using result_type = RealType;
+  class param_type {
+  public:
+    using distribution_type = cauchy_distribution;
+    explicit param_type(result_type location = 0, result_type scale = 1)
+        : location_(location), scale_(scale) {}
+    result_type a() const noexcept { return location_; }
+    result_type b() const noexcept { return scale_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    result_type location_;
+    result_type scale_;
+  };
+  cauchy_distribution() : cauchy_distribution(0) {}
+  explicit cauchy_distribution(result_type location, result_type scale = 1)
+      : parameters_(location, scale) {}
+  explicit cauchy_distribution(const param_type &parameters) : parameters_(parameters) {}
+  void reset() noexcept {}
+  template <class URBG> result_type operator()(URBG &generator) { return (*this)(generator, parameters_); }
+  template <class URBG> result_type operator()(URBG &generator, const param_type &p) {
+    constexpr result_type pi = static_cast<result_type>(3.141592653589793238462643383279502884L);
+    return p.a() + p.b() * tan(pi * (detail::random_unit<result_type>(generator) - result_type{0.5}));
+  }
+  result_type a() const noexcept { return parameters_.a(); }
+  result_type b() const noexcept { return parameters_.b(); }
+  param_type param() const noexcept { return parameters_; }
+  void param(const param_type &p) noexcept { parameters_ = p; }
+  result_type min() const noexcept { return numeric_limits<result_type>::lowest(); }
+  result_type max() const noexcept { return numeric_limits<result_type>::max(); }
+  friend bool operator==(const cauchy_distribution &,
+                         const cauchy_distribution &) = default;
+private:
+  param_type parameters_;
+};
+
+template <class IntType = int> class binomial_distribution {
+  static_assert(is_integral_v<IntType> && !is_same_v<remove_cv_t<IntType>, bool>);
+public:
+  using result_type = IntType;
+  class param_type {
+  public:
+    using distribution_type = binomial_distribution;
+    explicit param_type(result_type trials = 1, double probability = 0.5)
+        : trials_(trials), probability_(probability) {}
+    result_type t() const noexcept { return trials_; }
+    double p() const noexcept { return probability_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    result_type trials_;
+    double probability_;
+  };
+  binomial_distribution() : binomial_distribution(1) {}
+  explicit binomial_distribution(result_type trials, double probability = 0.5)
+      : parameters_(trials, probability) {}
+  explicit binomial_distribution(const param_type &parameters) : parameters_(parameters) {}
+  void reset() noexcept {}
+  template <class URBG> result_type operator()(URBG &generator) { return (*this)(generator, parameters_); }
+  template <class URBG> result_type operator()(URBG &generator, const param_type &p) {
+    if (p.p() == 0.0)
+      return 0;
+    if (p.p() == 1.0)
+      return p.t();
+    const bool complement = p.p() > 0.5;
+    geometric_distribution<result_type> gaps(complement ? 1.0 - p.p() : p.p());
+    result_type remaining = p.t();
+    result_type count = 0;
+    while (remaining > 0) {
+      const result_type gap = gaps(generator);
+      if (gap >= remaining)
+        break;
+      ++count;
+      remaining -= gap + 1;
+    }
+    return complement ? p.t() - count : count;
+  }
+  result_type t() const noexcept { return parameters_.t(); }
+  double p() const noexcept { return parameters_.p(); }
+  param_type param() const noexcept { return parameters_; }
+  void param(const param_type &p) noexcept { parameters_ = p; }
+  result_type min() const noexcept { return 0; }
+  result_type max() const noexcept { return t(); }
+  friend bool operator==(const binomial_distribution &,
+                         const binomial_distribution &) = default;
+private:
+  param_type parameters_;
+};
+
+template <class IntType = int> class negative_binomial_distribution {
+  static_assert(is_integral_v<IntType> && !is_same_v<remove_cv_t<IntType>, bool>);
+public:
+  using result_type = IntType;
+  class param_type {
+  public:
+    using distribution_type = negative_binomial_distribution;
+    explicit param_type(result_type successes = 1, double probability = 0.5)
+        : successes_(successes), probability_(probability) {}
+    result_type k() const noexcept { return successes_; }
+    double p() const noexcept { return probability_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    result_type successes_;
+    double probability_;
+  };
+  negative_binomial_distribution() : negative_binomial_distribution(1) {}
+  explicit negative_binomial_distribution(result_type successes, double probability = 0.5)
+      : parameters_(successes, probability) {}
+  explicit negative_binomial_distribution(const param_type &parameters) : parameters_(parameters) {}
+  void reset() noexcept {}
+  template <class URBG> result_type operator()(URBG &generator) { return (*this)(generator, parameters_); }
+  template <class URBG> result_type operator()(URBG &generator, const param_type &p) {
+    geometric_distribution<result_type> gaps(p.p());
+    result_type failures = 0;
+    for (result_type i = 0; i < p.k(); ++i) {
+      const result_type gap = gaps(generator);
+      if (gap > numeric_limits<result_type>::max() - failures)
+        return numeric_limits<result_type>::max();
+      failures += gap;
+    }
+    return failures;
+  }
+  result_type k() const noexcept { return parameters_.k(); }
+  double p() const noexcept { return parameters_.p(); }
+  param_type param() const noexcept { return parameters_; }
+  void param(const param_type &p) noexcept { parameters_ = p; }
+  result_type min() const noexcept { return 0; }
+  result_type max() const noexcept { return numeric_limits<result_type>::max(); }
+  friend bool operator==(const negative_binomial_distribution &,
+                         const negative_binomial_distribution &) = default;
+private:
+  param_type parameters_;
+};
+
+template <class IntType = int> class poisson_distribution {
+  static_assert(is_integral_v<IntType> && !is_same_v<remove_cv_t<IntType>, bool>);
+public:
+  using result_type = IntType;
+  class param_type {
+  public:
+    using distribution_type = poisson_distribution;
+    explicit param_type(double mean = 1) : mean_(mean) {}
+    double mean() const noexcept { return mean_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    double mean_;
+  };
+  poisson_distribution() : poisson_distribution(1) {}
+  explicit poisson_distribution(double mean) : parameters_(mean) {}
+  explicit poisson_distribution(const param_type &parameters) : parameters_(parameters) {}
+  void reset() noexcept {}
+  template <class URBG> result_type operator()(URBG &generator) { return (*this)(generator, parameters_); }
+  template <class URBG> result_type operator()(URBG &generator, const param_type &p) {
+    const double mean = p.mean();
+    if (mean < 10.0) {
+      const double limit = exp(-mean);
+      result_type count = 0;
+      double product = 1.0;
+      do {
+        ++count;
+        product *= detail::random_open_unit<double>(generator);
+      } while (product > limit);
+      return count - 1;
+    }
+    const double b = 0.931 + 2.53 * sqrt(mean);
+    const double a = -0.059 + 0.02483 * b;
+    const double inverse_alpha = 1.1239 + 1.1328 / (b - 3.4);
+    const double squeeze = 0.9277 - 3.6224 / (b - 2.0);
+    for (;;) {
+      const double u = detail::random_unit<double>(generator) - 0.5;
+      const double v = detail::random_unit<double>(generator);
+      const double us = 0.5 - (u < 0 ? -u : u);
+      const double candidate = floor((2.0 * a / us + b) * u + mean + 0.43);
+      if (us >= 0.07 && v <= squeeze)
+        return static_cast<result_type>(candidate);
+      if (candidate < 0 || (us < 0.013 && v > us))
+        continue;
+      if (log(v * inverse_alpha / (a / (us * us) + b)) <=
+          -mean + candidate * log(mean) - lgamma(candidate + 1.0))
+        return static_cast<result_type>(candidate);
+    }
+  }
+  double mean() const noexcept { return parameters_.mean(); }
+  param_type param() const noexcept { return parameters_; }
+  void param(const param_type &p) noexcept { parameters_ = p; }
+  result_type min() const noexcept { return 0; }
+  result_type max() const noexcept { return numeric_limits<result_type>::max(); }
+  friend bool operator==(const poisson_distribution &,
+                         const poisson_distribution &) = default;
+private:
+  param_type parameters_;
+};
+
+template <class RealType = double> class chi_squared_distribution {
+  static_assert(is_floating_point_v<RealType>);
+public:
+  using result_type = RealType;
+  class param_type {
+  public:
+    using distribution_type = chi_squared_distribution;
+    explicit param_type(result_type degrees = 1) : degrees_(degrees) {}
+    result_type n() const noexcept { return degrees_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    result_type degrees_;
+  };
+  chi_squared_distribution() : chi_squared_distribution(1) {}
+  explicit chi_squared_distribution(result_type degrees) : parameters_(degrees) {}
+  explicit chi_squared_distribution(const param_type &parameters) : parameters_(parameters) {}
+  void reset() noexcept {}
+  template <class URBG> result_type operator()(URBG &generator) { return (*this)(generator, parameters_); }
+  template <class URBG> result_type operator()(URBG &generator, const param_type &p) {
+    gamma_distribution<result_type> gamma(p.n() / result_type{2}, result_type{2});
+    return gamma(generator);
+  }
+  result_type n() const noexcept { return parameters_.n(); }
+  param_type param() const noexcept { return parameters_; }
+  void param(const param_type &p) noexcept { parameters_ = p; }
+  result_type min() const noexcept { return 0; }
+  result_type max() const noexcept { return numeric_limits<result_type>::max(); }
+  friend bool operator==(const chi_squared_distribution &,
+                         const chi_squared_distribution &) = default;
+private:
+  param_type parameters_;
+};
+
+template <class RealType = double> class fisher_f_distribution {
+  static_assert(is_floating_point_v<RealType>);
+public:
+  using result_type = RealType;
+  class param_type {
+  public:
+    using distribution_type = fisher_f_distribution;
+    explicit param_type(result_type numerator = 1, result_type denominator = 1)
+        : numerator_(numerator), denominator_(denominator) {}
+    result_type m() const noexcept { return numerator_; }
+    result_type n() const noexcept { return denominator_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    result_type numerator_;
+    result_type denominator_;
+  };
+  fisher_f_distribution() : fisher_f_distribution(1) {}
+  explicit fisher_f_distribution(result_type numerator, result_type denominator = 1)
+      : parameters_(numerator, denominator) {}
+  explicit fisher_f_distribution(const param_type &parameters) : parameters_(parameters) {}
+  void reset() noexcept {}
+  template <class URBG> result_type operator()(URBG &generator) { return (*this)(generator, parameters_); }
+  template <class URBG> result_type operator()(URBG &generator, const param_type &p) {
+    gamma_distribution<result_type> numerator(p.m() / result_type{2}, result_type{2});
+    gamma_distribution<result_type> denominator(p.n() / result_type{2}, result_type{2});
+    return (numerator(generator) * p.n()) / (denominator(generator) * p.m());
+  }
+  result_type m() const noexcept { return parameters_.m(); }
+  result_type n() const noexcept { return parameters_.n(); }
+  param_type param() const noexcept { return parameters_; }
+  void param(const param_type &p) noexcept { parameters_ = p; }
+  result_type min() const noexcept { return 0; }
+  result_type max() const noexcept { return numeric_limits<result_type>::max(); }
+  friend bool operator==(const fisher_f_distribution &,
+                         const fisher_f_distribution &) = default;
+private:
+  param_type parameters_;
+};
+
+template <class RealType = double> class student_t_distribution {
+  static_assert(is_floating_point_v<RealType>);
+public:
+  using result_type = RealType;
+  class param_type {
+  public:
+    using distribution_type = student_t_distribution;
+    explicit param_type(result_type degrees = 1) : degrees_(degrees) {}
+    result_type n() const noexcept { return degrees_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    result_type degrees_;
+  };
+  student_t_distribution() : student_t_distribution(1) {}
+  explicit student_t_distribution(result_type degrees) : parameters_(degrees) {}
+  explicit student_t_distribution(const param_type &parameters) : parameters_(parameters) {}
+  void reset() noexcept { normal_.reset(); }
+  template <class URBG> result_type operator()(URBG &generator) { return (*this)(generator, parameters_); }
+  template <class URBG> result_type operator()(URBG &generator, const param_type &p) {
+    gamma_distribution<result_type> chi(p.n() / result_type{2}, result_type{2});
+    return normal_(generator) / sqrt(chi(generator) / p.n());
+  }
+  result_type n() const noexcept { return parameters_.n(); }
+  param_type param() const noexcept { return parameters_; }
+  void param(const param_type &p) noexcept { parameters_ = p; }
+  result_type min() const noexcept { return numeric_limits<result_type>::lowest(); }
+  result_type max() const noexcept { return numeric_limits<result_type>::max(); }
+  friend bool operator==(const student_t_distribution &left,
+                         const student_t_distribution &right) {
+    return left.parameters_ == right.parameters_ && left.normal_ == right.normal_;
+  }
+private:
+  param_type parameters_;
+  normal_distribution<result_type> normal_{};
+};
+
+template <class IntType = int> class discrete_distribution {
+  static_assert(is_integral_v<IntType> && !is_same_v<remove_cv_t<IntType>, bool>);
+public:
+  using result_type = IntType;
+  class param_type {
+  public:
+    using distribution_type = discrete_distribution;
+    param_type() : probabilities_{1.0} {}
+    template <class InputIterator>
+    param_type(InputIterator first, InputIterator last) {
+      for (; first != last; ++first)
+        probabilities_.push_back(static_cast<double>(*first));
+      normalize();
+    }
+    param_type(initializer_list<double> weights)
+        : param_type(weights.begin(), weights.end()) {}
+    template <class UnaryOperation>
+    param_type(size_t count, double minimum, double maximum, UnaryOperation weight) {
+      if (count == 0) {
+        probabilities_.push_back(1.0);
+      } else {
+        const double delta = (maximum - minimum) / static_cast<double>(count);
+        for (size_t i = 0; i < count; ++i)
+          probabilities_.push_back(weight(minimum + (static_cast<double>(i) + 0.5) * delta));
+        normalize();
+      }
+    }
+    vector<double> probabilities() const { return probabilities_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    friend class discrete_distribution;
+    void normalize() {
+      if (probabilities_.empty()) {
+        probabilities_.push_back(1.0);
+        return;
+      }
+      double sum = 0;
+      for (double value : probabilities_)
+        sum += value;
+      for (double &value : probabilities_)
+        value /= sum;
+    }
+    vector<double> probabilities_;
+  };
+
+  discrete_distribution() = default;
+  template <class InputIterator>
+  discrete_distribution(InputIterator first, InputIterator last) : parameters_(first, last) {}
+  discrete_distribution(initializer_list<double> weights) : parameters_(weights) {}
+  template <class UnaryOperation>
+  discrete_distribution(size_t count, double minimum, double maximum, UnaryOperation weight)
+      : parameters_(count, minimum, maximum, weight) {}
+  explicit discrete_distribution(const param_type &parameters) : parameters_(parameters) {}
+  void reset() noexcept {}
+  template <class URBG> result_type operator()(URBG &generator) { return (*this)(generator, parameters_); }
+  template <class URBG> result_type operator()(URBG &generator, const param_type &p) {
+    const double value = detail::random_unit<double>(generator);
+    double cumulative = 0;
+    for (size_t i = 0; i + 1 < p.probabilities_.size(); ++i) {
+      cumulative += p.probabilities_[i];
+      if (value < cumulative)
+        return static_cast<result_type>(i);
+    }
+    return static_cast<result_type>(p.probabilities_.size() - 1);
+  }
+  vector<double> probabilities() const { return parameters_.probabilities(); }
+  param_type param() const { return parameters_; }
+  void param(const param_type &p) { parameters_ = p; }
+  result_type min() const noexcept { return 0; }
+  result_type max() const noexcept {
+    return static_cast<result_type>(parameters_.probabilities_.size() - 1);
+  }
+  friend bool operator==(const discrete_distribution &,
+                         const discrete_distribution &) = default;
+private:
+  param_type parameters_;
+};
+
+template <class RealType = double> class piecewise_constant_distribution {
+  static_assert(is_floating_point_v<RealType>);
+public:
+  using result_type = RealType;
+  class param_type {
+  public:
+    using distribution_type = piecewise_constant_distribution;
+    param_type() : intervals_{result_type{0}, result_type{1}}, densities_{result_type{1}} {}
+    template <class InputIteratorB, class InputIteratorW>
+    param_type(InputIteratorB first_boundary, InputIteratorB last_boundary,
+               InputIteratorW first_weight) {
+      for (; first_boundary != last_boundary; ++first_boundary)
+        intervals_.push_back(static_cast<result_type>(*first_boundary));
+      if (intervals_.size() < 2) {
+        intervals_ = vector<result_type>{result_type{0}, result_type{1}};
+        densities_ = vector<result_type>{result_type{1}};
+        return;
+      }
+      vector<result_type> weights;
+      for (size_t i = 0; i + 1 < intervals_.size(); ++i, ++first_weight)
+        weights.push_back(static_cast<result_type>(*first_weight));
+      initialize(weights);
+    }
+    template <class UnaryOperation>
+    param_type(initializer_list<result_type> boundaries, UnaryOperation weight) {
+      if (boundaries.size() < 2) {
+        intervals_ = vector<result_type>{result_type{0}, result_type{1}};
+        densities_ = vector<result_type>{result_type{1}};
+        return;
+      }
+      for (result_type boundary : boundaries)
+        intervals_.push_back(boundary);
+      vector<result_type> weights;
+      for (size_t i = 0; i + 1 < intervals_.size(); ++i)
+        weights.push_back(static_cast<result_type>(
+            weight((intervals_[i] + intervals_[i + 1]) / result_type{2})));
+      initialize(weights);
+    }
+    template <class UnaryOperation>
+    param_type(size_t count, result_type minimum, result_type maximum,
+               UnaryOperation weight) {
+      const size_t n = count == 0 ? 1 : count;
+      const result_type delta = (maximum - minimum) / static_cast<result_type>(n);
+      for (size_t i = 0; i <= n; ++i)
+        intervals_.push_back(minimum + static_cast<result_type>(i) * delta);
+      vector<result_type> weights;
+      for (size_t i = 0; i < n; ++i)
+        weights.push_back(static_cast<result_type>(
+            weight(intervals_[i] + delta / result_type{2})));
+      initialize(weights);
+    }
+    vector<result_type> intervals() const { return intervals_; }
+    vector<result_type> densities() const { return densities_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    friend class piecewise_constant_distribution;
+    void initialize(const vector<result_type> &weights) {
+      result_type sum = 0;
+      for (result_type weight : weights)
+        sum += weight;
+      for (size_t i = 0; i < weights.size(); ++i)
+        densities_.push_back(weights[i] /
+            (sum * (intervals_[i + 1] - intervals_[i])));
+    }
+    vector<result_type> intervals_;
+    vector<result_type> densities_;
+  };
+
+  piecewise_constant_distribution() = default;
+  template <class InputIteratorB, class InputIteratorW>
+  piecewise_constant_distribution(InputIteratorB first_boundary,
+      InputIteratorB last_boundary, InputIteratorW first_weight)
+      : parameters_(first_boundary, last_boundary, first_weight) {}
+  template <class UnaryOperation>
+  piecewise_constant_distribution(initializer_list<result_type> boundaries,
+                                  UnaryOperation weight)
+      : parameters_(boundaries, weight) {}
+  template <class UnaryOperation>
+  piecewise_constant_distribution(size_t count, result_type minimum,
+      result_type maximum, UnaryOperation weight)
+      : parameters_(count, minimum, maximum, weight) {}
+  explicit piecewise_constant_distribution(const param_type &parameters)
+      : parameters_(parameters) {}
+  void reset() noexcept {}
+  template <class URBG> result_type operator()(URBG &generator) { return (*this)(generator, parameters_); }
+  template <class URBG> result_type operator()(URBG &generator, const param_type &p) {
+    const result_type value = detail::random_unit<result_type>(generator);
+    result_type lower_mass = 0;
+    for (size_t index = 0; index < p.densities_.size(); ++index) {
+      const result_type interval_mass =
+          p.densities_[index] * (p.intervals_[index + 1] - p.intervals_[index]);
+      if (index + 1 == p.densities_.size() || value < lower_mass + interval_mass)
+        return p.intervals_[index] + (value - lower_mass) / p.densities_[index];
+      lower_mass += interval_mass;
+    }
+    return p.intervals_.back();
+  }
+  vector<result_type> intervals() const { return parameters_.intervals(); }
+  vector<result_type> densities() const { return parameters_.densities(); }
+  param_type param() const { return parameters_; }
+  void param(const param_type &p) { parameters_ = p; }
+  result_type min() const noexcept { return parameters_.intervals_[0]; }
+  result_type max() const noexcept { return parameters_.intervals_.back(); }
+  friend bool operator==(const piecewise_constant_distribution &,
+                         const piecewise_constant_distribution &) = default;
+private:
+  param_type parameters_;
+};
+
+template <class RealType = double> class piecewise_linear_distribution {
+  static_assert(is_floating_point_v<RealType>);
+public:
+  using result_type = RealType;
+  class param_type {
+  public:
+    using distribution_type = piecewise_linear_distribution;
+    param_type()
+        : intervals_{result_type{0}, result_type{1}},
+          densities_{result_type{1}, result_type{1}} {}
+    template <class InputIteratorB, class InputIteratorW>
+    param_type(InputIteratorB first_boundary, InputIteratorB last_boundary,
+               InputIteratorW first_weight) {
+      for (; first_boundary != last_boundary; ++first_boundary)
+        intervals_.push_back(static_cast<result_type>(*first_boundary));
+      if (intervals_.size() < 2) {
+        set_default();
+        return;
+      }
+      for (size_t i = 0; i < intervals_.size(); ++i, ++first_weight)
+        densities_.push_back(static_cast<result_type>(*first_weight));
+      normalize();
+    }
+    template <class UnaryOperation>
+    param_type(initializer_list<result_type> boundaries, UnaryOperation weight) {
+      if (boundaries.size() < 2) {
+        set_default();
+        return;
+      }
+      for (result_type boundary : boundaries) {
+        intervals_.push_back(boundary);
+        densities_.push_back(static_cast<result_type>(weight(boundary)));
+      }
+      normalize();
+    }
+    template <class UnaryOperation>
+    param_type(size_t count, result_type minimum, result_type maximum,
+               UnaryOperation weight) {
+      const size_t n = count == 0 ? 1 : count;
+      const result_type delta = (maximum - minimum) / static_cast<result_type>(n);
+      for (size_t i = 0; i <= n; ++i) {
+        const result_type boundary = minimum + static_cast<result_type>(i) * delta;
+        intervals_.push_back(boundary);
+        densities_.push_back(static_cast<result_type>(weight(boundary)));
+      }
+      normalize();
+    }
+    vector<result_type> intervals() const { return intervals_; }
+    vector<result_type> densities() const { return densities_; }
+    friend bool operator==(const param_type &, const param_type &) = default;
+  private:
+    friend class piecewise_linear_distribution;
+    void set_default() {
+      intervals_ = vector<result_type>{result_type{0}, result_type{1}};
+      densities_ = vector<result_type>{result_type{1}, result_type{1}};
+    }
+    void normalize() {
+      result_type area = 0;
+      for (size_t i = 0; i + 1 < intervals_.size(); ++i)
+        area += (densities_[i] + densities_[i + 1]) *
+                (intervals_[i + 1] - intervals_[i]) / result_type{2};
+      for (result_type &density : densities_)
+        density /= area;
+    }
+    vector<result_type> intervals_;
+    vector<result_type> densities_;
+  };
+
+  piecewise_linear_distribution() = default;
+  template <class InputIteratorB, class InputIteratorW>
+  piecewise_linear_distribution(InputIteratorB first_boundary,
+      InputIteratorB last_boundary, InputIteratorW first_weight)
+      : parameters_(first_boundary, last_boundary, first_weight) {}
+  template <class UnaryOperation>
+  piecewise_linear_distribution(initializer_list<result_type> boundaries,
+                                UnaryOperation weight)
+      : parameters_(boundaries, weight) {}
+  template <class UnaryOperation>
+  piecewise_linear_distribution(size_t count, result_type minimum,
+      result_type maximum, UnaryOperation weight)
+      : parameters_(count, minimum, maximum, weight) {}
+  explicit piecewise_linear_distribution(const param_type &parameters)
+      : parameters_(parameters) {}
+  void reset() noexcept {}
+  template <class URBG> result_type operator()(URBG &generator) { return (*this)(generator, parameters_); }
+  template <class URBG> result_type operator()(URBG &generator, const param_type &p) {
+    const result_type value = detail::random_unit<result_type>(generator);
+    result_type lower_mass = 0;
+    for (size_t i = 0; i + 1 < p.intervals_.size(); ++i) {
+      const result_type width = p.intervals_[i + 1] - p.intervals_[i];
+      const result_type interval_mass =
+          (p.densities_[i] + p.densities_[i + 1]) * width / result_type{2};
+      if (i + 2 == p.intervals_.size() || value < lower_mass + interval_mass) {
+        const result_type mass = value - lower_mass;
+        const result_type slope = (p.densities_[i + 1] - p.densities_[i]) / width;
+        const result_type offset = slope == result_type{0}
+            ? mass / p.densities_[i]
+            : result_type{2} * mass /
+                  (p.densities_[i] +
+                   sqrt(p.densities_[i] * p.densities_[i] +
+                        result_type{2} * slope * mass));
+        return p.intervals_[i] + offset;
+      }
+      lower_mass += interval_mass;
+    }
+    return p.intervals_.back();
+  }
+  vector<result_type> intervals() const { return parameters_.intervals(); }
+  vector<result_type> densities() const { return parameters_.densities(); }
+  param_type param() const { return parameters_; }
+  void param(const param_type &p) { parameters_ = p; }
+  result_type min() const noexcept { return parameters_.intervals_[0]; }
+  result_type max() const noexcept { return parameters_.intervals_.back(); }
+  friend bool operator==(const piecewise_linear_distribution &,
+                         const piecewise_linear_distribution &) = default;
+private:
+  param_type parameters_;
+};
+
+FTL_END_NAMESPACE
+#endif

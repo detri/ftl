@@ -13,6 +13,11 @@
 #define FTL_CSTDLIB_END }
 #endif
 
+#if !defined(__cpp_lib_constexpr_cmath) || __cpp_lib_constexpr_cmath < 202202L
+#undef __cpp_lib_constexpr_cmath
+#define __cpp_lib_constexpr_cmath 202202L
+#endif
+
 extern "C" {
 #if defined(__APPLE__)
 void abort() __attribute__((__noreturn__));

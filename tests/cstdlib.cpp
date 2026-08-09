@@ -6,6 +6,10 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+#if __cpp_lib_constexpr_cmath != 202202L
+#error <cstdlib> must advertise constexpr integer math
+#endif
+
 static_assert(sizeof(tested::size_t) == sizeof(void*));
 static_assert(tested::abs(-7) == 7 && tested::labs(-8L) == 8L);
 static_assert(tested::llabs(-9LL) == 9LL);

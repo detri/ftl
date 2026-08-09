@@ -10,6 +10,12 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+#if __cpp_lib_constexpr_cmath != 202202L || __cpp_lib_hypot != 201603L ||    \
+    __cpp_lib_interpolate != 201902L ||                                      \
+    __cpp_lib_math_special_functions != 201603L
+#error <cmath> feature-test macros are incomplete
+#endif
+
 static_assert(tested::is_same_v<decltype(tested::sqrt(4.0f)), float>);
 static_assert(tested::is_same_v<decltype(tested::sqrt(4)), double>);
 static_assert(tested::is_same_v<decltype(tested::pow(2.0L, 3)), long double>);

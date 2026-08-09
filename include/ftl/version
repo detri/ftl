@@ -645,10 +645,31 @@
 #define __cpp_lib_interpolate 201902L
 #endif
 
+#if !defined(__cpp_lib_constexpr_cmath) || __cpp_lib_constexpr_cmath < 202202L
+#undef __cpp_lib_constexpr_cmath
+#define __cpp_lib_constexpr_cmath 202202L
+#endif
+
+#if !defined(__cpp_lib_hypot) || __cpp_lib_hypot < 201603L
+#undef __cpp_lib_hypot
+#define __cpp_lib_hypot 201603L
+#endif
+
 #if !defined(__cpp_lib_math_special_functions) ||                       \
     __cpp_lib_math_special_functions < 201603L
 #undef __cpp_lib_math_special_functions
 #define __cpp_lib_math_special_functions 201603L
+#endif
+
+#if !defined(__cpp_lib_complex_udls) || __cpp_lib_complex_udls < 201309L
+#undef __cpp_lib_complex_udls
+#define __cpp_lib_complex_udls 201309L
+#endif
+
+#if !defined(__cpp_lib_constexpr_complex) ||                             \
+    __cpp_lib_constexpr_complex < 201711L
+#undef __cpp_lib_constexpr_complex
+#define __cpp_lib_constexpr_complex 201711L
 #endif
 
 #if !defined(__cpp_lib_ranges_iota) || __cpp_lib_ranges_iota < 202202L

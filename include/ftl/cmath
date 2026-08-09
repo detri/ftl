@@ -31,6 +31,24 @@
 #define MATH_ERREXCEPT 2
 #define math_errhandling MATH_ERREXCEPT
 
+#if !defined(__cpp_lib_constexpr_cmath) || __cpp_lib_constexpr_cmath < 202202L
+#undef __cpp_lib_constexpr_cmath
+#define __cpp_lib_constexpr_cmath 202202L
+#endif
+#if !defined(__cpp_lib_hypot) || __cpp_lib_hypot < 201603L
+#undef __cpp_lib_hypot
+#define __cpp_lib_hypot 201603L
+#endif
+#if !defined(__cpp_lib_interpolate) || __cpp_lib_interpolate < 201902L
+#undef __cpp_lib_interpolate
+#define __cpp_lib_interpolate 201902L
+#endif
+#if !defined(__cpp_lib_math_special_functions) ||                       \
+    __cpp_lib_math_special_functions < 201603L
+#undef __cpp_lib_math_special_functions
+#define __cpp_lib_math_special_functions 201603L
+#endif
+
 FTL_CMATH_BEGIN
 
 using float_t = float;
