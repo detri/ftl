@@ -1,0 +1,132 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_DETAIL_MATH_RUNTIME_HEADER
+#define FTL_DETAIL_MATH_RUNTIME_HEADER
+
+extern "C" {
+
+int ftl_olm___fpclassifyd(double);
+int ftl_olm___fpclassifyf(float);
+int ftl_olm___fpclassifyl(long double);
+int ftl_olm___isfinite(double);
+int ftl_olm___isfinitef(float);
+int ftl_olm___isfinitel(long double);
+int ftl_olm_isinf(double);
+int ftl_olm___isinff(float);
+int ftl_olm___isinfl(long double);
+int ftl_olm_isnan(double);
+int ftl_olm___isnanf(float);
+int ftl_olm___isnanl(long double);
+int ftl_olm___isnormal(double);
+int ftl_olm___isnormalf(float);
+int ftl_olm___isnormall(long double);
+int ftl_olm___signbit(double);
+int ftl_olm___signbitf(float);
+int ftl_olm___signbitl(long double);
+
+#define FTL_MATH_UNARY(name)                                                  \
+  double ftl_olm_##name(double);                                              \
+  float ftl_olm_##name##f(float);                                             \
+  long double ftl_olm_##name##l(long double)
+
+#define FTL_MATH_BINARY(name)                                                 \
+  double ftl_olm_##name(double, double);                                      \
+  float ftl_olm_##name##f(float, float);                                      \
+  long double ftl_olm_##name##l(long double, long double)
+
+FTL_MATH_UNARY(acos);
+FTL_MATH_UNARY(acosh);
+FTL_MATH_UNARY(asin);
+FTL_MATH_UNARY(asinh);
+FTL_MATH_UNARY(atan);
+FTL_MATH_UNARY(atanh);
+FTL_MATH_UNARY(cbrt);
+FTL_MATH_UNARY(ceil);
+FTL_MATH_UNARY(cos);
+FTL_MATH_UNARY(cosh);
+FTL_MATH_UNARY(erf);
+FTL_MATH_UNARY(erfc);
+FTL_MATH_UNARY(exp);
+FTL_MATH_UNARY(exp2);
+FTL_MATH_UNARY(expm1);
+FTL_MATH_UNARY(fabs);
+FTL_MATH_UNARY(floor);
+FTL_MATH_UNARY(lgamma);
+FTL_MATH_UNARY(log);
+FTL_MATH_UNARY(log10);
+FTL_MATH_UNARY(log1p);
+FTL_MATH_UNARY(log2);
+FTL_MATH_UNARY(logb);
+FTL_MATH_UNARY(nearbyint);
+FTL_MATH_UNARY(rint);
+FTL_MATH_UNARY(round);
+FTL_MATH_UNARY(sin);
+FTL_MATH_UNARY(sinh);
+FTL_MATH_UNARY(sqrt);
+FTL_MATH_UNARY(tan);
+FTL_MATH_UNARY(tanh);
+FTL_MATH_UNARY(tgamma);
+FTL_MATH_UNARY(trunc);
+
+FTL_MATH_BINARY(atan2);
+FTL_MATH_BINARY(copysign);
+FTL_MATH_BINARY(fdim);
+FTL_MATH_BINARY(fmax);
+FTL_MATH_BINARY(fmin);
+FTL_MATH_BINARY(fmod);
+FTL_MATH_BINARY(hypot);
+FTL_MATH_BINARY(nextafter);
+FTL_MATH_BINARY(pow);
+FTL_MATH_BINARY(remainder);
+
+#undef FTL_MATH_UNARY
+#undef FTL_MATH_BINARY
+
+double ftl_olm_fma(double, double, double);
+float ftl_olm_fmaf(float, float, float);
+long double ftl_olm_fmal(long double, long double, long double);
+
+double ftl_olm_frexp(double, int *);
+float ftl_olm_frexpf(float, int *);
+long double ftl_olm_frexpl(long double, int *);
+double ftl_olm_modf(double, double *);
+float ftl_olm_modff(float, float *);
+long double ftl_olm_modfl(long double, long double *);
+
+int ftl_olm_ilogb(double);
+int ftl_olm_ilogbf(float);
+int ftl_olm_ilogbl(long double);
+
+double ftl_olm_ldexp(double, int);
+float ftl_olm_ldexpf(float, int);
+long double ftl_olm_ldexpl(long double, int);
+double ftl_olm_scalbn(double, int);
+float ftl_olm_scalbnf(float, int);
+long double ftl_olm_scalbnl(long double, int);
+double ftl_olm_scalbln(double, long);
+float ftl_olm_scalblnf(float, long);
+long double ftl_olm_scalblnl(long double, long);
+
+long ftl_olm_lrint(double);
+long ftl_olm_lrintf(float);
+long ftl_olm_lrintl(long double);
+long long ftl_olm_llrint(double);
+long long ftl_olm_llrintf(float);
+long long ftl_olm_llrintl(long double);
+long ftl_olm_lround(double);
+long ftl_olm_lroundf(float);
+long ftl_olm_lroundl(long double);
+long long ftl_olm_llround(double);
+long long ftl_olm_llroundf(float);
+long long ftl_olm_llroundl(long double);
+
+double ftl_olm_nexttoward(double, long double);
+float ftl_olm_nexttowardf(float, long double);
+long double ftl_olm_nexttowardl(long double, long double);
+double ftl_olm_remquo(double, double, int *);
+float ftl_olm_remquof(float, float, int *);
+long double ftl_olm_remquol(long double, long double, int *);
+
+} // extern "C"
+
+#endif

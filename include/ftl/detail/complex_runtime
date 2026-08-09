@@ -1,0 +1,43 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_DETAIL_COMPLEX_RUNTIME_HEADER
+#define FTL_DETAIL_COMPLEX_RUNTIME_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <detail/complex_abi>
+#else
+#include <ftl/detail/complex_abi>
+#endif
+
+#define FTL_COMPLEX_RUNTIME(type, suffix)                                     \
+  ftl_olm_complex<type> ftl_olm_cacos##suffix(ftl_olm_complex<type>);         \
+  ftl_olm_complex<type> ftl_olm_casin##suffix(ftl_olm_complex<type>);         \
+  ftl_olm_complex<type> ftl_olm_catan##suffix(ftl_olm_complex<type>);         \
+  ftl_olm_complex<type> ftl_olm_ccos##suffix(ftl_olm_complex<type>);          \
+  ftl_olm_complex<type> ftl_olm_csin##suffix(ftl_olm_complex<type>);          \
+  ftl_olm_complex<type> ftl_olm_ctan##suffix(ftl_olm_complex<type>);          \
+  ftl_olm_complex<type> ftl_olm_cacosh##suffix(ftl_olm_complex<type>);        \
+  ftl_olm_complex<type> ftl_olm_casinh##suffix(ftl_olm_complex<type>);        \
+  ftl_olm_complex<type> ftl_olm_catanh##suffix(ftl_olm_complex<type>);        \
+  ftl_olm_complex<type> ftl_olm_ccosh##suffix(ftl_olm_complex<type>);         \
+  ftl_olm_complex<type> ftl_olm_csinh##suffix(ftl_olm_complex<type>);         \
+  ftl_olm_complex<type> ftl_olm_ctanh##suffix(ftl_olm_complex<type>);         \
+  ftl_olm_complex<type> ftl_olm_cexp##suffix(ftl_olm_complex<type>);          \
+  ftl_olm_complex<type> ftl_olm_clog##suffix(ftl_olm_complex<type>);          \
+  type ftl_olm_cabs##suffix(ftl_olm_complex<type>);                           \
+  ftl_olm_complex<type> ftl_olm_cpow##suffix(                                \
+      ftl_olm_complex<type>, ftl_olm_complex<type>);                          \
+  ftl_olm_complex<type> ftl_olm_csqrt##suffix(ftl_olm_complex<type>);         \
+  type ftl_olm_carg##suffix(ftl_olm_complex<type>);                           \
+  type ftl_olm_cimag##suffix(ftl_olm_complex<type>);                          \
+  ftl_olm_complex<type> ftl_olm_conj##suffix(ftl_olm_complex<type>);          \
+  ftl_olm_complex<type> ftl_olm_cproj##suffix(ftl_olm_complex<type>);         \
+  type ftl_olm_creal##suffix(ftl_olm_complex<type>)
+
+FTL_COMPLEX_RUNTIME(double, );
+FTL_COMPLEX_RUNTIME(float, f);
+FTL_COMPLEX_RUNTIME(long double, l);
+
+#undef FTL_COMPLEX_RUNTIME
+
+#endif

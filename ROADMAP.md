@@ -156,6 +156,9 @@ dependency order, not hundreds of individual overloads.
 | `<ctime>`            | Stage 5.1         |
 | `<stdexcept>`        | Stage 5.2         |
 | `<system_error>`     | Stage 5.2         |
+| `<cfenv>`            | Stage 5.3         |
+| `<cmath>`            | Stage 5.3         |
+| `<complex>`          | Stage 5.3         |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -193,7 +196,6 @@ remain required when C++23 still specifies them; they are not silently dropped.
 | Algorithms/numerics       | `<numbers>`, `<random>`, `<valarray>`                                                                                                                              |
 | Text/encoding             | `<codecvt>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                               |
 | Errors/time/localization  | `<locale>`, `<clocale>`                                                                                                                                            |
-| C numerics/text           | `<cfenv>`, `<cmath>`, `<complex>`                                                                                                                                  |
 | I/O/formatting/files      | `<cstdio>`, `<fstream>`, `<iomanip>`, `<iostream>`, `<ostream>`, `<sstream>`, `<spanstream>`, `<strstream>`, `<syncstream>`, `<filesystem>`, `<format>`, `<print>` |
 | Concurrency               | `<barrier>`, `<condition_variable>`, `<future>`, `<latch>`, `<mutex>`, `<semaphore>`, `<shared_mutex>`, `<stop_token>`, `<thread>`                                 |
 | C compatibility           | `<stdatomic.h>`                                                                                                                                                    |
@@ -423,7 +425,11 @@ Take these closures in order:
    `<ratio>` and `<ctime>` complete
 2. `<system_error>` + `<stdexcept>` + `<stacktrace>` — **runtime closure
    complete**
-3. `<cfenv>` + `<cmath>` + `<numbers>` + `<complex>`
+3. `<cfenv>` + `<cmath>` + `<numbers>` + `<complex>` — **OpenLibm real/complex
+   core and the Boost.Math-derived C++23 special functions complete; the N4950
+   synopsis audit is complete, the local MSVC, ClangCL, GCC, and Clang matrix
+   is green across all supported floating-point formats, and the Apple AArch64
+   runtime core is CI-validated**
 4. `<random>` + `<valarray>`
 
 **Exit:** numeric and time facilities have specified edge behavior and do not
@@ -466,6 +472,38 @@ The `<stacktrace>` stream insertion and formatter specializations depend on
 Stage 7's `<ostream>` and `<format>` closures. They, and the
 `__cpp_lib_stacktrace` advertisement, remain deferred until those headers are
 complete; the runtime surface does not import vendor C++ library APIs.
+
+Stage 5.3 starts with the freestanding, header-only C++23 `<numbers>` surface.
+The remaining closure will be taken in dependency order:
+
+1. Own `<fenv.h>` and `<cfenv>` surfaces over a private environment layer.
+   x86-64 saves and restores both MXCSR and the x87 control/status state;
+   AArch64 uses FPCR/FPSR. Compiler barriers surround environment mutations.
+2. Adapt OpenLibm's MIT-licensed binary32/binary64 kernels and C99 complex
+   functions into FTL-owned detail code, retaining upstream notices and file
+   provenance. Add only the x86-64 and AArch64 selection needed by the
+   supported matrix, plus x86 binary80 operations where `long double` uses it.
+3. Build the `<cmath>` overload and classification surface over those kernels,
+   then adapt the C++23 special mathematical functions from Boost.Math under
+   the Boost Software License 1.0. Keep Boost policy/template machinery out of
+   the public implementation unless a required function genuinely needs it.
+4. Implement `<complex>` last: the value type and elementary arithmetic are
+   local and header-only; transcendental functions route through the completed
+   real kernels or adapted OpenLibm complex routines so branch cuts, signed
+   zero, infinities, and NaNs have one source of truth.
+
+Each imported source keeps its upstream license header and is listed in a
+Stage 5.3 attribution file. Completion requires normal and `FTL_REPLACE_STL`
+public-header checks, freestanding linkage, rounding-mode/exception tests, and
+an accuracy suite measured in ULPs against high-precision reference vectors on
+every supported floating-point format.
+
+The N4950 audit covers the complete `<numbers>` and `<cfenv>` synopses,
+`<cmath>` including arithmetic promotions, C++23 `constexpr` functions, and all
+21 special-function families, and `<complex>` including conversion-rank and
+mixed-arithmetic rules. The two `<complex>` stream operators remain staged with
+Stage 7's stream closure so this freestanding header does not import an
+incomplete I/O dependency.
 
 ### Stage 6 — Concurrency
 

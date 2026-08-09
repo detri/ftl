@@ -3,6 +3,11 @@
 #ifndef FTL_VERSION_HEADER
 #define FTL_VERSION_HEADER
 
+#if !defined(__cpp_lib_math_constants) || __cpp_lib_math_constants < 201907L
+#undef __cpp_lib_math_constants
+#define __cpp_lib_math_constants 201907L
+#endif
+
 #if !defined(__cpp_lib_chrono) || __cpp_lib_chrono < 201611L
 #undef __cpp_lib_chrono
 #define __cpp_lib_chrono 201611L
@@ -638,6 +643,12 @@
 #if !defined(__cpp_lib_interpolate) || __cpp_lib_interpolate < 201902L
 #undef __cpp_lib_interpolate
 #define __cpp_lib_interpolate 201902L
+#endif
+
+#if !defined(__cpp_lib_math_special_functions) ||                       \
+    __cpp_lib_math_special_functions < 201603L
+#undef __cpp_lib_math_special_functions
+#define __cpp_lib_math_special_functions 201603L
 #endif
 
 #if !defined(__cpp_lib_ranges_iota) || __cpp_lib_ranges_iota < 202202L
