@@ -1,0 +1,289 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_THREAD_HEADER
+#define FTL_THREAD_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <chrono>
+#include <compare>
+#include <detail/thread.hpp>
+#include <exception>
+#include <functional>
+#include <system_error>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+#define FTL_THREAD_BEGIN_NAMESPACE namespace std {
+#define FTL_THREAD_END_NAMESPACE }
+#else
+#include <ftl/chrono>
+#include <ftl/compare>
+#include <ftl/detail/thread.hpp>
+#include <ftl/exception>
+#include <ftl/functional>
+#include <ftl/system_error>
+#include <ftl/tuple>
+#include <ftl/type_traits>
+#include <ftl/utility>
+#define FTL_THREAD_BEGIN_NAMESPACE namespace ftl {
+#define FTL_THREAD_END_NAMESPACE }
+#endif
+
+FTL_THREAD_BEGIN_NAMESPACE
+
+class thread;
+
+namespace detail {
+
+struct thread_id_access;
+
+[[noreturn]]
+inline void throw_thread_error(errc error, const char *operation) {
+#if FTL_HAS_EXCEPTIONS
+  throw system_error(make_error_code(error), operation);
+#else
+  (void)error;
+  (void)operation;
+  terminate();
+#endif
+}
+
+template <class Function, class... Args>
+class thread_invocation final : public thread_start_state {
+public:
+  template <class F, class... A>
+  explicit thread_invocation(F &&function, A &&...arguments)
+      : thread_start_state(&thread_invocation::run),
+        function_(forward<F>(function)), arguments_(forward<A>(arguments)...) {}
+
+private:
+  static void run(thread_start_state *base) noexcept {
+    auto *self = static_cast<thread_invocation *>(base);
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+      self->invoke_stored();
+    } catch (...) {
+      delete self;
+      terminate();
+    }
+#else
+    self->invoke_stored();
+#endif
+
+    delete self;
+  }
+
+  void invoke_stored() {
+    apply(
+        [this](auto &&...arguments) {
+          invoke(move(function_), move(arguments)...);
+        },
+        move(arguments_));
+  }
+
+  Function function_;
+  tuple<Args...> arguments_;
+};
+
+} // namespace detail
+
+class thread {
+public:
+  class id {
+    friend class thread;
+    friend struct detail::thread_id_access;
+
+  public:
+    id() noexcept = default;
+
+    friend bool operator==(id, id) noexcept = default;
+
+    friend strong_ordering operator<=>(id, id) noexcept = default;
+
+  private:
+    explicit id(detail::native_thread_id value) noexcept : value_(value) {}
+
+    detail::native_thread_id value_ = 0;
+  };
+
+  using native_handle_type = detail::native_thread_handle;
+
+  thread() noexcept = default;
+
+  template <class F, class... Args>
+    requires(!is_same_v<remove_cvref_t<F>, thread>)
+  explicit thread(F &&function, Args &&...arguments) {
+    static_assert(is_constructible_v<decay_t<F>, F>);
+
+    static_assert((is_constructible_v<decay_t<Args>, Args> && ...));
+
+    static_assert(is_invocable_v<decay_t<F>, decay_t<Args>...>);
+
+    using invocation = detail::thread_invocation<decay_t<F>, decay_t<Args>...>;
+
+    invocation *state =
+        new invocation(forward<F>(function), forward<Args>(arguments)...);
+
+    detail::native_thread_handle handle{};
+    detail::native_thread_id id_value{};
+
+    if (!detail::native_thread_create(handle, id_value, state)) {
+      delete state;
+
+      detail::throw_thread_error(errc::resource_unavailable_try_again,
+                                 "thread");
+    }
+
+    handle_ = handle;
+    id_ = id{id_value};
+  }
+
+  ~thread() {
+    if (joinable())
+      terminate();
+  }
+
+  thread(const thread &) = delete;
+
+  thread &operator=(const thread &) = delete;
+
+  thread(thread &&other) noexcept
+      : handle_(exchange(other.handle_, native_handle_type{})),
+        id_(exchange(other.id_, id{})) {}
+
+  thread &operator=(thread &&other) noexcept {
+    if (joinable())
+      terminate();
+
+    handle_ = exchange(other.handle_, native_handle_type{});
+
+    id_ = exchange(other.id_, id{});
+
+    return *this;
+  }
+
+  void swap(thread &other) noexcept {
+    auto handle = handle_;
+    handle_ = other.handle_;
+    other.handle_ = handle;
+
+    auto identifier = id_;
+    id_ = other.id_;
+    other.id_ = identifier;
+  }
+
+  [[nodiscard]]
+  bool joinable() const noexcept {
+    return id_ != id{};
+  }
+
+  void join() {
+    if (!joinable()) {
+      detail::throw_thread_error(errc::invalid_argument, "thread::join");
+    }
+
+    if (id_.value_ == detail::native_this_thread_id()) {
+      detail::throw_thread_error(errc::resource_deadlock_would_occur,
+                                 "thread::join");
+    }
+
+    if (!detail::native_thread_join(handle_)) {
+      detail::throw_thread_error(errc::no_such_process, "thread::join");
+    }
+
+    handle_ = native_handle_type{};
+    id_ = id{};
+  }
+
+  void detach() {
+    if (!joinable()) {
+      detail::throw_thread_error(errc::invalid_argument, "thread::detach");
+    }
+
+    if (!detail::native_thread_detach(handle_)) {
+      detail::throw_thread_error(errc::no_such_process, "thread::detach");
+    }
+
+    handle_ = native_handle_type{};
+    id_ = id{};
+  }
+
+  [[nodiscard]]
+  id get_id() const noexcept {
+    return id_;
+  }
+
+  native_handle_type native_handle() { return handle_; }
+
+  static unsigned int hardware_concurrency() noexcept {
+    return detail::native_thread_hardware_concurrency();
+  }
+
+private:
+  native_handle_type handle_{};
+  id id_{};
+};
+
+namespace detail {
+
+struct thread_id_access {
+  static thread::id make(native_thread_id value) noexcept {
+    return thread::id{value};
+  }
+
+  static native_thread_id value(thread::id id) noexcept { return id.value_; }
+};
+
+} // namespace detail
+
+inline void swap(thread &left, thread &right) noexcept { left.swap(right); }
+
+namespace this_thread {
+
+inline thread::id get_id() noexcept {
+  return detail::thread_id_access::make(detail::native_this_thread_id());
+}
+
+inline void yield() noexcept { detail::native_thread_yield(); }
+
+template <class Rep, class Period>
+void sleep_for(const chrono::duration<Rep, Period> &duration) {
+  if (duration <= chrono::duration<Rep, Period>::zero()) {
+    return;
+  }
+
+  const auto rounded = chrono::ceil<chrono::nanoseconds>(duration);
+
+  if (rounded.count() <= 0)
+    return;
+
+  detail::native_thread_sleep(static_cast<uint64_t>(rounded.count()));
+}
+
+template <class Clock, class Duration>
+void sleep_until(const chrono::time_point<Clock, Duration> &time) {
+  for (;;) {
+    const auto now = Clock::now();
+
+    if (now >= time)
+      return;
+
+    sleep_for(time - now);
+  }
+}
+
+} // namespace this_thread
+
+template <> struct hash<thread::id> {
+  size_t operator()(thread::id value) const noexcept {
+    return hash<uintptr_t>{}(detail::thread_id_access::value(value));
+  }
+};
+
+FTL_THREAD_END_NAMESPACE
+
+#undef FTL_THREAD_BEGIN_NAMESPACE
+#undef FTL_THREAD_END_NAMESPACE
+
+#endif // FTL_THREAD_HEADER

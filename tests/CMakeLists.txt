@@ -440,6 +440,8 @@ foreach (header IN ITEMS
         big_uint
         floating_bits
         floating_conversion
+        stop_token
+        thread
 )
     add_ftl_test(${header})
 endforeach ()
