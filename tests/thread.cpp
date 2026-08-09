@@ -14,6 +14,69 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+template <class T> void wait_until_equal(tested::atomic<T> &value, T expected) {
+  T current = value.load(tested::memory_order_acquire);
+
+  while (current != expected) {
+    value.wait(current, tested::memory_order_acquire);
+
+    current = value.load(tested::memory_order_acquire);
+  }
+}
+
+void wait_until_true(tested::atomic_bool &value) {
+  while (!value.load(tested::memory_order_acquire)) {
+    value.wait(false, tested::memory_order_acquire);
+  }
+}
+
+struct blocking_stop_callback {
+  tested::atomic_bool *entered;
+  tested::atomic_bool *release;
+
+  void operator()() noexcept {
+    entered->store(true, tested::memory_order_release);
+    entered->notify_all();
+
+    while (!release->load(tested::memory_order_acquire)) {
+      release->wait(false, tested::memory_order_acquire);
+    }
+  }
+};
+
+struct counting_stop_callback {
+  tested::atomic_int *count;
+
+  void operator()() noexcept {
+    count->fetch_add(1, tested::memory_order_relaxed);
+  }
+};
+
+struct self_destroy_callback;
+using self_destroy_registration = tested::stop_callback<self_destroy_callback>;
+
+struct self_destroy_callback {
+  void **registration;
+  tested::atomic_bool *invoked;
+
+  void operator()() noexcept;
+};
+
+void destroy_self_registration(void *value) noexcept {
+  delete static_cast<self_destroy_registration *>(value);
+}
+
+void self_destroy_callback::operator()() noexcept {
+  invoked->store(true, tested::memory_order_release);
+
+  void *current = *registration;
+  *registration = nullptr;
+
+  destroy_self_registration(current);
+
+  // Do not touch any members after this point.
+}
+
 static_assert(tested::is_default_constructible_v<tested::thread>);
 
 static_assert(tested::is_move_constructible_v<tested::thread>);
@@ -536,6 +599,433 @@ bool jthread_native_handle_works() {
   return true;
 }
 
+bool atomic_notify_without_change_does_not_return() {
+  tested::atomic_int value{0};
+  tested::atomic_bool ready{false};
+  tested::atomic_bool completed{false};
+
+  tested::thread waiter{[&] {
+    ready.store(true, tested::memory_order_release);
+    ready.notify_all();
+
+    value.wait(0, tested::memory_order_acquire);
+
+    completed.store(true, tested::memory_order_release);
+    completed.notify_all();
+  }};
+
+  wait_until_true(ready);
+
+  // Give the waiter a chance to actually enter
+  // the platform blocking path.
+  tested::this_thread::sleep_for(tested::chrono::milliseconds{2});
+
+  value.notify_all();
+
+  tested::this_thread::sleep_for(tested::chrono::milliseconds{2});
+
+  if (completed.load(tested::memory_order_acquire)) {
+    value.store(1, tested::memory_order_release);
+    value.notify_all();
+    waiter.join();
+    return false;
+  }
+
+  value.store(1, tested::memory_order_release);
+  value.notify_all();
+
+  waiter.join();
+
+  return completed.load(tested::memory_order_acquire);
+}
+
+template <class Atomic, class T>
+bool blocking_wait_width_works(T initial, T changed) {
+  Atomic value{initial};
+
+  tested::atomic_bool ready{false};
+  tested::atomic_bool completed{false};
+
+  tested::thread waiter{[&] {
+    ready.store(true, tested::memory_order_release);
+    ready.notify_all();
+
+    value.wait(initial, tested::memory_order_acquire);
+
+    completed.store(value.load(tested::memory_order_acquire) == changed,
+                    tested::memory_order_release);
+  }};
+
+  wait_until_true(ready);
+
+  tested::this_thread::sleep_for(tested::chrono::milliseconds{2});
+
+  if (completed.load(tested::memory_order_acquire)) {
+    waiter.join();
+    return false;
+  }
+
+  value.store(changed, tested::memory_order_release);
+
+  value.notify_one();
+
+  waiter.join();
+
+  return completed.load(tested::memory_order_acquire);
+}
+
+bool atomic_blocking_widths_work() {
+  return blocking_wait_width_works<tested::atomic_uint8_t>(
+             tested::uint8_t{0}, tested::uint8_t{1}) &&
+
+         blocking_wait_width_works<tested::atomic_uint16_t>(
+             tested::uint16_t{0}, tested::uint16_t{1}) &&
+
+         blocking_wait_width_works<tested::atomic_uint32_t>(
+             tested::uint32_t{0}, tested::uint32_t{1}) &&
+
+         blocking_wait_width_works<tested::atomic_uint64_t>(
+             tested::uint64_t{0}, tested::uint64_t{1});
+}
+
+bool atomic_notify_all_blocked_waiters_work() {
+  constexpr int worker_count = 8;
+
+  tested::atomic_int value{0};
+  tested::atomic_int ready{0};
+  tested::atomic_int completed{0};
+
+  tested::thread workers[worker_count];
+
+  for (int index = 0; index < worker_count; ++index) {
+    workers[index] = tested::thread{[&] {
+      const int count = ready.fetch_add(1, tested::memory_order_release) + 1;
+
+      ready.notify_all();
+
+      value.wait(0, tested::memory_order_acquire);
+
+      completed.fetch_add(1, tested::memory_order_release);
+
+      completed.notify_all();
+    }};
+  }
+
+  wait_until_equal(ready, worker_count);
+
+  tested::this_thread::sleep_for(tested::chrono::milliseconds{2});
+
+  if (completed.load(tested::memory_order_acquire) != 0) {
+    value.store(1);
+    value.notify_all();
+
+    for (auto &worker : workers)
+      worker.join();
+
+    return false;
+  }
+
+  value.store(1, tested::memory_order_release);
+
+  value.notify_all();
+
+  for (auto &worker : workers)
+    worker.join();
+
+  return completed.load(tested::memory_order_acquire) == worker_count;
+}
+
+bool atomic_ref_wait_notify_works() {
+  alignas(tested::atomic_ref<int>::required_alignment) int value = 0;
+
+  tested::atomic_ref<int> waiter_ref{value};
+
+  tested::atomic_ref<int> notifier_ref{value};
+
+  tested::atomic_bool ready{false};
+  tested::atomic_bool completed{false};
+
+  tested::thread waiter{[&] {
+    ready.store(true, tested::memory_order_release);
+    ready.notify_all();
+
+    waiter_ref.wait(0, tested::memory_order_acquire);
+
+    completed.store(waiter_ref.load(tested::memory_order_acquire) == 42,
+                    tested::memory_order_release);
+  }};
+
+  wait_until_true(ready);
+
+  tested::this_thread::sleep_for(tested::chrono::milliseconds{2});
+
+  notifier_ref.store(42, tested::memory_order_release);
+
+  notifier_ref.notify_one();
+
+  waiter.join();
+
+  return completed.load(tested::memory_order_acquire);
+}
+
+bool atomic_flag_blocking_wait_works() {
+  tested::atomic_flag flag{};
+  tested::atomic_bool ready{false};
+  tested::atomic_bool completed{false};
+
+  tested::thread waiter{[&] {
+    ready.store(true, tested::memory_order_release);
+    ready.notify_all();
+
+    flag.wait(false, tested::memory_order_acquire);
+
+    completed.store(flag.test(tested::memory_order_acquire),
+                    tested::memory_order_release);
+  }};
+
+  wait_until_true(ready);
+
+  tested::this_thread::sleep_for(tested::chrono::milliseconds{2});
+
+  flag.test_and_set(tested::memory_order_release);
+
+  flag.notify_one();
+
+  waiter.join();
+
+  return completed.load(tested::memory_order_acquire);
+}
+
+bool atomic_proxy_collision_notify_one_works() {
+#if defined(_WIN32)
+  return true;
+#else
+  alignas(16) tested::uint8_t storage[16]{};
+
+  if (tested::detail::wait_bucket_for(&storage[0]) !=
+      tested::detail::wait_bucket_for(&storage[1])) {
+    return false;
+  }
+
+  tested::atomic_ref<tested::uint8_t> first{storage[0]};
+
+  tested::atomic_ref<tested::uint8_t> second{storage[1]};
+
+  tested::atomic_int ready{0};
+
+  tested::atomic_bool first_completed{false};
+
+  tested::atomic_bool second_completed{false};
+
+  tested::thread first_waiter{[&] {
+    ready.fetch_add(1, tested::memory_order_release);
+    ready.notify_all();
+
+    first.wait(tested::uint8_t{0}, tested::memory_order_acquire);
+
+    first_completed.store(true, tested::memory_order_release);
+  }};
+
+  tested::thread second_waiter{[&] {
+    ready.fetch_add(1, tested::memory_order_release);
+    ready.notify_all();
+
+    second.wait(tested::uint8_t{0}, tested::memory_order_acquire);
+
+    second_completed.store(true, tested::memory_order_release);
+  }};
+
+  wait_until_equal(ready, 2);
+
+  tested::this_thread::sleep_for(tested::chrono::milliseconds{2});
+
+  first.store(tested::uint8_t{1}, tested::memory_order_release);
+
+  first.notify_one();
+
+  first_waiter.join();
+
+  if (!first_completed.load(tested::memory_order_acquire)) {
+    second.store(1);
+    second.notify_all();
+    second_waiter.join();
+    return false;
+  }
+
+  // second shares the proxy bucket and may have
+  // been physically woken, but wait() must have
+  // rechecked its own object and gone back to sleep.
+  tested::this_thread::sleep_for(tested::chrono::milliseconds{2});
+
+  if (second_completed.load(tested::memory_order_acquire)) {
+    second_waiter.join();
+    return false;
+  }
+
+  second.store(tested::uint8_t{1}, tested::memory_order_release);
+
+  second.notify_one();
+
+  second_waiter.join();
+
+  return second_completed.load(tested::memory_order_acquire);
+#endif
+}
+
+bool stop_callback_destructor_waits_for_execution() {
+  tested::stop_source source;
+
+  tested::stop_token token = source.get_token();
+
+  tested::atomic_bool entered{false};
+  tested::atomic_bool release{false};
+
+  tested::atomic_bool destructor_returned{false};
+
+  using registration = tested::stop_callback<blocking_stop_callback>;
+
+  auto *callback =
+      new registration{token, blocking_stop_callback{&entered, &release}};
+
+  tested::thread requester{[&] { source.request_stop(); }};
+
+  wait_until_true(entered);
+
+  tested::thread destroyer{[&] {
+    delete callback;
+
+    destructor_returned.store(true, tested::memory_order_release);
+
+    destructor_returned.notify_all();
+  }};
+
+  // The callback is still executing, therefore
+  // its destructor must not have returned.
+  tested::this_thread::sleep_for(tested::chrono::milliseconds{2});
+
+  const bool returned_early =
+      destructor_returned.load(tested::memory_order_acquire);
+
+  release.store(true, tested::memory_order_release);
+
+  release.notify_all();
+
+  requester.join();
+  destroyer.join();
+
+  return !returned_early &&
+         destructor_returned.load(tested::memory_order_acquire);
+}
+
+bool stop_callback_destructor_ignores_unrelated_execution() {
+  tested::stop_source source;
+
+  tested::stop_token token = source.get_token();
+
+  tested::atomic_bool entered{false};
+  tested::atomic_bool release{false};
+
+  tested::atomic_int target_count{0};
+
+  using target_registration = tested::stop_callback<counting_stop_callback>;
+
+  auto *target =
+      new target_registration{token, counting_stop_callback{&target_count}};
+
+  // Registered second => list head => executes first.
+  tested::stop_callback blocker{token,
+                                blocking_stop_callback{&entered, &release}};
+
+  tested::thread requester{[&] { source.request_stop(); }};
+
+  wait_until_true(entered);
+
+  // request_stop() is currently blocked inside
+  // blocker. Destroying target must merely unlink
+  // target; it must not wait for blocker.
+  delete target;
+
+  if (target_count.load(tested::memory_order_relaxed) != 0) {
+    release.store(true);
+    release.notify_all();
+    requester.join();
+    return false;
+  }
+
+  release.store(true, tested::memory_order_release);
+  release.notify_all();
+
+  requester.join();
+
+  return target_count.load(tested::memory_order_relaxed) == 0;
+}
+
+bool stop_callback_can_destroy_itself() {
+  tested::stop_source source;
+
+  tested::stop_token token = source.get_token();
+
+  tested::atomic_bool invoked{false};
+
+  void *registration = nullptr;
+
+  registration = new self_destroy_registration{
+      token, self_destroy_callback{&registration, &invoked}};
+
+  if (!source.request_stop())
+    return false;
+
+  return registration == nullptr && invoked.load(tested::memory_order_acquire);
+}
+
+bool stop_callback_registration_request_race() {
+  constexpr int iterations = 256;
+
+  for (int iteration = 0; iteration < iterations; ++iteration) {
+    tested::stop_source source;
+
+    tested::stop_token token = source.get_token();
+
+    tested::atomic_bool go{false};
+    tested::atomic_bool constructed{false};
+    tested::atomic_bool release{false};
+
+    tested::atomic_int calls{0};
+
+    tested::thread registrar{[&] {
+      go.wait(false, tested::memory_order_acquire);
+
+      tested::stop_callback callback{
+          token,
+          [&] noexcept { calls.fetch_add(1, tested::memory_order_relaxed); }};
+
+      constructed.store(true, tested::memory_order_release);
+
+      constructed.notify_all();
+
+      release.wait(false, tested::memory_order_acquire);
+    }};
+
+    go.store(true, tested::memory_order_release);
+    go.notify_one();
+
+    source.request_stop();
+
+    wait_until_true(constructed);
+
+    release.store(true, tested::memory_order_release);
+    release.notify_one();
+
+    registrar.join();
+
+    if (calls.load(tested::memory_order_relaxed) != 1) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 bool ftl_test() {
   return basic_thread_works() && arguments_work() &&
          move_only_argument_works() && thread_ids_work() &&
@@ -550,5 +1040,14 @@ bool ftl_test() {
          jthread_move_constructor_works() &&
          jthread_move_assignment_stops_old_thread() && jthread_swap_works() &&
          jthread_detach_works() && jthread_hardware_concurrency_works() &&
-         jthread_native_handle_works();
+         jthread_native_handle_works() &&
+         atomic_notify_without_change_does_not_return() &&
+         atomic_blocking_widths_work() &&
+         atomic_notify_all_blocked_waiters_work() &&
+         atomic_ref_wait_notify_works() && atomic_flag_blocking_wait_works() &&
+         atomic_proxy_collision_notify_one_works() &&
+         stop_callback_destructor_waits_for_execution() &&
+         stop_callback_destructor_ignores_unrelated_execution() &&
+         stop_callback_can_destroy_itself() &&
+         stop_callback_registration_request_race();
 }
