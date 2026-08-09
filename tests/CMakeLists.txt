@@ -356,6 +356,8 @@ foreach (header IN ITEMS
         adjacent_transform_views
         join_with_view
         stdexcept
+        system_error
+        stacktrace
         iosfwd
         streambuf
         ios
