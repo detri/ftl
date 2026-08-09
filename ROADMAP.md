@@ -156,6 +156,9 @@ dependency order, not hundreds of individual overloads.
 | `<ctime>`            | Stage 5.1         |
 | `<stdexcept>`        | Stage 5.2         |
 | `<system_error>`     | Stage 5.2         |
+| `<cfenv>`            | Stage 5.3         |
+| `<cmath>`            | Stage 5.3         |
+| `<complex>`          | Stage 5.3         |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -193,7 +196,6 @@ remain required when C++23 still specifies them; they are not silently dropped.
 | Algorithms/numerics       | `<numbers>`, `<random>`, `<valarray>`                                                                                                                              |
 | Text/encoding             | `<codecvt>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                               |
 | Errors/time/localization  | `<locale>`, `<clocale>`                                                                                                                                            |
-| C numerics/text           | `<cfenv>`, `<cmath>`, `<complex>`                                                                                                                                  |
 | I/O/formatting/files      | `<cstdio>`, `<fstream>`, `<iomanip>`, `<iostream>`, `<ostream>`, `<sstream>`, `<spanstream>`, `<strstream>`, `<syncstream>`, `<filesystem>`, `<format>`, `<print>` |
 | Concurrency               | `<barrier>`, `<condition_variable>`, `<future>`, `<latch>`, `<mutex>`, `<semaphore>`, `<shared_mutex>`, `<stop_token>`, `<thread>`                                 |
 | C compatibility           | `<stdatomic.h>`                                                                                                                                                    |
