@@ -1039,6 +1039,37 @@ bool platform_wait_backend_links() {
   return true;
 }
 
+bool pointer_min_difference_does_not_overflow() {
+  int values[1]{};
+
+  constexpr tested::ptrdiff_t minimum =
+      tested::numeric_limits<tested::ptrdiff_t>::min();
+
+  tested::atomic<int *> pointer{values};
+
+  if (pointer.fetch_sub(minimum) != values)
+    return false;
+
+  // Reversing the same modular representation
+  // operation must restore the original pointer.
+  (void)pointer.fetch_add(minimum);
+
+  if (pointer.load() != values)
+    return false;
+
+  alignas(tested::atomic_ref<int *>::required_alignment) int *referenced =
+      values;
+
+  tested::atomic_ref<int *> reference{referenced};
+
+  if (reference.fetch_sub(minimum) != values)
+    return false;
+
+  (void)reference.fetch_add(minimum);
+
+  return reference.load() == values;
+}
+
 bool ftl_test() {
   return basic_operations_work() && compare_exchange_works() &&
          generic_atomic_works() && arithmetic_works() &&
@@ -1059,5 +1090,6 @@ bool ftl_test() {
          kill_dependency_works() && atomic_wait_immediate_return_works() &&
          atomic_ref_wait_immediate_return_works() &&
          atomic_flag_wait_immediate_return_works() &&
-         platform_wait_backend_links();
+         platform_wait_backend_links() &&
+         pointer_min_difference_does_not_overflow();
 }

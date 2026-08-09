@@ -16,14 +16,29 @@ void* memcpy(
     void* destination,
     const void* source,
     ftl_runtime_size_t count) {
+#if defined(_MSC_VER) && !defined(__clang__)
   auto* output =
-      static_cast<unsigned char*>(destination);
+      static_cast<volatile unsigned char*>(
+          destination);
 
   auto* input =
-      static_cast<const unsigned char*>(source);
+      static_cast<const volatile unsigned char*>(
+          source);
+#else
+  auto* output =
+      static_cast<unsigned char*>(
+          destination);
 
-  for (ftl_runtime_size_t index = 0; index < count; ++index)
+  auto* input =
+      static_cast<const unsigned char*>(
+          source);
+#endif
+
+  for (ftl_runtime_size_t index = 0;
+       index < count;
+       ++index) {
     output[index] = input[index];
+       }
 
   return destination;
 }

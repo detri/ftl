@@ -19,13 +19,14 @@ add_library(ftl_compiler_runtime STATIC runtime/memory.cpp)
 
 target_compile_features(ftl_compiler_runtime PRIVATE cxx_std_23)
 
-if (MSVC)
+if(MSVC)
     target_compile_options(
             ftl_compiler_runtime
             PRIVATE
             /GS-
+            /Oi-
     )
-else ()
+else()
     target_compile_options(
             ftl_compiler_runtime
             PRIVATE
@@ -33,7 +34,7 @@ else ()
             -fno-exceptions
             -fno-rtti
     )
-endif ()
+endif()
 
 # Concurrency
 

@@ -174,18 +174,49 @@ constexpr T atomic_integral_sub(T left, T right) noexcept
 }
 
 template <class T>
-T atomic_pointer_offset(T pointer, ptrdiff_t amount) noexcept
+T atomic_pointer_add(
+    T pointer,
+    ptrdiff_t amount) noexcept
   requires atomic_object_pointer<T>
 {
   using word_type = atomic_word_t<T>;
 
   constexpr word_type scale =
-      static_cast<word_type>(sizeof(remove_pointer_t<T>));
+      static_cast<word_type>(
+          sizeof(remove_pointer_t<T>));
 
-  const word_type bits = atomic_to_word(pointer);
-  const word_type offset = static_cast<word_type>(amount) * scale;
+  const word_type bits =
+      atomic_to_word(pointer);
 
-  return atomic_from_word<T>(static_cast<word_type>(bits + offset));
+  const word_type offset =
+      static_cast<word_type>(amount) * scale;
+
+  return atomic_from_word<T>(
+      static_cast<word_type>(
+          bits + offset));
+}
+
+template <class T>
+T atomic_pointer_sub(
+    T pointer,
+    ptrdiff_t amount) noexcept
+  requires atomic_object_pointer<T>
+{
+  using word_type = atomic_word_t<T>;
+
+  constexpr word_type scale =
+      static_cast<word_type>(
+          sizeof(remove_pointer_t<T>));
+
+  const word_type bits =
+      atomic_to_word(pointer);
+
+  const word_type offset =
+      static_cast<word_type>(amount) * scale;
+
+  return atomic_from_word<T>(
+      static_cast<word_type>(
+          bits - offset));
 }
 
 #if defined(_MSC_VER)
@@ -885,7 +916,7 @@ public:
       T current = load(memory_order_relaxed);
 
       for (;;) {
-        const T desired = detail::atomic_pointer_offset(current, operand);
+        const T desired = detail::atomic_pointer_add(current, operand);
 
         if (compare_exchange_weak(current, desired, order,
                                   memory_order_relaxed)) {
@@ -923,7 +954,7 @@ public:
       T current = load(memory_order_relaxed);
 
       for (;;) {
-        const T desired = detail::atomic_pointer_offset(current, -operand);
+        const T desired = detail::atomic_pointer_sub(current, operand);
 
         if (compare_exchange_weak(current, desired, order,
                                   memory_order_relaxed)) {
@@ -1018,13 +1049,17 @@ public:
   T operator++() volatile noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_offset(fetch_add(1), 1);
+    return detail::atomic_pointer_add(
+    fetch_add(1),
+    1);
   }
 
   T operator++() noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_offset(fetch_add(1), 1);
+    return detail::atomic_pointer_add(
+    fetch_add(1),
+    1);
   }
 
   T operator--() volatile noexcept
@@ -1042,13 +1077,17 @@ public:
   T operator--() volatile noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_offset(fetch_sub(1), -1);
+    return detail::atomic_pointer_sub(
+    fetch_sub(1),
+    1);
   }
 
   T operator--() noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_offset(fetch_sub(1), -1);
+    return detail::atomic_pointer_sub(
+    fetch_sub(1),
+    1);
   }
 
   T operator+=(detail::atomic_operand_t<T> operand) volatile noexcept
@@ -1078,13 +1117,17 @@ public:
   T operator+=(detail::atomic_operand_t<T> operand) volatile noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_offset(fetch_add(operand), operand);
+    return detail::atomic_pointer_add(
+    fetch_add(operand),
+    operand);
   }
 
   T operator+=(detail::atomic_operand_t<T> operand) noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_offset(fetch_add(operand), operand);
+    return detail::atomic_pointer_add(
+    fetch_add(operand),
+    operand);
   }
 
   T operator-=(detail::atomic_operand_t<T> operand) volatile noexcept
@@ -1114,13 +1157,17 @@ public:
   T operator-=(detail::atomic_operand_t<T> operand) volatile noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_offset(fetch_sub(operand), -operand);
+    return detail::atomic_pointer_sub(
+    fetch_sub(operand),
+    operand);
   }
 
   T operator-=(detail::atomic_operand_t<T> operand) noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_offset(fetch_sub(operand), -operand);
+    return detail::atomic_pointer_sub(
+    fetch_sub(operand),
+    operand);
   }
 
   T operator&=(T operand) volatile noexcept
@@ -1287,7 +1334,7 @@ public:
       T current = load(memory_order_relaxed);
 
       for (;;) {
-        const T desired = detail::atomic_pointer_offset(current, operand);
+        const T desired = detail::atomic_pointer_add(current, operand);
 
         if (compare_exchange_weak(current, desired, order,
                                   memory_order_relaxed)) {
@@ -1318,7 +1365,7 @@ public:
       T current = load(memory_order_relaxed);
 
       for (;;) {
-        const T desired = detail::atomic_pointer_offset(current, -operand);
+        const T desired = detail::atomic_pointer_sub(current, operand);
 
         if (compare_exchange_weak(current, desired, order,
                                   memory_order_relaxed)) {
@@ -1370,7 +1417,9 @@ public:
   T operator++() const noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_offset(fetch_add(1), 1);
+    return detail::atomic_pointer_add(
+    fetch_add(1),
+    1);
   }
 
   T operator--() const noexcept
@@ -1382,7 +1431,9 @@ public:
   T operator--() const noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_offset(fetch_sub(1), -1);
+    return detail::atomic_pointer_sub(
+    fetch_sub(1),
+    1);
   }
 
   T operator+=(detail::atomic_operand_t<T> operand) const noexcept
@@ -1400,7 +1451,9 @@ public:
   T operator+=(detail::atomic_operand_t<T> operand) const noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_offset(fetch_add(operand), operand);
+    return detail::atomic_pointer_add(
+    fetch_add(operand),
+    operand);
   }
 
   T operator-=(detail::atomic_operand_t<T> operand) const noexcept
@@ -1418,7 +1471,9 @@ public:
   T operator-=(detail::atomic_operand_t<T> operand) const noexcept
     requires detail::atomic_object_pointer<T>
   {
-    return detail::atomic_pointer_offset(fetch_sub(operand), -operand);
+    return detail::atomic_pointer_sub(
+    fetch_sub(operand),
+    operand);
   }
 
   T operator&=(T operand) const noexcept
