@@ -1,4 +1,5 @@
 #include <ftl/any>
+#include <ftl/atomic>
 #include <ftl/bit>
 #include <ftl/bitset>
 #include <ftl/cstddef>
@@ -8,6 +9,8 @@
 #include <ftl/ranges>
 #include <ftl/source_location>
 #include <ftl/stdfloat>
+#include <ftl/stop_token>
+#include <ftl/thread>
 #include <ftl/utility>
 #include <ftl/variant>
 #include <ftl/version>
@@ -129,6 +132,20 @@
     __cpp_lib_string_resize_and_overwrite < 202110L ||                  \
     __cpp_lib_containers_ranges < 202202L
 #error Stage 3.4 string feature macros are incomplete
+#endif
+
+#if __cpp_lib_atomic_float < 201711L || \
+    __cpp_lib_atomic_is_always_lock_free < 201603L || \
+    __cpp_lib_atomic_lock_free_type_aliases < 201907L || \
+    __cpp_lib_atomic_ref < 201806L || \
+    __cpp_lib_atomic_flag_test < 201907L || \
+    __cpp_lib_atomic_value_initialization < 201911L || \
+    __cpp_lib_atomic_wait < 201907L
+#error Stage 6.1 atomic feature macros are incomplete
+#endif
+
+#if __cpp_lib_jthread < 201911L
+#error Stage 6.2 stop_token/thread feature macros are incomplete
 #endif
 
 int main() {}

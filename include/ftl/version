@@ -424,6 +424,30 @@
 #define __cpp_lib_atomic_shared_ptr 201711L
 #endif
 
+#if !defined(__cpp_lib_atomic_float) || \
+    __cpp_lib_atomic_float < 201711L
+#undef __cpp_lib_atomic_float
+#define __cpp_lib_atomic_float 201711L
+#endif
+
+#if !defined(__cpp_lib_atomic_is_always_lock_free) || \
+    __cpp_lib_atomic_is_always_lock_free < 201603L
+#undef __cpp_lib_atomic_is_always_lock_free
+#define __cpp_lib_atomic_is_always_lock_free 201603L
+#endif
+
+#if !defined(__cpp_lib_atomic_lock_free_type_aliases) || \
+    __cpp_lib_atomic_lock_free_type_aliases < 201907L
+#undef __cpp_lib_atomic_lock_free_type_aliases
+#define __cpp_lib_atomic_lock_free_type_aliases 201907L
+#endif
+
+#if !defined(__cpp_lib_jthread) || \
+    __cpp_lib_jthread < 201911L
+#undef __cpp_lib_jthread
+#define __cpp_lib_jthread 201911L
+#endif
+
 #if !defined(__cpp_lib_enable_shared_from_this) || \
     __cpp_lib_enable_shared_from_this < 201603L
 #undef __cpp_lib_enable_shared_from_this

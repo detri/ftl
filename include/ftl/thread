@@ -403,4 +403,10 @@ FTL_THREAD_END_NAMESPACE
 #undef FTL_THREAD_BEGIN_NAMESPACE
 #undef FTL_THREAD_END_NAMESPACE
 
+#if !defined(__cpp_lib_jthread) || \
+    __cpp_lib_jthread < 201911L
+#undef __cpp_lib_jthread
+#define __cpp_lib_jthread 201911L
+#endif
+
 #endif // FTL_THREAD_HEADER
