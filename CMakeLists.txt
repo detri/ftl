@@ -5,13 +5,51 @@ project(ftl VERSION ${FTL_VERSION} LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
+# FTL
+
 add_library(ftl INTERFACE)
 add_subdirectory(external/openlibm)
 target_include_directories(ftl INTERFACE include)
 target_compile_features(ftl INTERFACE cxx_std_23)
 target_link_libraries(ftl INTERFACE ftl_math_runtime)
 
-if(BUILD_TESTING)
+# Compiler
+
+add_library(ftl_compiler_runtime STATIC runtime/memory.cpp)
+
+target_compile_features(ftl_compiler_runtime PRIVATE cxx_std_23)
+
+if(MSVC)
+    target_compile_options(
+            ftl_compiler_runtime
+            PRIVATE
+            /GS-
+            /Oi-
+    )
+else()
+    target_compile_options(
+            ftl_compiler_runtime
+            PRIVATE
+            -fno-stack-protector
+            -fno-exceptions
+            -fno-rtti
+    )
+endif()
+
+# Concurrency
+
+if (WIN32)
+    target_link_libraries(ftl INTERFACE synchronization)
+endif ()
+
+if (UNIX)
+    find_package(Threads REQUIRED)
+    target_link_libraries(ftl INTERFACE Threads::Threads)
+endif ()
+
+# Tests
+
+if (BUILD_TESTING)
     enable_testing()
     add_subdirectory(tests)
-endif()
+endif ()
