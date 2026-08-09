@@ -515,6 +515,10 @@ have range, state, and statistical checks; and `valarray` covers owning arrays,
 all four selector proxies, arithmetic, transcendental operations, and range
 access. Random engine, adaptor, and distribution stream operators remain staged
 with Stage 7's `<ostream>` closure, matching the existing `<complex>` boundary.
+`random_device` uses native nondeterministic entropy on supported hosts:
+`RtlGenRandom` on Windows, `getrandom` on x86-64 Linux, and `arc4random_buf` on
+macOS. Only unknown freestanding targets retain the deterministic zero-entropy
+fallback.
 
 ### Stage 6 — Concurrency
 

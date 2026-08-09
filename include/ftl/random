@@ -12,6 +12,7 @@
 #include <initializer_list>
 #include <limits>
 #include <string>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -24,9 +25,14 @@
 #include <ftl/initializer_list>
 #include <ftl/limits>
 #include <ftl/string>
+#include <ftl/stdexcept>
 #include <ftl/type_traits>
 #include <ftl/utility>
 #include <ftl/vector>
+#endif
+
+#if defined(_WIN32) && defined(_MSC_VER)
+#pragma comment(lib, "advapi32.lib")
 #endif
 
 FTL_BEGIN_NAMESPACE
@@ -40,6 +46,21 @@ concept uniform_random_bit_generator =
     };
 
 namespace detail {
+
+#if defined(_WIN32)
+extern "C" unsigned char __stdcall SystemFunction036(void *, unsigned long);
+#elif defined(__APPLE__)
+extern "C" void arc4random_buf(void *, size_t);
+#elif defined(__linux__) && defined(__x86_64__)
+inline long random_getrandom(void *buffer, size_t size) noexcept {
+  long result;
+  __asm__ volatile("syscall"
+                   : "=a"(result)
+                   : "a"(318L), "D"(buffer), "S"(size), "d"(0L)
+                   : "rcx", "r11", "memory");
+  return result;
+}
+#endif
 
 template <class T, size_t Bits> constexpr T random_mask() noexcept {
   if constexpr (Bits == numeric_limits<T>::digits)
@@ -745,8 +766,42 @@ public:
   static constexpr result_type max() noexcept {
     return numeric_limits<result_type>::max();
   }
-  result_type operator()() { return detail::random_full_width<result_type>(engine_); }
-  double entropy() const noexcept { return 0.0; }
+  result_type operator()() {
+#if defined(_WIN32)
+    result_type value;
+    if (!detail::SystemFunction036(&value, sizeof(value)))
+      throw runtime_error("random_device entropy source failed");
+    return value;
+#elif defined(__APPLE__)
+    result_type value;
+    detail::arc4random_buf(&value, sizeof(value));
+    return value;
+#elif defined(__linux__) && defined(__x86_64__)
+    result_type value;
+    auto *current = reinterpret_cast<unsigned char *>(&value);
+    size_t remaining = sizeof(value);
+    while (remaining != 0) {
+      const long count = detail::random_getrandom(current, remaining);
+      if (count == -4)
+        continue;
+      if (count <= 0)
+        throw runtime_error("random_device entropy source failed");
+      current += count;
+      remaining -= static_cast<size_t>(count);
+    }
+    return value;
+#else
+    return detail::random_full_width<result_type>(engine_);
+#endif
+  }
+  double entropy() const noexcept {
+#if defined(_WIN32) || defined(__APPLE__) ||                              \
+    (defined(__linux__) && defined(__x86_64__))
+    return numeric_limits<result_type>::digits;
+#else
+    return 0.0;
+#endif
+  }
 private:
   minstd_rand engine_{};
 };

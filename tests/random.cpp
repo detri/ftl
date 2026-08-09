@@ -111,17 +111,49 @@ bool engine_sequences_match_n4950() {
          required_sequence<tested::knuth_b>(1112339016u);
 }
 
-bool seed_sequence_is_reproducible() {
-  tested::seed_seq first{1u, 2u, 3u, 4u};
-  tested::seed_seq second{1u, 2u, 3u, 4u};
-  tested::uint32_t a[8]{};
-  tested::uint32_t b[8]{};
-  first.generate(a, a + 8);
-  second.generate(b, b + 8);
-  for (int i = 0; i < 8; ++i)
-    if (a[i] != b[i])
+bool seed_sequence_matches_known_vectors() {
+  constexpr tested::uint32_t expected[] = {
+      885567924u,  1497546072u, 535818408u,  125127419u,  1352728756u,
+      1388689836u, 3943292234u, 2948707708u, 3339389554u, 3065408602u};
+  tested::seed_seq sequence{1u, 2u, 3u, 4u};
+  tested::uint32_t generated[10]{};
+  sequence.generate(generated, generated + 10);
+  for (int i = 0; i < 10; ++i)
+    if (generated[i] != expected[i])
+      return false;
+
+  tested::seed_seq lcg_seed{1u, 2u, 3u, 4u};
+  tested::minstd_rand lcg(lcg_seed);
+  constexpr tested::uint_fast32_t expected_lcg[] = {
+      1631472685u, 297674851u, 249650544u, 1350666107u, 400128077u};
+  for (auto value : expected_lcg)
+    if (lcg() != value)
+      return false;
+
+  tested::seed_seq mt_seed{1u, 2u, 3u, 4u};
+  tested::mt19937 mt(mt_seed);
+  constexpr tested::uint_fast32_t expected_mt[] = {
+      2103621173u, 3113074417u, 3119520880u, 1733660703u, 1996723807u};
+  for (auto value : expected_mt)
+    if (mt() != value)
       return false;
   return true;
+}
+
+bool random_device_uses_platform_entropy() {
+  tested::random_device first;
+  tested::random_device second;
+#if defined(_WIN32) || defined(__APPLE__) ||                              \
+    (defined(__linux__) && defined(__x86_64__))
+  if (first.entropy() <= 0.0)
+    return false;
+  for (int i = 0; i < 8; ++i)
+    if (first() != second())
+      return true;
+  return false;
+#else
+  return first.entropy() == 0.0;
+#endif
 }
 
 bool uniform_distributions_stay_in_range() {
@@ -166,7 +198,6 @@ bool scalar_distributions_work() {
   const double linear_weights[] = {1.0, 2.0, 1.0};
   tested::piecewise_linear_distribution<double> piecewise_linear(
       boundaries, boundaries + 3, linear_weights);
-  tested::random_device device;
   bool saw_true = false;
   bool saw_false = false;
   for (int i = 0; i < 1000; ++i) {
@@ -196,8 +227,7 @@ bool scalar_distributions_work() {
       return false;
   }
   normal.reset();
-  (void)device();
-  return saw_true && saw_false && device.entropy() == 0.0;
+  return saw_true && saw_false;
 }
 
 bool distribution_moments_are_sane() {
@@ -227,7 +257,8 @@ bool distribution_moments_are_sane() {
 }
 
 bool ftl_test() {
-  return engine_sequences_match_n4950() && seed_sequence_is_reproducible() &&
+  return engine_sequences_match_n4950() && seed_sequence_matches_known_vectors() &&
+         random_device_uses_platform_entropy() &&
          uniform_distributions_stay_in_range() && scalar_distributions_work() &&
          distribution_moments_are_sane();
 }
