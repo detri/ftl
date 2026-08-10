@@ -1331,9 +1331,12 @@ constexpr bool codecvt_valid_scalar(unsigned value) noexcept {
   return value <= 0x10ffffu && !(value >= 0xd800u && value <= 0xdfffu);
 }
 
+template <class Byte>
 [[nodiscard]]
-inline codecvt_decoded_scalar
-codecvt_decode_utf8(const char8_t *first, const char8_t *last) noexcept {
+inline codecvt_decoded_scalar codecvt_decode_utf8(const Byte *first,
+                                                  const Byte *last) noexcept {
+  static_assert(is_same_v<Byte, char> || is_same_v<Byte, char8_t>);
+
   if (first == last)
     return {codecvt_decode_status::partial, 0, 0};
 
@@ -1416,42 +1419,45 @@ codecvt_decode_utf16(const char16_t *first, const char16_t *last) noexcept {
   return {codecvt_decode_status::complete, first_unit, 1};
 }
 
+template <class Byte>
 [[nodiscard]]
-inline size_t codecvt_encode_utf8(unsigned value,
-                                  char8_t (&output)[4]) noexcept {
+inline size_t codecvt_encode_utf8(unsigned value, Byte (&output)[4]) noexcept {
+  static_assert(is_same_v<Byte, char> || is_same_v<Byte, char8_t>);
+
   if (!codecvt_valid_scalar(value))
     return 0;
 
   if (value <= 0x7fu) {
-    output[0] = static_cast<char8_t>(value);
+    output[0] = static_cast<Byte>(value);
+
     return 1;
   }
 
   if (value <= 0x7ffu) {
-    output[0] = static_cast<char8_t>(0xc0u | (value >> 6u));
+    output[0] = static_cast<Byte>(0xc0u | (value >> 6u));
 
-    output[1] = static_cast<char8_t>(0x80u | (value & 0x3fu));
+    output[1] = static_cast<Byte>(0x80u | (value & 0x3fu));
 
     return 2;
   }
 
   if (value <= 0xffffu) {
-    output[0] = static_cast<char8_t>(0xe0u | (value >> 12u));
+    output[0] = static_cast<Byte>(0xe0u | (value >> 12u));
 
-    output[1] = static_cast<char8_t>(0x80u | ((value >> 6u) & 0x3fu));
+    output[1] = static_cast<Byte>(0x80u | ((value >> 6u) & 0x3fu));
 
-    output[2] = static_cast<char8_t>(0x80u | (value & 0x3fu));
+    output[2] = static_cast<Byte>(0x80u | (value & 0x3fu));
 
     return 3;
   }
 
-  output[0] = static_cast<char8_t>(0xf0u | (value >> 18u));
+  output[0] = static_cast<Byte>(0xf0u | (value >> 18u));
 
-  output[1] = static_cast<char8_t>(0x80u | ((value >> 12u) & 0x3fu));
+  output[1] = static_cast<Byte>(0x80u | ((value >> 12u) & 0x3fu));
 
-  output[2] = static_cast<char8_t>(0x80u | ((value >> 6u) & 0x3fu));
+  output[2] = static_cast<Byte>(0x80u | ((value >> 6u) & 0x3fu));
 
-  output[3] = static_cast<char8_t>(0x80u | (value & 0x3fu));
+  output[3] = static_cast<Byte>(0x80u | (value & 0x3fu));
 
   return 4;
 }
@@ -1534,7 +1540,7 @@ protected:
     }
 
     //
-    // UTF-16 -> UTF-8
+    // UTF-16 -> UTF-8 (char8_t)
     //
     else if constexpr (is_same_v<intern_type, char16_t> &&
                        is_same_v<extern_type, char8_t> &&
@@ -1587,7 +1593,60 @@ protected:
     }
 
     //
-    // UTF-32 -> UTF-8
+    // Deprecated UTF-16 -> UTF-8 stored in char.
+    //
+    else if constexpr (is_same_v<intern_type, char16_t> &&
+                       is_same_v<extern_type, char> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char16_t *current = from;
+      char *output = to;
+
+      while (current != from_end) {
+        const auto decoded = detail::codecvt_decode_utf16(current, from_end);
+
+        if (decoded.status == detail::codecvt_decode_status::partial) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        if (decoded.status == detail::codecvt_decode_status::error) {
+          from_next = current;
+          to_next = output;
+          return error;
+        }
+
+        char encoded[4]{};
+
+        const size_t count =
+            detail::codecvt_encode_utf8(decoded.value, encoded);
+
+        if (count == 0) {
+          from_next = current;
+          to_next = output;
+          return error;
+        }
+
+        if (static_cast<size_t>(to_end - output) < count) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        for (size_t index = 0; index < count; ++index) {
+          *output++ = encoded[index];
+        }
+
+        current += decoded.units;
+      }
+
+      from_next = current;
+      to_next = output;
+      return ok;
+    }
+
+    //
+    // UTF-32 -> UTF-8 (char8_t)
     //
     else if constexpr (is_same_v<intern_type, char32_t> &&
                        is_same_v<extern_type, char8_t> &&
@@ -1627,11 +1686,47 @@ protected:
     }
 
     //
-    // FTL classic wchar_t -> char.
+    // Deprecated UTF-32 -> UTF-8 stored in char.
     //
-    // FTL's current C locale is the portable basic/ASCII
-    // character set, matching the existing cuchar/cwctype
-    // implementation.
+    else if constexpr (is_same_v<intern_type, char32_t> &&
+                       is_same_v<extern_type, char> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char32_t *current = from;
+      char *output = to;
+
+      while (current != from_end) {
+        const unsigned value = static_cast<unsigned>(*current);
+
+        char encoded[4]{};
+
+        const size_t count = detail::codecvt_encode_utf8(value, encoded);
+
+        if (count == 0) {
+          from_next = current;
+          to_next = output;
+          return error;
+        }
+
+        if (static_cast<size_t>(to_end - output) < count) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        for (size_t index = 0; index < count; ++index) {
+          *output++ = encoded[index];
+        }
+
+        ++current;
+      }
+
+      from_next = current;
+      to_next = output;
+      return ok;
+    }
+
+    //
+    // FTL classic wchar_t -> char.
     //
     else if constexpr (is_same_v<intern_type, wchar_t> &&
                        is_same_v<extern_type, char> &&
@@ -1697,7 +1792,7 @@ protected:
     }
 
     //
-    // UTF-8 -> UTF-16
+    // UTF-8 (char8_t) -> UTF-16
     //
     else if constexpr (is_same_v<intern_type, char16_t> &&
                        is_same_v<extern_type, char8_t> &&
@@ -1747,12 +1842,102 @@ protected:
     }
 
     //
-    // UTF-8 -> UTF-32
+    // Deprecated UTF-8 stored in char -> UTF-16.
+    //
+    else if constexpr (is_same_v<intern_type, char16_t> &&
+                       is_same_v<extern_type, char> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char *current = from;
+      char16_t *output = to;
+
+      while (current != from_end) {
+        const auto decoded = detail::codecvt_decode_utf8(current, from_end);
+
+        if (decoded.status == detail::codecvt_decode_status::partial) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        if (decoded.status == detail::codecvt_decode_status::error) {
+          from_next = current;
+          to_next = output;
+          return error;
+        }
+
+        const size_t required = decoded.value <= 0xffffu ? 1 : 2;
+
+        if (static_cast<size_t>(to_end - output) < required) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        if (required == 1) {
+          *output++ = static_cast<char16_t>(decoded.value);
+        } else {
+          const unsigned value = decoded.value - 0x10000u;
+
+          *output++ = static_cast<char16_t>(0xd800u + (value >> 10u));
+
+          *output++ = static_cast<char16_t>(0xdc00u + (value & 0x3ffu));
+        }
+
+        current += decoded.units;
+      }
+
+      from_next = current;
+      to_next = output;
+      return ok;
+    }
+
+    //
+    // UTF-8 (char8_t) -> UTF-32.
     //
     else if constexpr (is_same_v<intern_type, char32_t> &&
                        is_same_v<extern_type, char8_t> &&
                        is_same_v<state_type, mbstate_t>) {
       const char8_t *current = from;
+      char32_t *output = to;
+
+      while (current != from_end) {
+        const auto decoded = detail::codecvt_decode_utf8(current, from_end);
+
+        if (decoded.status == detail::codecvt_decode_status::partial) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        if (decoded.status == detail::codecvt_decode_status::error) {
+          from_next = current;
+          to_next = output;
+          return error;
+        }
+
+        if (output == to_end) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        *output++ = static_cast<char32_t>(decoded.value);
+
+        current += decoded.units;
+      }
+
+      from_next = current;
+      to_next = output;
+      return ok;
+    }
+
+    //
+    // Deprecated UTF-8 stored in char -> UTF-32.
+    //
+    else if constexpr (is_same_v<intern_type, char32_t> &&
+                       is_same_v<extern_type, char> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char *current = from;
       char32_t *output = to;
 
       while (current != from_end) {
@@ -1848,18 +2033,27 @@ protected:
                   is_same_v<extern_type, char> &&
                   is_same_v<state_type, mbstate_t>) {
       return 1;
-    } else if constexpr (is_same_v<intern_type, wchar_t> &&
-                         is_same_v<extern_type, char> &&
-                         is_same_v<state_type, mbstate_t>) {
+    }
+
+    else if constexpr (is_same_v<intern_type, wchar_t> &&
+                       is_same_v<extern_type, char> &&
+                       is_same_v<state_type, mbstate_t>) {
       return 1;
-    } else if constexpr ((is_same_v<intern_type, char16_t> ||
-                          is_same_v<intern_type, char32_t>) &&
-                         is_same_v<extern_type, char8_t> &&
-                         is_same_v<state_type, mbstate_t>) {
+    }
+
+    else if constexpr ((is_same_v<intern_type, char16_t> ||
+                        is_same_v<intern_type, char32_t>) &&
+                       (is_same_v<extern_type, char8_t> ||
+                        is_same_v<extern_type, char>) &&
+                       is_same_v<state_type, mbstate_t>) {
       return 0;
-    } else if constexpr (is_same_v<intern_type, extern_type>) {
+    }
+
+    else if constexpr (is_same_v<intern_type, extern_type>) {
       return 1;
-    } else {
+    }
+
+    else {
       return 0;
     }
   }
@@ -1873,6 +2067,9 @@ protected:
                         const extern_type *from_end, size_t maximum) const {
     (void)state;
 
+    //
+    // Identity conversion.
+    //
     if constexpr (is_same_v<intern_type, char> &&
                   is_same_v<extern_type, char> &&
                   is_same_v<state_type, mbstate_t>) {
@@ -1884,7 +2081,7 @@ protected:
     }
 
     //
-    // UTF-8 -> UTF-16.
+    // UTF-8 (char8_t) -> UTF-16.
     //
     else if constexpr (is_same_v<intern_type, char16_t> &&
                        is_same_v<extern_type, char8_t> &&
@@ -1901,9 +2098,8 @@ protected:
 
         const size_t required = decoded.value <= 0xffffu ? 1 : 2;
 
-        if (produced + required > maximum) {
+        if (produced + required > maximum)
           break;
-        }
 
         produced += required;
         current += decoded.units;
@@ -1913,12 +2109,63 @@ protected:
     }
 
     //
-    // UTF-8 -> UTF-32.
+    // Deprecated UTF-8 stored in char -> UTF-16.
+    //
+    else if constexpr (is_same_v<intern_type, char16_t> &&
+                       is_same_v<extern_type, char> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char *current = from;
+      size_t produced = 0;
+
+      while (current != from_end) {
+        const auto decoded = detail::codecvt_decode_utf8(current, from_end);
+
+        if (decoded.status != detail::codecvt_decode_status::complete) {
+          break;
+        }
+
+        const size_t required = decoded.value <= 0xffffu ? 1 : 2;
+
+        if (produced + required > maximum)
+          break;
+
+        produced += required;
+        current += decoded.units;
+      }
+
+      return static_cast<int>(current - from);
+    }
+
+    //
+    // UTF-8 (char8_t) -> UTF-32.
     //
     else if constexpr (is_same_v<intern_type, char32_t> &&
                        is_same_v<extern_type, char8_t> &&
                        is_same_v<state_type, mbstate_t>) {
       const char8_t *current = from;
+      size_t produced = 0;
+
+      while (current != from_end && produced < maximum) {
+        const auto decoded = detail::codecvt_decode_utf8(current, from_end);
+
+        if (decoded.status != detail::codecvt_decode_status::complete) {
+          break;
+        }
+
+        ++produced;
+        current += decoded.units;
+      }
+
+      return static_cast<int>(current - from);
+    }
+
+    //
+    // Deprecated UTF-8 stored in char -> UTF-32.
+    //
+    else if constexpr (is_same_v<intern_type, char32_t> &&
+                       is_same_v<extern_type, char> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char *current = from;
       size_t produced = 0;
 
       while (current != from_end && produced < maximum) {
@@ -1970,24 +2217,266 @@ protected:
   [[nodiscard]]
   virtual int do_max_length() const noexcept {
     if constexpr (is_same_v<intern_type, char16_t> &&
-                  is_same_v<extern_type, char8_t> &&
+                  (is_same_v<extern_type, char8_t> ||
+                   is_same_v<extern_type, char>) &&
                   is_same_v<state_type, mbstate_t>) {
-      //
-      // A three-byte UTF-8 sequence can produce one UTF-16
-      // code unit. Four-byte UTF-8 sequences require two.
-      //
       return 3;
-    } else if constexpr (is_same_v<intern_type, char32_t> &&
-                         is_same_v<extern_type, char8_t> &&
-                         is_same_v<state_type, mbstate_t>) {
+    }
+
+    else if constexpr (is_same_v<intern_type, char32_t> &&
+                       (is_same_v<extern_type, char8_t> ||
+                        is_same_v<extern_type, char>) &&
+                       is_same_v<state_type, mbstate_t>) {
       return 4;
-    } else {
+    }
+
+    else {
       return 1;
     }
   }
 };
 
-template <class InternT, class ExternT, class StateT> class codecvt_byname;
+namespace detail {
+
+[[noreturn]]
+inline void locale_named_codecvt_failure() {
+#if FTL_HAS_EXCEPTIONS
+  throw runtime_error("codecvt_byname");
+#else
+  terminate();
+#endif
+}
+
+struct locale_named_codecvt_context {
+  ftl_locale_runtime::native_handle native{};
+
+  explicit locale_named_codecvt_context(const char *name)
+      : native(ftl_locale_runtime::create_ctype(name)) {
+    if (native == nullptr)
+      locale_named_codecvt_failure();
+
+    if (ftl_locale_runtime::multibyte_is_stateful(native)) {
+      ftl_locale_runtime::destroy(native);
+      native = nullptr;
+
+      locale_named_codecvt_failure();
+    }
+  }
+
+  locale_named_codecvt_context(const locale_named_codecvt_context &) = delete;
+
+  locale_named_codecvt_context &
+  operator=(const locale_named_codecvt_context &) = delete;
+
+  ~locale_named_codecvt_context() { ftl_locale_runtime::destroy(native); }
+};
+
+} // namespace detail
+
+template <class InternT, class ExternT, class StateT>
+class codecvt_byname : public codecvt<InternT, ExternT, StateT> {
+public:
+  using base_type = codecvt<InternT, ExternT, StateT>;
+
+  using intern_type = typename base_type::intern_type;
+
+  using extern_type = typename base_type::extern_type;
+
+  using state_type = typename base_type::state_type;
+
+  explicit codecvt_byname(const char *name, size_t refs = 0)
+      : base_type(refs),
+        context_(new detail::locale_named_codecvt_context(name)) {}
+
+  explicit codecvt_byname(const string &name, size_t refs = 0)
+      : codecvt_byname(name.c_str(), refs) {}
+
+protected:
+  ~codecvt_byname() override { delete context_; }
+
+  typename codecvt_base::result do_out(state_type &state,
+                                       const intern_type *from,
+                                       const intern_type *from_end,
+                                       const intern_type *&from_next,
+                                       extern_type *to, extern_type *to_end,
+                                       extern_type *&to_next) const override {
+    //
+    // char/char and the UTF-fixed standard specializations do not
+    // acquire different encodings merely because a named locale was
+    // requested. wchar_t/char represents the native locale encoding
+    // and is the one case whose conversion semantics vary by name.
+    //
+    if constexpr (is_same_v<intern_type, wchar_t> &&
+                  is_same_v<extern_type, char> &&
+                  is_same_v<state_type, mbstate_t>) {
+      (void)state;
+
+      from_next = from;
+      to_next = to;
+
+      const wchar_t *current = from;
+      char *output = to;
+
+      while (current != from_end) {
+        const auto encoded =
+            ftl_locale_runtime::encode_wide(context_->native, *current);
+
+        if (!encoded.valid) {
+          from_next = current;
+          to_next = output;
+          return codecvt_base::error;
+        }
+
+        if (static_cast<size_t>(to_end - output) < encoded.produced) {
+          from_next = current;
+          to_next = output;
+          return codecvt_base::partial;
+        }
+
+        for (size_t index = 0; index < encoded.produced; ++index) {
+          *output++ = encoded.bytes[index];
+        }
+
+        ++current;
+      }
+
+      from_next = current;
+      to_next = output;
+
+      return codecvt_base::ok;
+    } else {
+      return base_type::do_out(state, from, from_end, from_next, to, to_end,
+                               to_next);
+    }
+  }
+
+  typename codecvt_base::result
+  do_in(state_type &state, const extern_type *from, const extern_type *from_end,
+        const extern_type *&from_next, intern_type *to, intern_type *to_end,
+        intern_type *&to_next) const override {
+    if constexpr (is_same_v<intern_type, wchar_t> &&
+                  is_same_v<extern_type, char> &&
+                  is_same_v<state_type, mbstate_t>) {
+      (void)state;
+
+      from_next = from;
+      to_next = to;
+
+      const char *current = from;
+      wchar_t *output = to;
+
+      while (current != from_end) {
+        if (output == to_end) {
+          from_next = current;
+          to_next = output;
+          return codecvt_base::partial;
+        }
+
+        const auto decoded = ftl_locale_runtime::decode_wide(context_->native,
+                                                             current, from_end);
+
+        if (decoded.result ==
+            ftl_locale_runtime::decoded_wide::status::partial) {
+          from_next = current;
+          to_next = output;
+          return codecvt_base::partial;
+        }
+
+        if (decoded.result == ftl_locale_runtime::decoded_wide::status::error) {
+          from_next = current;
+          to_next = output;
+          return codecvt_base::error;
+        }
+
+        *output++ = decoded.value;
+        current += decoded.consumed;
+      }
+
+      from_next = current;
+      to_next = output;
+
+      return codecvt_base::ok;
+    } else {
+      return base_type::do_in(state, from, from_end, from_next, to, to_end,
+                              to_next);
+    }
+  }
+
+  typename codecvt_base::result
+  do_unshift(state_type &state, extern_type *to, extern_type *to_end,
+             extern_type *&to_next) const override {
+    if constexpr (is_same_v<intern_type, wchar_t> &&
+                  is_same_v<extern_type, char> &&
+                  is_same_v<state_type, mbstate_t>) {
+      (void)state;
+      (void)to_end;
+
+      to_next = to;
+
+      return codecvt_base::noconv;
+    } else {
+      return base_type::do_unshift(state, to, to_end, to_next);
+    }
+  }
+
+  int do_encoding() const noexcept override {
+    if constexpr (is_same_v<intern_type, wchar_t> &&
+                  is_same_v<extern_type, char> &&
+                  is_same_v<state_type, mbstate_t>) {
+      return ftl_locale_runtime::multibyte_max_length(context_->native) == 1
+                 ? 1
+                 : 0;
+    } else {
+      return base_type::do_encoding();
+    }
+  }
+
+  bool do_always_noconv() const noexcept override {
+    return base_type::do_always_noconv();
+  }
+
+  int do_length(state_type &state, const extern_type *from,
+                const extern_type *from_end, size_t maximum) const override {
+    if constexpr (is_same_v<intern_type, wchar_t> &&
+                  is_same_v<extern_type, char> &&
+                  is_same_v<state_type, mbstate_t>) {
+      (void)state;
+
+      const char *current = from;
+      size_t produced = 0;
+
+      while (current != from_end && produced < maximum) {
+        const auto decoded = ftl_locale_runtime::decode_wide(context_->native,
+                                                             current, from_end);
+
+        if (decoded.result !=
+            ftl_locale_runtime::decoded_wide::status::complete) {
+          break;
+        }
+
+        current += decoded.consumed;
+        ++produced;
+      }
+
+      return static_cast<int>(current - from);
+    } else {
+      return base_type::do_length(state, from, from_end, maximum);
+    }
+  }
+
+  int do_max_length() const noexcept override {
+    if constexpr (is_same_v<intern_type, wchar_t> &&
+                  is_same_v<extern_type, char> &&
+                  is_same_v<state_type, mbstate_t>) {
+      return ftl_locale_runtime::multibyte_max_length(context_->native);
+    } else {
+      return base_type::do_max_length();
+    }
+  }
+
+private:
+  detail::locale_named_codecvt_context *context_;
+};
 
 template <class Character> class collate_byname : public collate<Character> {
   static_assert(is_same_v<Character, char> || is_same_v<Character, wchar_t>,
@@ -2277,6 +2766,36 @@ struct locale_classic_ctype_wchar final : ctype<wchar_t> {
   ~locale_classic_ctype_wchar() override = default;
 };
 
+struct locale_classic_codecvt_char16_char final
+    : codecvt<char16_t, char, mbstate_t> {
+  locale_classic_codecvt_char16_char()
+      : codecvt<char16_t, char, mbstate_t>(1) {}
+
+  ~locale_classic_codecvt_char16_char() override = default;
+};
+
+struct locale_classic_codecvt_char32_char final
+    : codecvt<char32_t, char, mbstate_t> {
+  locale_classic_codecvt_char32_char()
+      : codecvt<char32_t, char, mbstate_t>(1) {}
+
+  ~locale_classic_codecvt_char32_char() override = default;
+};
+
+inline locale_facet_control &locale_classic_codecvt_char16_char_control() {
+  static locale_classic_codecvt_char16_char facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &locale_classic_codecvt_char32_char_control() {
+  static locale_classic_codecvt_char32_char facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
 inline locale_facet_control &locale_classic_ctype_char_control() {
   static locale_classic_ctype_char facet;
   static locale_facet_control control(&facet);
@@ -2354,7 +2873,7 @@ inline locale_state &locale_classic_state() {
   static locale_state state;
 
   static const bool initialized = [] {
-    state.facets.reserve(10);
+    state.facets.reserve(12);
 
     state.facets.push_back(
         {&ctype<char>::id, &locale_classic_ctype_char_control()});
@@ -2385,6 +2904,12 @@ inline locale_state &locale_classic_state() {
 
     state.facets.push_back({&codecvt<wchar_t, char, mbstate_t>::id,
                             &locale_classic_codecvt_wchar_control()});
+
+    state.facets.push_back({&codecvt<char16_t, char, mbstate_t>::id,
+                            &locale_classic_codecvt_char16_char_control()});
+
+    state.facets.push_back({&codecvt<char32_t, char, mbstate_t>::id,
+                            &locale_classic_codecvt_char32_char_control()});
 
     return true;
   }();

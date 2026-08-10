@@ -552,6 +552,7 @@ foreach (header IN ITEMS
         locale_collate
         locale_numpunct
         locale_codecvt
+        locale_codecvt_byname
 )
     add_ftl_test(${header})
 endforeach ()

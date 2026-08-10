@@ -73,6 +73,8 @@ decltype(sizeof(0)) __cdecl _wcsxfrm_l(wchar_t *, const wchar_t *,
 
 int __cdecl _configthreadlocale(int);
 
+int __cdecl ___mb_cur_max_l_func(void *);
+
 } // extern "C"
 
 inline native_handle create_ctype(const char *name) noexcept {
@@ -100,6 +102,85 @@ inline native_handle create_numeric(const char *name) noexcept {
   // wide character.
   //
   return _create_locale(LC_ALL, name);
+}
+
+inline int multibyte_max_length(native_handle locale) noexcept {
+  const int result = ___mb_cur_max_l_func(locale);
+
+  return result > 0 ? result : 1;
+}
+
+inline bool multibyte_is_stateful(native_handle) noexcept {
+  //
+  // The Windows CRT code-page based multibyte encodings supported
+  // through _locale_t do not expose a shift-state mechanism through
+  // the _l conversion API.
+  //
+  return false;
+}
+
+struct decoded_wide {
+  enum class status { complete, partial, error };
+
+  status result;
+  wchar_t value;
+  decltype(sizeof(0)) consumed;
+};
+
+inline decoded_wide decode_wide(native_handle locale, const char *first,
+                                const char *last) noexcept {
+  if (first == last) {
+    return {decoded_wide::status::partial, wchar_t{}, 0};
+  }
+
+  wchar_t value{};
+
+  const auto available = static_cast<decltype(sizeof(0))>(last - first);
+
+  const int result = _mbtowc_l(&value, first, available, locale);
+
+  if (result > 0) {
+    return {decoded_wide::status::complete, value,
+            static_cast<decltype(sizeof(0))>(result)};
+  }
+
+  if (result == 0) {
+    return {decoded_wide::status::complete, wchar_t{}, 1};
+  }
+
+  //
+  // Microsoft's non-restartable locale-specific conversion API
+  // unfortunately does not distinguish invalid input from an
+  // incomplete sequence. If fewer than the locale's maximum bytes
+  // are available, preserve the source and request more input.
+  //
+  if (available <
+      static_cast<decltype(sizeof(0))>(multibyte_max_length(locale))) {
+    return {decoded_wide::status::partial, wchar_t{}, 0};
+  }
+
+  return {decoded_wide::status::error, wchar_t{}, 0};
+}
+
+struct encoded_wide {
+  bool valid;
+  char bytes[16];
+  decltype(sizeof(0)) produced;
+};
+
+inline encoded_wide encode_wide(native_handle locale, wchar_t value) noexcept {
+  encoded_wide result{};
+
+  const int produced = _wctomb_l(result.bytes, value, locale);
+
+  if (produced < 0)
+    return result;
+
+  result.valid = true;
+
+  result.produced = static_cast<decltype(sizeof(0))>(produced);
+
+  return result;
 }
 
 inline wchar_t widen_first(native_handle locale, const char *source,
@@ -293,6 +374,8 @@ decltype(sizeof(0)) wcsxfrm_l(wchar_t *, const wchar_t *, decltype(sizeof(0)),
 
 int mbtowc(wchar_t *, const char *, decltype(sizeof(0)));
 
+int wctomb(char *, wchar_t);
+
 } // extern "C"
 
 inline native_handle create_ctype(const char *name) noexcept {
@@ -320,6 +403,96 @@ inline native_handle create_numeric(const char *name) noexcept {
   constexpr int numeric_and_ctype_mask = (1 << LC_NUMERIC) | (1 << LC_CTYPE);
 
   return newlocale(numeric_and_ctype_mask, name, nullptr);
+}
+
+inline int multibyte_max_length(native_handle) noexcept {
+  //
+  // Supported FTL POSIX targets use libc multibyte encodings whose
+  // maximum representation fits comfortably in this bound. Returning
+  // an upper bound is permitted by codecvt::max_length().
+  //
+  return 16;
+}
+
+inline bool multibyte_is_stateful(native_handle locale) noexcept {
+  native_handle previous = uselocale(locale);
+
+  if (previous == nullptr)
+    return true;
+
+  const int result = mbtowc(nullptr, nullptr, 0);
+
+  (void)uselocale(previous);
+
+  return result != 0;
+}
+
+inline decoded_wide decode_wide(native_handle locale, const char *first,
+                                const char *last) noexcept {
+  if (first == last) {
+    return {decoded_wide::status::partial, wchar_t{}, 0};
+  }
+
+  native_handle previous = uselocale(locale);
+
+  if (previous == nullptr) {
+    return {decoded_wide::status::error, wchar_t{}, 0};
+  }
+
+  //
+  // The named-codecvt implementation deliberately supports
+  // stateless native encodings. Reset the non-restartable C
+  // conversion state for each scalar.
+  //
+  (void)mbtowc(nullptr, nullptr, 0);
+
+  wchar_t value{};
+
+  const auto available = static_cast<decltype(sizeof(0))>(last - first);
+
+  const int result = mbtowc(&value, first, available);
+
+  (void)uselocale(previous);
+
+  if (result > 0) {
+    return {decoded_wide::status::complete, value,
+            static_cast<decltype(sizeof(0))>(result)};
+  }
+
+  if (result == 0) {
+    return {decoded_wide::status::complete, wchar_t{}, 1};
+  }
+
+  if (available <
+      static_cast<decltype(sizeof(0))>(multibyte_max_length(locale))) {
+    return {decoded_wide::status::partial, wchar_t{}, 0};
+  }
+
+  return {decoded_wide::status::error, wchar_t{}, 0};
+}
+
+inline encoded_wide encode_wide(native_handle locale, wchar_t value) noexcept {
+  encoded_wide result{};
+
+  native_handle previous = uselocale(locale);
+
+  if (previous == nullptr)
+    return result;
+
+  (void)wctomb(nullptr, wchar_t{});
+
+  const int produced = wctomb(result.bytes, value);
+
+  (void)uselocale(previous);
+
+  if (produced < 0)
+    return result;
+
+  result.valid = true;
+
+  result.produced = static_cast<decltype(sizeof(0))>(produced);
+
+  return result;
 }
 
 inline wchar_t widen_first(native_handle locale, const char *source,
