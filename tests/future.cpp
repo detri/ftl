@@ -68,6 +68,40 @@ template <class T> struct promise_counting_allocator {
   template <class> friend struct promise_counting_allocator;
 };
 
+int packaged_task_free_function(int value) { return value + 5; }
+
+struct packaged_task_functor {
+  long operator()(short value) const noexcept { return value * 3L; }
+};
+
+static_assert(tested::is_same_v<decltype(tested::packaged_task{
+                                    &packaged_task_free_function}),
+                                tested::packaged_task<int(int)>>);
+
+static_assert(
+    tested::is_same_v<decltype(tested::packaged_task{packaged_task_functor{}}),
+                      tested::packaged_task<long(short)>>);
+
+struct move_only_packaged_callable {
+  explicit move_only_packaged_callable(int *calls) : calls(calls) {}
+
+  move_only_packaged_callable(const move_only_packaged_callable &) = delete;
+
+  move_only_packaged_callable &
+  operator=(const move_only_packaged_callable &) = delete;
+
+  move_only_packaged_callable(move_only_packaged_callable &&other) noexcept
+      : calls(tested::exchange(other.calls, nullptr)) {}
+
+  int operator()(int value) {
+    ++*calls;
+
+    return value * 2;
+  }
+
+  int *calls;
+};
+
 static_assert(static_cast<int>(tested::future_errc::broken_promise) != 0);
 
 static_assert(static_cast<int>(tested::future_errc::future_already_retrieved) !=
@@ -147,6 +181,19 @@ static_assert(
 
 static_assert(noexcept(tested::declval<tested::promise<int> &>().swap(
     tested::declval<tested::promise<int> &>())));
+
+static_assert(tested::is_default_constructible_v<tested::packaged_task<int()>>);
+
+static_assert(tested::is_move_constructible_v<tested::packaged_task<int()>>);
+
+static_assert(tested::is_move_assignable_v<tested::packaged_task<int()>>);
+
+static_assert(!tested::is_copy_constructible_v<tested::packaged_task<int()>>);
+
+static_assert(!tested::is_copy_assignable_v<tested::packaged_task<int()>>);
+
+static_assert(noexcept(tested::declval<tested::packaged_task<int()> &>().swap(
+    tested::declval<tested::packaged_task<int()> &>())));
 
 bool strings_equal(const char *left, const char *right) {
   while (*left != '\0' && *right != '\0') {
@@ -1222,6 +1269,371 @@ bool promise_allocator_constructor_works() {
   return allocations != 0 && allocations == deallocations;
 }
 
+bool packaged_task_value_works() {
+  tested::packaged_task<int(int, int)> task{
+      [](int left, int right) { return left + right; }};
+
+  auto result = task.get_future();
+
+  task(20, 22);
+
+  return result.get() == 42;
+}
+
+bool packaged_task_void_works() {
+  int value = 0;
+
+  tested::packaged_task<void(int)> task{[&](int input) { value = input; }};
+
+  auto result = task.get_future();
+
+  task(91);
+
+  result.get();
+
+  return value == 91;
+}
+
+bool packaged_task_reference_works() {
+  tested::packaged_task<int &(int &)> task{
+      [](int &value) -> int & { return value; }};
+
+  auto result = task.get_future();
+
+  int target = 73;
+
+  task(target);
+
+  return &result.get() == &target;
+}
+
+bool packaged_task_captures_exception() {
+  tested::packaged_task<int()> task{[]() -> int { throw stored_exception{}; }};
+
+  auto result = task.get_future();
+
+  try {
+    task();
+  } catch (...) {
+    // The task exception belongs in the
+    // shared state, not here.
+    return false;
+  }
+
+  try {
+    (void)result.get();
+  } catch (const stored_exception &) {
+    return true;
+  } catch (...) {
+    return false;
+  }
+
+  return false;
+}
+
+bool packaged_task_supports_move_only_callable() {
+  int calls = 0;
+
+  tested::packaged_task<int(int)> task{move_only_packaged_callable{&calls}};
+
+  auto result = task.get_future();
+
+  task(21);
+
+  return result.get() == 42 && calls == 1;
+}
+
+bool packaged_task_get_future_is_single_use() {
+  tested::packaged_task<int()> task{[] { return 17; }};
+
+  auto result = task.get_future();
+
+  try {
+    (void)task.get_future();
+  } catch (const tested::future_error &error) {
+    if (error.code() != tested::make_error_code(
+                            tested::future_errc::future_already_retrieved)) {
+      return false;
+    }
+  } catch (...) {
+    return false;
+  }
+
+  task();
+
+  return result.get() == 17;
+}
+
+bool packaged_task_is_single_invocation_per_state() {
+  tested::packaged_task<int()> task{[] { return 44; }};
+
+  auto result = task.get_future();
+
+  task();
+
+  try {
+    task();
+  } catch (const tested::future_error &error) {
+    if (error.code() != tested::make_error_code(
+                            tested::future_errc::promise_already_satisfied)) {
+      return false;
+    }
+  } catch (...) {
+    return false;
+  }
+
+  return result.get() == 44;
+}
+
+bool empty_packaged_task_reports_no_state() {
+  tested::packaged_task<int()> task;
+
+  if (task.valid())
+    return false;
+
+  try {
+    (void)task.get_future();
+  } catch (const tested::future_error &error) {
+    if (error.code() !=
+        tested::make_error_code(tested::future_errc::no_state)) {
+      return false;
+    }
+  } catch (...) {
+    return false;
+  }
+
+  try {
+    task();
+  } catch (const tested::future_error &error) {
+    return error.code() ==
+           tested::make_error_code(tested::future_errc::no_state);
+  } catch (...) {
+    return false;
+  }
+
+  return false;
+}
+
+bool packaged_task_move_works() {
+  tested::packaged_task<int()> source{[] { return 88; }};
+
+  auto result = source.get_future();
+
+  tested::packaged_task<int()> destination{tested::move(source)};
+
+  if (source.valid() || !destination.valid()) {
+    return false;
+  }
+
+  destination();
+
+  return result.get() == 88;
+}
+
+bool packaged_task_move_assignment_abandons_old_state() {
+  tested::packaged_task<int()> first{[] { return 1; }};
+
+  tested::packaged_task<int()> second{[] { return 2; }};
+
+  auto first_result = first.get_future();
+
+  auto second_result = second.get_future();
+
+  first = tested::move(second);
+
+  bool broken = false;
+
+  try {
+    (void)first_result.get();
+  } catch (const tested::future_error &error) {
+    broken = error.code() ==
+             tested::make_error_code(tested::future_errc::broken_promise);
+  } catch (...) {
+    return false;
+  }
+
+  if (!broken)
+    return false;
+
+  first();
+
+  return second_result.get() == 2;
+}
+
+bool packaged_task_swap_works() {
+  tested::packaged_task<int()> first{[] { return 10; }};
+
+  tested::packaged_task<int()> second{[] { return 20; }};
+
+  auto first_result = first.get_future();
+
+  auto second_result = second.get_future();
+
+  tested::swap(first, second);
+
+  first();
+  second();
+
+  return first_result.get() == 10 && second_result.get() == 20;
+}
+
+bool packaged_task_destruction_breaks_future() {
+  tested::future<int> result;
+
+  {
+    tested::packaged_task<int()> task{[] { return 5; }};
+
+    result = task.get_future();
+  }
+
+  try {
+    (void)result.get();
+  } catch (const tested::future_error &error) {
+    return error.code() ==
+           tested::make_error_code(tested::future_errc::broken_promise);
+  } catch (...) {
+    return false;
+  }
+
+  return false;
+}
+
+struct reset_packaged_callable {
+  int value = 40;
+
+  int operator()() { return ++value; }
+};
+
+bool packaged_task_reset_creates_fresh_state() {
+  tested::packaged_task<int()> task{reset_packaged_callable{}};
+
+  auto abandoned = task.get_future();
+
+  task.reset();
+
+  bool broken = false;
+
+  try {
+    (void)abandoned.get();
+  } catch (const tested::future_error &error) {
+    broken = error.code() ==
+             tested::make_error_code(tested::future_errc::broken_promise);
+  } catch (...) {
+    return false;
+  }
+
+  if (!broken)
+    return false;
+
+  auto first = task.get_future();
+
+  task();
+
+  if (first.get() != 41)
+    return false;
+
+  task.reset();
+
+  auto second = task.get_future();
+
+  task();
+
+  return second.get() == 42;
+}
+
+bool empty_packaged_task_reset_reports_no_state() {
+  tested::packaged_task<int()> task;
+
+  try {
+    task.reset();
+  } catch (const tested::future_error &error) {
+    return error.code() ==
+           tested::make_error_code(tested::future_errc::no_state);
+  } catch (...) {
+    return false;
+  }
+
+  return false;
+}
+
+bool packaged_task_ready_at_thread_exit_is_deferred() {
+  tested::packaged_task<int()> task{[] { return 314; }};
+
+  auto result = task.get_future();
+
+  tested::atomic<bool> stored{false};
+
+  tested::atomic<bool> release{false};
+
+  tested::thread worker(
+      [task = tested::move(task), &stored, &release]() mutable {
+        task.make_ready_at_thread_exit();
+
+        stored.store(true, tested::memory_order_release);
+
+        while (!release.load(tested::memory_order_acquire)) {
+          tested::this_thread::yield();
+        }
+      });
+
+  while (!stored.load(tested::memory_order_acquire)) {
+    tested::this_thread::yield();
+  }
+
+  const bool still_waiting = result.wait_for(tested::chrono::milliseconds{0}) ==
+                             tested::future_status::timeout;
+
+  release.store(true, tested::memory_order_release);
+
+  worker.join();
+
+  return still_waiting && result.get() == 314;
+}
+
+bool packaged_task_ready_at_thread_exit_captures_exception() {
+  tested::packaged_task<int()> task{[]() -> int { throw stored_exception{}; }};
+
+  auto result = task.get_future();
+
+  tested::thread worker([task = tested::move(task)]() mutable {
+    task.make_ready_at_thread_exit();
+  });
+
+  worker.join();
+
+  try {
+    (void)result.get();
+  } catch (const stored_exception &) {
+    return true;
+  } catch (...) {
+    return false;
+  }
+
+  return false;
+}
+
+bool packaged_task_thread_exit_follows_tls_destruction() {
+  tested::atomic<bool> tls_destroyed{false};
+
+  tested::packaged_task<int()> task{[] { return 515; }};
+
+  auto result = task.get_future();
+
+  tested::thread worker([task = tested::move(task), &tls_destroyed]() mutable {
+    promise_tls_probe_instance.destroyed = &tls_destroyed;
+
+    task.make_ready_at_thread_exit();
+  });
+
+  result.wait();
+
+  const bool ordered = tls_destroyed.load(tested::memory_order_acquire);
+
+  worker.join();
+
+  return ordered && result.get() == 515;
+}
+
 bool ftl_test() {
   return error_vocabulary_works() && value_state_works() &&
          reference_state_works() && void_state_works() &&
@@ -1255,5 +1667,19 @@ bool ftl_test() {
          promise_exception_at_thread_exit_works() &&
          promise_reference_and_void_at_thread_exit_work() &&
          promise_thread_exit_follows_tls_destruction() &&
-         promise_allocator_constructor_works();
+         promise_allocator_constructor_works() && packaged_task_value_works() &&
+         packaged_task_void_works() && packaged_task_reference_works() &&
+         packaged_task_captures_exception() &&
+         packaged_task_supports_move_only_callable() &&
+         packaged_task_get_future_is_single_use() &&
+         packaged_task_is_single_invocation_per_state() &&
+         empty_packaged_task_reports_no_state() && packaged_task_move_works() &&
+         packaged_task_move_assignment_abandons_old_state() &&
+         packaged_task_swap_works() &&
+         packaged_task_destruction_breaks_future() &&
+         packaged_task_reset_creates_fresh_state() &&
+         empty_packaged_task_reset_reports_no_state() &&
+         packaged_task_ready_at_thread_exit_is_deferred() &&
+         packaged_task_ready_at_thread_exit_captures_exception() &&
+         packaged_task_thread_exit_follows_tls_destruction();
 }

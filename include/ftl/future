@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <detail/future_state.hpp>
 #include <detail/thread_exit.hpp>
+#include <functional>
 #include <memory>
 #include <stdexcept>
 #include <system_error>
@@ -20,6 +21,7 @@
 #include <ftl/cstdint>
 #include <ftl/detail/future_state.hpp>
 #include <ftl/detail/thread_exit.hpp>
+#include <ftl/functional>
 #include <ftl/memory>
 #include <ftl/stdexcept>
 #include <ftl/system_error>
@@ -1020,6 +1022,305 @@ template <class R> void swap(promise<R> &left, promise<R> &right) noexcept {
 
 template <class R, class Allocator>
 struct uses_allocator<promise<R>, Allocator> : true_type {};
+
+namespace detail {
+
+template <class R, class Callable, class... Args>
+bool packaged_task_store_ready(future_state<R> &state, Callable &callable,
+                               Args &&...args) {
+#if FTL_HAS_EXCEPTIONS
+  try {
+#endif
+    if constexpr (is_void_v<R>) {
+      invoke_r<R>(callable, forward<Args>(args)...);
+
+      return state.try_set_value();
+    } else if constexpr (is_reference_v<R>) {
+      R result = invoke_r<R>(callable, forward<Args>(args)...);
+
+      return state.try_set_value(result);
+    } else {
+      return state.try_set_value(invoke_r<R>(callable, forward<Args>(args)...));
+    }
+
+#if FTL_HAS_EXCEPTIONS
+  } catch (...) {
+    return state.try_set_exception(current_exception());
+  }
+#endif
+}
+
+template <class R, class Callable, class... Args>
+bool packaged_task_store_deferred(future_state<R> &state, Callable &callable,
+                                  Args &&...args) {
+#if FTL_HAS_EXCEPTIONS
+  try {
+#endif
+    if constexpr (is_void_v<R>) {
+      invoke_r<R>(callable, forward<Args>(args)...);
+
+      return state.try_store_value();
+    } else if constexpr (is_reference_v<R>) {
+      R result = invoke_r<R>(callable, forward<Args>(args)...);
+
+      return state.try_store_value(result);
+    } else {
+      return state.try_store_value(
+          invoke_r<R>(callable, forward<Args>(args)...));
+    }
+
+#if FTL_HAS_EXCEPTIONS
+  } catch (...) {
+    return state.try_store_exception(current_exception());
+  }
+#endif
+}
+
+template <class R, class... ArgTypes> class packaged_task_erased {
+public:
+  virtual ~packaged_task_erased() = default;
+
+  packaged_task_erased(const packaged_task_erased &) = delete;
+
+  packaged_task_erased &operator=(const packaged_task_erased &) = delete;
+
+  virtual void invoke_task(const shared_ptr<future_state<R>> &state,
+                           ArgTypes &&...args) = 0;
+
+  virtual void
+  invoke_task_at_thread_exit(const shared_ptr<future_state<R>> &state,
+                             ArgTypes &&...args) = 0;
+
+  virtual packaged_task_erased *move_task() = 0;
+
+protected:
+  packaged_task_erased() = default;
+
+  [[nodiscard]]
+  bool claim_invocation() noexcept {
+    return !invoked_.exchange(true, memory_order_acq_rel);
+  }
+
+private:
+  atomic<bool> invoked_{false};
+};
+
+template <class Callable, class R, class... ArgTypes>
+class packaged_task_model final : public packaged_task_erased<R, ArgTypes...> {
+public:
+  template <class F>
+  explicit packaged_task_model(F &&callable)
+      : callable_(forward<F>(callable)) {}
+
+  void invoke_task(const shared_ptr<future_state<R>> &state,
+                   ArgTypes &&...args) override {
+    if (!this->claim_invocation()) {
+      throw_future_error(future_errc::promise_already_satisfied);
+    }
+
+    if (!packaged_task_store_ready<R>(*state, callable_,
+                                      forward<ArgTypes>(args)...)) {
+      throw_future_error(future_errc::promise_already_satisfied);
+    }
+  }
+
+  void invoke_task_at_thread_exit(const shared_ptr<future_state<R>> &state,
+                                  ArgTypes &&...args) override {
+    using action_type = promise_thread_exit_action<future_state<R>>;
+
+    // Allocate the exit action before claiming the
+    // invocation. If allocation fails, the task has
+    // not been invoked and remains usable.
+    unique_ptr<action_type> action{new action_type{state}};
+
+    if (!this->claim_invocation()) {
+      throw_future_error(future_errc::promise_already_satisfied);
+    }
+
+    if (!packaged_task_store_deferred<R>(*state, callable_,
+                                         forward<ArgTypes>(args)...)) {
+      throw_future_error(future_errc::promise_already_satisfied);
+    }
+
+    if (!register_thread_exit_action(action.get())) {
+      // The result is already stored. Do not leave
+      // the future permanently blocked merely
+      // because deferred registration failed.
+      state->make_ready();
+
+      throw_future_thread_exit_registration_error();
+    }
+
+    (void)action.release();
+  }
+
+  packaged_task_erased<R, ArgTypes...> *move_task() override {
+    return new packaged_task_model{move(callable_)};
+  }
+
+private:
+  Callable callable_;
+};
+
+// Deduction helper for ordinary non-static
+// call operators. functional already owns the
+// complete cv/ref/noexcept member-function
+// signature stripping machinery.
+template <class F, class Signature = decltype(&F::operator())>
+struct packaged_task_guide {
+  using type = typename function_guide<Signature>::type;
+};
+
+// C++23 static operator().
+template <class F, class R, class... Args>
+struct packaged_task_guide<F, R (*)(Args...)> {
+  using type = R(Args...);
+};
+
+template <class F, class R, class... Args>
+struct packaged_task_guide<F, R (*)(Args...) noexcept> {
+  using type = R(Args...);
+};
+
+// C++23 explicit-object operator() has a
+// function-pointer representation with the
+// explicit object as its first parameter.
+// Recognize the ordinary non-template case.
+template <class F, class R, class G, class... Args>
+  requires is_same_v<remove_cvref_t<G>, F>
+struct packaged_task_guide<F, R (*)(G, Args...)> {
+  using type = R(Args...);
+};
+
+template <class F, class R, class G, class... Args>
+  requires is_same_v<remove_cvref_t<G>, F>
+struct packaged_task_guide<F, R (*)(G, Args...) noexcept> {
+  using type = R(Args...);
+};
+
+} // namespace detail
+
+template <class R, class... ArgTypes> class packaged_task<R(ArgTypes...)> {
+  using erased_type = detail::packaged_task_erased<R, ArgTypes...>;
+
+public:
+  packaged_task() noexcept = default;
+
+  template <class F>
+    requires(!is_same_v<remove_cvref_t<F>, packaged_task>)
+  explicit packaged_task(F &&callable) {
+    static_assert(is_invocable_r_v<R, F &, ArgTypes...>);
+
+    using callable_type = decay_t<F>;
+
+    auto state = make_shared<detail::future_state<R>>();
+
+    unique_ptr<erased_type> task{
+        new detail::packaged_task_model<callable_type, R, ArgTypes...>{
+            forward<F>(callable)}};
+
+    state_ = move(state);
+    task_ = move(task);
+  }
+
+  ~packaged_task() { detail::abandon_promise_state(state_); }
+
+  packaged_task(const packaged_task &) = delete;
+
+  packaged_task &operator=(const packaged_task &) = delete;
+
+  packaged_task(packaged_task &&) noexcept = default;
+
+  packaged_task &operator=(packaged_task &&other) noexcept {
+    if (this != &other) {
+      detail::abandon_promise_state(state_);
+
+      state_ = move(other.state_);
+      task_ = move(other.task_);
+    }
+
+    return *this;
+  }
+
+  void swap(packaged_task &other) noexcept {
+    state_.swap(other.state_);
+    task_.swap(other.task_);
+  }
+
+  [[nodiscard]]
+  bool valid() const noexcept {
+    return static_cast<bool>(state_);
+  }
+
+  future<R> get_future() {
+    auto &state = require_state();
+
+    if (!state.try_mark_future_retrieved()) {
+      detail::throw_future_error(future_errc::future_already_retrieved);
+    }
+
+    return detail::future_access::make_future<R>(state_);
+  }
+
+  void operator()(ArgTypes... args) {
+    require_state();
+
+    task_->invoke_task(state_, forward<ArgTypes>(args)...);
+  }
+
+  void make_ready_at_thread_exit(ArgTypes... args) {
+    require_state();
+
+    task_->invoke_task_at_thread_exit(state_, forward<ArgTypes>(args)...);
+  }
+
+  void reset() {
+    require_state();
+
+    // Construct the replacement state before
+    // touching the callable, so allocation failure
+    // leaves the existing task untouched.
+    auto replacement_state = make_shared<detail::future_state<R>>();
+
+    unique_ptr<erased_type> replacement_task{task_->move_task()};
+
+    // The old future, if any, observes
+    // broken_promise unless its state was already
+    // satisfied.
+    detail::abandon_promise_state(state_);
+
+    state_ = move(replacement_state);
+
+    task_ = move(replacement_task);
+  }
+
+private:
+  [[nodiscard]]
+  detail::future_state<R> &require_state() {
+    if (!state_) {
+      detail::throw_future_error(future_errc::no_state);
+    }
+
+    return *state_;
+  }
+
+  shared_ptr<detail::future_state<R>> state_;
+
+  unique_ptr<erased_type> task_;
+};
+
+template <class R, class... ArgTypes>
+void swap(packaged_task<R(ArgTypes...)> &left,
+          packaged_task<R(ArgTypes...)> &right) noexcept {
+  left.swap(right);
+}
+
+template <class R, class... ArgTypes>
+packaged_task(R (*)(ArgTypes...)) -> packaged_task<R(ArgTypes...)>;
+
+template <class F>
+packaged_task(F)
+    -> packaged_task<typename detail::packaged_task_guide<F>::type>;
 
 FTL_FUTURE_END_NAMESPACE
 
