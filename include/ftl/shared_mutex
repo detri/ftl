@@ -1,0 +1,280 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_SHARED_MUTEX_HEADER
+#define FTL_SHARED_MUTEX_HEADER
+
+#if !defined(__cpp_lib_shared_timed_mutex) ||                                  \
+    __cpp_lib_shared_timed_mutex < 201402L
+#undef __cpp_lib_shared_timed_mutex
+#define __cpp_lib_shared_timed_mutex 201402L
+#endif
+
+#if !defined(__cpp_lib_shared_mutex) || __cpp_lib_shared_mutex < 201505L
+#undef __cpp_lib_shared_mutex
+#define __cpp_lib_shared_mutex 201505L
+#endif
+
+#ifdef FTL_REPLACE_STL
+#include <chrono>
+#include <detail/shared_mutex.hpp>
+#include <memory>
+#include <mutex>
+#include <utility>
+#define FTL_SHARED_MUTEX_BEGIN_NAMESPACE namespace std {
+#define FTL_SHARED_MUTEX_END_NAMESPACE }
+#else
+#include <ftl/chrono>
+#include <ftl/detail/shared_mutex.hpp>
+#include <ftl/memory>
+#include <ftl/mutex>
+#include <ftl/utility>
+#define FTL_SHARED_MUTEX_BEGIN_NAMESPACE namespace ftl {
+#define FTL_SHARED_MUTEX_END_NAMESPACE }
+#endif
+
+FTL_SHARED_MUTEX_BEGIN_NAMESPACE
+
+namespace detail {
+
+template <class State, class Clock, class Duration>
+bool shared_mutex_try_lock_shared_until(
+    State &state, const chrono::time_point<Clock, Duration> &absolute_time) {
+  for (;;) {
+    const auto now = Clock::now();
+
+    if (!(now < absolute_time))
+      return state.try_lock_shared();
+
+    const uint64_t remaining = mutex_timeout_nanoseconds(absolute_time - now);
+
+    if (state.try_lock_shared_for(remaining)) {
+      return true;
+    }
+
+    if (!(Clock::now() < absolute_time))
+      return false;
+  }
+}
+
+} // namespace detail
+
+class shared_mutex {
+public:
+  shared_mutex() {}
+  ~shared_mutex() = default;
+
+  shared_mutex(const shared_mutex &) = delete;
+
+  shared_mutex &operator=(const shared_mutex &) = delete;
+
+  void lock() { state_.lock(); }
+
+  bool try_lock() { return state_.try_lock(); }
+
+  void unlock() { state_.unlock(); }
+
+  void lock_shared() { state_.lock_shared(); }
+
+  bool try_lock_shared() { return state_.try_lock_shared(); }
+
+  void unlock_shared() { state_.unlock_shared(); }
+
+private:
+  detail::shared_mutex_state state_;
+};
+
+class shared_timed_mutex {
+public:
+  shared_timed_mutex() {}
+  ~shared_timed_mutex() = default;
+
+  shared_timed_mutex(const shared_timed_mutex &) = delete;
+
+  shared_timed_mutex &operator=(const shared_timed_mutex &) = delete;
+
+  void lock() { state_.lock(); }
+
+  bool try_lock() { return state_.try_lock(); }
+
+  template <class Rep, class Period>
+  bool try_lock_for(const chrono::duration<Rep, Period> &relative_time) {
+    return state_.try_lock_for(
+        detail::mutex_timeout_nanoseconds(relative_time));
+  }
+
+  template <class Clock, class Duration>
+  bool
+  try_lock_until(const chrono::time_point<Clock, Duration> &absolute_time) {
+    return detail::mutex_try_lock_until(state_, absolute_time);
+  }
+
+  void unlock() { state_.unlock(); }
+
+  void lock_shared() { state_.lock_shared(); }
+
+  bool try_lock_shared() { return state_.try_lock_shared(); }
+
+  template <class Rep, class Period>
+  bool try_lock_shared_for(const chrono::duration<Rep, Period> &relative_time) {
+    return state_.try_lock_shared_for(
+        detail::mutex_timeout_nanoseconds(relative_time));
+  }
+
+  template <class Clock, class Duration>
+  bool try_lock_shared_until(
+      const chrono::time_point<Clock, Duration> &absolute_time) {
+    return detail::shared_mutex_try_lock_shared_until(state_, absolute_time);
+  }
+
+  void unlock_shared() { state_.unlock_shared(); }
+
+private:
+  detail::shared_mutex_state state_;
+};
+
+template <class Mutex> class shared_lock {
+public:
+  using mutex_type = Mutex;
+
+  shared_lock() noexcept = default;
+
+  explicit shared_lock(mutex_type &mutex) : mutex_(addressof(mutex)) {
+    mutex_->lock_shared();
+    owns_ = true;
+  }
+
+  shared_lock(mutex_type &mutex, defer_lock_t) noexcept
+      : mutex_(addressof(mutex)) {}
+
+  shared_lock(mutex_type &mutex, try_to_lock_t)
+      : mutex_(addressof(mutex)), owns_(mutex_->try_lock_shared()) {}
+
+  shared_lock(mutex_type &mutex, adopt_lock_t)
+      : mutex_(addressof(mutex)), owns_(true) {}
+
+  template <class Clock, class Duration>
+  shared_lock(mutex_type &mutex,
+              const chrono::time_point<Clock, Duration> &absolute_time)
+      : mutex_(addressof(mutex)),
+        owns_(mutex_->try_lock_shared_until(absolute_time)) {}
+
+  template <class Rep, class Period>
+  shared_lock(mutex_type &mutex,
+              const chrono::duration<Rep, Period> &relative_time)
+      : mutex_(addressof(mutex)),
+        owns_(mutex_->try_lock_shared_for(relative_time)) {}
+
+  ~shared_lock() {
+    if (owns_)
+      mutex_->unlock_shared();
+  }
+
+  shared_lock(const shared_lock &) = delete;
+
+  shared_lock &operator=(const shared_lock &) = delete;
+
+  shared_lock(shared_lock &&other) noexcept
+      : mutex_(exchange(other.mutex_, nullptr)),
+        owns_(exchange(other.owns_, false)) {}
+
+  shared_lock &operator=(shared_lock &&other) noexcept {
+    shared_lock(move(other)).swap(*this);
+    return *this;
+  }
+
+  void lock() {
+    require_lockable();
+
+    mutex_->lock_shared();
+    owns_ = true;
+  }
+
+  bool try_lock() {
+    require_lockable();
+
+    owns_ = mutex_->try_lock_shared();
+
+    return owns_;
+  }
+
+  template <class Rep, class Period>
+  bool try_lock_for(const chrono::duration<Rep, Period> &relative_time) {
+    require_lockable();
+
+    owns_ = mutex_->try_lock_shared_for(relative_time);
+
+    return owns_;
+  }
+
+  template <class Clock, class Duration>
+  bool
+  try_lock_until(const chrono::time_point<Clock, Duration> &absolute_time) {
+    require_lockable();
+
+    owns_ = mutex_->try_lock_shared_until(absolute_time);
+
+    return owns_;
+  }
+
+  void unlock() {
+    if (!owns_) {
+      detail::throw_mutex_error(errc::operation_not_permitted,
+                                "shared_lock::unlock");
+    }
+
+    mutex_->unlock_shared();
+    owns_ = false;
+  }
+
+  void swap(shared_lock &other) noexcept {
+    auto *mutex = mutex_;
+    mutex_ = other.mutex_;
+    other.mutex_ = mutex;
+
+    const bool owns = owns_;
+    owns_ = other.owns_;
+    other.owns_ = owns;
+  }
+
+  mutex_type *release() noexcept {
+    mutex_type *result = mutex_;
+
+    mutex_ = nullptr;
+    owns_ = false;
+
+    return result;
+  }
+
+  bool owns_lock() const noexcept { return owns_; }
+
+  explicit operator bool() const noexcept { return owns_; }
+
+  mutex_type *mutex() const noexcept { return mutex_; }
+
+private:
+  void require_lockable() const {
+    if (mutex_ == nullptr) {
+      detail::throw_mutex_error(errc::operation_not_permitted, "shared_lock");
+    }
+
+    if (owns_) {
+      detail::throw_mutex_error(errc::resource_deadlock_would_occur,
+                                "shared_lock");
+    }
+  }
+
+  mutex_type *mutex_ = nullptr;
+  bool owns_ = false;
+};
+
+template <class Mutex>
+void swap(shared_lock<Mutex> &left, shared_lock<Mutex> &right) noexcept {
+  left.swap(right);
+}
+
+FTL_SHARED_MUTEX_END_NAMESPACE
+
+#undef FTL_SHARED_MUTEX_BEGIN_NAMESPACE
+#undef FTL_SHARED_MUTEX_END_NAMESPACE
+
+#endif // FTL_SHARED_MUTEX_HEADER

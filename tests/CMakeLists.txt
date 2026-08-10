@@ -494,6 +494,9 @@ foreach (header IN ITEMS
         stop_token
         thread
         stdatomic_h
+        mutex
+        shared_mutex
+        condition_variable
 )
     add_ftl_test(${header})
 endforeach ()

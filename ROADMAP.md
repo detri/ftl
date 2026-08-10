@@ -86,85 +86,88 @@ dependency order, not hundreds of individual overloads.
 
 ### Complete headers
 
-| Header               | Completed closure |
-|----------------------|-------------------|
-| `<cstddef>`          | Stage 1.1         |
-| `<cstdint>`          | Stage 1.1         |
-| `<initializer_list>` | Stage 1.1         |
-| `<type_traits>`      | Stage 1.2         |
-| `<utility>`          | Stage 1.2         |
-| `<concepts>`         | Stage 1.2         |
-| `<compare>`          | Stage 1.2         |
-| `<limits>`           | Stage 1.3         |
-| `<bit>`              | Stage 1.3         |
-| `<version>`          | Stage 1.3         |
-| `<source_location>`  | Stage 1.3         |
-| `<stdfloat>`         | Stage 1.3         |
-| `<new>`              | Stage 1.4         |
-| `<exception>`        | Stage 1.4         |
-| `<typeinfo>`         | Stage 1.4         |
-| `<typeindex>`        | Stage 1.4         |
-| `<cassert>`          | Stage 1.5         |
-| `<cerrno>`           | Stage 1.5         |
-| `<cfloat>`           | Stage 1.5         |
-| `<climits>`          | Stage 1.5         |
-| `<cstdarg>`          | Stage 1.5         |
-| `<csetjmp>`          | Stage 1.5         |
-| `<csignal>`          | Stage 1.5         |
-| `<cstdlib>`          | Stage 1.5         |
-| `<cinttypes>`        | Stage 1.5         |
-| `<iterator>`         | Stage 2.1         |
-| `<functional>`       | Stage 2.3         |
-| `<memory>`           | Stage 2.4         |
-| `<scoped_allocator>` | Stage 2.4         |
-| `<memory_resource>`  | Stage 2.4         |
-| `<optional>`         | Stage 2.5         |
-| `<expected>`         | Stage 2.5         |
-| `<variant>`          | Stage 2.5         |
-| `<any>`              | Stage 2.5         |
-| `<coroutine>`        | Stage 2.6.1       |
-| `<generator>`        | Stage 2.6.4       |
-| `<mdspan>`           | Stage 2.6.5       |
-| `<span>`             | Stage 2.6.6       |
-| `<ranges>`           | Stage 2.6.6       |
-| `<array>`            | Stage 2.6.6       |
-| `<tuple>`            | Stage 2.6.6       |
-| `<execution>`        | Stage 3.1         |
-| `<algorithm>`        | Stage 3.1         |
-| `<numeric>`          | Stage 3.1         |
-| `<cstring>`          | Stage 3.2         |
-| `<cwchar>`           | Stage 3.2         |
-| `<cwctype>`          | Stage 3.2         |
-| `<cuchar>`           | Stage 3.2         |
-| `<charconv>`         | Stage 3.3         |
-| `<string_view>`      | Stage 3.3         |
-| `<string>`           | Stage 3.4         |
-| `<bitset>`           | Stage 3.5         |
-| `<vector>`           | Stage 4.1         |
-| `<deque>`            | Stage 4.2         |
-| `<queue>`            | Stage 4.2         |
-| `<stack>`            | Stage 4.2         |
-| `<forward_list>`     | Stage 4.3         |
-| `<list>`             | Stage 4.3         |
-| `<set>`              | Stage 4.3         |
-| `<map>`              | Stage 4.3         |
-| `<unordered_set>`    | Stage 4.3         |
-| `<unordered_map>`    | Stage 4.3         |
-| `<flat_set>`         | Stage 4.3         |
-| `<flat_map>`         | Stage 4.3         |
-| `<ratio>`            | Stage 5.1         |
-| `<ctime>`            | Stage 5.1         |
-| `<stdexcept>`        | Stage 5.2         |
-| `<system_error>`     | Stage 5.2         |
-| `<cfenv>`            | Stage 5.3         |
-| `<numbers>`          | Stage 5.3         |
-| `<cmath>`            | Stage 5.3         |
-| `<complex>`          | Stage 5.3         |
-| `<random>`           | Stage 5.4         |
-| `<valarray>`         | Stage 5.4         |
-| `<atomic>`           | Stage 6.1         |
-| `<stdatomic.h>`      | Stage 6.1         |
-| `<stop_token>`       | Stage 6.2         |
+| Header                 | Completed closure |
+|------------------------|-------------------|
+| `<cstddef>`            | Stage 1.1         |
+| `<cstdint>`            | Stage 1.1         |
+| `<initializer_list>`   | Stage 1.1         |
+| `<type_traits>`        | Stage 1.2         |
+| `<utility>`            | Stage 1.2         |
+| `<concepts>`           | Stage 1.2         |
+| `<compare>`            | Stage 1.2         |
+| `<limits>`             | Stage 1.3         |
+| `<bit>`                | Stage 1.3         |
+| `<version>`            | Stage 1.3         |
+| `<source_location>`    | Stage 1.3         |
+| `<stdfloat>`           | Stage 1.3         |
+| `<new>`                | Stage 1.4         |
+| `<exception>`          | Stage 1.4         |
+| `<typeinfo>`           | Stage 1.4         |
+| `<typeindex>`          | Stage 1.4         |
+| `<cassert>`            | Stage 1.5         |
+| `<cerrno>`             | Stage 1.5         |
+| `<cfloat>`             | Stage 1.5         |
+| `<climits>`            | Stage 1.5         |
+| `<cstdarg>`            | Stage 1.5         |
+| `<csetjmp>`            | Stage 1.5         |
+| `<csignal>`            | Stage 1.5         |
+| `<cstdlib>`            | Stage 1.5         |
+| `<cinttypes>`          | Stage 1.5         |
+| `<iterator>`           | Stage 2.1         |
+| `<functional>`         | Stage 2.3         |
+| `<memory>`             | Stage 2.4         |
+| `<scoped_allocator>`   | Stage 2.4         |
+| `<memory_resource>`    | Stage 2.4         |
+| `<optional>`           | Stage 2.5         |
+| `<expected>`           | Stage 2.5         |
+| `<variant>`            | Stage 2.5         |
+| `<any>`                | Stage 2.5         |
+| `<coroutine>`          | Stage 2.6.1       |
+| `<generator>`          | Stage 2.6.4       |
+| `<mdspan>`             | Stage 2.6.5       |
+| `<span>`               | Stage 2.6.6       |
+| `<ranges>`             | Stage 2.6.6       |
+| `<array>`              | Stage 2.6.6       |
+| `<tuple>`              | Stage 2.6.6       |
+| `<execution>`          | Stage 3.1         |
+| `<algorithm>`          | Stage 3.1         |
+| `<numeric>`            | Stage 3.1         |
+| `<cstring>`            | Stage 3.2         |
+| `<cwchar>`             | Stage 3.2         |
+| `<cwctype>`            | Stage 3.2         |
+| `<cuchar>`             | Stage 3.2         |
+| `<charconv>`           | Stage 3.3         |
+| `<string_view>`        | Stage 3.3         |
+| `<string>`             | Stage 3.4         |
+| `<bitset>`             | Stage 3.5         |
+| `<vector>`             | Stage 4.1         |
+| `<deque>`              | Stage 4.2         |
+| `<queue>`              | Stage 4.2         |
+| `<stack>`              | Stage 4.2         |
+| `<forward_list>`       | Stage 4.3         |
+| `<list>`               | Stage 4.3         |
+| `<set>`                | Stage 4.3         |
+| `<map>`                | Stage 4.3         |
+| `<unordered_set>`      | Stage 4.3         |
+| `<unordered_map>`      | Stage 4.3         |
+| `<flat_set>`           | Stage 4.3         |
+| `<flat_map>`           | Stage 4.3         |
+| `<ratio>`              | Stage 5.1         |
+| `<ctime>`              | Stage 5.1         |
+| `<stdexcept>`          | Stage 5.2         |
+| `<system_error>`       | Stage 5.2         |
+| `<cfenv>`              | Stage 5.3         |
+| `<numbers>`            | Stage 5.3         |
+| `<cmath>`              | Stage 5.3         |
+| `<complex>`            | Stage 5.3         |
+| `<random>`             | Stage 5.4         |
+| `<valarray>`           | Stage 5.4         |
+| `<atomic>`             | Stage 6.1         |
+| `<stdatomic.h>`        | Stage 6.1         |
+| `<stop_token>`         | Stage 6.2         |
+| `<mutex>`              | Stage 6.3         |
+| `<shared_mutex>`       | Stage 6.3         |
+| `<condition_variable>` | Stage 6.3         |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -251,8 +254,8 @@ ratio + limits
      -> thread synchronization and timed waits
 
 atomic + memory + functional + tuple + chrono + system_error
-  -> stop_token + thread + mutex + condition_variable
-  -> semaphore + latch + barrier + shared_mutex
+  -> stop_token + thread + mutex + shared_mutex + condition_variable
+  -> semaphore + latch + barrier
   -> future
 
 cmath + limits + concepts
@@ -289,6 +292,10 @@ Some headers form delivery closures and should be completed together:
   support need one runtime design.
 - `<locale>` + streams: facets and stream formatting are a single large
   closure and should not leak partial public APIs between stages.
+- `<mutex>` + `<shared_mutex>` + `<condition_variable>`: exclusive/shared
+  ownership, timed blocking, condition waiting, stop-aware wakeup, and
+  thread-exit notification share the same parking, deadline, and lifetime
+  machinery and are completed as one synchronization closure.
 
 ## Staged completion plan
 
@@ -532,7 +539,7 @@ Take these closures in order:
 2. `<stop_token>` + `<thread>` — **runtime closure complete**;
    `<stop_token>` complete, with `<thread>` stream insertion and formatting
    deferred to Stage 7
-3. `<mutex>` + `<shared_mutex>` + `<condition_variable>`
+3. `<mutex>` + `<shared_mutex>` + `<condition_variable>` — **complete**
 4. `<semaphore>` + `<latch>` + `<barrier>`
 5. `<future>`
 
@@ -568,6 +575,40 @@ compile time, but consumer preprocessor definitions cannot currently remove
 that already-declared transitive link requirement. Stage 8 will make runtime
 link dependencies explicit per-target choices as part of the replacement
 integration.
+
+Stage 6.3 completes the C++23 synchronization surfaces for `<mutex>`,
+`<shared_mutex>`, and `<condition_variable>`.
+
+`<mutex>` provides ordinary, recursive, timed, and recursive timed mutexes;
+the lock tags, `lock_guard`, `scoped_lock`, and `unique_lock`; generic
+deadlock-avoiding `lock` and `try_lock`; and `once_flag`/`call_once`.
+
+`<shared_mutex>` provides ordinary and timed shared mutexes together with
+`shared_lock`, using FTL-owned reader/writer bookkeeping with writer-aware
+blocking.
+
+`<condition_variable>` provides `condition_variable`,
+`condition_variable_any`, `cv_status`, predicate and timed waits,
+stop-token-aware waits, and `notify_all_at_thread_exit`.
+
+The synchronization implementation is FTL-owned rather than a wrapper around
+a vendor C++ threading library. Mutexes, shared mutexes, and condition
+variables build on the address-wait substrate introduced for `<atomic>`.
+Windows uses `WaitOnAddress`, Linux uses futexes, and macOS uses native
+address-wait operations. Timed waits share a private steady-clock deadline
+layer, and public headers expose no platform synchronization ABI types.
+
+Condition variables use generation counters over the same wait/wake machinery
+to avoid lost notifications across the unlock-to-block transition.
+`condition_variable_any` integrates with `<stop_token>` by registering a stop
+callback that participates in the same generation protocol.
+
+`notify_all_at_thread_exit` preserves the required ordering after destruction
+of thread-storage-duration objects. Windows defers actions through a late PE
+TLS callback ordered after dynamic TLS destruction. POSIX targets defer FTL
+thread-exit actions through an additional pthread thread-specific-data
+destructor pass so language TLS destruction completes before deferred mutex
+unlock and notification.
 
 **Exit:** the full memory model and synchronization API pass stress, sanitizer,
 and platform shutdown/lifetime tests on every supported toolchain.

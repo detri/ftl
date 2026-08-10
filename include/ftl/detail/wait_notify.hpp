@@ -6,11 +6,13 @@
 #ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <cstdint>
+#include <detail/clock_runtime.hpp>
 #define FTL_WAIT_NOTIFY_BEGIN_NAMESPACE namespace std::detail {
 #define FTL_WAIT_NOTIFY_END_NAMESPACE }
 #else
 #include <ftl/cstddef>
 #include <ftl/cstdint>
+#include <ftl/detail/clock_runtime.hpp>
 #define FTL_WAIT_NOTIFY_BEGIN_NAMESPACE namespace ftl::detail {
 #define FTL_WAIT_NOTIFY_END_NAMESPACE }
 #endif
@@ -35,6 +37,27 @@ inline void platform_wait(const volatile void *address, uint64_t expected,
                       0xffffffffUL);
 }
 
+inline void platform_wait_for(const volatile void *address, uint64_t expected,
+                              size_t size,
+                              uint64_t timeout_nanoseconds) noexcept {
+  if (timeout_nanoseconds == 0)
+    return;
+
+  constexpr uint64_t nanoseconds_per_millisecond = 1000000ULL;
+  constexpr uint64_t maximum_wait_milliseconds = 0xfffffffeULL;
+
+  uint64_t milliseconds = timeout_nanoseconds / nanoseconds_per_millisecond;
+
+  if (timeout_nanoseconds % nanoseconds_per_millisecond != 0)
+    ++milliseconds;
+
+  if (milliseconds > maximum_wait_milliseconds)
+    milliseconds = maximum_wait_milliseconds;
+
+  (void)WaitOnAddress(const_cast<volatile void *>(address), &expected, size,
+                      static_cast<unsigned long>(milliseconds));
+}
+
 inline void platform_wake_one(const volatile void *address, size_t) noexcept {
   WakeByAddressSingle(const_cast<void *>(address));
 }
@@ -45,11 +68,19 @@ inline void platform_wake_all(const volatile void *address, size_t) noexcept {
 
 #elif defined(__linux__)
 
+struct linux_futex_timespec {
+  long tv_sec;
+  long tv_nsec;
+};
+
 #if defined(__x86_64__)
 
-inline long linux_futex(volatile uint32_t *address, long operation,
-                        uint32_t value) noexcept {
-  register long r10 __asm__("r10") = 0;
+inline long
+linux_futex(volatile uint32_t *address, long operation, uint32_t value,
+            const linux_futex_timespec *timeout = nullptr) noexcept {
+  register long r10 __asm__("r10") =
+      timeout == nullptr ? 0 : reinterpret_cast<long>(timeout);
+
   register long r8 __asm__("r8") = 0;
   register long r9 __asm__("r9") = 0;
 
@@ -68,12 +99,18 @@ inline long linux_futex(volatile uint32_t *address, long operation,
 
 #elif defined(__aarch64__)
 
-inline long linux_futex(volatile uint32_t *address, long operation,
-                        uint32_t value) noexcept {
+inline long
+linux_futex(volatile uint32_t *address, long operation, uint32_t value,
+            const linux_futex_timespec *timeout = nullptr) noexcept {
   register long x0 __asm__("x0") = reinterpret_cast<long>(address);
+
   register long x1 __asm__("x1") = operation;
+
   register long x2 __asm__("x2") = static_cast<long>(value);
-  register long x3 __asm__("x3") = 0;
+
+  register long x3 __asm__("x3") =
+      timeout == nullptr ? 0 : reinterpret_cast<long>(timeout);
+
   register long x4 __asm__("x4") = 0;
   register long x5 __asm__("x5") = 0;
   register long x8 __asm__("x8") = 98;
@@ -106,6 +143,22 @@ inline void platform_wait(const volatile void *address, uint64_t expected,
                     0, static_cast<uint32_t>(expected));
 }
 
+inline void platform_wait_for(const volatile void *address, uint64_t expected,
+                              size_t, uint64_t timeout_nanoseconds) noexcept {
+  if (timeout_nanoseconds == 0)
+    return;
+
+  constexpr uint64_t nanoseconds_per_second = 1000000000ULL;
+
+  linux_futex_timespec timeout{
+      static_cast<long>(timeout_nanoseconds / nanoseconds_per_second),
+      static_cast<long>(timeout_nanoseconds % nanoseconds_per_second)};
+
+  (void)linux_futex(reinterpret_cast<volatile uint32_t *>(
+                        const_cast<volatile void *>(address)),
+                    0, static_cast<uint32_t>(expected), &timeout);
+}
+
 inline void platform_wake_one(const volatile void *address, size_t) noexcept {
   (void)linux_futex(reinterpret_cast<volatile uint32_t *>(
                         const_cast<volatile void *>(address)),
@@ -124,6 +177,9 @@ template <size_t Size> inline constexpr bool wait_directly_supported = false;
 
 inline void platform_wait(const volatile void *, uint64_t, size_t) noexcept {}
 
+inline void platform_wait_for(const volatile void *, uint64_t, size_t,
+                              uint64_t) noexcept {}
+
 inline void platform_wake_one(const volatile void *, size_t) noexcept {}
 
 inline void platform_wake_all(const volatile void *, size_t) noexcept {}
@@ -141,6 +197,10 @@ extern "C" int os_sync_wake_by_address_any(void *, size_t, int)
 extern "C" int os_sync_wake_by_address_all(void *, size_t, int)
     __attribute__((weak_import));
 
+extern "C" int os_sync_wait_on_address_with_timeout(void *, uint64_t, size_t,
+                                                    int, int, uint64_t)
+    __attribute__((weak_import));
+
 template <size_t Size>
 inline constexpr bool wait_directly_supported = Size == 4 || Size == 8;
 
@@ -149,6 +209,22 @@ inline void platform_wait(const volatile void *address, uint64_t expected,
   if (os_sync_wait_on_address != nullptr) {
     (void)os_sync_wait_on_address(const_cast<void *>(address), expected, size,
                                   0);
+  }
+}
+
+inline void platform_wait_for(const volatile void *address, uint64_t expected,
+                              size_t size,
+                              uint64_t timeout_nanoseconds) noexcept {
+  if (timeout_nanoseconds == 0)
+    return;
+
+  if (os_sync_wait_on_address_with_timeout != nullptr) {
+    // os_clockid_t::OS_CLOCK_MACH_ABSOLUTE_TIME.
+    constexpr int mach_absolute_clock = 32;
+
+    (void)os_sync_wait_on_address_with_timeout(
+        const_cast<void *>(address), expected, size, 0, mach_absolute_clock,
+        timeout_nanoseconds);
   }
 }
 
@@ -171,6 +247,9 @@ inline void platform_wake_all(const volatile void *address,
 template <size_t Size> inline constexpr bool wait_directly_supported = false;
 
 inline void platform_wait(const volatile void *, uint64_t, size_t) noexcept {}
+
+inline void platform_wait_for(const volatile void *, uint64_t, size_t,
+                              uint64_t) noexcept {}
 
 inline void platform_wake_one(const volatile void *, size_t) noexcept {}
 
@@ -213,6 +292,100 @@ inline void wait_bucket_bump(volatile uint32_t *value) noexcept {
 }
 
 #endif
+
+inline uint64_t wait_steady_now() noexcept {
+  const long long now =
+      ftl_clock_runtime::steady_nanoseconds();
+
+  return now <= 0
+             ? uint64_t{0}
+  : static_cast<uint64_t>(now);
+}
+
+inline uint64_t
+wait_deadline_after(uint64_t timeout_nanoseconds) noexcept {
+  constexpr uint64_t maximum =
+      0x7fffffffffffffffULL;
+
+  const uint64_t now = wait_steady_now();
+
+  if (now >= maximum)
+    return maximum;
+
+  if (timeout_nanoseconds >= maximum - now)
+    return maximum;
+
+  return now + timeout_nanoseconds;
+}
+
+inline uint64_t
+wait_remaining(uint64_t deadline) noexcept {
+  const uint64_t now = wait_steady_now();
+
+  return deadline > now
+             ? deadline - now
+             : uint64_t{0};
+}
+
+template <size_t Size, class Word, class LoadWord>
+bool atomic_wait_until_changed_until(
+    const volatile void *address,
+    Word old,
+    uint64_t deadline,
+    LoadWord load_word) noexcept {
+  static_assert(
+      Size == 1 ||
+      Size == 2 ||
+      Size == 4 ||
+      Size == 8);
+
+  for (;;) {
+    if (load_word() != old)
+      return true;
+
+    uint64_t remaining =
+        wait_remaining(deadline);
+
+    if (remaining == 0)
+      return false;
+
+    if constexpr (wait_directly_supported<Size>) {
+      platform_wait_for(
+          address,
+          static_cast<uint64_t>(old),
+          Size,
+          remaining);
+    } else {
+#if defined(_WIN32) && defined(_MSC_VER)
+      static_assert(
+          wait_directly_supported<Size>,
+          "Windows should directly wait on every "
+          "supported FTL atomic size");
+#else
+      volatile uint32_t *version =
+          wait_bucket_for(address);
+
+      const uint32_t observed =
+          wait_bucket_load(version);
+
+      if (load_word() != old)
+        return true;
+
+      remaining =
+          wait_remaining(deadline);
+
+      if (remaining == 0)
+        return false;
+
+      platform_wait_for(
+          version,
+          observed,
+          sizeof(uint32_t),
+          remaining);
+#endif
+    }
+  }
+}
 
 template <size_t Size, class Word, class LoadWord>
 void atomic_wait_until_changed(const volatile void *address, Word old,
