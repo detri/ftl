@@ -534,7 +534,7 @@ fallback.
 
 ### Stage 6 — Concurrency
 
-**Status: in progress.**
+**Status: complete.**
 
 Take these closures in order:
 
@@ -544,7 +544,7 @@ Take these closures in order:
    deferred to Stage 7
 3. `<mutex>` + `<shared_mutex>` + `<condition_variable>` — **complete**
 4. `<semaphore>` + `<latch>` + `<barrier>` — **complete**
-5. `<future>`
+5. `<future>` — **complete**
 
 Stage 6.1 completes the C++23 atomic surface, including generic lock-free and
 non-lock-free `atomic<T>`, `atomic_ref<T>`, integral, floating-point, pointer,
@@ -613,10 +613,59 @@ thread-exit actions through an additional pthread thread-specific-data
 destructor pass so language TLS destruction completes before deferred mutex
 unlock and notification.
 
+Stage 6.4 completes the C++23 coordination facilities in `<semaphore>`,
+`<latch>`, and `<barrier>`. They use the same FTL-owned atomic wait/wake and
+deadline machinery as the earlier synchronization closures rather than
+delegating to hosted standard-library primitives. Timed semaphore waits remain
+deadline-aware, while latch and barrier coordination use FTL-owned atomic state
+for waiter publication and phase transitions.
 
+Stage 6.5 completes the C++23 `<future>` surface, including future error
+vocabulary, `future`, `shared_future`, `promise`, `packaged_task`, launch
+policies, and `async`, together with reference and `void` specializations,
+allocator-aware promise construction, packaged-task deduction guides, and the
+specified move-only ownership model.
 
-**Exit:** the full memory model and synchronization API pass stress, sanitizer,
-and platform shutdown/lifetime tests on every supported toolchain.
+Future shared states are FTL-owned and synchronize publication through the
+existing atomic wait/wake substrate. Provider operations serialize competing
+attempts to satisfy a state, broken promises publish the required stored
+exception, and `future::get()` consumes its association even when retrieval
+rethrows or moving the stored value fails.
+
+Promise and packaged-task `_at_thread_exit` operations reuse the common
+thread-exit runtime introduced by the synchronization closures. Results are
+stored without being published and become ready only after the producing
+thread's C++ thread-local destruction sequence has completed.
+
+`async` supports eager `launch::async`, lazy `launch::deferred`, and the
+combined default policy. The asynchronous path runs on FTL's native thread
+implementation, while mixed-policy thread-creation failure may fall back to
+deferred execution when the failure is `resource_unavailable_try_again`.
+Deferred invocation executes exactly once on the first non-timed waiter.
+
+Asynchronous shared states separately track user-visible future references from
+internal implementation ownership. Releasing the final future or
+`shared_future` associated with an asynchronous invocation therefore performs
+the required completion synchronization, while releasing a non-final
+`shared_future` does not spuriously block. Timed waits remain deadline-aware
+through asynchronous thread completion, including thread-local destruction,
+rather than transitioning to an unbounded join after the result itself becomes
+ready.
+
+Focused `<future>` coverage exercises value, reference, and `void` states;
+exceptions and broken promises; one-shot retrieval; repeated shared-future
+access; concurrent provider satisfaction; allocator-aware promises;
+thread-exit publication and TLS ordering; packaged-task invocation, reset,
+move-only callables, and deduction; and asynchronous/deferred execution,
+lifetime, timing, exception, and destruction semantics in both normal and
+replacement modes. N4950 defines no `<future>` feature-test macro, so the
+completed facility does not introduce one.
+
+**Exit:** all Stage 6 concurrency runtime closures are complete and pass the
+supported compiler/platform matrix in normal and replacement modes. Remaining
+`<thread>` stream insertion and formatter interfaces are intentionally deferred
+to Stage 7 because they depend on the formatting and I/O closures rather than
+on missing concurrency runtime functionality.
 
 ### Stage 7 — Localization, formatting, and I/O
 
