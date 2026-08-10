@@ -1,21 +1,25 @@
 #ifdef FTL_REPLACE_STL
-#include <atomic>
 #include <barrier>
+#else
+#include <ftl/barrier>
+#endif
+
+#if __cpp_lib_barrier < 202302L
+#error <barrier> must advertise the N4950 barrier facility
+#endif
+
+#ifdef FTL_REPLACE_STL
+#include <atomic>
 #include <thread>
 #include <type_traits>
 #include <utility>
 namespace tested = std;
 #else
 #include <ftl/atomic>
-#include <ftl/barrier>
 #include <ftl/thread>
 #include <ftl/type_traits>
 #include <ftl/utility>
 namespace tested = ftl;
-#endif
-
-#if __cpp_lib_barrier < 202302L
-#error <barrier> must advertise the N4950 barrier facility
 #endif
 
 using default_barrier = tested::barrier<>;
