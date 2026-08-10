@@ -553,6 +553,7 @@ foreach (header IN ITEMS
         locale_numpunct
         locale_codecvt
         locale_codecvt_byname
+        locale_moneypunct
         codecvt
 )
     add_ftl_test(${header})

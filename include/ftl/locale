@@ -2625,6 +2625,1059 @@ private:
   detail::locale_named_numpunct_context *context_;
 };
 
+class money_base {
+public:
+  enum part {
+    none,
+    space,
+    symbol,
+    sign,
+    value
+  };
+
+  struct pattern {
+    char field[4];
+  };
+};
+
+template <
+    class Character,
+    bool International = false>
+class moneypunct
+    : public locale::facet,
+      public money_base {
+  static_assert(
+      is_same_v<Character, char> ||
+          is_same_v<Character, wchar_t>,
+      "FTL provides the required moneypunct "
+      "specializations for char and wchar_t");
+
+public:
+  using char_type = Character;
+  using string_type = basic_string<Character>;
+
+  explicit moneypunct(size_t refs = 0)
+      : locale::facet(refs) {}
+
+  [[nodiscard]]
+  char_type decimal_point() const {
+    return do_decimal_point();
+  }
+
+  [[nodiscard]]
+  char_type thousands_sep() const {
+    return do_thousands_sep();
+  }
+
+  [[nodiscard]]
+  string grouping() const {
+    return do_grouping();
+  }
+
+  [[nodiscard]]
+  string_type curr_symbol() const {
+    return do_curr_symbol();
+  }
+
+  [[nodiscard]]
+  string_type positive_sign() const {
+    return do_positive_sign();
+  }
+
+  [[nodiscard]]
+  string_type negative_sign() const {
+    return do_negative_sign();
+  }
+
+  [[nodiscard]]
+  int frac_digits() const {
+    return do_frac_digits();
+  }
+
+  [[nodiscard]]
+  pattern pos_format() const {
+    return do_pos_format();
+  }
+
+  [[nodiscard]]
+  pattern neg_format() const {
+    return do_neg_format();
+  }
+
+  inline static locale::id id{};
+
+  inline static constexpr bool intl =
+      International;
+
+protected:
+  ~moneypunct() override = default;
+
+  virtual char_type
+  do_decimal_point() const {
+    return static_cast<char_type>('.');
+  }
+
+  virtual char_type
+  do_thousands_sep() const {
+    return static_cast<char_type>(',');
+  }
+
+  virtual string
+  do_grouping() const {
+    return {};
+  }
+
+  virtual string_type
+  do_curr_symbol() const {
+    return {};
+  }
+
+  virtual string_type
+  do_positive_sign() const {
+    return {};
+  }
+
+  virtual string_type
+  do_negative_sign() const {
+    return {};
+  }
+
+  virtual int
+  do_frac_digits() const {
+    return 0;
+  }
+
+  virtual pattern
+  do_pos_format() const {
+    return pattern{{
+        static_cast<char>(symbol),
+        static_cast<char>(sign),
+        static_cast<char>(none),
+        static_cast<char>(value)}};
+  }
+
+  virtual pattern
+  do_neg_format() const {
+    return pattern{{
+        static_cast<char>(symbol),
+        static_cast<char>(sign),
+        static_cast<char>(none),
+        static_cast<char>(value)}};
+  }
+};
+
+namespace detail {
+
+struct locale_named_monetary_snapshot {
+  string decimal_point;
+  string thousands_sep;
+  string grouping;
+
+  string international_symbol;
+  string local_symbol;
+
+  string positive_sign;
+  string negative_sign;
+
+  unsigned char international_frac_digits{};
+  unsigned char local_frac_digits{};
+
+  unsigned char positive_cs_precedes{};
+  unsigned char positive_sep_by_space{};
+  unsigned char positive_sign_position{};
+
+  unsigned char negative_cs_precedes{};
+  unsigned char negative_sep_by_space{};
+  unsigned char negative_sign_position{};
+
+  unsigned char international_positive_cs_precedes{};
+  unsigned char international_positive_sep_by_space{};
+  unsigned char international_positive_sign_position{};
+
+  unsigned char international_negative_cs_precedes{};
+  unsigned char international_negative_sep_by_space{};
+  unsigned char international_negative_sign_position{};
+};
+
+[[noreturn]]
+inline void locale_named_moneypunct_failure() {
+#if FTL_HAS_EXCEPTIONS
+  throw runtime_error("moneypunct_byname");
+#else
+  terminate();
+#endif
+}
+
+inline string
+locale_monetary_copy_string(
+    const char *value) {
+  return value != nullptr
+             ? string(value)
+             : string{};
+}
+
+#if defined(_WIN32)
+
+inline string
+locale_current_monetary_name() {
+  const char *current =
+      ::setlocale(
+          LC_MONETARY,
+          nullptr);
+
+  return current != nullptr
+             ? string(current)
+             : string("C");
+}
+
+class locale_windows_monetary_scope {
+public:
+  explicit locale_windows_monetary_scope(
+      const char *name)
+      : previous_name_(
+            locale_current_monetary_name()),
+        previous_mode_(
+            ftl_locale_runtime::
+                _configthreadlocale(1)),
+        active_(false) {
+    if (previous_mode_ == -1)
+      locale_named_moneypunct_failure();
+
+    if (::setlocale(
+            LC_MONETARY,
+            name) == nullptr) {
+      if (previous_mode_ == 2) {
+        (void)ftl_locale_runtime::
+            _configthreadlocale(2);
+      }
+
+      locale_named_moneypunct_failure();
+    }
+
+    active_ = true;
+  }
+
+  locale_windows_monetary_scope(
+      const locale_windows_monetary_scope &) =
+      delete;
+
+  locale_windows_monetary_scope &
+  operator=(
+      const locale_windows_monetary_scope &) =
+      delete;
+
+  ~locale_windows_monetary_scope() {
+    if (active_) {
+      (void)::setlocale(
+          LC_MONETARY,
+          previous_name_.c_str());
+    }
+
+    if (previous_mode_ == 2) {
+      (void)ftl_locale_runtime::
+          _configthreadlocale(2);
+    }
+  }
+
+private:
+  string previous_name_;
+  int previous_mode_;
+  bool active_;
+};
+
+#else
+
+class locale_posix_monetary_scope {
+public:
+  explicit locale_posix_monetary_scope(
+      ftl_locale_runtime::native_handle locale)
+      : previous_(
+            ftl_locale_runtime::uselocale(
+                locale)) {
+    if (previous_ == nullptr)
+      locale_named_moneypunct_failure();
+  }
+
+  locale_posix_monetary_scope(
+      const locale_posix_monetary_scope &) =
+      delete;
+
+  locale_posix_monetary_scope &
+  operator=(
+      const locale_posix_monetary_scope &) =
+      delete;
+
+  ~locale_posix_monetary_scope() {
+    (void)ftl_locale_runtime::uselocale(
+        previous_);
+  }
+
+private:
+  ftl_locale_runtime::native_handle
+      previous_;
+};
+
+#endif
+
+inline locale_named_monetary_snapshot
+locale_load_monetary_snapshot(
+    const char *name,
+    ftl_locale_runtime::native_handle native) {
+#if defined(_WIN32)
+  locale_windows_monetary_scope scope(name);
+#else
+  locale_posix_monetary_scope scope(native);
+  (void)name;
+#endif
+
+  ::lconv *information =
+      ::localeconv();
+
+  if (information == nullptr)
+    locale_named_moneypunct_failure();
+
+  locale_named_monetary_snapshot result;
+
+  result.decimal_point =
+      locale_monetary_copy_string(
+          information->mon_decimal_point);
+
+  result.thousands_sep =
+      locale_monetary_copy_string(
+          information->mon_thousands_sep);
+
+  result.grouping =
+      locale_monetary_copy_string(
+          information->mon_grouping);
+
+  result.international_symbol =
+      locale_monetary_copy_string(
+          information->int_curr_symbol);
+
+  result.local_symbol =
+      locale_monetary_copy_string(
+          information->currency_symbol);
+
+  result.positive_sign =
+      locale_monetary_copy_string(
+          information->positive_sign);
+
+  result.negative_sign =
+      locale_monetary_copy_string(
+          information->negative_sign);
+
+  result.international_frac_digits =
+      static_cast<unsigned char>(
+          information->int_frac_digits);
+
+  result.local_frac_digits =
+      static_cast<unsigned char>(
+          information->frac_digits);
+
+  result.positive_cs_precedes =
+      static_cast<unsigned char>(
+          information->p_cs_precedes);
+
+  result.positive_sep_by_space =
+      static_cast<unsigned char>(
+          information->p_sep_by_space);
+
+  result.positive_sign_position =
+      static_cast<unsigned char>(
+          information->p_sign_posn);
+
+  result.negative_cs_precedes =
+      static_cast<unsigned char>(
+          information->n_cs_precedes);
+
+  result.negative_sep_by_space =
+      static_cast<unsigned char>(
+          information->n_sep_by_space);
+
+  result.negative_sign_position =
+      static_cast<unsigned char>(
+          information->n_sign_posn);
+
+#if defined(_WIN32)
+  //
+  // Microsoft's native lconv ABI historically does not expose
+  // the C99 int_p_* / int_n_* placement extension consistently.
+  // The international symbol and fractional digit count are
+  // available, so use the corresponding local placement rules.
+  //
+  result.international_positive_cs_precedes =
+      result.positive_cs_precedes;
+
+  result.international_positive_sep_by_space =
+      result.positive_sep_by_space;
+
+  result.international_positive_sign_position =
+      result.positive_sign_position;
+
+  result.international_negative_cs_precedes =
+      result.negative_cs_precedes;
+
+  result.international_negative_sep_by_space =
+      result.negative_sep_by_space;
+
+  result.international_negative_sign_position =
+      result.negative_sign_position;
+#else
+  result.international_positive_cs_precedes =
+      static_cast<unsigned char>(
+          information->int_p_cs_precedes);
+
+  result.international_positive_sep_by_space =
+      static_cast<unsigned char>(
+          information->int_p_sep_by_space);
+
+  result.international_positive_sign_position =
+      static_cast<unsigned char>(
+          information->int_p_sign_posn);
+
+  result.international_negative_cs_precedes =
+      static_cast<unsigned char>(
+          information->int_n_cs_precedes);
+
+  result.international_negative_sep_by_space =
+      static_cast<unsigned char>(
+          information->int_n_sep_by_space);
+
+  result.international_negative_sign_position =
+      static_cast<unsigned char>(
+          information->int_n_sign_posn);
+#endif
+
+  return result;
+}
+
+struct locale_named_moneypunct_context {
+  ftl_locale_runtime::native_handle native{};
+  locale_named_monetary_snapshot monetary;
+
+  explicit locale_named_moneypunct_context(
+      const char *name)
+      : native(
+            ftl_locale_runtime::
+                create_monetary(name)) {
+    if (native == nullptr)
+      locale_named_moneypunct_failure();
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+      monetary =
+          locale_load_monetary_snapshot(
+              name,
+              native);
+    } catch (...) {
+      ftl_locale_runtime::destroy(native);
+      native = nullptr;
+      throw;
+    }
+#else
+    monetary =
+        locale_load_monetary_snapshot(
+            name,
+            native);
+#endif
+  }
+
+  locale_named_moneypunct_context(
+      const locale_named_moneypunct_context &) =
+      delete;
+
+  locale_named_moneypunct_context &
+  operator=(
+      const locale_named_moneypunct_context &) =
+      delete;
+
+  ~locale_named_moneypunct_context() {
+    ftl_locale_runtime::destroy(native);
+  }
+};
+
+template <class Character>
+[[nodiscard]]
+inline Character
+locale_named_monetary_character(
+    const locale_named_moneypunct_context &context,
+    const string &source,
+    char fallback) noexcept {
+  if (source.empty())
+    return static_cast<Character>(fallback);
+
+  if constexpr (
+      is_same_v<Character, char>) {
+    return source[0];
+  } else {
+    return ftl_locale_runtime::widen_first(
+        context.native,
+        source.c_str(),
+        static_cast<wchar_t>(fallback));
+  }
+}
+
+template <class Character>
+[[nodiscard]]
+inline basic_string<Character>
+locale_named_monetary_string(
+    const locale_named_moneypunct_context &context,
+    const string &source) {
+  if constexpr (
+      is_same_v<Character, char>) {
+    return source;
+  } else {
+    basic_string<Character> result;
+
+    const char *current =
+        source.data();
+
+    const char *end =
+        source.data() + source.size();
+
+    while (current != end) {
+      const auto decoded =
+          ftl_locale_runtime::decode_wide(
+              context.native,
+              current,
+              end);
+
+      if (decoded.result ==
+          ftl_locale_runtime::
+              decoded_wide::status::complete) {
+        result.push_back(
+            static_cast<Character>(
+                decoded.value));
+
+        current += decoded.consumed;
+        continue;
+      }
+
+      //
+      // Preserve progress deterministically even if the native
+      // locale contains an exotic sequence that its own wchar_t
+      // conversion API cannot represent.
+      //
+      result.push_back(
+          static_cast<Character>(
+              static_cast<unsigned char>(
+                  *current)));
+
+      ++current;
+    }
+
+    return result;
+  }
+}
+
+[[nodiscard]]
+inline money_base::pattern
+locale_monetary_pattern(
+    unsigned cs_precedes,
+    unsigned sep_by_space,
+    unsigned sign_position) noexcept {
+  using part = money_base::part;
+
+  const auto make =
+      [](part first,
+         part second,
+         part third,
+         part fourth) {
+        return money_base::pattern{{
+            static_cast<char>(first),
+            static_cast<char>(second),
+            static_cast<char>(third),
+            static_cast<char>(fourth)}};
+      };
+
+  const auto fallback =
+      make(
+          money_base::symbol,
+          money_base::sign,
+          money_base::none,
+          money_base::value);
+
+  if (cs_precedes > 1 ||
+      sep_by_space > 2 ||
+      sign_position > 4) {
+    return fallback;
+  }
+
+  const bool currency_first =
+      cs_precedes != 0;
+
+  switch (sign_position) {
+  case 0:
+    if (currency_first) {
+      return sep_by_space == 1
+                 ? make(
+                       money_base::sign,
+                       money_base::symbol,
+                       money_base::space,
+                       money_base::value)
+                 : make(
+                       money_base::sign,
+                       money_base::symbol,
+                       money_base::none,
+                       money_base::value);
+    }
+
+    return sep_by_space == 0
+               ? make(
+                     money_base::sign,
+                     money_base::value,
+                     money_base::none,
+                     money_base::symbol)
+               : make(
+                     money_base::sign,
+                     money_base::value,
+                     money_base::space,
+                     money_base::symbol);
+
+  case 1:
+    if (currency_first) {
+      if (sep_by_space == 2) {
+        return make(
+            money_base::sign,
+            money_base::space,
+            money_base::symbol,
+            money_base::value);
+      }
+
+      if (sep_by_space == 1) {
+        return make(
+            money_base::sign,
+            money_base::symbol,
+            money_base::space,
+            money_base::value);
+      }
+
+      return make(
+          money_base::sign,
+          money_base::symbol,
+          money_base::none,
+          money_base::value);
+    }
+
+    return sep_by_space == 0
+               ? make(
+                     money_base::sign,
+                     money_base::value,
+                     money_base::none,
+                     money_base::symbol)
+               : make(
+                     money_base::sign,
+                     money_base::value,
+                     money_base::space,
+                     money_base::symbol);
+
+  case 2:
+    if (currency_first) {
+      if (sep_by_space == 2) {
+        return make(
+            money_base::symbol,
+            money_base::value,
+            money_base::space,
+            money_base::sign);
+      }
+
+      if (sep_by_space == 1) {
+        return make(
+            money_base::symbol,
+            money_base::space,
+            money_base::value,
+            money_base::sign);
+      }
+
+      return make(
+          money_base::symbol,
+          money_base::none,
+          money_base::value,
+          money_base::sign);
+    }
+
+    if (sep_by_space == 2) {
+      return make(
+          money_base::value,
+          money_base::symbol,
+          money_base::space,
+          money_base::sign);
+    }
+
+    if (sep_by_space == 1) {
+      return make(
+          money_base::value,
+          money_base::space,
+          money_base::symbol,
+          money_base::sign);
+    }
+
+    return make(
+        money_base::value,
+        money_base::none,
+        money_base::symbol,
+        money_base::sign);
+
+  case 3:
+    if (currency_first) {
+      if (sep_by_space == 2) {
+        return make(
+            money_base::sign,
+            money_base::space,
+            money_base::symbol,
+            money_base::value);
+      }
+
+      if (sep_by_space == 1) {
+        return make(
+            money_base::sign,
+            money_base::symbol,
+            money_base::space,
+            money_base::value);
+      }
+
+      return make(
+          money_base::sign,
+          money_base::symbol,
+          money_base::none,
+          money_base::value);
+    }
+
+    if (sep_by_space == 2) {
+      return make(
+          money_base::value,
+          money_base::sign,
+          money_base::space,
+          money_base::symbol);
+    }
+
+    if (sep_by_space == 1) {
+      return make(
+          money_base::value,
+          money_base::space,
+          money_base::sign,
+          money_base::symbol);
+    }
+
+    return make(
+        money_base::value,
+        money_base::none,
+        money_base::sign,
+        money_base::symbol);
+
+  case 4:
+    if (currency_first) {
+      if (sep_by_space == 2) {
+        return make(
+            money_base::symbol,
+            money_base::space,
+            money_base::sign,
+            money_base::value);
+      }
+
+      if (sep_by_space == 1) {
+        return make(
+            money_base::symbol,
+            money_base::sign,
+            money_base::space,
+            money_base::value);
+      }
+
+      return make(
+          money_base::symbol,
+          money_base::sign,
+          money_base::none,
+          money_base::value);
+    }
+
+    if (sep_by_space == 2) {
+      return make(
+          money_base::value,
+          money_base::symbol,
+          money_base::space,
+          money_base::sign);
+    }
+
+    if (sep_by_space == 1) {
+      return make(
+          money_base::value,
+          money_base::space,
+          money_base::symbol,
+          money_base::sign);
+    }
+
+    return make(
+        money_base::value,
+        money_base::none,
+        money_base::symbol,
+        money_base::sign);
+  }
+
+  return fallback;
+}
+
+[[nodiscard]]
+inline int locale_monetary_frac_digits(
+    unsigned char value) noexcept {
+  const auto signed_char_max =
+      static_cast<unsigned char>(
+          numeric_limits<char>::max());
+
+  const auto unsigned_char_max =
+      numeric_limits<unsigned char>::max();
+
+  if (value == signed_char_max ||
+      value == unsigned_char_max) {
+    return 0;
+  }
+
+  return static_cast<int>(value);
+}
+
+template <bool International>
+[[nodiscard]]
+inline unsigned
+locale_monetary_cs_precedes(
+    const locale_named_monetary_snapshot &value,
+    bool positive) noexcept {
+  if constexpr (International) {
+    return positive
+               ? value
+                     .international_positive_cs_precedes
+               : value
+                     .international_negative_cs_precedes;
+  } else {
+    return positive
+               ? value.positive_cs_precedes
+               : value.negative_cs_precedes;
+  }
+}
+
+template <bool International>
+[[nodiscard]]
+inline unsigned
+locale_monetary_sep_by_space(
+    const locale_named_monetary_snapshot &value,
+    bool positive) noexcept {
+  if constexpr (International) {
+    return positive
+               ? value
+                     .international_positive_sep_by_space
+               : value
+                     .international_negative_sep_by_space;
+  } else {
+    return positive
+               ? value.positive_sep_by_space
+               : value.negative_sep_by_space;
+  }
+}
+
+template <bool International>
+[[nodiscard]]
+inline unsigned
+locale_monetary_sign_position(
+    const locale_named_monetary_snapshot &value,
+    bool positive) noexcept {
+  if constexpr (International) {
+    return positive
+               ? value
+                     .international_positive_sign_position
+               : value
+                     .international_negative_sign_position;
+  } else {
+    return positive
+               ? value.positive_sign_position
+               : value.negative_sign_position;
+  }
+}
+
+} // namespace detail
+
+template <
+    class Character,
+    bool International = false>
+class moneypunct_byname
+    : public moneypunct<
+          Character,
+          International> {
+public:
+  using base_type =
+      moneypunct<
+          Character,
+          International>;
+
+  using char_type =
+      typename base_type::char_type;
+
+  using string_type =
+      typename base_type::string_type;
+
+  using pattern =
+      money_base::pattern;
+
+  explicit moneypunct_byname(
+      const char *name,
+      size_t refs = 0)
+      : base_type(refs),
+        context_(
+            new detail::
+                locale_named_moneypunct_context(
+                    name)) {}
+
+  explicit moneypunct_byname(
+      const string &name,
+      size_t refs = 0)
+      : moneypunct_byname(
+            name.c_str(),
+            refs) {}
+
+protected:
+  ~moneypunct_byname() override {
+    delete context_;
+  }
+
+  char_type
+  do_decimal_point() const override {
+    return detail::
+        locale_named_monetary_character<
+            Character>(
+            *context_,
+            context_->monetary.decimal_point,
+            '.');
+  }
+
+  char_type
+  do_thousands_sep() const override {
+    return detail::
+        locale_named_monetary_character<
+            Character>(
+            *context_,
+            context_->monetary.thousands_sep,
+            ',');
+  }
+
+  string
+  do_grouping() const override {
+    return context_->monetary.grouping;
+  }
+
+  string_type
+  do_curr_symbol() const override {
+    const string &symbol =
+        International
+            ? context_->monetary
+                  .international_symbol
+            : context_->monetary
+                  .local_symbol;
+
+    return detail::
+        locale_named_monetary_string<
+            Character>(
+            *context_,
+            symbol);
+  }
+
+  string_type
+  do_positive_sign() const override {
+    const unsigned position =
+        detail::
+            locale_monetary_sign_position<
+                International>(
+                context_->monetary,
+                true);
+
+    if (position == 0) {
+      return detail::
+          locale_ascii_string<Character>(
+              "()");
+    }
+
+    return detail::
+        locale_named_monetary_string<
+            Character>(
+            *context_,
+            context_->monetary
+                .positive_sign);
+  }
+
+  string_type
+  do_negative_sign() const override {
+    const unsigned position =
+        detail::
+            locale_monetary_sign_position<
+                International>(
+                context_->monetary,
+                false);
+
+    if (position == 0) {
+      return detail::
+          locale_ascii_string<Character>(
+              "()");
+    }
+
+    return detail::
+        locale_named_monetary_string<
+            Character>(
+            *context_,
+            context_->monetary
+                .negative_sign);
+  }
+
+  int
+  do_frac_digits() const override {
+    return detail::locale_monetary_frac_digits(
+        International
+            ? context_->monetary
+                  .international_frac_digits
+            : context_->monetary
+                  .local_frac_digits);
+  }
+
+  pattern
+  do_pos_format() const override {
+    return detail::locale_monetary_pattern(
+        detail::
+            locale_monetary_cs_precedes<
+                International>(
+                context_->monetary,
+                true),
+        detail::
+            locale_monetary_sep_by_space<
+                International>(
+                context_->monetary,
+                true),
+        detail::
+            locale_monetary_sign_position<
+                International>(
+                context_->monetary,
+                true));
+  }
+
+  pattern
+  do_neg_format() const override {
+    return detail::locale_monetary_pattern(
+        detail::
+            locale_monetary_cs_precedes<
+                International>(
+                context_->monetary,
+                false),
+        detail::
+            locale_monetary_sep_by_space<
+                International>(
+                context_->monetary,
+                false),
+        detail::
+            locale_monetary_sign_position<
+                International>(
+                context_->monetary,
+                false));
+  }
+
+private:
+  detail::locale_named_moneypunct_context
+      *context_;
+};
+
 namespace detail {
 
 struct locale_facet_control {
@@ -2701,6 +3754,74 @@ struct locale_classic_codecvt_wchar final : codecvt<wchar_t, char, mbstate_t> {
 
   ~locale_classic_codecvt_wchar() override = default;
 };
+
+struct locale_classic_moneypunct_char final
+    : moneypunct<char, false> {
+  locale_classic_moneypunct_char()
+      : moneypunct<char, false>(1) {}
+
+  ~locale_classic_moneypunct_char()
+      override = default;
+};
+
+struct locale_classic_moneypunct_wchar final
+    : moneypunct<wchar_t, false> {
+  locale_classic_moneypunct_wchar()
+      : moneypunct<wchar_t, false>(1) {}
+
+  ~locale_classic_moneypunct_wchar()
+      override = default;
+};
+
+struct locale_classic_moneypunct_intl_char final
+    : moneypunct<char, true> {
+  locale_classic_moneypunct_intl_char()
+      : moneypunct<char, true>(1) {}
+
+  ~locale_classic_moneypunct_intl_char()
+      override = default;
+};
+
+struct locale_classic_moneypunct_intl_wchar final
+    : moneypunct<wchar_t, true> {
+  locale_classic_moneypunct_intl_wchar()
+      : moneypunct<wchar_t, true>(1) {}
+
+  ~locale_classic_moneypunct_intl_wchar()
+      override = default;
+};
+
+inline locale_facet_control &
+locale_classic_moneypunct_char_control() {
+  static locale_classic_moneypunct_char facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &
+locale_classic_moneypunct_wchar_control() {
+  static locale_classic_moneypunct_wchar facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &
+locale_classic_moneypunct_intl_char_control() {
+  static locale_classic_moneypunct_intl_char facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &
+locale_classic_moneypunct_intl_wchar_control() {
+  static locale_classic_moneypunct_intl_wchar facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
 
 inline locale_facet_control &locale_classic_codecvt_char_control() {
   static locale_classic_codecvt_char facet;
@@ -2869,47 +3990,94 @@ inline void locale_release_state(locale_state *state) noexcept {
   delete state;
 }
 
-inline locale_state &locale_classic_state() {
+inline locale_state &
+locale_classic_state() {
   static locale_state state;
 
   static const bool initialized = [] {
-    state.facets.reserve(12);
+    state.facets.reserve(16);
 
     state.facets.push_back(
-        {&ctype<char>::id, &locale_classic_ctype_char_control()});
+        {&ctype<char>::id,
+         &locale_classic_ctype_char_control()});
 
     state.facets.push_back(
-        {&ctype<wchar_t>::id, &locale_classic_ctype_wchar_control()});
+        {&ctype<wchar_t>::id,
+         &locale_classic_ctype_wchar_control()});
 
     state.facets.push_back(
-        {&collate<char>::id, &locale_classic_collate_char_control()});
+        {&collate<char>::id,
+         &locale_classic_collate_char_control()});
 
     state.facets.push_back(
-        {&collate<wchar_t>::id, &locale_classic_collate_wchar_control()});
+        {&collate<wchar_t>::id,
+         &locale_classic_collate_wchar_control()});
 
     state.facets.push_back(
-        {&numpunct<char>::id, &locale_classic_numpunct_char_control()});
+        {&numpunct<char>::id,
+         &locale_classic_numpunct_char_control()});
 
     state.facets.push_back(
-        {&numpunct<wchar_t>::id, &locale_classic_numpunct_wchar_control()});
+        {&numpunct<wchar_t>::id,
+         &locale_classic_numpunct_wchar_control()});
 
-    state.facets.push_back({&codecvt<char, char, mbstate_t>::id,
-                            &locale_classic_codecvt_char_control()});
+    state.facets.push_back(
+        {&codecvt<
+             char,
+             char,
+             mbstate_t>::id,
+         &locale_classic_codecvt_char_control()});
 
-    state.facets.push_back({&codecvt<char16_t, char8_t, mbstate_t>::id,
-                            &locale_classic_codecvt_utf16_control()});
+    state.facets.push_back(
+        {&codecvt<
+             char16_t,
+             char8_t,
+             mbstate_t>::id,
+         &locale_classic_codecvt_utf16_control()});
 
-    state.facets.push_back({&codecvt<char32_t, char8_t, mbstate_t>::id,
-                            &locale_classic_codecvt_utf32_control()});
+    state.facets.push_back(
+        {&codecvt<
+             char32_t,
+             char8_t,
+             mbstate_t>::id,
+         &locale_classic_codecvt_utf32_control()});
 
-    state.facets.push_back({&codecvt<wchar_t, char, mbstate_t>::id,
-                            &locale_classic_codecvt_wchar_control()});
+    state.facets.push_back(
+        {&codecvt<
+             wchar_t,
+             char,
+             mbstate_t>::id,
+         &locale_classic_codecvt_wchar_control()});
 
-    state.facets.push_back({&codecvt<char16_t, char, mbstate_t>::id,
-                            &locale_classic_codecvt_char16_char_control()});
+    state.facets.push_back(
+        {&codecvt<
+             char16_t,
+             char,
+             mbstate_t>::id,
+         &locale_classic_codecvt_char16_char_control()});
 
-    state.facets.push_back({&codecvt<char32_t, char, mbstate_t>::id,
-                            &locale_classic_codecvt_char32_char_control()});
+    state.facets.push_back(
+        {&codecvt<
+             char32_t,
+             char,
+             mbstate_t>::id,
+         &locale_classic_codecvt_char32_char_control()});
+
+    state.facets.push_back(
+        {&moneypunct<char, false>::id,
+         &locale_classic_moneypunct_char_control()});
+
+    state.facets.push_back(
+        {&moneypunct<wchar_t, false>::id,
+         &locale_classic_moneypunct_wchar_control()});
+
+    state.facets.push_back(
+        {&moneypunct<char, true>::id,
+         &locale_classic_moneypunct_intl_char_control()});
+
+    state.facets.push_back(
+        {&moneypunct<wchar_t, true>::id,
+         &locale_classic_moneypunct_intl_wchar_control()});
 
     return true;
   }();

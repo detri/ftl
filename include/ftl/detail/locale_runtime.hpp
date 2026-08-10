@@ -27,11 +27,7 @@ enum class classification {
 };
 
 struct decoded_wide {
-  enum class status {
-    complete,
-    partial,
-    error
-  };
+  enum class status { complete, partial, error };
 
   status result;
   wchar_t value;
@@ -118,6 +114,17 @@ inline native_handle create_numeric(const char *name) noexcept {
   // LC_NUMERIC. numpunct<wchar_t> needs the locale's multibyte
   // conversion rules to turn the CRT punctuation string into a
   // wide character.
+  //
+  return _create_locale(LC_ALL, name);
+}
+
+inline native_handle create_monetary(const char *name) noexcept {
+  if (name == nullptr)
+    return nullptr;
+
+  //
+  // We need LC_MONETARY for the actual facet data and
+  // LC_CTYPE for widening currency/sign strings.
   //
   return _create_locale(LC_ALL, name);
 }
@@ -407,6 +414,15 @@ inline native_handle create_numeric(const char *name) noexcept {
   constexpr int numeric_and_ctype_mask = (1 << LC_NUMERIC) | (1 << LC_CTYPE);
 
   return newlocale(numeric_and_ctype_mask, name, nullptr);
+}
+
+inline native_handle create_monetary(const char *name) noexcept {
+  if (name == nullptr)
+    return nullptr;
+
+  constexpr int monetary_and_ctype_mask = (1 << LC_MONETARY) | (1 << LC_CTYPE);
+
+  return newlocale(monetary_and_ctype_mask, name, nullptr);
 }
 
 inline int multibyte_max_length(native_handle) noexcept {
