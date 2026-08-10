@@ -63,6 +63,16 @@ public:
     return load_status(memory_order_acquire) != future_state_status::empty;
   }
 
+  void add_return_reference() noexcept {
+    return_references_.fetch_add(1, memory_order_relaxed);
+  }
+
+  void release_return_reference() noexcept {
+    if (return_references_.fetch_sub(1, memory_order_acq_rel) == 1) {
+      on_last_return_reference();
+    }
+  }
+
   [[nodiscard]]
   bool try_mark_future_retrieved() noexcept {
     return !future_retrieved_.exchange(true, memory_order_acq_rel);
@@ -73,6 +83,11 @@ public:
       execute_deferred();
 
     wait_ready();
+
+    // async-created states override this so
+    // successful non-timed waits do not return
+    // before their associated thread completes.
+    wait_completion();
   }
 
   [[nodiscard]]
@@ -80,13 +95,17 @@ public:
     if (is_deferred())
       return future_wait_result::deferred;
 
-    if (is_ready())
-      return future_wait_result::ready;
-
     const uint64_t deadline = wait_deadline_after(timeout_nanoseconds);
 
-    return wait_ready_until(deadline) ? future_wait_result::ready
-                                      : future_wait_result::timeout;
+    if (!is_ready()) {
+      if (!wait_ready_until(deadline))
+        return future_wait_result::timeout;
+    }
+
+    if (!wait_completion_until(deadline))
+      return future_wait_result::timeout;
+
+    return future_wait_result::ready;
   }
 
   void make_ready() noexcept {
@@ -101,13 +120,15 @@ public:
 
     future_state_status replacement = current;
 
-    if (current == future_state_status::stored_value)
+    if (current == future_state_status::stored_value) {
       replacement = future_state_status::ready_value;
-    else if (current == future_state_status::stored_exception)
+    } else if (current == future_state_status::stored_exception) {
       replacement = future_state_status::ready_exception;
+    }
 
     if (replacement != current) {
       status.store(encode_status(replacement), memory_order_release);
+
       notify = true;
     }
 
@@ -137,8 +158,6 @@ public:
     const future_state_status current =
         decode_status(status.load(memory_order_relaxed));
 
-    // A result stored for *_at_thread_exit is already
-    // satisfied even though it is not ready yet.
     if (current == future_state_status::empty) {
       exception_ = move(exception);
 
@@ -225,6 +244,23 @@ protected:
 
   virtual void execute_deferred() noexcept {}
 
+  // Async states use these hooks to couple
+  // readiness to actual associated-thread
+  // completion.
+  virtual void wait_completion() noexcept {}
+
+  [[nodiscard]]
+  virtual bool wait_completion_until(uint64_t) noexcept {
+    return true;
+  }
+
+  // Physical shared_ptr ownership includes
+  // implementation references such as the
+  // running async worker. This hook instead
+  // observes the last future/shared_future
+  // reference disappearing.
+  virtual void on_last_return_reference() noexcept {}
+
 private:
   [[nodiscard]]
   bool try_store_exception(exception_ptr exception, bool ready_immediately) {
@@ -240,8 +276,9 @@ private:
     for (;;) {
       const uint32_t current = status.load(memory_order_acquire);
 
-      if (is_ready_status(decode_status(current)))
+      if (is_ready_status(decode_status(current))) {
         return;
+      }
 
       status.wait(current, memory_order_acquire);
     }
@@ -254,8 +291,9 @@ private:
     for (;;) {
       const uint32_t current = status.load(memory_order_acquire);
 
-      if (is_ready_status(decode_status(current)))
+      if (is_ready_status(decode_status(current))) {
         return true;
+      }
 
       if (!atomic_wait_until_changed_until<sizeof(uint32_t)>(
               &status_, current, deadline,
@@ -295,6 +333,8 @@ private:
       encode_status(future_state_status::empty);
 
   atomic<bool> future_retrieved_{false};
+
+  atomic<unsigned int> return_references_{0};
 
   exception_ptr exception_{};
 };

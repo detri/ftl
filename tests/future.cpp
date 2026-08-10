@@ -102,6 +102,47 @@ struct move_only_packaged_callable {
   int *calls;
 };
 
+struct async_move_only_argument {
+  explicit async_move_only_argument(int input) : value(input) {}
+
+  async_move_only_argument(const async_move_only_argument &) = delete;
+
+  async_move_only_argument &
+  operator=(const async_move_only_argument &) = delete;
+
+  async_move_only_argument(async_move_only_argument &&) noexcept = default;
+
+  int value;
+};
+
+struct async_move_only_callable {
+  async_move_only_callable() = default;
+
+  async_move_only_callable(const async_move_only_callable &) = delete;
+
+  async_move_only_callable(async_move_only_callable &&) noexcept = default;
+
+  int operator()(async_move_only_argument argument) {
+    return argument.value * 2;
+  }
+};
+
+static_assert(tested::is_same_v<decltype(tested::async(tested::launch::deferred,
+                                                       [] { return 42; })),
+                                tested::future<int>>);
+
+struct async_reference_callable {
+  int *value;
+
+  int &operator()() const { return *value; }
+};
+
+static_assert(
+    tested::is_same_v<
+        decltype(tested::async(tested::launch::deferred,
+                               tested::declval<async_reference_callable>())),
+        tested::future<int &>>);
+
 static_assert(static_cast<int>(tested::future_errc::broken_promise) != 0);
 
 static_assert(static_cast<int>(tested::future_errc::future_already_retrieved) !=
@@ -1634,6 +1675,340 @@ bool packaged_task_thread_exit_follows_tls_destruction() {
   return ordered && result.get() == 515;
 }
 
+bool async_policy_runs_on_another_thread() {
+  const auto caller = tested::this_thread::get_id();
+
+  auto result = tested::async(tested::launch::async,
+                              [] { return tested::this_thread::get_id(); });
+
+  const auto worker = result.get();
+
+  return worker != caller;
+}
+
+bool async_policy_starts_eagerly() {
+  tested::atomic<bool> started{false};
+  tested::atomic<bool> release{false};
+
+  auto result = tested::async(tested::launch::async, [&] {
+    started.store(true, tested::memory_order_release);
+
+    while (!release.load(tested::memory_order_acquire)) {
+      tested::this_thread::yield();
+    }
+
+    return 91;
+  });
+
+  while (!started.load(tested::memory_order_acquire)) {
+    tested::this_thread::yield();
+  }
+
+  const bool not_ready = result.wait_for(tested::chrono::milliseconds{0}) ==
+                         tested::future_status::timeout;
+
+  release.store(true, tested::memory_order_release);
+
+  return not_ready && result.get() == 91;
+}
+
+bool deferred_policy_is_lazy() {
+  tested::atomic<int> calls{0};
+
+  const auto caller = tested::this_thread::get_id();
+
+  auto result = tested::async(tested::launch::deferred, [&] {
+    calls.fetch_add(1, tested::memory_order_relaxed);
+
+    return tested::this_thread::get_id();
+  });
+
+  if (calls.load(tested::memory_order_relaxed) != 0) {
+    return false;
+  }
+
+  if (result.wait_for(tested::chrono::hours{1}) !=
+      tested::future_status::deferred) {
+    return false;
+  }
+
+  if (result.wait_until(tested::chrono::steady_clock::now() +
+                        tested::chrono::hours{1}) !=
+      tested::future_status::deferred) {
+    return false;
+  }
+
+  if (calls.load(tested::memory_order_relaxed) != 0) {
+    return false;
+  }
+
+  const auto execution_thread = result.get();
+
+  return execution_thread == caller &&
+         calls.load(tested::memory_order_relaxed) == 1;
+}
+
+bool deferred_wait_executes_task() {
+  tested::atomic<int> calls{0};
+
+  auto result = tested::async(tested::launch::deferred, [&] {
+    calls.fetch_add(1, tested::memory_order_relaxed);
+
+    return 44;
+  });
+
+  result.wait();
+
+  return calls.load(tested::memory_order_relaxed) == 1 && result.get() == 44;
+}
+
+bool deferred_shared_future_executes_once() {
+  tested::atomic<int> calls{0};
+
+  auto result = tested::async(tested::launch::deferred, [&] {
+    calls.fetch_add(1, tested::memory_order_relaxed);
+
+    return 812;
+  });
+
+  auto first = result.share();
+
+  auto second = first;
+
+  tested::atomic<int> correct{0};
+
+  tested::thread first_waiter([first, &correct] {
+    if (first.get() == 812) {
+      correct.fetch_add(1, tested::memory_order_relaxed);
+    }
+  });
+
+  tested::thread second_waiter([second, &correct] {
+    if (second.get() == 812) {
+      correct.fetch_add(1, tested::memory_order_relaxed);
+    }
+  });
+
+  first_waiter.join();
+  second_waiter.join();
+
+  return calls.load(tested::memory_order_relaxed) == 1 &&
+         correct.load(tested::memory_order_relaxed) == 2;
+}
+
+bool async_captures_exception() {
+  auto result = tested::async(tested::launch::async,
+                              []() -> int { throw stored_exception{}; });
+
+  try {
+    (void)result.get();
+  } catch (const stored_exception &) {
+    return true;
+  } catch (...) {
+    return false;
+  }
+
+  return false;
+}
+
+bool deferred_captures_exception() {
+  auto result = tested::async(tested::launch::deferred,
+                              []() -> int { throw stored_exception{}; });
+
+  try {
+    (void)result.get();
+  } catch (const stored_exception &) {
+    return true;
+  } catch (...) {
+    return false;
+  }
+
+  return false;
+}
+
+bool async_void_result_works() {
+  tested::atomic<bool> called{false};
+
+  auto result = tested::async(tested::launch::async, [&] {
+    called.store(true, tested::memory_order_release);
+  });
+
+  result.get();
+
+  return called.load(tested::memory_order_acquire);
+}
+
+bool async_reference_result_works() {
+  int target = 123;
+
+  auto result =
+      tested::async(tested::launch::async, [&]() -> int & { return target; });
+
+  return &result.get() == &target;
+}
+
+bool async_supports_move_only_inputs() {
+  auto result = tested::async(tested::launch::async, async_move_only_callable{},
+                              async_move_only_argument{21});
+
+  return result.get() == 42;
+}
+
+bool deferred_decay_copies_arguments() {
+  int source = 17;
+
+  auto result = tested::async(
+      tested::launch::deferred, [](int value) { return value; }, source);
+
+  source = 99;
+
+  return result.get() == 17;
+}
+
+bool default_async_policy_works() {
+  auto result = tested::async([] { return 515; });
+
+  const auto status = result.wait_for(tested::chrono::milliseconds{0});
+
+  if (status != tested::future_status::ready &&
+      status != tested::future_status::timeout &&
+      status != tested::future_status::deferred) {
+    return false;
+  }
+
+  return result.get() == 515;
+}
+
+bool async_wait_observes_thread_completion() {
+  tested::atomic<bool> tls_destroyed{false};
+
+  auto result = tested::async(tested::launch::async, [&] {
+    promise_tls_probe_instance.destroyed = &tls_destroyed;
+
+    return 404;
+  });
+
+  const int value = result.get();
+
+  return value == 404 && tls_destroyed.load(tested::memory_order_acquire);
+}
+
+bool async_last_future_release_blocks() {
+  tested::atomic<bool> started{false};
+  tested::atomic<bool> destroying{false};
+  tested::atomic<bool> scope_exited{false};
+  tested::atomic<bool> release{false};
+  tested::atomic<bool> finished{false};
+  tested::atomic<bool> escaped_early{false};
+
+  tested::thread controller([&] {
+    while (!destroying.load(tested::memory_order_acquire)) {
+      tested::this_thread::yield();
+    }
+
+    const auto deadline =
+        tested::chrono::steady_clock::now() + tested::chrono::milliseconds{20};
+
+    while (!scope_exited.load(tested::memory_order_acquire) &&
+           tested::chrono::steady_clock::now() < deadline) {
+      tested::this_thread::yield();
+    }
+
+    if (scope_exited.load(tested::memory_order_acquire)) {
+      escaped_early.store(true, tested::memory_order_release);
+    }
+
+    release.store(true, tested::memory_order_release);
+  });
+
+  {
+    auto result = tested::async(tested::launch::async, [&] {
+      started.store(true, tested::memory_order_release);
+
+      while (!release.load(tested::memory_order_acquire)) {
+        tested::this_thread::yield();
+      }
+
+      finished.store(true, tested::memory_order_release);
+    });
+
+    while (!started.load(tested::memory_order_acquire)) {
+      tested::this_thread::yield();
+    }
+
+    destroying.store(true, tested::memory_order_release);
+
+    // result is destroyed here.
+  }
+
+  scope_exited.store(true, tested::memory_order_release);
+
+  controller.join();
+
+  return !escaped_early.load(tested::memory_order_acquire) &&
+         finished.load(tested::memory_order_acquire);
+}
+
+bool async_nonlast_shared_future_release_does_not_block() {
+  tested::atomic<bool> started{false};
+  tested::atomic<bool> destroying{false};
+  tested::atomic<bool> scope_exited{false};
+  tested::atomic<bool> release{false};
+  tested::atomic<bool> exited_promptly{false};
+
+  auto shared = tested::async(tested::launch::async, [&] {
+                  started.store(true, tested::memory_order_release);
+
+                  while (!release.load(tested::memory_order_acquire)) {
+                    tested::this_thread::yield();
+                  }
+
+                  return 72;
+                }).share();
+
+  auto survivor = shared;
+
+  while (!started.load(tested::memory_order_acquire)) {
+    tested::this_thread::yield();
+  }
+
+  tested::thread controller([&] {
+    while (!destroying.load(tested::memory_order_acquire)) {
+      tested::this_thread::yield();
+    }
+
+    const auto deadline =
+        tested::chrono::steady_clock::now() + tested::chrono::milliseconds{20};
+
+    while (!scope_exited.load(tested::memory_order_acquire) &&
+           tested::chrono::steady_clock::now() < deadline) {
+      tested::this_thread::yield();
+    }
+
+    if (scope_exited.load(tested::memory_order_acquire)) {
+      exited_promptly.store(true, tested::memory_order_release);
+    }
+
+    release.store(true, tested::memory_order_release);
+  });
+
+  {
+    auto disposable = shared;
+
+    destroying.store(true, tested::memory_order_release);
+
+    // disposable is not the final asynchronous
+    // return reference and must not join here.
+  }
+
+  scope_exited.store(true, tested::memory_order_release);
+
+  controller.join();
+
+  return exited_promptly.load(tested::memory_order_acquire) &&
+         survivor.get() == 72;
+}
+
 bool ftl_test() {
   return error_vocabulary_works() && value_state_works() &&
          reference_state_works() && void_state_works() &&
@@ -1681,5 +2056,15 @@ bool ftl_test() {
          empty_packaged_task_reset_reports_no_state() &&
          packaged_task_ready_at_thread_exit_is_deferred() &&
          packaged_task_ready_at_thread_exit_captures_exception() &&
-         packaged_task_thread_exit_follows_tls_destruction();
+         packaged_task_thread_exit_follows_tls_destruction() &&
+         async_policy_runs_on_another_thread() &&
+         async_policy_starts_eagerly() && deferred_policy_is_lazy() &&
+         deferred_wait_executes_task() &&
+         deferred_shared_future_executes_once() && async_captures_exception() &&
+         deferred_captures_exception() && async_void_result_works() &&
+         async_reference_result_works() && async_supports_move_only_inputs() &&
+         deferred_decay_copies_arguments() && default_async_policy_works() &&
+         async_wait_observes_thread_completion() &&
+         async_last_future_release_blocks() &&
+         async_nonlast_shared_future_release_does_not_block();
 }
