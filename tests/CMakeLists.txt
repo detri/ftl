@@ -368,6 +368,7 @@ foreach (header IN ITEMS
         ratio
         numbers
         ctime
+        clocale
         chrono
         version
         source_location

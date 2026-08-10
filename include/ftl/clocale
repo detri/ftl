@@ -1,0 +1,20 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CLOCALE_HEADER
+#define FTL_CLOCALE_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <locale.h>
+namespace std {
+#else
+#include <ftl/locale.h>
+namespace ftl {
+#endif
+
+using ::lconv;
+using ::localeconv;
+using ::setlocale;
+
+} // namespace std or ftl
+
+#endif
