@@ -3,6 +3,12 @@
 #ifndef FTL_DETAIL_LOCALE_RUNTIME_HPP
 #define FTL_DETAIL_LOCALE_RUNTIME_HPP
 
+#ifdef FTL_REPLACE_STL
+#include <locale.h>
+#else
+#include <ftl/locale.h>
+#endif
+
 namespace ftl_locale_runtime {
 
 using native_handle = void *;
@@ -59,6 +65,12 @@ int __cdecl _mbtowc_l(wchar_t *, const char *, decltype(sizeof(0)), void *);
 
 int __cdecl _wctomb_l(char *, wchar_t, void *);
 
+decltype(sizeof(0)) __cdecl _strxfrm_l(char *, const char *,
+                                       decltype(sizeof(0)), void *);
+
+decltype(sizeof(0)) __cdecl _wcsxfrm_l(wchar_t *, const wchar_t *,
+                                       decltype(sizeof(0)), void *);
+
 } // extern "C"
 
 inline native_handle create_ctype(const char *name) noexcept {
@@ -66,6 +78,26 @@ inline native_handle create_ctype(const char *name) noexcept {
     return nullptr;
 
   return _create_locale(LC_CTYPE, name);
+}
+
+inline native_handle create_collate(const char *name) noexcept {
+  if (name == nullptr)
+    return nullptr;
+
+  return _create_locale(LC_COLLATE, name);
+}
+
+inline decltype(sizeof(0)) transform_byte(native_handle locale,
+                                          char *destination, const char *source,
+                                          decltype(sizeof(0)) count) noexcept {
+  return _strxfrm_l(destination, source, count, locale);
+}
+
+inline decltype(sizeof(0)) transform_wide(native_handle locale,
+                                          wchar_t *destination,
+                                          const wchar_t *source,
+                                          decltype(sizeof(0)) count) noexcept {
+  return _wcsxfrm_l(destination, source, count, locale);
 }
 
 inline void destroy(native_handle locale) noexcept {
@@ -219,6 +251,12 @@ unsigned int towlower_l(unsigned int, void *);
 unsigned int btowc(int);
 int wctob(unsigned int);
 
+decltype(sizeof(0)) strxfrm_l(char *, const char *, decltype(sizeof(0)),
+                              void *);
+
+decltype(sizeof(0)) wcsxfrm_l(wchar_t *, const wchar_t *, decltype(sizeof(0)),
+                              void *);
+
 } // extern "C"
 
 inline native_handle create_ctype(const char *name) noexcept {
@@ -228,6 +266,28 @@ inline native_handle create_ctype(const char *name) noexcept {
   constexpr int ctype_mask = 1 << LC_CTYPE;
 
   return newlocale(ctype_mask, name, nullptr);
+}
+
+inline native_handle create_collate(const char *name) noexcept {
+  if (name == nullptr)
+    return nullptr;
+
+  constexpr int collate_mask = 1 << LC_COLLATE;
+
+  return newlocale(collate_mask, name, nullptr);
+}
+
+inline decltype(sizeof(0)) transform_byte(native_handle locale,
+                                          char *destination, const char *source,
+                                          decltype(sizeof(0)) count) noexcept {
+  return strxfrm_l(destination, source, count, locale);
+}
+
+inline decltype(sizeof(0)) transform_wide(native_handle locale,
+                                          wchar_t *destination,
+                                          const wchar_t *source,
+                                          decltype(sizeof(0)) count) noexcept {
+  return wcsxfrm_l(destination, source, count, locale);
 }
 
 inline void destroy(native_handle locale) noexcept {

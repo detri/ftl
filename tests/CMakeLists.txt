@@ -549,6 +549,7 @@ foreach (header IN ITEMS
         locale
         locale_ctype
         locale_ctype_byname
+        locale_collate
 )
     add_ftl_test(${header})
 endforeach ()
