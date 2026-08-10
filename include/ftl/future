@@ -224,47 +224,34 @@ future_timeout_nanoseconds(const chrono::duration<Rep, Period> &duration) {
   return result;
 }
 
-template <class R>
-class future_handle {
+template <class R> class future_handle {
 public:
   future_handle() noexcept = default;
 
-  explicit future_handle(
-      shared_ptr<future_state<R>> state)
-      noexcept
+  explicit future_handle(shared_ptr<future_state<R>> state) noexcept
       : state_(move(state)) {
     add_reference();
   }
 
-  future_handle(
-      const future_handle &other) noexcept
-      : state_(other.state_) {
+  future_handle(const future_handle &other) noexcept : state_(other.state_) {
     add_reference();
   }
 
-  future_handle(
-      future_handle &&other) noexcept
-      : state_(move(other.state_)) {}
+  future_handle(future_handle &&other) noexcept : state_(move(other.state_)) {}
 
-  ~future_handle() {
-    release();
-  }
+  ~future_handle() { release(); }
 
-  future_handle &
-  operator=(
-      const future_handle &other) noexcept {
+  future_handle &operator=(const future_handle &other) noexcept {
     if (this == &other)
       return *this;
 
     // Increment first. If both handles point
     // at the same state, we must not transiently
     // report zero return references.
-    auto replacement =
-        other.state_;
+    auto replacement = other.state_;
 
     if (replacement)
-      replacement->
-          add_return_reference();
+      replacement->add_return_reference();
 
     release();
 
@@ -273,16 +260,13 @@ public:
     return *this;
   }
 
-  future_handle &
-  operator=(
-      future_handle &&other) noexcept {
+  future_handle &operator=(future_handle &&other) noexcept {
     if (this == &other)
       return *this;
 
     release();
 
-    state_ =
-        move(other.state_);
+    state_ = move(other.state_);
 
     return *this;
   }
@@ -292,74 +276,51 @@ public:
     return static_cast<bool>(state_);
   }
 
-  void wait() const {
-    require_state().wait();
-  }
+  void wait() const { require_state().wait(); }
 
   template <class Rep, class Period>
-  future_status wait_for(
-      const chrono::duration<
-          Rep,
-          Period> &relative_time) const {
+  future_status
+  wait_for(const chrono::duration<Rep, Period> &relative_time) const {
     return future_status_from_wait_result(
-        require_state().wait_for(
-            future_timeout_nanoseconds(
-                relative_time)));
+        require_state().wait_for(future_timeout_nanoseconds(relative_time)));
   }
 
   template <class Clock, class Duration>
-  future_status wait_until(
-      const chrono::time_point<
-          Clock,
-          Duration> &absolute_time) const {
-    static_assert(
-        chrono::is_clock_v<Clock>);
+  future_status
+  wait_until(const chrono::time_point<Clock, Duration> &absolute_time) const {
+    static_assert(chrono::is_clock_v<Clock>);
 
-    future_state<R> &state =
-        require_state();
+    future_state<R> &state = require_state();
 
     // Detect deferred states immediately.
-    const future_wait_result immediate =
-        state.wait_for(0);
+    const future_wait_result immediate = state.wait_for(0);
 
-    if (immediate ==
-        future_wait_result::deferred) {
+    if (immediate == future_wait_result::deferred) {
       return future_status::deferred;
     }
 
-    if (immediate ==
-        future_wait_result::ready) {
+    if (immediate == future_wait_result::ready) {
       return future_status::ready;
     }
 
     for (;;) {
-      const auto now =
-          Clock::now();
+      const auto now = Clock::now();
 
       if (!(now < absolute_time)) {
-        return state.wait_for(0) ==
-                       future_wait_result::
-                           ready
+        return state.wait_for(0) == future_wait_result::ready
                    ? future_status::ready
                    : future_status::timeout;
       }
 
       const future_wait_result result =
-          state.wait_for(
-              future_timeout_nanoseconds(
-                  absolute_time - now));
+          state.wait_for(future_timeout_nanoseconds(absolute_time - now));
 
-      if (result !=
-          future_wait_result::timeout) {
-        return future_status_from_wait_result(
-            result);
+      if (result != future_wait_result::timeout) {
+        return future_status_from_wait_result(result);
       }
 
-      if (!(Clock::now() <
-            absolute_time)) {
-        return state.wait_for(0) ==
-                       future_wait_result::
-                           ready
+      if (!(Clock::now() < absolute_time)) {
+        return state.wait_for(0) == future_wait_result::ready
                    ? future_status::ready
                    : future_status::timeout;
       }
@@ -367,17 +328,14 @@ public:
   }
 
   [[nodiscard]]
-  future_state<R> &
-  state() const {
+  future_state<R> &state() const {
     return require_state();
   }
 
   [[nodiscard]]
-  shared_ptr<future_state<R>>
-  take_state() noexcept {
+  shared_ptr<future_state<R>> take_state() noexcept {
     if (state_)
-      state_->
-          release_return_reference();
+      state_->release_return_reference();
 
     return move(state_);
   }
@@ -385,32 +343,27 @@ public:
 private:
   void add_reference() noexcept {
     if (state_)
-      state_->
-          add_return_reference();
+      state_->add_return_reference();
   }
 
   void release() noexcept {
     if (!state_)
       return;
 
-    state_->
-        release_return_reference();
+    state_->release_return_reference();
 
     state_.reset();
   }
 
   [[nodiscard]]
-  future_state<R> &
-  require_state() const {
+  future_state<R> &require_state() const {
     if (!state_)
-      throw_future_error(
-          future_errc::no_state);
+      throw_future_error(future_errc::no_state);
 
     return *state_;
   }
 
-  shared_ptr<future_state<R>>
-      state_;
+  shared_ptr<future_state<R>> state_;
 };
 
 } // namespace detail
@@ -767,67 +720,60 @@ public:
       : thread_exit_action(&promise_thread_exit_action::invoke),
         state_(move(state)) {}
 
+  void arm() noexcept { armed_ = true; }
+
 private:
   static void invoke(thread_exit_action *base) noexcept {
     auto *self = static_cast<promise_thread_exit_action *>(base);
 
-    self->state_->make_ready();
+    if (self->armed_)
+      self->state_->make_ready();
 
     delete self;
   }
 
   shared_ptr<State> state_;
+  bool armed_ = false;
 };
 
-[[noreturn]]
-inline void throw_future_thread_exit_registration_error() {
-#if FTL_HAS_EXCEPTIONS
-  throw system_error(make_error_code(errc::resource_unavailable_try_again),
-                     "promise thread-exit registration");
-#else
-  terminate();
-#endif
+template <class State>
+promise_thread_exit_action<State> *
+register_future_thread_exit_action(const shared_ptr<State> &state) {
+  auto *action = new promise_thread_exit_action<State>{state};
+
+  if (!register_thread_exit_action(action)) {
+    delete action;
+
+    // FTL cannot provide the required
+    // post-TLS publication semantics if its
+    // internal thread-exit runtime cannot be
+    // installed. Do not expose an exception
+    // outside the standard's specified surface
+    // and, critically, do not publish early.
+    terminate();
+  }
+
+  return action;
 }
 
 template <class State, class Store>
 void promise_store_at_thread_exit(const shared_ptr<State> &state,
                                   Store &&store) {
-  // Allocate the action before mutating the state.
-  // If allocation fails, the promise remains
-  // completely unsatisfied.
-  auto *action = new promise_thread_exit_action<State>{state};
+  // Register before mutating the shared state.
+  //
+  // If storing the result later throws or reports
+  // an already-satisfied state, the registered
+  // action remains deliberately unarmed and simply
+  // destroys itself at thread exit.
+  auto *action = register_future_thread_exit_action(state);
 
-  bool stored = false;
-
-#if FTL_HAS_EXCEPTIONS
-  try {
-#endif
-
-    stored = forward<Store>(store)();
-
-#if FTL_HAS_EXCEPTIONS
-  } catch (...) {
-    delete action;
-    throw;
-  }
-#endif
-
-  if (!stored) {
-    delete action;
-
+  if (!forward<Store>(store)()) {
     throw_future_error(future_errc::promise_already_satisfied);
   }
 
-  if (!register_thread_exit_action(action)) {
-    // The result is already stored and cannot be
-    // rolled back. Publish it rather than leaving
-    // waiters permanently stranded.
-    state->make_ready();
-
-    delete action;
-
-    throw_future_thread_exit_registration_error();
-  }
+  // Only a successfully stored result is eligible
+  // for deferred publication.
+  action->arm();
 }
 
 inline exception_ptr broken_promise_exception() noexcept {
@@ -1231,12 +1177,10 @@ public:
 
   void invoke_task_at_thread_exit(const shared_ptr<future_state<R>> &state,
                                   ArgTypes &&...args) override {
-    using action_type = promise_thread_exit_action<future_state<R>>;
-
-    // Allocate the exit action before claiming the
-    // invocation. If allocation fails, the task has
-    // not been invoked and remains usable.
-    unique_ptr<action_type> action{new action_type{state}};
+    // Register first. A registration failure
+    // therefore cannot leave a stored result
+    // that has no legal publication mechanism.
+    auto *action = register_future_thread_exit_action(state);
 
     if (!this->claim_invocation()) {
       throw_future_error(future_errc::promise_already_satisfied);
@@ -1247,16 +1191,7 @@ public:
       throw_future_error(future_errc::promise_already_satisfied);
     }
 
-    if (!register_thread_exit_action(action.get())) {
-      // The result is already stored. Do not leave
-      // the future permanently blocked merely
-      // because deferred registration failed.
-      state->make_ready();
-
-      throw_future_thread_exit_registration_error();
-    }
-
-    (void)action.release();
+    action->arm();
   }
 
   packaged_task_erased<R, ArgTypes...> *move_task() override {
@@ -1267,44 +1202,145 @@ private:
   Callable callable_;
 };
 
-// Deduction helper for ordinary non-static
-// call operators. functional already owns the
-// complete cv/ref/noexcept member-function
-// signature stripping machinery.
+template <class F>
+concept packaged_task_static_call_operator =
+    requires(F &value) {
+      value.operator();
+    };
+
+template <bool Static, class R, class... Args>
+struct packaged_task_function_pointer_guide;
+
+// static operator():
+// all parameters belong to the callable signature.
+template <class R, class... Args>
+struct packaged_task_function_pointer_guide<true, R, Args...> {
+  using type = R(Args...);
+};
+
+// explicit-object operator():
+// the first parameter is the explicit object parameter.
+template <class R, class G, class... Args>
+struct packaged_task_function_pointer_guide<false, R, G, Args...> {
+  using type = R(Args...);
+};
+
 template <class F, class Signature = decltype(&F::operator())>
-struct packaged_task_guide {
-  using type = typename function_guide<Signature>::type;
-};
+struct packaged_task_guide;
 
-// C++23 static operator().
-template <class F, class R, class... Args>
-struct packaged_task_guide<F, R (*)(Args...)> {
-  using type = R(Args...);
-};
+// Implicit-object operator().
+//
+// N4950 permits:
+//   cv opt(&) opt(noexcept)
+//
+// Deliberately no && forms.
 
-template <class F, class R, class... Args>
-struct packaged_task_guide<F, R (*)(Args...) noexcept> {
-  using type = R(Args...);
-};
-
-// C++23 explicit-object operator() has a
-// function-pointer representation with the
-// explicit object as its first parameter.
-// Recognize the ordinary non-template case.
 template <class F, class R, class G, class... Args>
-  requires is_same_v<remove_cvref_t<G>, F>
-struct packaged_task_guide<F, R (*)(G, Args...)> {
+struct packaged_task_guide<F, R (G::*)(Args...)> {
   using type = R(Args...);
 };
 
 template <class F, class R, class G, class... Args>
-  requires is_same_v<remove_cvref_t<G>, F>
-struct packaged_task_guide<F, R (*)(G, Args...) noexcept> {
+struct packaged_task_guide<F, R (G::*)(Args...) const> {
   using type = R(Args...);
 };
+
+template <class F, class R, class G, class... Args>
+struct packaged_task_guide<F, R (G::*)(Args...) volatile> {
+  using type = R(Args...);
+};
+
+template <class F, class R, class G, class... Args>
+struct packaged_task_guide<F, R (G::*)(Args...) const volatile> {
+  using type = R(Args...);
+};
+
+template <class F, class R, class G, class... Args>
+struct packaged_task_guide<F, R (G::*)(Args...) &> {
+  using type = R(Args...);
+};
+
+template <class F, class R, class G, class... Args>
+struct packaged_task_guide<F, R (G::*)(Args...) const &> {
+  using type = R(Args...);
+};
+
+template <class F, class R, class G, class... Args>
+struct packaged_task_guide<F, R (G::*)(Args...) volatile &> {
+  using type = R(Args...);
+};
+
+template <class F, class R, class G, class... Args>
+struct packaged_task_guide<F, R (G::*)(Args...) const volatile &> {
+  using type = R(Args...);
+};
+
+template <class F, class R, class G, class... Args>
+struct packaged_task_guide<F, R (G::*)(Args...) noexcept> {
+  using type = R(Args...);
+};
+
+template <class F, class R, class G, class... Args>
+struct packaged_task_guide<F, R (G::*)(Args...) const noexcept> {
+  using type = R(Args...);
+};
+
+template <class F, class R, class G, class... Args>
+struct packaged_task_guide<F, R (G::*)(Args...) volatile noexcept> {
+  using type = R(Args...);
+};
+
+template <class F, class R, class G, class... Args>
+struct packaged_task_guide<F, R (G::*)(Args...) const volatile noexcept> {
+  using type = R(Args...);
+};
+
+template <class F, class R, class G, class... Args>
+struct packaged_task_guide<F, R (G::*)(Args...) & noexcept> {
+  using type = R(Args...);
+};
+
+template <class F, class R, class G, class... Args>
+struct packaged_task_guide<F, R (G::*)(Args...) const & noexcept> {
+  using type = R(Args...);
+};
+
+template <class F, class R, class G, class... Args>
+struct packaged_task_guide<F, R (G::*)(Args...) volatile & noexcept> {
+  using type = R(Args...);
+};
+
+template <class F, class R, class G, class... Args>
+struct packaged_task_guide<F, R (G::*)(Args...) const volatile & noexcept> {
+  using type = R(Args...);
+};
+
+// C++23 static operator() and explicit-object operator()
+// both produce function-pointer-shaped types.
+//
+// A static operator() can be named through an object as:
+//
+//   value.operator()
+//
+// An explicit-object operator() cannot. For the latter,
+// the first function-pointer parameter is therefore the
+// explicit object parameter and gets stripped.
+
+template <class F, class R, class... Args>
+struct packaged_task_guide<F, R (*)(Args...)>
+    : packaged_task_function_pointer_guide<
+          packaged_task_static_call_operator<F>,
+          R,
+          Args...> {};
+
+template <class F, class R, class... Args>
+struct packaged_task_guide<F, R (*)(Args...) noexcept>
+    : packaged_task_function_pointer_guide<
+          packaged_task_static_call_operator<F>,
+          R,
+          Args...> {};
 
 } // namespace detail
-
 template <class R, class... ArgTypes> class packaged_task<R(ArgTypes...)> {
   using erased_type = detail::packaged_task_erased<R, ArgTypes...>;
 
@@ -1430,71 +1466,38 @@ packaged_task(F)
 namespace detail {
 
 [[nodiscard]]
-constexpr bool launch_contains(
-    launch policy,
-    launch value) noexcept {
+constexpr bool launch_contains(launch policy, launch value) noexcept {
   return (policy & value) == value;
 }
 
 } // namespace detail
 
 template <class F, class... Args>
-future<
-    invoke_result_t<
-        decay_t<F>,
-        decay_t<Args>...>>
-async(
-    launch policy,
-    F &&function,
-    Args &&...arguments) {
-  using function_type =
-      decay_t<F>;
+[[nodiscard]]
+future<invoke_result_t<decay_t<F>, decay_t<Args>...>>
+async(launch policy, F &&function, Args &&...arguments) {
+  using function_type = decay_t<F>;
 
-  using result_type =
-      invoke_result_t<
-          function_type,
-          decay_t<Args>...>;
+  using result_type = invoke_result_t<function_type, decay_t<Args>...>;
 
-  static_assert(
-      is_constructible_v<
-          function_type,
-          F>);
+  static_assert(is_constructible_v<function_type, F>);
 
-  static_assert(
-      (is_constructible_v<
-           decay_t<Args>,
-           Args> &&
-       ...));
+  static_assert((is_constructible_v<decay_t<Args>, Args> && ...));
 
-  static_assert(
-      is_invocable_v<
-          function_type,
-          decay_t<Args>...>);
+  static_assert(is_invocable_v<function_type, decay_t<Args>...>);
 
   using state_type =
-      detail::async_state<
-          result_type,
-          function_type,
-          decay_t<Args>...>;
+      detail::async_state<result_type, function_type, decay_t<Args>...>;
 
   // This construction performs all decay-copy /
   // decay-move materialization in the thread that
   // called async, before any worker is started.
-  auto state =
-      make_shared<state_type>(
-          forward<F>(function),
-          forward<Args>(
-              arguments)...);
+  auto state = make_shared<state_type>(forward<F>(function),
+                                       forward<Args>(arguments)...);
 
-  const bool allow_async =
-      detail::launch_contains(
-          policy,
-          launch::async);
+  const bool allow_async = detail::launch_contains(policy, launch::async);
 
-  const bool allow_deferred =
-      detail::launch_contains(
-          policy,
-          launch::deferred);
+  const bool allow_deferred = detail::launch_contains(policy, launch::deferred);
 
   if (allow_async) {
 #if FTL_HAS_EXCEPTIONS
@@ -1503,13 +1506,10 @@ async(
 
       state->start_async(state);
 
-      return detail::future_access::
-          make_future<result_type>(
-              move(state));
+      return detail::future_access::make_future<result_type>(move(state));
 
 #if FTL_HAS_EXCEPTIONS
-    } catch (
-        const system_error &error) {
+    } catch (const system_error &error) {
       // Exact launch::async is required to
       // report failure to start a thread.
       //
@@ -1520,9 +1520,7 @@ async(
       // resource exhaustion error.
       if (!allow_deferred ||
           error.code() !=
-              make_error_code(
-                  errc::
-                      resource_unavailable_try_again)) {
+              make_error_code(errc::resource_unavailable_try_again)) {
         throw;
       }
     }
@@ -1532,9 +1530,7 @@ async(
   if (allow_deferred) {
     state->select_deferred();
 
-    return detail::future_access::
-        make_future<result_type>(
-            move(state));
+    return detail::future_access::make_future<result_type>(move(state));
   }
 
   // N4950 gives undefined behavior when no
@@ -1543,19 +1539,12 @@ async(
 }
 
 template <class F, class... Args>
-future<
-    invoke_result_t<
-        decay_t<F>,
-        decay_t<Args>...>>
-async(
-    F &&function,
-    Args &&...arguments) {
-  return FTL_FUTURE_NAMESPACE::async(
-      launch::async |
-          launch::deferred,
-      forward<F>(function),
-      forward<Args>(
-          arguments)...);
+[[nodiscard]]
+future<invoke_result_t<decay_t<F>, decay_t<Args>...>>
+async(F &&function, Args &&...arguments) {
+  return FTL_FUTURE_NAMESPACE::async(launch::async | launch::deferred,
+                                     forward<F>(function),
+                                     forward<Args>(arguments)...);
 }
 
 FTL_FUTURE_END_NAMESPACE

@@ -74,6 +74,43 @@ struct packaged_task_functor {
   long operator()(short value) const noexcept { return value * 3L; }
 };
 
+struct packaged_task_lvalue_only_functor {
+  int operator()(short value) & { return value + 1; }
+};
+
+struct packaged_task_rvalue_only_functor {
+  int operator()(short value) && { return value + 1; }
+};
+
+struct packaged_task_static_self_first {
+  static long operator()(packaged_task_static_self_first &,
+                         short value) noexcept {
+    return value * 2L;
+  }
+};
+
+template <class T>
+concept packaged_task_ctad_available =
+    requires(T &&value) { tested::packaged_task{tested::forward<T>(value)}; };
+
+static_assert(tested::is_same_v<decltype(tested::packaged_task{
+                                    packaged_task_lvalue_only_functor{}}),
+                                tested::packaged_task<int(short)>>);
+
+// N4950's deduction guide does not accept
+// an &&-qualified call operator.
+static_assert(!packaged_task_ctad_available<packaged_task_rvalue_only_functor>);
+
+// This is a static operator(), even though its
+// first ordinary parameter happens to look exactly
+// like an explicit object parameter.
+//
+// It must therefore KEEP that parameter.
+static_assert(
+    tested::is_same_v<
+        decltype(tested::packaged_task{packaged_task_static_self_first{}}),
+        tested::packaged_task<long(packaged_task_static_self_first &, short)>>);
+
 static_assert(tested::is_same_v<decltype(tested::packaged_task{
                                     &packaged_task_free_function}),
                                 tested::packaged_task<int(int)>>);
@@ -2009,6 +2046,86 @@ bool async_nonlast_shared_future_release_does_not_block() {
          survivor.get() == 72;
 }
 
+struct thread_exit_throwing_value {
+  explicit thread_exit_throwing_value(int input) : value(input) {}
+
+  thread_exit_throwing_value(const thread_exit_throwing_value &) = delete;
+
+  thread_exit_throwing_value(thread_exit_throwing_value &&other)
+      : value(other.value) {
+    if (value < 0)
+      throw value;
+  }
+
+  int value;
+};
+
+bool failed_thread_exit_store_does_not_publish() {
+  tested::promise<thread_exit_throwing_value> provider;
+
+  auto result = provider.get_future();
+
+  tested::atomic<bool> failed{false};
+  tested::atomic<bool> replacement_stored{false};
+  tested::atomic<bool> release{false};
+
+  tested::thread worker([provider = tested::move(provider), &failed,
+                         &replacement_stored, &release]() mutable {
+    try {
+      provider.set_value_at_thread_exit(thread_exit_throwing_value{-1});
+    } catch (int value) {
+      if (value == -1) {
+        failed.store(true, tested::memory_order_release);
+      }
+    }
+
+    // The failed attempt must have left the
+    // promise unsatisfied despite already
+    // having registered a dormant action.
+    provider.set_value_at_thread_exit(thread_exit_throwing_value{88});
+
+    replacement_stored.store(true, tested::memory_order_release);
+
+    while (!release.load(tested::memory_order_acquire)) {
+      tested::this_thread::yield();
+    }
+  });
+
+  while (!failed.load(tested::memory_order_acquire) ||
+         !replacement_stored.load(tested::memory_order_acquire)) {
+    tested::this_thread::yield();
+  }
+
+  // Neither the failed action nor the successfully
+  // armed action may make the state ready before
+  // thread exit.
+  const bool still_waiting = result.wait_for(tested::chrono::milliseconds{0}) ==
+                             tested::future_status::timeout;
+
+  release.store(true, tested::memory_order_release);
+
+  worker.join();
+
+  auto value = result.get();
+
+  return still_waiting && value.value == 88;
+}
+
+#if defined(__cpp_explicit_this_parameter)
+
+struct packaged_task_explicit_object_functor {
+  long operator()(this packaged_task_explicit_object_functor &,
+                  short value) noexcept {
+    return value * 3L;
+  }
+};
+
+static_assert(tested::is_same_v<decltype(tested::packaged_task{
+                                    packaged_task_explicit_object_functor{}}),
+                                tested::packaged_task<long(short)>>);
+
+#endif
+
 bool ftl_test() {
   return error_vocabulary_works() && value_state_works() &&
          reference_state_works() && void_state_works() &&
@@ -2066,5 +2183,6 @@ bool ftl_test() {
          deferred_decay_copies_arguments() && default_async_policy_works() &&
          async_wait_observes_thread_completion() &&
          async_last_future_release_blocks() &&
-         async_nonlast_shared_future_release_does_not_block();
+         async_nonlast_shared_future_release_does_not_block() &&
+         failed_thread_exit_store_does_not_publish();
 }
