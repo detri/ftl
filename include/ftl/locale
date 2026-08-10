@@ -1,0 +1,4336 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_LOCALE_HEADER
+#define FTL_LOCALE_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <atomic>
+#include <clocale>
+#include <cstddef>
+#include <cstdint>
+#include <cwchar>
+#include <cwctype>
+#include <detail/locale_runtime.hpp>
+#include <detail/rapidhash>
+#include <memory>
+#include <mutex>
+#include <stdexcept>
+#include <string>
+#include <type_traits>
+#include <typeinfo>
+#include <vector>
+#else
+#include <ftl/atomic>
+#include <ftl/clocale>
+#include <ftl/cstddef>
+#include <ftl/cstdint>
+#include <ftl/cwchar>
+#include <ftl/cwctype>
+#include <ftl/detail/locale_runtime.hpp>
+#include <ftl/detail/rapidhash>
+#include <ftl/memory>
+#include <ftl/mutex>
+#include <ftl/stdexcept>
+#include <ftl/string>
+#include <ftl/type_traits>
+#include <ftl/typeinfo>
+#include <ftl/vector>
+#endif
+
+#ifdef FTL_REPLACE_STL
+#define FTL_LOCALE_NAMESPACE std
+#else
+#define FTL_LOCALE_NAMESPACE ftl
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+class locale;
+
+template <class Facet> const Facet &use_facet(const locale &);
+
+template <class Facet> bool has_facet(const locale &) noexcept;
+
+namespace detail {
+struct locale_facet_control;
+struct locale_facet_slot;
+struct locale_state;
+} // namespace detail
+
+class locale {
+public:
+  class facet;
+  class id;
+
+  using category = int;
+
+  static constexpr category none = 0;
+  static constexpr category collate = 1 << 0;
+  static constexpr category ctype = 1 << 1;
+  static constexpr category monetary = 1 << 2;
+  static constexpr category numeric = 1 << 3;
+  static constexpr category time = 1 << 4;
+  static constexpr category messages = 1 << 5;
+  static constexpr category all =
+      collate | ctype | monetary | numeric | time | messages;
+
+  locale() noexcept;
+  locale(const locale &other) noexcept;
+
+  template <class Facet> locale(const locale &other, Facet *value);
+
+  ~locale();
+
+  const locale &operator=(const locale &other) noexcept;
+
+  template <class Facet> locale combine(const locale &other) const;
+
+  [[nodiscard]]
+  string name() const;
+
+  [[nodiscard]]
+  bool operator==(const locale &other) const;
+
+  template <class Character, class Traits, class Allocator>
+  bool
+  operator()(const basic_string<Character, Traits, Allocator> &left,
+             const basic_string<Character, Traits, Allocator> &right) const;
+
+  static locale global(const locale &value);
+
+  [[nodiscard]]
+  static const locale &classic();
+
+private:
+  struct adopt_state_t {};
+
+  explicit locale(detail::locale_state *state, adopt_state_t) noexcept
+      : state_(state) {}
+
+  detail::locale_state *state_;
+
+  template <class Facet> friend const Facet &use_facet(const locale &);
+
+  template <class Facet> friend bool has_facet(const locale &) noexcept;
+};
+
+class locale::facet {
+protected:
+  explicit facet(size_t refs = 0) : refs_(refs) {}
+
+  virtual ~facet() = default;
+
+  facet(const facet &) = delete;
+  void operator=(const facet &) = delete;
+
+private:
+  size_t refs_;
+
+  friend struct detail::locale_facet_control;
+};
+
+class locale::id {
+public:
+  id() = default;
+
+  id(const id &) = delete;
+  void operator=(const id &) = delete;
+};
+
+class ctype_base {
+public:
+  using mask = unsigned short;
+
+  inline static constexpr mask space = 1u << 0;
+  inline static constexpr mask print = 1u << 1;
+  inline static constexpr mask cntrl = 1u << 2;
+  inline static constexpr mask upper = 1u << 3;
+  inline static constexpr mask lower = 1u << 4;
+  inline static constexpr mask alpha = 1u << 5;
+  inline static constexpr mask digit = 1u << 6;
+  inline static constexpr mask punct = 1u << 7;
+  inline static constexpr mask xdigit = 1u << 8;
+  inline static constexpr mask blank = 1u << 9;
+
+  inline static constexpr mask alnum = alpha | digit;
+  inline static constexpr mask graph = alnum | punct;
+};
+
+namespace detail {
+
+[[nodiscard]]
+constexpr ctype_base::mask ctype_ascii_mask(unsigned int value) noexcept {
+  using mask = ctype_base::mask;
+
+  const bool upper = value >= static_cast<unsigned>('A') &&
+                     value <= static_cast<unsigned>('Z');
+
+  const bool lower = value >= static_cast<unsigned>('a') &&
+                     value <= static_cast<unsigned>('z');
+
+  const bool alpha = upper || lower;
+
+  const bool digit = value >= static_cast<unsigned>('0') &&
+                     value <= static_cast<unsigned>('9');
+
+  const bool xdigit = digit ||
+                      (value >= static_cast<unsigned>('A') &&
+                       value <= static_cast<unsigned>('F')) ||
+                      (value >= static_cast<unsigned>('a') &&
+                       value <= static_cast<unsigned>('f'));
+
+  const bool space = value == static_cast<unsigned>(' ') ||
+                     value == static_cast<unsigned>('\t') ||
+                     value == static_cast<unsigned>('\n') ||
+                     value == static_cast<unsigned>('\v') ||
+                     value == static_cast<unsigned>('\f') ||
+                     value == static_cast<unsigned>('\r');
+
+  const bool blank = value == static_cast<unsigned>(' ') ||
+                     value == static_cast<unsigned>('\t');
+
+  const bool cntrl = value <= 0x1fu || value == 0x7fu;
+  const bool print = value >= 0x20u && value <= 0x7eu;
+  const bool graph = value >= 0x21u && value <= 0x7eu;
+  const bool punct = graph && !alpha && !digit;
+
+  mask result = 0;
+
+  if (space)
+    result |= ctype_base::space;
+
+  if (print)
+    result |= ctype_base::print;
+
+  if (cntrl)
+    result |= ctype_base::cntrl;
+
+  if (upper)
+    result |= ctype_base::upper;
+
+  if (lower)
+    result |= ctype_base::lower;
+
+  if (alpha)
+    result |= ctype_base::alpha;
+
+  if (digit)
+    result |= ctype_base::digit;
+
+  if (punct)
+    result |= ctype_base::punct;
+
+  if (xdigit)
+    result |= ctype_base::xdigit;
+
+  if (blank)
+    result |= ctype_base::blank;
+
+  return result;
+}
+
+struct ctype_classic_table_storage {
+  ctype_base::mask values[256]{};
+
+  constexpr ctype_classic_table_storage() {
+    for (size_t index = 0; index < 256; ++index)
+      values[index] = ctype_ascii_mask(static_cast<unsigned int>(index));
+  }
+};
+
+inline constexpr ctype_classic_table_storage ctype_classic_table{};
+
+[[nodiscard]]
+inline ctype_base::mask ctype_wide_mask(wchar_t value) noexcept {
+  ctype_base::mask result = 0;
+
+  const wint_t wide = static_cast<wint_t>(value);
+
+  if (iswspace(wide))
+    result |= ctype_base::space;
+
+  if (iswprint(wide))
+    result |= ctype_base::print;
+
+  if (iswcntrl(wide))
+    result |= ctype_base::cntrl;
+
+  if (iswupper(wide))
+    result |= ctype_base::upper;
+
+  if (iswlower(wide))
+    result |= ctype_base::lower;
+
+  if (iswalpha(wide))
+    result |= ctype_base::alpha;
+
+  if (iswdigit(wide))
+    result |= ctype_base::digit;
+
+  if (iswpunct(wide))
+    result |= ctype_base::punct;
+
+  if (iswxdigit(wide))
+    result |= ctype_base::xdigit;
+
+  if (iswblank(wide))
+    result |= ctype_base::blank;
+
+  return result;
+}
+
+} // namespace detail
+
+template <class Character>
+class ctype : public locale::facet, public ctype_base {
+  static_assert(is_same_v<Character, wchar_t>,
+                "FTL provides standard ctype specializations for char and "
+                "wchar_t");
+
+public:
+  using char_type = Character;
+
+  explicit ctype(size_t refs = 0) : locale::facet(refs) {}
+
+  [[nodiscard]]
+  bool is(mask requested, char_type value) const {
+    return do_is(requested, value);
+  }
+
+  const char_type *is(const char_type *low, const char_type *high,
+                      mask *output) const {
+    return do_is(low, high, output);
+  }
+
+  [[nodiscard]]
+  const char_type *scan_is(mask requested, const char_type *low,
+                           const char_type *high) const {
+    return do_scan_is(requested, low, high);
+  }
+
+  [[nodiscard]]
+  const char_type *scan_not(mask requested, const char_type *low,
+                            const char_type *high) const {
+    return do_scan_not(requested, low, high);
+  }
+
+  [[nodiscard]]
+  char_type toupper(char_type value) const {
+    return do_toupper(value);
+  }
+
+  const char_type *toupper(char_type *low, const char_type *high) const {
+    return do_toupper(low, high);
+  }
+
+  [[nodiscard]]
+  char_type tolower(char_type value) const {
+    return do_tolower(value);
+  }
+
+  const char_type *tolower(char_type *low, const char_type *high) const {
+    return do_tolower(low, high);
+  }
+
+  [[nodiscard]]
+  char_type widen(char value) const {
+    return do_widen(value);
+  }
+
+  const char *widen(const char *low, const char *high,
+                    char_type *output) const {
+    return do_widen(low, high, output);
+  }
+
+  [[nodiscard]]
+  char narrow(char_type value, char fallback) const {
+    return do_narrow(value, fallback);
+  }
+
+  const char_type *narrow(const char_type *low, const char_type *high,
+                          char fallback, char *output) const {
+    return do_narrow(low, high, fallback, output);
+  }
+
+  inline static locale::id id{};
+
+protected:
+  ~ctype() override = default;
+
+  virtual bool do_is(mask requested, char_type value) const {
+    return (detail::ctype_wide_mask(static_cast<wchar_t>(value)) & requested) !=
+           0;
+  }
+
+  virtual const char_type *do_is(const char_type *low, const char_type *high,
+                                 mask *output) const {
+    for (const char_type *current = low; current != high; ++current)
+      *output++ = detail::ctype_wide_mask(static_cast<wchar_t>(*current));
+
+    return high;
+  }
+
+  virtual const char_type *do_scan_is(mask requested, const char_type *low,
+                                      const char_type *high) const {
+    while (low != high) {
+      if (do_is(requested, *low))
+        break;
+
+      ++low;
+    }
+
+    return low;
+  }
+
+  virtual const char_type *do_scan_not(mask requested, const char_type *low,
+                                       const char_type *high) const {
+    while (low != high) {
+      if (!do_is(requested, *low))
+        break;
+
+      ++low;
+    }
+
+    return low;
+  }
+
+  virtual char_type do_toupper(char_type value) const {
+    return static_cast<char_type>(towupper(static_cast<wint_t>(value)));
+  }
+
+  virtual const char_type *do_toupper(char_type *low,
+                                      const char_type *high) const {
+    for (char_type *current = low; current != high; ++current)
+      *current = do_toupper(*current);
+
+    return high;
+  }
+
+  virtual char_type do_tolower(char_type value) const {
+    return static_cast<char_type>(towlower(static_cast<wint_t>(value)));
+  }
+
+  virtual const char_type *do_tolower(char_type *low,
+                                      const char_type *high) const {
+    for (char_type *current = low; current != high; ++current)
+      *current = do_tolower(*current);
+
+    return high;
+  }
+
+  virtual char_type do_widen(char value) const {
+    return static_cast<char_type>(static_cast<unsigned char>(value));
+  }
+
+  virtual const char *do_widen(const char *low, const char *high,
+                               char_type *output) const {
+    while (low != high)
+      *output++ = do_widen(*low++);
+
+    return high;
+  }
+
+  virtual char do_narrow(char_type value, char fallback) const {
+    if constexpr (is_signed_v<char_type>) {
+      if (value < 0)
+        return fallback;
+    }
+
+    const auto numeric = static_cast<unsigned long long>(value);
+
+    if (numeric <= 0x7fu)
+      return static_cast<char>(numeric);
+
+    return fallback;
+  }
+
+  virtual const char_type *do_narrow(const char_type *low,
+                                     const char_type *high, char fallback,
+                                     char *output) const {
+    while (low != high)
+      *output++ = do_narrow(*low++, fallback);
+
+    return high;
+  }
+};
+
+template <> class ctype<char> : public locale::facet, public ctype_base {
+public:
+  using char_type = char;
+
+  explicit ctype(const mask *table = nullptr, bool delete_table = false,
+                 size_t refs = 0)
+      : locale::facet(refs), table_(table),
+        delete_table_(table != nullptr && delete_table) {}
+
+  [[nodiscard]]
+  bool is(mask requested, char value) const {
+    return (table()[static_cast<unsigned char>(value)] & requested) != 0;
+  }
+
+  const char *is(const char *low, const char *high, mask *output) const {
+    while (low != high) {
+      *output++ = table()[static_cast<unsigned char>(*low++)];
+    }
+
+    return high;
+  }
+
+  [[nodiscard]]
+  const char *scan_is(mask requested, const char *low, const char *high) const {
+    while (low != high) {
+      if ((table()[static_cast<unsigned char>(*low)] & requested) != 0)
+        break;
+
+      ++low;
+    }
+
+    return low;
+  }
+
+  [[nodiscard]]
+  const char *scan_not(mask requested, const char *low,
+                       const char *high) const {
+    while (low != high) {
+      if ((table()[static_cast<unsigned char>(*low)] & requested) == 0)
+        break;
+
+      ++low;
+    }
+
+    return low;
+  }
+
+  [[nodiscard]]
+  char toupper(char value) const {
+    return do_toupper(value);
+  }
+
+  const char *toupper(char *low, const char *high) const {
+    return do_toupper(low, high);
+  }
+
+  [[nodiscard]]
+  char tolower(char value) const {
+    return do_tolower(value);
+  }
+
+  const char *tolower(char *low, const char *high) const {
+    return do_tolower(low, high);
+  }
+
+  [[nodiscard]]
+  char widen(char value) const {
+    return do_widen(value);
+  }
+
+  const char *widen(const char *low, const char *high, char *output) const {
+    return do_widen(low, high, output);
+  }
+
+  [[nodiscard]]
+  char narrow(char value, char fallback) const {
+    return do_narrow(value, fallback);
+  }
+
+  const char *narrow(const char *low, const char *high, char fallback,
+                     char *output) const {
+    return do_narrow(low, high, fallback, output);
+  }
+
+  inline static locale::id id{};
+
+  inline static constexpr size_t table_size = 256;
+
+  [[nodiscard]]
+  const mask *table() const noexcept {
+    return table_ != nullptr ? table_ : classic_table();
+  }
+
+  [[nodiscard]]
+  static const mask *classic_table() noexcept {
+    return detail::ctype_classic_table.values;
+  }
+
+protected:
+  ~ctype() override {
+    if (delete_table_)
+      delete[] table_;
+  }
+
+  virtual char do_toupper(char value) const {
+    const unsigned char character = static_cast<unsigned char>(value);
+
+    if (character >= static_cast<unsigned char>('a') &&
+        character <= static_cast<unsigned char>('z')) {
+      return static_cast<char>(character - static_cast<unsigned char>('a') +
+                               static_cast<unsigned char>('A'));
+    }
+
+    return value;
+  }
+
+  virtual const char *do_toupper(char *low, const char *high) const {
+    for (char *current = low; current != high; ++current)
+      *current = do_toupper(*current);
+
+    return high;
+  }
+
+  virtual char do_tolower(char value) const {
+    const unsigned char character = static_cast<unsigned char>(value);
+
+    if (character >= static_cast<unsigned char>('A') &&
+        character <= static_cast<unsigned char>('Z')) {
+      return static_cast<char>(character - static_cast<unsigned char>('A') +
+                               static_cast<unsigned char>('a'));
+    }
+
+    return value;
+  }
+
+  virtual const char *do_tolower(char *low, const char *high) const {
+    for (char *current = low; current != high; ++current)
+      *current = do_tolower(*current);
+
+    return high;
+  }
+
+  virtual char do_widen(char value) const { return value; }
+
+  virtual const char *do_widen(const char *low, const char *high,
+                               char *output) const {
+    while (low != high)
+      *output++ = *low++;
+
+    return high;
+  }
+
+  virtual char do_narrow(char value, char) const { return value; }
+
+  virtual const char *do_narrow(const char *low, const char *high, char,
+                                char *output) const {
+    while (low != high)
+      *output++ = *low++;
+
+    return high;
+  }
+
+private:
+  const mask *table_;
+  bool delete_table_;
+};
+
+// Named facets come with the named-locale runtime in the next slice.
+template <class Character> class ctype_byname;
+
+namespace detail {
+
+[[noreturn]]
+inline void locale_named_ctype_failure() {
+#if defined(FTL_NO_EXCEPTIONS)
+  terminate();
+#else
+  throw runtime_error("ctype_byname");
+#endif
+}
+
+struct locale_named_ctype_context {
+  ftl_locale_runtime::native_handle native;
+
+  explicit locale_named_ctype_context(const char *name)
+      : native(ftl_locale_runtime::create_ctype(name)) {
+    if (native == nullptr)
+      locale_named_ctype_failure();
+  }
+
+  locale_named_ctype_context(const locale_named_ctype_context &) = delete;
+
+  locale_named_ctype_context &
+  operator=(const locale_named_ctype_context &) = delete;
+
+  ~locale_named_ctype_context() { ftl_locale_runtime::destroy(native); }
+};
+
+[[nodiscard]]
+inline ctype_base::mask
+locale_named_ctype_byte_mask(ftl_locale_runtime::native_handle native,
+                             unsigned char value) noexcept {
+  using runtime_class = ftl_locale_runtime::classification;
+
+  ctype_base::mask result = 0;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::space))
+    result |= ctype_base::space;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::print))
+    result |= ctype_base::print;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::cntrl))
+    result |= ctype_base::cntrl;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::upper))
+    result |= ctype_base::upper;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::lower))
+    result |= ctype_base::lower;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::alpha))
+    result |= ctype_base::alpha;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::digit))
+    result |= ctype_base::digit;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::punct))
+    result |= ctype_base::punct;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::xdigit))
+    result |= ctype_base::xdigit;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::blank))
+    result |= ctype_base::blank;
+
+  return result;
+}
+
+[[nodiscard]]
+inline ctype_base::mask
+locale_named_ctype_wide_mask(ftl_locale_runtime::native_handle native,
+                             wchar_t value) noexcept {
+  using runtime_class = ftl_locale_runtime::classification;
+
+  ctype_base::mask result = 0;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::space))
+    result |= ctype_base::space;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::print))
+    result |= ctype_base::print;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::cntrl))
+    result |= ctype_base::cntrl;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::upper))
+    result |= ctype_base::upper;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::lower))
+    result |= ctype_base::lower;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::alpha))
+    result |= ctype_base::alpha;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::digit))
+    result |= ctype_base::digit;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::punct))
+    result |= ctype_base::punct;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::xdigit))
+    result |= ctype_base::xdigit;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::blank))
+    result |= ctype_base::blank;
+
+  return result;
+}
+
+struct locale_named_ctype_char_context : locale_named_ctype_context {
+  ctype_base::mask table[ctype<char>::table_size]{};
+
+  explicit locale_named_ctype_char_context(const char *name)
+      : locale_named_ctype_context(name) {
+    for (size_t index = 0; index < ctype<char>::table_size; ++index) {
+      table[index] = locale_named_ctype_byte_mask(
+          native, static_cast<unsigned char>(index));
+    }
+  }
+};
+
+} // namespace detail
+
+template <> class ctype_byname<char> : public ctype<char> {
+public:
+  using mask = typename ctype<char>::mask;
+
+  explicit ctype_byname(const char *name, size_t refs = 0)
+      : ctype_byname(new detail::locale_named_ctype_char_context(name), refs) {}
+
+  explicit ctype_byname(const string &name, size_t refs = 0)
+      : ctype_byname(name.c_str(), refs) {}
+
+protected:
+  ~ctype_byname() override { delete context_; }
+
+  char do_toupper(char value) const override {
+    return ftl_locale_runtime::toupper_byte(context_->native, value);
+  }
+
+  const char *do_toupper(char *low, const char *high) const override {
+    for (char *current = low; current != high; ++current) {
+      *current = do_toupper(*current);
+    }
+
+    return high;
+  }
+
+  char do_tolower(char value) const override {
+    return ftl_locale_runtime::tolower_byte(context_->native, value);
+  }
+
+  const char *do_tolower(char *low, const char *high) const override {
+    for (char *current = low; current != high; ++current) {
+      *current = do_tolower(*current);
+    }
+
+    return high;
+  }
+
+private:
+  explicit ctype_byname(detail::locale_named_ctype_char_context *context,
+                        size_t refs)
+      : ctype<char>(context->table, false, refs), context_(context) {}
+
+  detail::locale_named_ctype_char_context *context_;
+};
+
+template <> class ctype_byname<wchar_t> : public ctype<wchar_t> {
+public:
+  using mask = typename ctype<wchar_t>::mask;
+
+  explicit ctype_byname(const char *name, size_t refs = 0)
+      : ctype<wchar_t>(refs),
+        context_(new detail::locale_named_ctype_context(name)) {}
+
+  explicit ctype_byname(const string &name, size_t refs = 0)
+      : ctype_byname(name.c_str(), refs) {}
+
+protected:
+  ~ctype_byname() override { delete context_; }
+
+  bool do_is(mask requested, wchar_t value) const override {
+    return (detail::locale_named_ctype_wide_mask(context_->native, value) &
+            requested) != 0;
+  }
+
+  const wchar_t *do_is(const wchar_t *low, const wchar_t *high,
+                       mask *output) const override {
+    while (low != high) {
+      *output++ =
+          detail::locale_named_ctype_wide_mask(context_->native, *low++);
+    }
+
+    return high;
+  }
+
+  const wchar_t *do_scan_is(mask requested, const wchar_t *low,
+                            const wchar_t *high) const override {
+    while (low != high) {
+      if (do_is(requested, *low))
+        break;
+
+      ++low;
+    }
+
+    return low;
+  }
+
+  const wchar_t *do_scan_not(mask requested, const wchar_t *low,
+                             const wchar_t *high) const override {
+    while (low != high) {
+      if (!do_is(requested, *low))
+        break;
+
+      ++low;
+    }
+
+    return low;
+  }
+
+  wchar_t do_toupper(wchar_t value) const override {
+    return ftl_locale_runtime::toupper_wide(context_->native, value);
+  }
+
+  const wchar_t *do_toupper(wchar_t *low, const wchar_t *high) const override {
+    for (wchar_t *current = low; current != high; ++current) {
+      *current = do_toupper(*current);
+    }
+
+    return high;
+  }
+
+  wchar_t do_tolower(wchar_t value) const override {
+    return ftl_locale_runtime::tolower_wide(context_->native, value);
+  }
+
+  const wchar_t *do_tolower(wchar_t *low, const wchar_t *high) const override {
+    for (wchar_t *current = low; current != high; ++current) {
+      *current = do_tolower(*current);
+    }
+
+    return high;
+  }
+
+  wchar_t do_widen(char value) const override {
+    return ftl_locale_runtime::widen(context_->native, value);
+  }
+
+  const char *do_widen(const char *low, const char *high,
+                       wchar_t *output) const override {
+    while (low != high)
+      *output++ = do_widen(*low++);
+
+    return high;
+  }
+
+  char do_narrow(wchar_t value, char fallback) const override {
+    return ftl_locale_runtime::narrow(context_->native, value, fallback);
+  }
+
+  const wchar_t *do_narrow(const wchar_t *low, const wchar_t *high,
+                           char fallback, char *output) const override {
+    while (low != high)
+      *output++ = do_narrow(*low++, fallback);
+
+    return high;
+  }
+
+private:
+  detail::locale_named_ctype_context *context_;
+};
+
+namespace detail {
+
+template <class Character>
+[[nodiscard]]
+inline long collate_hash_range(const Character *low,
+                               const Character *high) noexcept {
+  if (low == high)
+    return 0;
+
+  const size_t count = static_cast<size_t>(high - low);
+
+  const auto value = ftl_rapidhash::rapidhash(low, count * sizeof(Character));
+
+  const unsigned long folded =
+      static_cast<unsigned long>(value) ^
+      static_cast<unsigned long>(value >> (sizeof(unsigned long) * 4));
+
+  const unsigned long positive_mask = static_cast<unsigned long>(-1) >> 1;
+
+  return static_cast<long>(folded & positive_mask);
+}
+
+template <class Character>
+[[nodiscard]]
+inline int collate_lexicographical_compare(const Character *low1,
+                                           const Character *high1,
+                                           const Character *low2,
+                                           const Character *high2) noexcept {
+  while (low1 != high1 && low2 != high2) {
+    if (char_traits<Character>::lt(*low1, *low2))
+      return -1;
+
+    if (char_traits<Character>::lt(*low2, *low1))
+      return 1;
+
+    ++low1;
+    ++low2;
+  }
+
+  if (low1 != high1)
+    return 1;
+
+  if (low2 != high2)
+    return -1;
+
+  return 0;
+}
+
+} // namespace detail
+
+template <class Character> class collate : public locale::facet {
+  static_assert(is_same_v<Character, char> || is_same_v<Character, wchar_t>,
+                "FTL provides the standard collate specializations for "
+                "char and wchar_t");
+
+public:
+  using char_type = Character;
+  using string_type = basic_string<Character>;
+
+  explicit collate(size_t refs = 0) : locale::facet(refs) {}
+
+  [[nodiscard]]
+  int compare(const Character *low1, const Character *high1,
+              const Character *low2, const Character *high2) const {
+    return do_compare(low1, high1, low2, high2);
+  }
+
+  [[nodiscard]]
+  string_type transform(const Character *low, const Character *high) const {
+    return do_transform(low, high);
+  }
+
+  [[nodiscard]]
+  long hash(const Character *low, const Character *high) const {
+    return do_hash(low, high);
+  }
+
+  inline static locale::id id{};
+
+protected:
+  ~collate() override = default;
+
+  virtual int do_compare(const Character *low1, const Character *high1,
+                         const Character *low2, const Character *high2) const {
+    while (low1 != high1 && low2 != high2) {
+      if (char_traits<Character>::lt(*low1, *low2))
+        return -1;
+
+      if (char_traits<Character>::lt(*low2, *low1))
+        return 1;
+
+      ++low1;
+      ++low2;
+    }
+
+    if (low1 != high1)
+      return 1;
+
+    if (low2 != high2)
+      return -1;
+
+    return 0;
+  }
+
+  virtual string_type do_transform(const Character *low,
+                                   const Character *high) const {
+    return string_type(low, high);
+  }
+
+  virtual long do_hash(const Character *low, const Character *high) const {
+    return detail::collate_hash_range(low, high);
+  }
+};
+
+namespace detail {
+
+[[noreturn]]
+inline void locale_named_collate_failure() {
+#if defined(FTL_NO_EXCEPTIONS)
+  terminate();
+#else
+  throw runtime_error("collate_byname");
+#endif
+}
+
+struct locale_named_collate_context {
+  ftl_locale_runtime::native_handle native;
+
+  explicit locale_named_collate_context(const char *name)
+      : native(ftl_locale_runtime::create_collate(name)) {
+    if (native == nullptr)
+      locale_named_collate_failure();
+  }
+
+  locale_named_collate_context(const locale_named_collate_context &) = delete;
+
+  locale_named_collate_context &
+  operator=(const locale_named_collate_context &) = delete;
+
+  ~locale_named_collate_context() { ftl_locale_runtime::destroy(native); }
+};
+
+template <class Character>
+[[nodiscard]]
+inline size_t
+locale_collate_transform_size(ftl_locale_runtime::native_handle native,
+                              const Character *source);
+
+template <>
+inline size_t
+locale_collate_transform_size<char>(ftl_locale_runtime::native_handle native,
+                                    const char *source) {
+  return ftl_locale_runtime::transform_byte(native, nullptr, source, 0);
+}
+
+template <>
+inline size_t
+locale_collate_transform_size<wchar_t>(ftl_locale_runtime::native_handle native,
+                                       const wchar_t *source) {
+  return ftl_locale_runtime::transform_wide(native, nullptr, source, 0);
+}
+
+template <class Character>
+inline void
+locale_collate_transform_into(ftl_locale_runtime::native_handle native,
+                              Character *destination, size_t count,
+                              const Character *source);
+
+template <>
+inline void
+locale_collate_transform_into<char>(ftl_locale_runtime::native_handle native,
+                                    char *destination, size_t count,
+                                    const char *source) {
+  (void)ftl_locale_runtime::transform_byte(native, destination, source, count);
+}
+
+template <>
+inline void
+locale_collate_transform_into<wchar_t>(ftl_locale_runtime::native_handle native,
+                                       wchar_t *destination, size_t count,
+                                       const wchar_t *source) {
+  (void)ftl_locale_runtime::transform_wide(native, destination, source, count);
+}
+
+template <class Character>
+[[nodiscard]]
+inline basic_string<Character>
+locale_named_collate_transform(ftl_locale_runtime::native_handle native,
+                               const Character *low, const Character *high) {
+  basic_string<Character> result;
+
+  const Character *current = low;
+
+  for (;;) {
+    const Character *segment_end = current;
+
+    while (segment_end != high && *segment_end != Character{}) {
+      ++segment_end;
+    }
+
+    basic_string<Character> source(current, segment_end);
+
+    const size_t required =
+        locale_collate_transform_size<Character>(native, source.c_str());
+
+    basic_string<Character> transformed(required + 1, Character{});
+
+    locale_collate_transform_into<Character>(native, transformed.data(),
+                                             required + 1, source.c_str());
+
+    transformed.resize(required);
+
+    //
+    // Encode transformed units as:
+    //
+    //     1, unit, 1, unit, ..., 0
+    //
+    // This preserves lexicographical ordering of each CRT
+    // transform while also preserving embedded NUL characters
+    // from the original C++ [low, high) range. The C runtime's
+    // xfrm API itself is NUL-terminated.
+    //
+    result.reserve(result.size() + transformed.size() * 2 + 1);
+
+    for (Character value : transformed) {
+      result.push_back(static_cast<Character>(1));
+
+      result.push_back(value);
+    }
+
+    result.push_back(Character{});
+
+    if (segment_end == high)
+      break;
+
+    current = segment_end + 1;
+  }
+
+  return result;
+}
+
+template <class Character>
+[[nodiscard]]
+inline long
+locale_named_collate_hash(const basic_string<Character> &key) noexcept {
+  return collate_hash_range(key.data(), key.data() + key.size());
+}
+
+struct locale_named_numeric_snapshot {
+  string decimal_point;
+  string thousands_sep;
+  string grouping;
+};
+
+[[noreturn]]
+inline void locale_named_numpunct_failure() {
+#if FTL_HAS_EXCEPTIONS
+  throw runtime_error("numpunct_byname");
+#else
+  terminate();
+#endif
+}
+
+#if defined(_WIN32)
+
+inline string locale_current_numeric_name() {
+  const char *current = ::setlocale(LC_NUMERIC, nullptr);
+
+  return current != nullptr ? string(current) : string("C");
+}
+
+class locale_windows_numeric_scope {
+public:
+  explicit locale_windows_numeric_scope(const char *name)
+      : previous_name_(locale_current_numeric_name()),
+        previous_mode_(ftl_locale_runtime::_configthreadlocale(1)),
+        active_(false) {
+    if (previous_mode_ == -1)
+      locale_named_numpunct_failure();
+
+    if (::setlocale(LC_NUMERIC, name) == nullptr) {
+      if (previous_mode_ == 2) {
+        (void)ftl_locale_runtime::_configthreadlocale(2);
+      }
+
+      locale_named_numpunct_failure();
+    }
+
+    active_ = true;
+  }
+
+  locale_windows_numeric_scope(const locale_windows_numeric_scope &) = delete;
+
+  locale_windows_numeric_scope &
+  operator=(const locale_windows_numeric_scope &) = delete;
+
+  ~locale_windows_numeric_scope() {
+    if (active_) {
+      (void)::setlocale(LC_NUMERIC, previous_name_.c_str());
+    }
+
+    if (previous_mode_ == 2) {
+      (void)ftl_locale_runtime::_configthreadlocale(2);
+    }
+  }
+
+private:
+  string previous_name_;
+  int previous_mode_;
+  bool active_;
+};
+
+#else
+
+class locale_posix_numeric_scope {
+public:
+  explicit locale_posix_numeric_scope(ftl_locale_runtime::native_handle locale)
+      : previous_(ftl_locale_runtime::uselocale(locale)) {
+    if (previous_ == nullptr)
+      locale_named_numpunct_failure();
+  }
+
+  locale_posix_numeric_scope(const locale_posix_numeric_scope &) = delete;
+
+  locale_posix_numeric_scope &
+  operator=(const locale_posix_numeric_scope &) = delete;
+
+  ~locale_posix_numeric_scope() {
+    (void)ftl_locale_runtime::uselocale(previous_);
+  }
+
+private:
+  ftl_locale_runtime::native_handle previous_;
+};
+
+#endif
+
+inline locale_named_numeric_snapshot
+locale_load_numeric_snapshot(const char *name,
+                             ftl_locale_runtime::native_handle native) {
+#if defined(_WIN32)
+  locale_windows_numeric_scope scope(name);
+#else
+  locale_posix_numeric_scope scope(native);
+  (void)name;
+#endif
+
+  ::lconv *information = ::localeconv();
+
+  if (information == nullptr)
+    locale_named_numpunct_failure();
+
+  locale_named_numeric_snapshot result;
+
+  if (information->decimal_point != nullptr)
+    result.decimal_point = information->decimal_point;
+
+  if (information->thousands_sep != nullptr)
+    result.thousands_sep = information->thousands_sep;
+
+  if (information->grouping != nullptr)
+    result.grouping = information->grouping;
+
+  return result;
+}
+
+struct locale_named_numpunct_context {
+  ftl_locale_runtime::native_handle native{};
+  locale_named_numeric_snapshot punctuation;
+
+  explicit locale_named_numpunct_context(const char *name)
+      : native(ftl_locale_runtime::create_numeric(name)) {
+    if (native == nullptr)
+      locale_named_numpunct_failure();
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+      punctuation = locale_load_numeric_snapshot(name, native);
+    } catch (...) {
+      ftl_locale_runtime::destroy(native);
+      native = nullptr;
+      throw;
+    }
+#else
+    punctuation = locale_load_numeric_snapshot(name, native);
+#endif
+  }
+
+  locale_named_numpunct_context(const locale_named_numpunct_context &) = delete;
+
+  locale_named_numpunct_context &
+  operator=(const locale_named_numpunct_context &) = delete;
+
+  ~locale_named_numpunct_context() { ftl_locale_runtime::destroy(native); }
+};
+
+template <class Character>
+[[nodiscard]]
+inline Character
+locale_named_numeric_character(const locale_named_numpunct_context &context,
+                               const string &value, char fallback) noexcept {
+  if (value.empty())
+    return static_cast<Character>(fallback);
+
+  if constexpr (is_same_v<Character, char>) {
+    return value[0];
+  } else {
+    return ftl_locale_runtime::widen_first(context.native, value.c_str(),
+                                           static_cast<wchar_t>(fallback));
+  }
+}
+
+template <class Character>
+[[nodiscard]]
+inline basic_string<Character> locale_ascii_string(const char *value) {
+  basic_string<Character> result;
+
+  while (*value != '\0') {
+    result.push_back(static_cast<Character>(*value++));
+  }
+
+  return result;
+}
+
+enum class codecvt_decode_status { complete, partial, error };
+
+struct codecvt_decoded_scalar {
+  codecvt_decode_status status;
+  unsigned value;
+  size_t units;
+};
+
+[[nodiscard]]
+constexpr bool codecvt_valid_scalar(unsigned value) noexcept {
+  return value <= 0x10ffffu && !(value >= 0xd800u && value <= 0xdfffu);
+}
+
+template <class Byte>
+[[nodiscard]]
+inline codecvt_decoded_scalar codecvt_decode_utf8(const Byte *first,
+                                                  const Byte *last) noexcept {
+  static_assert(is_same_v<Byte, char> || is_same_v<Byte, char8_t>);
+
+  if (first == last)
+    return {codecvt_decode_status::partial, 0, 0};
+
+  const unsigned first_byte = static_cast<unsigned char>(*first);
+
+  if (first_byte <= 0x7fu) {
+    return {codecvt_decode_status::complete, first_byte, 1};
+  }
+
+  unsigned count = 0;
+  unsigned value = 0;
+  unsigned minimum = 0;
+
+  if (first_byte >= 0xc2u && first_byte <= 0xdfu) {
+    count = 2;
+    value = first_byte & 0x1fu;
+    minimum = 0x80u;
+  } else if (first_byte >= 0xe0u && first_byte <= 0xefu) {
+    count = 3;
+    value = first_byte & 0x0fu;
+    minimum = 0x800u;
+  } else if (first_byte >= 0xf0u && first_byte <= 0xf4u) {
+    count = 4;
+    value = first_byte & 0x07u;
+    minimum = 0x10000u;
+  } else {
+    return {codecvt_decode_status::error, 0, 0};
+  }
+
+  if (static_cast<size_t>(last - first) < count) {
+    return {codecvt_decode_status::partial, 0, 0};
+  }
+
+  for (unsigned index = 1; index < count; ++index) {
+    const unsigned byte = static_cast<unsigned char>(first[index]);
+
+    if (byte < 0x80u || byte > 0xbfu) {
+      return {codecvt_decode_status::error, 0, 0};
+    }
+
+    value = (value << 6u) | (byte & 0x3fu);
+  }
+
+  if (value < minimum || !codecvt_valid_scalar(value)) {
+    return {codecvt_decode_status::error, 0, 0};
+  }
+
+  return {codecvt_decode_status::complete, value, count};
+}
+
+[[nodiscard]]
+inline codecvt_decoded_scalar
+codecvt_decode_utf16(const char16_t *first, const char16_t *last) noexcept {
+  if (first == last)
+    return {codecvt_decode_status::partial, 0, 0};
+
+  const unsigned first_unit = static_cast<unsigned>(*first);
+
+  if (first_unit >= 0xd800u && first_unit <= 0xdbffu) {
+    if (last - first < 2) {
+      return {codecvt_decode_status::partial, 0, 0};
+    }
+
+    const unsigned second_unit = static_cast<unsigned>(first[1]);
+
+    if (second_unit < 0xdc00u || second_unit > 0xdfffu) {
+      return {codecvt_decode_status::error, 0, 0};
+    }
+
+    return {codecvt_decode_status::complete,
+            0x10000u + ((first_unit - 0xd800u) << 10u) +
+                (second_unit - 0xdc00u),
+            2};
+  }
+
+  if (first_unit >= 0xdc00u && first_unit <= 0xdfffu) {
+    return {codecvt_decode_status::error, 0, 0};
+  }
+
+  return {codecvt_decode_status::complete, first_unit, 1};
+}
+
+template <class Byte>
+[[nodiscard]]
+inline size_t codecvt_encode_utf8(unsigned value, Byte (&output)[4]) noexcept {
+  static_assert(is_same_v<Byte, char> || is_same_v<Byte, char8_t>);
+
+  if (!codecvt_valid_scalar(value))
+    return 0;
+
+  if (value <= 0x7fu) {
+    output[0] = static_cast<Byte>(value);
+
+    return 1;
+  }
+
+  if (value <= 0x7ffu) {
+    output[0] = static_cast<Byte>(0xc0u | (value >> 6u));
+
+    output[1] = static_cast<Byte>(0x80u | (value & 0x3fu));
+
+    return 2;
+  }
+
+  if (value <= 0xffffu) {
+    output[0] = static_cast<Byte>(0xe0u | (value >> 12u));
+
+    output[1] = static_cast<Byte>(0x80u | ((value >> 6u) & 0x3fu));
+
+    output[2] = static_cast<Byte>(0x80u | (value & 0x3fu));
+
+    return 3;
+  }
+
+  output[0] = static_cast<Byte>(0xf0u | (value >> 18u));
+
+  output[1] = static_cast<Byte>(0x80u | ((value >> 12u) & 0x3fu));
+
+  output[2] = static_cast<Byte>(0x80u | ((value >> 6u) & 0x3fu));
+
+  output[3] = static_cast<Byte>(0x80u | (value & 0x3fu));
+
+  return 4;
+}
+
+} // namespace detail
+
+class codecvt_base {
+public:
+  enum result { ok, partial, error, noconv };
+};
+
+template <class InternT, class ExternT, class StateT>
+class codecvt : public locale::facet, public codecvt_base {
+public:
+  using intern_type = InternT;
+  using extern_type = ExternT;
+  using state_type = StateT;
+
+  explicit codecvt(size_t refs = 0) : locale::facet(refs) {}
+
+  result out(state_type &state, const intern_type *from,
+             const intern_type *from_end, const intern_type *&from_next,
+             extern_type *to, extern_type *to_end,
+             extern_type *&to_next) const {
+    return do_out(state, from, from_end, from_next, to, to_end, to_next);
+  }
+
+  result unshift(state_type &state, extern_type *to, extern_type *to_end,
+                 extern_type *&to_next) const {
+    return do_unshift(state, to, to_end, to_next);
+  }
+
+  result in(state_type &state, const extern_type *from,
+            const extern_type *from_end, const extern_type *&from_next,
+            intern_type *to, intern_type *to_end, intern_type *&to_next) const {
+    return do_in(state, from, from_end, from_next, to, to_end, to_next);
+  }
+
+  [[nodiscard]]
+  int encoding() const noexcept {
+    return do_encoding();
+  }
+
+  [[nodiscard]]
+  bool always_noconv() const noexcept {
+    return do_always_noconv();
+  }
+
+  int length(state_type &state, const extern_type *from,
+             const extern_type *from_end, size_t maximum) const {
+    return do_length(state, from, from_end, maximum);
+  }
+
+  [[nodiscard]]
+  int max_length() const noexcept {
+    return do_max_length();
+  }
+
+  inline static locale::id id{};
+
+protected:
+  ~codecvt() override = default;
+
+  virtual result do_out(state_type &state, const intern_type *from,
+                        const intern_type *from_end,
+                        const intern_type *&from_next, extern_type *to,
+                        extern_type *to_end, extern_type *&to_next) const {
+    (void)state;
+
+    from_next = from;
+    to_next = to;
+
+    //
+    // codecvt<char, char, mbstate_t>
+    //
+    if constexpr (is_same_v<intern_type, char> &&
+                  is_same_v<extern_type, char> &&
+                  is_same_v<state_type, mbstate_t>) {
+      return noconv;
+    }
+
+    //
+    // UTF-16 -> UTF-8 (char8_t)
+    //
+    else if constexpr (is_same_v<intern_type, char16_t> &&
+                       is_same_v<extern_type, char8_t> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char16_t *current = from;
+      char8_t *output = to;
+
+      while (current != from_end) {
+        const auto decoded = detail::codecvt_decode_utf16(current, from_end);
+
+        if (decoded.status == detail::codecvt_decode_status::partial) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        if (decoded.status == detail::codecvt_decode_status::error) {
+          from_next = current;
+          to_next = output;
+          return error;
+        }
+
+        char8_t encoded[4]{};
+
+        const size_t count =
+            detail::codecvt_encode_utf8(decoded.value, encoded);
+
+        if (count == 0) {
+          from_next = current;
+          to_next = output;
+          return error;
+        }
+
+        if (static_cast<size_t>(to_end - output) < count) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        for (size_t index = 0; index < count; ++index) {
+          *output++ = encoded[index];
+        }
+
+        current += decoded.units;
+      }
+
+      from_next = current;
+      to_next = output;
+      return ok;
+    }
+
+    //
+    // Deprecated UTF-16 -> UTF-8 stored in char.
+    //
+    else if constexpr (is_same_v<intern_type, char16_t> &&
+                       is_same_v<extern_type, char> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char16_t *current = from;
+      char *output = to;
+
+      while (current != from_end) {
+        const auto decoded = detail::codecvt_decode_utf16(current, from_end);
+
+        if (decoded.status == detail::codecvt_decode_status::partial) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        if (decoded.status == detail::codecvt_decode_status::error) {
+          from_next = current;
+          to_next = output;
+          return error;
+        }
+
+        char encoded[4]{};
+
+        const size_t count =
+            detail::codecvt_encode_utf8(decoded.value, encoded);
+
+        if (count == 0) {
+          from_next = current;
+          to_next = output;
+          return error;
+        }
+
+        if (static_cast<size_t>(to_end - output) < count) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        for (size_t index = 0; index < count; ++index) {
+          *output++ = encoded[index];
+        }
+
+        current += decoded.units;
+      }
+
+      from_next = current;
+      to_next = output;
+      return ok;
+    }
+
+    //
+    // UTF-32 -> UTF-8 (char8_t)
+    //
+    else if constexpr (is_same_v<intern_type, char32_t> &&
+                       is_same_v<extern_type, char8_t> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char32_t *current = from;
+      char8_t *output = to;
+
+      while (current != from_end) {
+        const unsigned value = static_cast<unsigned>(*current);
+
+        char8_t encoded[4]{};
+
+        const size_t count = detail::codecvt_encode_utf8(value, encoded);
+
+        if (count == 0) {
+          from_next = current;
+          to_next = output;
+          return error;
+        }
+
+        if (static_cast<size_t>(to_end - output) < count) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        for (size_t index = 0; index < count; ++index) {
+          *output++ = encoded[index];
+        }
+
+        ++current;
+      }
+
+      from_next = current;
+      to_next = output;
+      return ok;
+    }
+
+    //
+    // Deprecated UTF-32 -> UTF-8 stored in char.
+    //
+    else if constexpr (is_same_v<intern_type, char32_t> &&
+                       is_same_v<extern_type, char> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char32_t *current = from;
+      char *output = to;
+
+      while (current != from_end) {
+        const unsigned value = static_cast<unsigned>(*current);
+
+        char encoded[4]{};
+
+        const size_t count = detail::codecvt_encode_utf8(value, encoded);
+
+        if (count == 0) {
+          from_next = current;
+          to_next = output;
+          return error;
+        }
+
+        if (static_cast<size_t>(to_end - output) < count) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        for (size_t index = 0; index < count; ++index) {
+          *output++ = encoded[index];
+        }
+
+        ++current;
+      }
+
+      from_next = current;
+      to_next = output;
+      return ok;
+    }
+
+    //
+    // FTL classic wchar_t -> char.
+    //
+    else if constexpr (is_same_v<intern_type, wchar_t> &&
+                       is_same_v<extern_type, char> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const wchar_t *current = from;
+      char *output = to;
+
+      while (current != from_end) {
+        if (output == to_end) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        if constexpr (is_signed_v<wchar_t>) {
+          if (*current < 0) {
+            from_next = current;
+            to_next = output;
+            return error;
+          }
+        }
+
+        const unsigned long value = static_cast<unsigned long>(*current);
+
+        if (value > 0x7ful) {
+          from_next = current;
+          to_next = output;
+          return error;
+        }
+
+        *output++ = static_cast<char>(static_cast<unsigned char>(value));
+
+        ++current;
+      }
+
+      from_next = current;
+      to_next = output;
+      return ok;
+    }
+
+    else if constexpr (is_same_v<intern_type, extern_type>) {
+      return noconv;
+    }
+
+    else {
+      return error;
+    }
+  }
+
+  virtual result do_in(state_type &state, const extern_type *from,
+                       const extern_type *from_end,
+                       const extern_type *&from_next, intern_type *to,
+                       intern_type *to_end, intern_type *&to_next) const {
+    (void)state;
+
+    from_next = from;
+    to_next = to;
+
+    if constexpr (is_same_v<intern_type, char> &&
+                  is_same_v<extern_type, char> &&
+                  is_same_v<state_type, mbstate_t>) {
+      return noconv;
+    }
+
+    //
+    // UTF-8 (char8_t) -> UTF-16
+    //
+    else if constexpr (is_same_v<intern_type, char16_t> &&
+                       is_same_v<extern_type, char8_t> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char8_t *current = from;
+      char16_t *output = to;
+
+      while (current != from_end) {
+        const auto decoded = detail::codecvt_decode_utf8(current, from_end);
+
+        if (decoded.status == detail::codecvt_decode_status::partial) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        if (decoded.status == detail::codecvt_decode_status::error) {
+          from_next = current;
+          to_next = output;
+          return error;
+        }
+
+        const size_t required = decoded.value <= 0xffffu ? 1 : 2;
+
+        if (static_cast<size_t>(to_end - output) < required) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        if (required == 1) {
+          *output++ = static_cast<char16_t>(decoded.value);
+        } else {
+          const unsigned value = decoded.value - 0x10000u;
+
+          *output++ = static_cast<char16_t>(0xd800u + (value >> 10u));
+
+          *output++ = static_cast<char16_t>(0xdc00u + (value & 0x3ffu));
+        }
+
+        current += decoded.units;
+      }
+
+      from_next = current;
+      to_next = output;
+      return ok;
+    }
+
+    //
+    // Deprecated UTF-8 stored in char -> UTF-16.
+    //
+    else if constexpr (is_same_v<intern_type, char16_t> &&
+                       is_same_v<extern_type, char> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char *current = from;
+      char16_t *output = to;
+
+      while (current != from_end) {
+        const auto decoded = detail::codecvt_decode_utf8(current, from_end);
+
+        if (decoded.status == detail::codecvt_decode_status::partial) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        if (decoded.status == detail::codecvt_decode_status::error) {
+          from_next = current;
+          to_next = output;
+          return error;
+        }
+
+        const size_t required = decoded.value <= 0xffffu ? 1 : 2;
+
+        if (static_cast<size_t>(to_end - output) < required) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        if (required == 1) {
+          *output++ = static_cast<char16_t>(decoded.value);
+        } else {
+          const unsigned value = decoded.value - 0x10000u;
+
+          *output++ = static_cast<char16_t>(0xd800u + (value >> 10u));
+
+          *output++ = static_cast<char16_t>(0xdc00u + (value & 0x3ffu));
+        }
+
+        current += decoded.units;
+      }
+
+      from_next = current;
+      to_next = output;
+      return ok;
+    }
+
+    //
+    // UTF-8 (char8_t) -> UTF-32.
+    //
+    else if constexpr (is_same_v<intern_type, char32_t> &&
+                       is_same_v<extern_type, char8_t> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char8_t *current = from;
+      char32_t *output = to;
+
+      while (current != from_end) {
+        const auto decoded = detail::codecvt_decode_utf8(current, from_end);
+
+        if (decoded.status == detail::codecvt_decode_status::partial) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        if (decoded.status == detail::codecvt_decode_status::error) {
+          from_next = current;
+          to_next = output;
+          return error;
+        }
+
+        if (output == to_end) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        *output++ = static_cast<char32_t>(decoded.value);
+
+        current += decoded.units;
+      }
+
+      from_next = current;
+      to_next = output;
+      return ok;
+    }
+
+    //
+    // Deprecated UTF-8 stored in char -> UTF-32.
+    //
+    else if constexpr (is_same_v<intern_type, char32_t> &&
+                       is_same_v<extern_type, char> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char *current = from;
+      char32_t *output = to;
+
+      while (current != from_end) {
+        const auto decoded = detail::codecvt_decode_utf8(current, from_end);
+
+        if (decoded.status == detail::codecvt_decode_status::partial) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        if (decoded.status == detail::codecvt_decode_status::error) {
+          from_next = current;
+          to_next = output;
+          return error;
+        }
+
+        if (output == to_end) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        *output++ = static_cast<char32_t>(decoded.value);
+
+        current += decoded.units;
+      }
+
+      from_next = current;
+      to_next = output;
+      return ok;
+    }
+
+    //
+    // FTL classic char -> wchar_t.
+    //
+    else if constexpr (is_same_v<intern_type, wchar_t> &&
+                       is_same_v<extern_type, char> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char *current = from;
+      wchar_t *output = to;
+
+      while (current != from_end) {
+        if (output == to_end) {
+          from_next = current;
+          to_next = output;
+          return partial;
+        }
+
+        const unsigned char value = static_cast<unsigned char>(*current);
+
+        if (value > 0x7fu) {
+          from_next = current;
+          to_next = output;
+          return error;
+        }
+
+        *output++ = static_cast<wchar_t>(value);
+
+        ++current;
+      }
+
+      from_next = current;
+      to_next = output;
+      return ok;
+    }
+
+    else if constexpr (is_same_v<intern_type, extern_type>) {
+      return noconv;
+    }
+
+    else {
+      return error;
+    }
+  }
+
+  virtual result do_unshift(state_type &state, extern_type *to,
+                            extern_type *to_end, extern_type *&to_next) const {
+    (void)state;
+    (void)to_end;
+
+    to_next = to;
+
+    //
+    // Every encoding currently supplied by FTL is stateless.
+    //
+    return noconv;
+  }
+
+  [[nodiscard]]
+  virtual int do_encoding() const noexcept {
+    if constexpr (is_same_v<intern_type, char> &&
+                  is_same_v<extern_type, char> &&
+                  is_same_v<state_type, mbstate_t>) {
+      return 1;
+    }
+
+    else if constexpr (is_same_v<intern_type, wchar_t> &&
+                       is_same_v<extern_type, char> &&
+                       is_same_v<state_type, mbstate_t>) {
+      return 1;
+    }
+
+    else if constexpr ((is_same_v<intern_type, char16_t> ||
+                        is_same_v<intern_type, char32_t>) &&
+                       (is_same_v<extern_type, char8_t> ||
+                        is_same_v<extern_type, char>) &&
+                       is_same_v<state_type, mbstate_t>) {
+      return 0;
+    }
+
+    else if constexpr (is_same_v<intern_type, extern_type>) {
+      return 1;
+    }
+
+    else {
+      return 0;
+    }
+  }
+
+  [[nodiscard]]
+  virtual bool do_always_noconv() const noexcept {
+    return is_same_v<intern_type, extern_type>;
+  }
+
+  virtual int do_length(state_type &state, const extern_type *from,
+                        const extern_type *from_end, size_t maximum) const {
+    (void)state;
+
+    //
+    // Identity conversion.
+    //
+    if constexpr (is_same_v<intern_type, char> &&
+                  is_same_v<extern_type, char> &&
+                  is_same_v<state_type, mbstate_t>) {
+      const size_t available = static_cast<size_t>(from_end - from);
+
+      const size_t count = available < maximum ? available : maximum;
+
+      return static_cast<int>(count);
+    }
+
+    //
+    // UTF-8 (char8_t) -> UTF-16.
+    //
+    else if constexpr (is_same_v<intern_type, char16_t> &&
+                       is_same_v<extern_type, char8_t> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char8_t *current = from;
+      size_t produced = 0;
+
+      while (current != from_end) {
+        const auto decoded = detail::codecvt_decode_utf8(current, from_end);
+
+        if (decoded.status != detail::codecvt_decode_status::complete) {
+          break;
+        }
+
+        const size_t required = decoded.value <= 0xffffu ? 1 : 2;
+
+        if (produced + required > maximum)
+          break;
+
+        produced += required;
+        current += decoded.units;
+      }
+
+      return static_cast<int>(current - from);
+    }
+
+    //
+    // Deprecated UTF-8 stored in char -> UTF-16.
+    //
+    else if constexpr (is_same_v<intern_type, char16_t> &&
+                       is_same_v<extern_type, char> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char *current = from;
+      size_t produced = 0;
+
+      while (current != from_end) {
+        const auto decoded = detail::codecvt_decode_utf8(current, from_end);
+
+        if (decoded.status != detail::codecvt_decode_status::complete) {
+          break;
+        }
+
+        const size_t required = decoded.value <= 0xffffu ? 1 : 2;
+
+        if (produced + required > maximum)
+          break;
+
+        produced += required;
+        current += decoded.units;
+      }
+
+      return static_cast<int>(current - from);
+    }
+
+    //
+    // UTF-8 (char8_t) -> UTF-32.
+    //
+    else if constexpr (is_same_v<intern_type, char32_t> &&
+                       is_same_v<extern_type, char8_t> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char8_t *current = from;
+      size_t produced = 0;
+
+      while (current != from_end && produced < maximum) {
+        const auto decoded = detail::codecvt_decode_utf8(current, from_end);
+
+        if (decoded.status != detail::codecvt_decode_status::complete) {
+          break;
+        }
+
+        ++produced;
+        current += decoded.units;
+      }
+
+      return static_cast<int>(current - from);
+    }
+
+    //
+    // Deprecated UTF-8 stored in char -> UTF-32.
+    //
+    else if constexpr (is_same_v<intern_type, char32_t> &&
+                       is_same_v<extern_type, char> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char *current = from;
+      size_t produced = 0;
+
+      while (current != from_end && produced < maximum) {
+        const auto decoded = detail::codecvt_decode_utf8(current, from_end);
+
+        if (decoded.status != detail::codecvt_decode_status::complete) {
+          break;
+        }
+
+        ++produced;
+        current += decoded.units;
+      }
+
+      return static_cast<int>(current - from);
+    }
+
+    //
+    // Classic narrow -> wide.
+    //
+    else if constexpr (is_same_v<intern_type, wchar_t> &&
+                       is_same_v<extern_type, char> &&
+                       is_same_v<state_type, mbstate_t>) {
+      const char *current = from;
+      size_t produced = 0;
+
+      while (current != from_end && produced < maximum) {
+        if (static_cast<unsigned char>(*current) > 0x7fu) {
+          break;
+        }
+
+        ++current;
+        ++produced;
+      }
+
+      return static_cast<int>(current - from);
+    }
+
+    else if constexpr (is_same_v<intern_type, extern_type>) {
+      const size_t available = static_cast<size_t>(from_end - from);
+
+      return static_cast<int>(available < maximum ? available : maximum);
+    }
+
+    else {
+      return 0;
+    }
+  }
+
+  [[nodiscard]]
+  virtual int do_max_length() const noexcept {
+    if constexpr (is_same_v<intern_type, char16_t> &&
+                  (is_same_v<extern_type, char8_t> ||
+                   is_same_v<extern_type, char>) &&
+                  is_same_v<state_type, mbstate_t>) {
+      return 3;
+    }
+
+    else if constexpr (is_same_v<intern_type, char32_t> &&
+                       (is_same_v<extern_type, char8_t> ||
+                        is_same_v<extern_type, char>) &&
+                       is_same_v<state_type, mbstate_t>) {
+      return 4;
+    }
+
+    else {
+      return 1;
+    }
+  }
+};
+
+namespace detail {
+
+[[noreturn]]
+inline void locale_named_codecvt_failure() {
+#if FTL_HAS_EXCEPTIONS
+  throw runtime_error("codecvt_byname");
+#else
+  terminate();
+#endif
+}
+
+struct locale_named_codecvt_context {
+  ftl_locale_runtime::native_handle native{};
+
+  explicit locale_named_codecvt_context(const char *name)
+      : native(ftl_locale_runtime::create_ctype(name)) {
+    if (native == nullptr)
+      locale_named_codecvt_failure();
+
+    if (ftl_locale_runtime::multibyte_is_stateful(native)) {
+      ftl_locale_runtime::destroy(native);
+      native = nullptr;
+
+      locale_named_codecvt_failure();
+    }
+  }
+
+  locale_named_codecvt_context(const locale_named_codecvt_context &) = delete;
+
+  locale_named_codecvt_context &
+  operator=(const locale_named_codecvt_context &) = delete;
+
+  ~locale_named_codecvt_context() { ftl_locale_runtime::destroy(native); }
+};
+
+} // namespace detail
+
+template <class InternT, class ExternT, class StateT>
+class codecvt_byname : public codecvt<InternT, ExternT, StateT> {
+public:
+  using base_type = codecvt<InternT, ExternT, StateT>;
+
+  using intern_type = typename base_type::intern_type;
+
+  using extern_type = typename base_type::extern_type;
+
+  using state_type = typename base_type::state_type;
+
+  explicit codecvt_byname(const char *name, size_t refs = 0)
+      : base_type(refs),
+        context_(new detail::locale_named_codecvt_context(name)) {}
+
+  explicit codecvt_byname(const string &name, size_t refs = 0)
+      : codecvt_byname(name.c_str(), refs) {}
+
+protected:
+  ~codecvt_byname() override { delete context_; }
+
+  typename codecvt_base::result do_out(state_type &state,
+                                       const intern_type *from,
+                                       const intern_type *from_end,
+                                       const intern_type *&from_next,
+                                       extern_type *to, extern_type *to_end,
+                                       extern_type *&to_next) const override {
+    //
+    // char/char and the UTF-fixed standard specializations do not
+    // acquire different encodings merely because a named locale was
+    // requested. wchar_t/char represents the native locale encoding
+    // and is the one case whose conversion semantics vary by name.
+    //
+    if constexpr (is_same_v<intern_type, wchar_t> &&
+                  is_same_v<extern_type, char> &&
+                  is_same_v<state_type, mbstate_t>) {
+      (void)state;
+
+      from_next = from;
+      to_next = to;
+
+      const wchar_t *current = from;
+      char *output = to;
+
+      while (current != from_end) {
+        const auto encoded =
+            ftl_locale_runtime::encode_wide(context_->native, *current);
+
+        if (!encoded.valid) {
+          from_next = current;
+          to_next = output;
+          return codecvt_base::error;
+        }
+
+        if (static_cast<size_t>(to_end - output) < encoded.produced) {
+          from_next = current;
+          to_next = output;
+          return codecvt_base::partial;
+        }
+
+        for (size_t index = 0; index < encoded.produced; ++index) {
+          *output++ = encoded.bytes[index];
+        }
+
+        ++current;
+      }
+
+      from_next = current;
+      to_next = output;
+
+      return codecvt_base::ok;
+    } else {
+      return base_type::do_out(state, from, from_end, from_next, to, to_end,
+                               to_next);
+    }
+  }
+
+  typename codecvt_base::result
+  do_in(state_type &state, const extern_type *from, const extern_type *from_end,
+        const extern_type *&from_next, intern_type *to, intern_type *to_end,
+        intern_type *&to_next) const override {
+    if constexpr (is_same_v<intern_type, wchar_t> &&
+                  is_same_v<extern_type, char> &&
+                  is_same_v<state_type, mbstate_t>) {
+      (void)state;
+
+      from_next = from;
+      to_next = to;
+
+      const char *current = from;
+      wchar_t *output = to;
+
+      while (current != from_end) {
+        if (output == to_end) {
+          from_next = current;
+          to_next = output;
+          return codecvt_base::partial;
+        }
+
+        const auto decoded = ftl_locale_runtime::decode_wide(context_->native,
+                                                             current, from_end);
+
+        if (decoded.result ==
+            ftl_locale_runtime::decoded_wide::status::partial) {
+          from_next = current;
+          to_next = output;
+          return codecvt_base::partial;
+        }
+
+        if (decoded.result == ftl_locale_runtime::decoded_wide::status::error) {
+          from_next = current;
+          to_next = output;
+          return codecvt_base::error;
+        }
+
+        *output++ = decoded.value;
+        current += decoded.consumed;
+      }
+
+      from_next = current;
+      to_next = output;
+
+      return codecvt_base::ok;
+    } else {
+      return base_type::do_in(state, from, from_end, from_next, to, to_end,
+                              to_next);
+    }
+  }
+
+  typename codecvt_base::result
+  do_unshift(state_type &state, extern_type *to, extern_type *to_end,
+             extern_type *&to_next) const override {
+    if constexpr (is_same_v<intern_type, wchar_t> &&
+                  is_same_v<extern_type, char> &&
+                  is_same_v<state_type, mbstate_t>) {
+      (void)state;
+      (void)to_end;
+
+      to_next = to;
+
+      return codecvt_base::noconv;
+    } else {
+      return base_type::do_unshift(state, to, to_end, to_next);
+    }
+  }
+
+  int do_encoding() const noexcept override {
+    if constexpr (is_same_v<intern_type, wchar_t> &&
+                  is_same_v<extern_type, char> &&
+                  is_same_v<state_type, mbstate_t>) {
+      return ftl_locale_runtime::multibyte_max_length(context_->native) == 1
+                 ? 1
+                 : 0;
+    } else {
+      return base_type::do_encoding();
+    }
+  }
+
+  bool do_always_noconv() const noexcept override {
+    return base_type::do_always_noconv();
+  }
+
+  int do_length(state_type &state, const extern_type *from,
+                const extern_type *from_end, size_t maximum) const override {
+    if constexpr (is_same_v<intern_type, wchar_t> &&
+                  is_same_v<extern_type, char> &&
+                  is_same_v<state_type, mbstate_t>) {
+      (void)state;
+
+      const char *current = from;
+      size_t produced = 0;
+
+      while (current != from_end && produced < maximum) {
+        const auto decoded = ftl_locale_runtime::decode_wide(context_->native,
+                                                             current, from_end);
+
+        if (decoded.result !=
+            ftl_locale_runtime::decoded_wide::status::complete) {
+          break;
+        }
+
+        current += decoded.consumed;
+        ++produced;
+      }
+
+      return static_cast<int>(current - from);
+    } else {
+      return base_type::do_length(state, from, from_end, maximum);
+    }
+  }
+
+  int do_max_length() const noexcept override {
+    if constexpr (is_same_v<intern_type, wchar_t> &&
+                  is_same_v<extern_type, char> &&
+                  is_same_v<state_type, mbstate_t>) {
+      return ftl_locale_runtime::multibyte_max_length(context_->native);
+    } else {
+      return base_type::do_max_length();
+    }
+  }
+
+private:
+  detail::locale_named_codecvt_context *context_;
+};
+
+template <class Character> class collate_byname : public collate<Character> {
+  static_assert(is_same_v<Character, char> || is_same_v<Character, wchar_t>,
+                "FTL provides the standard collate_byname specializations "
+                "for char and wchar_t");
+
+public:
+  using string_type = basic_string<Character>;
+
+  explicit collate_byname(const char *name, size_t refs = 0)
+      : collate<Character>(refs),
+        context_(new detail::locale_named_collate_context(name)) {}
+
+  explicit collate_byname(const string &name, size_t refs = 0)
+      : collate_byname(name.c_str(), refs) {}
+
+protected:
+  ~collate_byname() override { delete context_; }
+
+  int do_compare(const Character *low1, const Character *high1,
+                 const Character *low2, const Character *high2) const override {
+    const auto left =
+        detail::locale_named_collate_transform(context_->native, low1, high1);
+
+    const auto right =
+        detail::locale_named_collate_transform(context_->native, low2, high2);
+
+    return detail::collate_lexicographical_compare(
+        left.data(), left.data() + left.size(), right.data(),
+        right.data() + right.size());
+  }
+
+  string_type do_transform(const Character *low,
+                           const Character *high) const override {
+    return detail::locale_named_collate_transform(context_->native, low, high);
+  }
+
+  long do_hash(const Character *low, const Character *high) const override {
+    const auto transformed = do_transform(low, high);
+
+    return detail::locale_named_collate_hash(transformed);
+  }
+
+private:
+  detail::locale_named_collate_context *context_;
+};
+
+template <class Character> class numpunct : public locale::facet {
+  static_assert(is_same_v<Character, char> || is_same_v<Character, wchar_t>,
+                "FTL provides the required numpunct specializations "
+                "for char and wchar_t");
+
+public:
+  using char_type = Character;
+  using string_type = basic_string<Character>;
+
+  explicit numpunct(size_t refs = 0) : locale::facet(refs) {}
+
+  [[nodiscard]]
+  char_type decimal_point() const {
+    return do_decimal_point();
+  }
+
+  [[nodiscard]]
+  char_type thousands_sep() const {
+    return do_thousands_sep();
+  }
+
+  [[nodiscard]]
+  string grouping() const {
+    return do_grouping();
+  }
+
+  [[nodiscard]]
+  string_type truename() const {
+    return do_truename();
+  }
+
+  [[nodiscard]]
+  string_type falsename() const {
+    return do_falsename();
+  }
+
+  inline static locale::id id{};
+
+protected:
+  ~numpunct() override = default;
+
+  virtual char_type do_decimal_point() const {
+    return static_cast<char_type>('.');
+  }
+
+  virtual char_type do_thousands_sep() const {
+    return static_cast<char_type>(',');
+  }
+
+  virtual string do_grouping() const { return {}; }
+
+  virtual string_type do_truename() const {
+    return detail::locale_ascii_string<char_type>("true");
+  }
+
+  virtual string_type do_falsename() const {
+    return detail::locale_ascii_string<char_type>("false");
+  }
+};
+
+template <class Character> class numpunct_byname : public numpunct<Character> {
+  static_assert(is_same_v<Character, char> || is_same_v<Character, wchar_t>,
+                "FTL provides numpunct_byname specializations "
+                "for char and wchar_t");
+
+public:
+  using char_type = Character;
+  using string_type = basic_string<Character>;
+
+  explicit numpunct_byname(const char *name, size_t refs = 0)
+      : numpunct<Character>(refs),
+        context_(new detail::locale_named_numpunct_context(name)) {}
+
+  explicit numpunct_byname(const string &name, size_t refs = 0)
+      : numpunct_byname(name.c_str(), refs) {}
+
+protected:
+  ~numpunct_byname() override { delete context_; }
+
+  char_type do_decimal_point() const override {
+    return detail::locale_named_numeric_character<Character>(
+        *context_, context_->punctuation.decimal_point, '.');
+  }
+
+  char_type do_thousands_sep() const override {
+    //
+    // The C locale reports no active grouping separator because
+    // grouping itself is empty. numpunct still requires a character
+    // result, so retain the classic comma when the runtime provides
+    // no separator.
+    //
+    return detail::locale_named_numeric_character<Character>(
+        *context_, context_->punctuation.thousands_sep, ',');
+  }
+
+  string do_grouping() const override { return context_->punctuation.grouping; }
+
+private:
+  detail::locale_named_numpunct_context *context_;
+};
+
+class time_base {
+public:
+  enum dateorder {
+    no_order,
+    dmy,
+    mdy,
+    ymd,
+    ydm
+  };
+};
+
+class money_base {
+public:
+  enum part { none, space, symbol, sign, value };
+
+  struct pattern {
+    char field[4];
+  };
+};
+
+template <class Character, bool International = false>
+class moneypunct : public locale::facet, public money_base {
+  static_assert(is_same_v<Character, char> || is_same_v<Character, wchar_t>,
+                "FTL provides the required moneypunct "
+                "specializations for char and wchar_t");
+
+public:
+  using char_type = Character;
+  using string_type = basic_string<Character>;
+
+  explicit moneypunct(size_t refs = 0) : locale::facet(refs) {}
+
+  [[nodiscard]]
+  char_type decimal_point() const {
+    return do_decimal_point();
+  }
+
+  [[nodiscard]]
+  char_type thousands_sep() const {
+    return do_thousands_sep();
+  }
+
+  [[nodiscard]]
+  string grouping() const {
+    return do_grouping();
+  }
+
+  [[nodiscard]]
+  string_type curr_symbol() const {
+    return do_curr_symbol();
+  }
+
+  [[nodiscard]]
+  string_type positive_sign() const {
+    return do_positive_sign();
+  }
+
+  [[nodiscard]]
+  string_type negative_sign() const {
+    return do_negative_sign();
+  }
+
+  [[nodiscard]]
+  int frac_digits() const {
+    return do_frac_digits();
+  }
+
+  [[nodiscard]]
+  pattern pos_format() const {
+    return do_pos_format();
+  }
+
+  [[nodiscard]]
+  pattern neg_format() const {
+    return do_neg_format();
+  }
+
+  inline static locale::id id{};
+
+  inline static constexpr bool intl = International;
+
+protected:
+  ~moneypunct() override = default;
+
+  virtual char_type do_decimal_point() const {
+    return static_cast<char_type>('.');
+  }
+
+  virtual char_type do_thousands_sep() const {
+    return static_cast<char_type>(',');
+  }
+
+  virtual string do_grouping() const { return {}; }
+
+  virtual string_type do_curr_symbol() const { return {}; }
+
+  virtual string_type do_positive_sign() const { return {}; }
+
+  virtual string_type do_negative_sign() const { return {}; }
+
+  virtual int do_frac_digits() const { return 0; }
+
+  virtual pattern do_pos_format() const {
+    return pattern{{static_cast<char>(symbol), static_cast<char>(sign),
+                    static_cast<char>(none), static_cast<char>(value)}};
+  }
+
+  virtual pattern do_neg_format() const {
+    return pattern{{static_cast<char>(symbol), static_cast<char>(sign),
+                    static_cast<char>(none), static_cast<char>(value)}};
+  }
+};
+
+namespace detail {
+
+struct locale_named_monetary_snapshot {
+  string decimal_point;
+  string thousands_sep;
+  string grouping;
+
+  string international_symbol;
+  string local_symbol;
+
+  string positive_sign;
+  string negative_sign;
+
+  unsigned char international_frac_digits{};
+  unsigned char local_frac_digits{};
+
+  unsigned char positive_cs_precedes{};
+  unsigned char positive_sep_by_space{};
+  unsigned char positive_sign_position{};
+
+  unsigned char negative_cs_precedes{};
+  unsigned char negative_sep_by_space{};
+  unsigned char negative_sign_position{};
+
+  unsigned char international_positive_cs_precedes{};
+  unsigned char international_positive_sep_by_space{};
+  unsigned char international_positive_sign_position{};
+
+  unsigned char international_negative_cs_precedes{};
+  unsigned char international_negative_sep_by_space{};
+  unsigned char international_negative_sign_position{};
+};
+
+[[noreturn]]
+inline void locale_named_moneypunct_failure() {
+#if FTL_HAS_EXCEPTIONS
+  throw runtime_error("moneypunct_byname");
+#else
+  terminate();
+#endif
+}
+
+inline string locale_monetary_copy_string(const char *value) {
+  return value != nullptr ? string(value) : string{};
+}
+
+#if defined(_WIN32)
+
+inline string locale_current_monetary_name() {
+  const char *current = ::setlocale(LC_MONETARY, nullptr);
+
+  return current != nullptr ? string(current) : string("C");
+}
+
+class locale_windows_monetary_scope {
+public:
+  explicit locale_windows_monetary_scope(const char *name)
+      : previous_name_(locale_current_monetary_name()),
+        previous_mode_(ftl_locale_runtime::_configthreadlocale(1)),
+        active_(false) {
+    if (previous_mode_ == -1)
+      locale_named_moneypunct_failure();
+
+    if (::setlocale(LC_MONETARY, name) == nullptr) {
+      if (previous_mode_ == 2) {
+        (void)ftl_locale_runtime::_configthreadlocale(2);
+      }
+
+      locale_named_moneypunct_failure();
+    }
+
+    active_ = true;
+  }
+
+  locale_windows_monetary_scope(const locale_windows_monetary_scope &) = delete;
+
+  locale_windows_monetary_scope &
+  operator=(const locale_windows_monetary_scope &) = delete;
+
+  ~locale_windows_monetary_scope() {
+    if (active_) {
+      (void)::setlocale(LC_MONETARY, previous_name_.c_str());
+    }
+
+    if (previous_mode_ == 2) {
+      (void)ftl_locale_runtime::_configthreadlocale(2);
+    }
+  }
+
+private:
+  string previous_name_;
+  int previous_mode_;
+  bool active_;
+};
+
+#else
+
+class locale_posix_monetary_scope {
+public:
+  explicit locale_posix_monetary_scope(ftl_locale_runtime::native_handle locale)
+      : previous_(ftl_locale_runtime::uselocale(locale)) {
+    if (previous_ == nullptr)
+      locale_named_moneypunct_failure();
+  }
+
+  locale_posix_monetary_scope(const locale_posix_monetary_scope &) = delete;
+
+  locale_posix_monetary_scope &
+  operator=(const locale_posix_monetary_scope &) = delete;
+
+  ~locale_posix_monetary_scope() {
+    (void)ftl_locale_runtime::uselocale(previous_);
+  }
+
+private:
+  ftl_locale_runtime::native_handle previous_;
+};
+
+#endif
+
+inline locale_named_monetary_snapshot
+locale_load_monetary_snapshot(const char *name,
+                              ftl_locale_runtime::native_handle native) {
+#if defined(_WIN32)
+  locale_windows_monetary_scope scope(name);
+#else
+  locale_posix_monetary_scope scope(native);
+  (void)name;
+#endif
+
+  ::lconv *information = ::localeconv();
+
+  if (information == nullptr)
+    locale_named_moneypunct_failure();
+
+  locale_named_monetary_snapshot result;
+
+  result.decimal_point =
+      locale_monetary_copy_string(information->mon_decimal_point);
+
+  result.thousands_sep =
+      locale_monetary_copy_string(information->mon_thousands_sep);
+
+  result.grouping = locale_monetary_copy_string(information->mon_grouping);
+
+  result.international_symbol =
+      locale_monetary_copy_string(information->int_curr_symbol);
+
+  result.local_symbol =
+      locale_monetary_copy_string(information->currency_symbol);
+
+  result.positive_sign =
+      locale_monetary_copy_string(information->positive_sign);
+
+  result.negative_sign =
+      locale_monetary_copy_string(information->negative_sign);
+
+  result.international_frac_digits =
+      static_cast<unsigned char>(information->int_frac_digits);
+
+  result.local_frac_digits =
+      static_cast<unsigned char>(information->frac_digits);
+
+  result.positive_cs_precedes =
+      static_cast<unsigned char>(information->p_cs_precedes);
+
+  result.positive_sep_by_space =
+      static_cast<unsigned char>(information->p_sep_by_space);
+
+  result.positive_sign_position =
+      static_cast<unsigned char>(information->p_sign_posn);
+
+  result.negative_cs_precedes =
+      static_cast<unsigned char>(information->n_cs_precedes);
+
+  result.negative_sep_by_space =
+      static_cast<unsigned char>(information->n_sep_by_space);
+
+  result.negative_sign_position =
+      static_cast<unsigned char>(information->n_sign_posn);
+
+#if defined(_WIN32)
+  //
+  // Microsoft's native lconv ABI historically does not expose
+  // the C99 int_p_* / int_n_* placement extension consistently.
+  // The international symbol and fractional digit count are
+  // available, so use the corresponding local placement rules.
+  //
+  result.international_positive_cs_precedes = result.positive_cs_precedes;
+
+  result.international_positive_sep_by_space = result.positive_sep_by_space;
+
+  result.international_positive_sign_position = result.positive_sign_position;
+
+  result.international_negative_cs_precedes = result.negative_cs_precedes;
+
+  result.international_negative_sep_by_space = result.negative_sep_by_space;
+
+  result.international_negative_sign_position = result.negative_sign_position;
+#else
+  result.international_positive_cs_precedes =
+      static_cast<unsigned char>(information->int_p_cs_precedes);
+
+  result.international_positive_sep_by_space =
+      static_cast<unsigned char>(information->int_p_sep_by_space);
+
+  result.international_positive_sign_position =
+      static_cast<unsigned char>(information->int_p_sign_posn);
+
+  result.international_negative_cs_precedes =
+      static_cast<unsigned char>(information->int_n_cs_precedes);
+
+  result.international_negative_sep_by_space =
+      static_cast<unsigned char>(information->int_n_sep_by_space);
+
+  result.international_negative_sign_position =
+      static_cast<unsigned char>(information->int_n_sign_posn);
+#endif
+
+  return result;
+}
+
+struct locale_named_moneypunct_context {
+  ftl_locale_runtime::native_handle native{};
+  locale_named_monetary_snapshot monetary;
+
+  explicit locale_named_moneypunct_context(const char *name)
+      : native(ftl_locale_runtime::create_monetary(name)) {
+    if (native == nullptr)
+      locale_named_moneypunct_failure();
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+      monetary = locale_load_monetary_snapshot(name, native);
+    } catch (...) {
+      ftl_locale_runtime::destroy(native);
+      native = nullptr;
+      throw;
+    }
+#else
+    monetary = locale_load_monetary_snapshot(name, native);
+#endif
+  }
+
+  locale_named_moneypunct_context(const locale_named_moneypunct_context &) =
+      delete;
+
+  locale_named_moneypunct_context &
+  operator=(const locale_named_moneypunct_context &) = delete;
+
+  ~locale_named_moneypunct_context() { ftl_locale_runtime::destroy(native); }
+};
+
+template <class Character>
+[[nodiscard]]
+inline Character
+locale_named_monetary_character(const locale_named_moneypunct_context &context,
+                                const string &source, char fallback) noexcept {
+  if (source.empty())
+    return static_cast<Character>(fallback);
+
+  if constexpr (is_same_v<Character, char>) {
+    return source[0];
+  } else {
+    return ftl_locale_runtime::widen_first(context.native, source.c_str(),
+                                           static_cast<wchar_t>(fallback));
+  }
+}
+
+template <class Character>
+[[nodiscard]]
+inline basic_string<Character>
+locale_named_monetary_string(const locale_named_moneypunct_context &context,
+                             const string &source) {
+  if constexpr (is_same_v<Character, char>) {
+    return source;
+  } else {
+    basic_string<Character> result;
+
+    const char *current = source.data();
+
+    const char *end = source.data() + source.size();
+
+    while (current != end) {
+      const auto decoded =
+          ftl_locale_runtime::decode_wide(context.native, current, end);
+
+      if (decoded.result ==
+          ftl_locale_runtime::decoded_wide::status::complete) {
+        result.push_back(static_cast<Character>(decoded.value));
+
+        current += decoded.consumed;
+        continue;
+      }
+
+      //
+      // Preserve progress deterministically even if the native
+      // locale contains an exotic sequence that its own wchar_t
+      // conversion API cannot represent.
+      //
+      result.push_back(
+          static_cast<Character>(static_cast<unsigned char>(*current)));
+
+      ++current;
+    }
+
+    return result;
+  }
+}
+
+[[nodiscard]]
+inline money_base::pattern
+locale_monetary_pattern(unsigned cs_precedes, unsigned sep_by_space,
+                        unsigned sign_position) noexcept {
+  using part = money_base::part;
+
+  const auto make = [](part first, part second, part third, part fourth) {
+    return money_base::pattern{
+        {static_cast<char>(first), static_cast<char>(second),
+         static_cast<char>(third), static_cast<char>(fourth)}};
+  };
+
+  const auto fallback = make(money_base::symbol, money_base::sign,
+                             money_base::none, money_base::value);
+
+  if (cs_precedes > 1 || sep_by_space > 2 || sign_position > 4) {
+    return fallback;
+  }
+
+  const bool currency_first = cs_precedes != 0;
+
+  switch (sign_position) {
+  case 0:
+    if (currency_first) {
+      return sep_by_space == 1 ? make(money_base::sign, money_base::symbol,
+                                      money_base::space, money_base::value)
+                               : make(money_base::sign, money_base::symbol,
+                                      money_base::none, money_base::value);
+    }
+
+    return sep_by_space == 0 ? make(money_base::sign, money_base::value,
+                                    money_base::none, money_base::symbol)
+                             : make(money_base::sign, money_base::value,
+                                    money_base::space, money_base::symbol);
+
+  case 1:
+    if (currency_first) {
+      if (sep_by_space == 2) {
+        return make(money_base::sign, money_base::space, money_base::symbol,
+                    money_base::value);
+      }
+
+      if (sep_by_space == 1) {
+        return make(money_base::sign, money_base::symbol, money_base::space,
+                    money_base::value);
+      }
+
+      return make(money_base::sign, money_base::symbol, money_base::none,
+                  money_base::value);
+    }
+
+    return sep_by_space == 0 ? make(money_base::sign, money_base::value,
+                                    money_base::none, money_base::symbol)
+                             : make(money_base::sign, money_base::value,
+                                    money_base::space, money_base::symbol);
+
+  case 2:
+    if (currency_first) {
+      if (sep_by_space == 2) {
+        return make(money_base::symbol, money_base::value, money_base::space,
+                    money_base::sign);
+      }
+
+      if (sep_by_space == 1) {
+        return make(money_base::symbol, money_base::space, money_base::value,
+                    money_base::sign);
+      }
+
+      return make(money_base::symbol, money_base::none, money_base::value,
+                  money_base::sign);
+    }
+
+    if (sep_by_space == 2) {
+      return make(money_base::value, money_base::symbol, money_base::space,
+                  money_base::sign);
+    }
+
+    if (sep_by_space == 1) {
+      return make(money_base::value, money_base::space, money_base::symbol,
+                  money_base::sign);
+    }
+
+    return make(money_base::value, money_base::none, money_base::symbol,
+                money_base::sign);
+
+  case 3:
+    if (currency_first) {
+      if (sep_by_space == 2) {
+        return make(money_base::sign, money_base::space, money_base::symbol,
+                    money_base::value);
+      }
+
+      if (sep_by_space == 1) {
+        return make(money_base::sign, money_base::symbol, money_base::space,
+                    money_base::value);
+      }
+
+      return make(money_base::sign, money_base::symbol, money_base::none,
+                  money_base::value);
+    }
+
+    if (sep_by_space == 2) {
+      return make(money_base::value, money_base::sign, money_base::space,
+                  money_base::symbol);
+    }
+
+    if (sep_by_space == 1) {
+      return make(money_base::value, money_base::space, money_base::sign,
+                  money_base::symbol);
+    }
+
+    return make(money_base::value, money_base::none, money_base::sign,
+                money_base::symbol);
+
+  case 4:
+    if (currency_first) {
+      if (sep_by_space == 2) {
+        return make(money_base::symbol, money_base::space, money_base::sign,
+                    money_base::value);
+      }
+
+      if (sep_by_space == 1) {
+        return make(money_base::symbol, money_base::sign, money_base::space,
+                    money_base::value);
+      }
+
+      return make(money_base::symbol, money_base::sign, money_base::none,
+                  money_base::value);
+    }
+
+    if (sep_by_space == 2) {
+      return make(money_base::value, money_base::symbol, money_base::space,
+                  money_base::sign);
+    }
+
+    if (sep_by_space == 1) {
+      return make(money_base::value, money_base::space, money_base::symbol,
+                  money_base::sign);
+    }
+
+    return make(money_base::value, money_base::none, money_base::symbol,
+                money_base::sign);
+  }
+
+  return fallback;
+}
+
+[[nodiscard]]
+inline int locale_monetary_frac_digits(unsigned char value) noexcept {
+  const auto signed_char_max =
+      static_cast<unsigned char>(numeric_limits<char>::max());
+
+  const auto unsigned_char_max = numeric_limits<unsigned char>::max();
+
+  if (value == signed_char_max || value == unsigned_char_max) {
+    return 0;
+  }
+
+  return static_cast<int>(value);
+}
+
+template <bool International>
+[[nodiscard]]
+inline unsigned
+locale_monetary_cs_precedes(const locale_named_monetary_snapshot &value,
+                            bool positive) noexcept {
+  if constexpr (International) {
+    return positive ? value.international_positive_cs_precedes
+                    : value.international_negative_cs_precedes;
+  } else {
+    return positive ? value.positive_cs_precedes : value.negative_cs_precedes;
+  }
+}
+
+template <bool International>
+[[nodiscard]]
+inline unsigned
+locale_monetary_sep_by_space(const locale_named_monetary_snapshot &value,
+                             bool positive) noexcept {
+  if constexpr (International) {
+    return positive ? value.international_positive_sep_by_space
+                    : value.international_negative_sep_by_space;
+  } else {
+    return positive ? value.positive_sep_by_space : value.negative_sep_by_space;
+  }
+}
+
+template <bool International>
+[[nodiscard]]
+inline unsigned
+locale_monetary_sign_position(const locale_named_monetary_snapshot &value,
+                              bool positive) noexcept {
+  if constexpr (International) {
+    return positive ? value.international_positive_sign_position
+                    : value.international_negative_sign_position;
+  } else {
+    return positive ? value.positive_sign_position
+                    : value.negative_sign_position;
+  }
+}
+
+} // namespace detail
+
+template <class Character, bool International = false>
+class moneypunct_byname : public moneypunct<Character, International> {
+public:
+  using base_type = moneypunct<Character, International>;
+
+  using char_type = typename base_type::char_type;
+
+  using string_type = typename base_type::string_type;
+
+  using pattern = money_base::pattern;
+
+  explicit moneypunct_byname(const char *name, size_t refs = 0)
+      : base_type(refs),
+        context_(new detail::locale_named_moneypunct_context(name)) {}
+
+  explicit moneypunct_byname(const string &name, size_t refs = 0)
+      : moneypunct_byname(name.c_str(), refs) {}
+
+protected:
+  ~moneypunct_byname() override { delete context_; }
+
+  char_type do_decimal_point() const override {
+    return detail::locale_named_monetary_character<Character>(
+        *context_, context_->monetary.decimal_point, '.');
+  }
+
+  char_type do_thousands_sep() const override {
+    return detail::locale_named_monetary_character<Character>(
+        *context_, context_->monetary.thousands_sep, ',');
+  }
+
+  string do_grouping() const override { return context_->monetary.grouping; }
+
+  string_type do_curr_symbol() const override {
+    const string &symbol = International
+                               ? context_->monetary.international_symbol
+                               : context_->monetary.local_symbol;
+
+    return detail::locale_named_monetary_string<Character>(*context_, symbol);
+  }
+
+  string_type do_positive_sign() const override {
+    const unsigned position =
+        detail::locale_monetary_sign_position<International>(context_->monetary,
+                                                             true);
+
+    if (position == 0) {
+      return detail::locale_ascii_string<Character>("()");
+    }
+
+    return detail::locale_named_monetary_string<Character>(
+        *context_, context_->monetary.positive_sign);
+  }
+
+  string_type do_negative_sign() const override {
+    const unsigned position =
+        detail::locale_monetary_sign_position<International>(context_->monetary,
+                                                             false);
+
+    if (position == 0) {
+      return detail::locale_ascii_string<Character>("()");
+    }
+
+    return detail::locale_named_monetary_string<Character>(
+        *context_, context_->monetary.negative_sign);
+  }
+
+  int do_frac_digits() const override {
+    return detail::locale_monetary_frac_digits(
+        International ? context_->monetary.international_frac_digits
+                      : context_->monetary.local_frac_digits);
+  }
+
+  pattern do_pos_format() const override {
+    return detail::locale_monetary_pattern(
+        detail::locale_monetary_cs_precedes<International>(context_->monetary,
+                                                           true),
+        detail::locale_monetary_sep_by_space<International>(context_->monetary,
+                                                            true),
+        detail::locale_monetary_sign_position<International>(context_->monetary,
+                                                             true));
+  }
+
+  pattern do_neg_format() const override {
+    return detail::locale_monetary_pattern(
+        detail::locale_monetary_cs_precedes<International>(context_->monetary,
+                                                           false),
+        detail::locale_monetary_sep_by_space<International>(context_->monetary,
+                                                            false),
+        detail::locale_monetary_sign_position<International>(context_->monetary,
+                                                             false));
+  }
+
+private:
+  detail::locale_named_moneypunct_context *context_;
+};
+
+class messages_base {
+public:
+  using catalog = intptr_t;
+};
+
+namespace detail {
+
+[[noreturn]]
+inline void locale_named_messages_failure() {
+#if FTL_HAS_EXCEPTIONS
+  throw runtime_error("messages_byname");
+#else
+  terminate();
+#endif
+}
+
+struct locale_named_messages_context {
+  ftl_locale_runtime::native_handle native{};
+
+  explicit locale_named_messages_context(const char *name)
+      : native(ftl_locale_runtime::create_messages(name)) {
+    if (native == nullptr)
+      locale_named_messages_failure();
+  }
+
+  locale_named_messages_context(const locale_named_messages_context &) = delete;
+
+  locale_named_messages_context &
+  operator=(const locale_named_messages_context &) = delete;
+
+  ~locale_named_messages_context() { ftl_locale_runtime::destroy(native); }
+};
+
+struct locale_message_catalog_entry {
+  ftl_locale_runtime::native_catalog native;
+  locale conversion_locale;
+
+  locale_message_catalog_entry(
+      ftl_locale_runtime::native_catalog native_catalog,
+      const locale &conversion)
+      : native(native_catalog), conversion_locale(conversion) {}
+
+  locale_message_catalog_entry(const locale_message_catalog_entry &) = delete;
+
+  locale_message_catalog_entry &
+  operator=(const locale_message_catalog_entry &) = delete;
+
+  ~locale_message_catalog_entry() {
+    ftl_locale_runtime::close_message_catalog(native);
+  }
+};
+
+template <class Character>
+[[nodiscard]]
+inline basic_string<Character>
+locale_convert_message(const char *source, const locale &conversion_locale,
+                       const basic_string<Character> &fallback) {
+  if (source == nullptr)
+    return fallback;
+
+  if constexpr (is_same_v<Character, char>) {
+    return basic_string<char>(source);
+  } else {
+    static_assert(is_same_v<Character, wchar_t>,
+                  "FTL provides messages for char and wchar_t");
+
+    if (!has_facet<codecvt<wchar_t, char, mbstate_t>>(conversion_locale)) {
+      return fallback;
+    }
+
+    size_t source_size = 0;
+
+    while (source[source_size] != '\0')
+      ++source_size;
+
+    if (source_size == 0)
+      return {};
+
+    basic_string<wchar_t> result(source_size, wchar_t{});
+
+    const auto &conversion =
+        use_facet<codecvt<wchar_t, char, mbstate_t>>(conversion_locale);
+
+    mbstate_t state{};
+
+    const char *from_next = source;
+
+    wchar_t *to_begin = result.data();
+
+    wchar_t *to_next = to_begin;
+
+    const auto status =
+        conversion.in(state, source, source + source_size, from_next, to_begin,
+                      to_begin + result.size(), to_next);
+
+    if (status != codecvt_base::ok || from_next != source + source_size) {
+      return fallback;
+    }
+
+    result.resize(static_cast<size_t>(to_next - to_begin));
+
+    return result;
+  }
+}
+
+} // namespace detail
+
+template <class Character>
+class messages : public locale::facet, public messages_base {
+  static_assert(is_same_v<Character, char> || is_same_v<Character, wchar_t>,
+                "FTL provides the required messages "
+                "specializations for char and wchar_t");
+
+public:
+  using char_type = Character;
+  using string_type = basic_string<Character>;
+
+  explicit messages(size_t refs = 0) : messages("C", refs) {}
+
+  catalog open(const string &filename, const locale &conversion_locale) const {
+    return do_open(filename, conversion_locale);
+  }
+
+  string_type get(catalog opened_catalog, int set, int message,
+                  const string_type &fallback) const {
+    return do_get(opened_catalog, set, message, fallback);
+  }
+
+  void close(catalog opened_catalog) const { do_close(opened_catalog); }
+
+  inline static locale::id id{};
+
+protected:
+  explicit messages(const char *name, size_t refs)
+      : locale::facet(refs),
+        context_(new detail::locale_named_messages_context(name)) {}
+
+  ~messages() override {
+    //
+    // Closing forgotten catalogs here isn't observable through a
+    // conforming caller, because using a catalog after its facet has
+    // died is already invalid. It does prevent native resource leaks.
+    //
+    catalogs_.clear();
+
+    delete context_;
+  }
+
+  virtual catalog do_open(const string &filename,
+                          const locale &conversion_locale) const {
+    const auto native = ftl_locale_runtime::open_message_catalog(
+        context_->native, filename.c_str());
+
+    if (!ftl_locale_runtime::message_catalog_valid(native)) {
+      return static_cast<catalog>(-1);
+    }
+
+    unique_ptr<detail::locale_message_catalog_entry> entry(
+        new detail::locale_message_catalog_entry(native, conversion_locale));
+
+    lock_guard<mutex> lock(catalog_mutex_);
+
+    for (size_t index = 0; index < catalogs_.size(); ++index) {
+      if (!catalogs_[index]) {
+        catalogs_[index] = move(entry);
+
+        return static_cast<catalog>(index);
+      }
+    }
+
+    catalogs_.push_back(move(entry));
+
+    return static_cast<catalog>(catalogs_.size() - 1);
+  }
+
+  virtual string_type do_get(catalog opened_catalog, int set, int message,
+                             const string_type &fallback) const {
+    if (opened_catalog < 0)
+      return fallback;
+
+    lock_guard<mutex> lock(catalog_mutex_);
+
+    const size_t index = static_cast<size_t>(opened_catalog);
+
+    if (index >= catalogs_.size() || !catalogs_[index]) {
+      return fallback;
+    }
+
+    const auto &entry = *catalogs_[index];
+
+    if constexpr (is_same_v<Character, char>) {
+      const char *native_fallback = fallback.c_str();
+
+      const char *result = ftl_locale_runtime::get_message_catalog(
+          entry.native, set, message, native_fallback);
+
+      if (result == native_fallback)
+        return fallback;
+
+      return string_type(result);
+    } else {
+      //
+      // Pointer identity lets us distinguish "message not found"
+      // from an actual empty-string catalog entry.
+      //
+      const char missing[] = "";
+
+      const char *result = ftl_locale_runtime::get_message_catalog(
+          entry.native, set, message, missing);
+
+      if (result == missing)
+        return fallback;
+
+      return detail::locale_convert_message<Character>(
+          result, entry.conversion_locale, fallback);
+    }
+  }
+
+  virtual void do_close(catalog opened_catalog) const {
+    if (opened_catalog < 0)
+      return;
+
+    lock_guard<mutex> lock(catalog_mutex_);
+
+    const size_t index = static_cast<size_t>(opened_catalog);
+
+    if (index >= catalogs_.size())
+      return;
+
+    //
+    // The entry owns and closes the native descriptor.
+    //
+    catalogs_[index].reset();
+  }
+
+private:
+  mutable mutex catalog_mutex_;
+
+  mutable vector<unique_ptr<detail::locale_message_catalog_entry>> catalogs_;
+
+  detail::locale_named_messages_context *context_;
+};
+
+template <class Character> class messages_byname : public messages<Character> {
+public:
+  using catalog = messages_base::catalog;
+
+  using string_type = basic_string<Character>;
+
+  explicit messages_byname(const char *name, size_t refs = 0)
+      : messages<Character>(name, refs) {}
+
+  explicit messages_byname(const string &name, size_t refs = 0)
+      : messages_byname(name.c_str(), refs) {}
+
+protected:
+  ~messages_byname() override = default;
+};
+
+namespace detail {
+
+struct locale_facet_control {
+  atomic<size_t> references{1};
+  const locale::facet *value;
+
+  explicit locale_facet_control(const locale::facet *facet) noexcept
+      : value(facet) {}
+
+  void retain() noexcept { references.fetch_add(1, memory_order_relaxed); }
+
+  void release() noexcept {
+    if (references.fetch_sub(1, memory_order_release) != 1)
+      return;
+
+    atomic_thread_fence(memory_order_acquire);
+
+    const locale::facet *facet = value;
+    const bool destroy = facet != nullptr && facet->refs_ == 0;
+
+    delete this;
+
+    if (destroy)
+      delete facet;
+  }
+};
+
+struct locale_classic_collate_char final : collate<char> {
+  locale_classic_collate_char() : collate<char>(1) {}
+
+  ~locale_classic_collate_char() override = default;
+};
+
+struct locale_classic_collate_wchar final : collate<wchar_t> {
+  locale_classic_collate_wchar() : collate<wchar_t>(1) {}
+
+  ~locale_classic_collate_wchar() override = default;
+};
+
+struct locale_classic_numpunct_char final : numpunct<char> {
+  locale_classic_numpunct_char() : numpunct<char>(1) {}
+
+  ~locale_classic_numpunct_char() override = default;
+};
+
+struct locale_classic_numpunct_wchar final : numpunct<wchar_t> {
+  locale_classic_numpunct_wchar() : numpunct<wchar_t>(1) {}
+
+  ~locale_classic_numpunct_wchar() override = default;
+};
+
+struct locale_classic_codecvt_char final : codecvt<char, char, mbstate_t> {
+  locale_classic_codecvt_char() : codecvt<char, char, mbstate_t>(1) {}
+
+  ~locale_classic_codecvt_char() override = default;
+};
+
+struct locale_classic_codecvt_utf16 final
+    : codecvt<char16_t, char8_t, mbstate_t> {
+  locale_classic_codecvt_utf16() : codecvt<char16_t, char8_t, mbstate_t>(1) {}
+
+  ~locale_classic_codecvt_utf16() override = default;
+};
+
+struct locale_classic_codecvt_utf32 final
+    : codecvt<char32_t, char8_t, mbstate_t> {
+  locale_classic_codecvt_utf32() : codecvt<char32_t, char8_t, mbstate_t>(1) {}
+
+  ~locale_classic_codecvt_utf32() override = default;
+};
+
+struct locale_classic_codecvt_wchar final : codecvt<wchar_t, char, mbstate_t> {
+  locale_classic_codecvt_wchar() : codecvt<wchar_t, char, mbstate_t>(1) {}
+
+  ~locale_classic_codecvt_wchar() override = default;
+};
+
+struct locale_classic_moneypunct_char final : moneypunct<char, false> {
+  locale_classic_moneypunct_char() : moneypunct<char, false>(1) {}
+
+  ~locale_classic_moneypunct_char() override = default;
+};
+
+struct locale_classic_moneypunct_wchar final : moneypunct<wchar_t, false> {
+  locale_classic_moneypunct_wchar() : moneypunct<wchar_t, false>(1) {}
+
+  ~locale_classic_moneypunct_wchar() override = default;
+};
+
+struct locale_classic_moneypunct_intl_char final : moneypunct<char, true> {
+  locale_classic_moneypunct_intl_char() : moneypunct<char, true>(1) {}
+
+  ~locale_classic_moneypunct_intl_char() override = default;
+};
+
+struct locale_classic_moneypunct_intl_wchar final : moneypunct<wchar_t, true> {
+  locale_classic_moneypunct_intl_wchar() : moneypunct<wchar_t, true>(1) {}
+
+  ~locale_classic_moneypunct_intl_wchar() override = default;
+};
+
+struct locale_classic_messages_char final : messages<char> {
+  locale_classic_messages_char() : messages<char>(1) {}
+
+  ~locale_classic_messages_char() override = default;
+};
+
+struct locale_classic_messages_wchar final : messages<wchar_t> {
+  locale_classic_messages_wchar() : messages<wchar_t>(1) {}
+
+  ~locale_classic_messages_wchar() override = default;
+};
+
+inline locale_facet_control &locale_classic_messages_char_control() {
+  static locale_classic_messages_char facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &locale_classic_messages_wchar_control() {
+  static locale_classic_messages_wchar facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &locale_classic_moneypunct_char_control() {
+  static locale_classic_moneypunct_char facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &locale_classic_moneypunct_wchar_control() {
+  static locale_classic_moneypunct_wchar facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &locale_classic_moneypunct_intl_char_control() {
+  static locale_classic_moneypunct_intl_char facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &locale_classic_moneypunct_intl_wchar_control() {
+  static locale_classic_moneypunct_intl_wchar facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &locale_classic_codecvt_char_control() {
+  static locale_classic_codecvt_char facet;
+  static locale_facet_control control(&facet);
+  return control;
+}
+
+inline locale_facet_control &locale_classic_codecvt_utf16_control() {
+  static locale_classic_codecvt_utf16 facet;
+  static locale_facet_control control(&facet);
+  return control;
+}
+
+inline locale_facet_control &locale_classic_codecvt_utf32_control() {
+  static locale_classic_codecvt_utf32 facet;
+  static locale_facet_control control(&facet);
+  return control;
+}
+
+inline locale_facet_control &locale_classic_codecvt_wchar_control() {
+  static locale_classic_codecvt_wchar facet;
+  static locale_facet_control control(&facet);
+  return control;
+}
+
+inline locale_facet_control &locale_classic_numpunct_char_control() {
+  static locale_classic_numpunct_char facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &locale_classic_numpunct_wchar_control() {
+  static locale_classic_numpunct_wchar facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &locale_classic_collate_char_control() {
+  static locale_classic_collate_char facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &locale_classic_collate_wchar_control() {
+  static locale_classic_collate_wchar facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+struct locale_classic_ctype_char final : ctype<char> {
+  locale_classic_ctype_char() : ctype<char>(nullptr, false, 1) {}
+
+  ~locale_classic_ctype_char() override = default;
+};
+
+struct locale_classic_ctype_wchar final : ctype<wchar_t> {
+  locale_classic_ctype_wchar() : ctype<wchar_t>(1) {}
+
+  ~locale_classic_ctype_wchar() override = default;
+};
+
+struct locale_classic_codecvt_char16_char final
+    : codecvt<char16_t, char, mbstate_t> {
+  locale_classic_codecvt_char16_char()
+      : codecvt<char16_t, char, mbstate_t>(1) {}
+
+  ~locale_classic_codecvt_char16_char() override = default;
+};
+
+struct locale_classic_codecvt_char32_char final
+    : codecvt<char32_t, char, mbstate_t> {
+  locale_classic_codecvt_char32_char()
+      : codecvt<char32_t, char, mbstate_t>(1) {}
+
+  ~locale_classic_codecvt_char32_char() override = default;
+};
+
+inline locale_facet_control &locale_classic_codecvt_char16_char_control() {
+  static locale_classic_codecvt_char16_char facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &locale_classic_codecvt_char32_char_control() {
+  static locale_classic_codecvt_char32_char facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &locale_classic_ctype_char_control() {
+  static locale_classic_ctype_char facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &locale_classic_ctype_wchar_control() {
+  static locale_classic_ctype_wchar facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+struct locale_facet_slot {
+  const locale::id *key;
+  locale_facet_control *control;
+};
+
+struct locale_state {
+  atomic<size_t> references;
+  bool immortal;
+  bool named;
+  const char *static_name;
+  string owned_name;
+  vector<locale_facet_slot> facets;
+
+  locale_state()
+      : references(0), immortal(true), named(true), static_name("C"),
+        owned_name(), facets() {}
+
+  locale_state(const locale_state &other, bool preserve_name)
+      : references(1), immortal(false), named(preserve_name && other.named),
+        static_name(named ? other.static_name : nullptr),
+        owned_name(named && other.static_name == nullptr ? other.owned_name
+                                                         : string{}),
+        facets(other.facets) {
+    for (auto &slot : facets) {
+      if (slot.control != nullptr)
+        slot.control->retain();
+    }
+  }
+
+  locale_state(const locale_state &) = delete;
+  locale_state &operator=(const locale_state &) = delete;
+
+  ~locale_state() {
+    if (immortal)
+      return;
+
+    for (auto &slot : facets) {
+      if (slot.control != nullptr)
+        slot.control->release();
+    }
+  }
+};
+
+inline void locale_retain_state(locale_state *state) noexcept {
+  if (!state->immortal)
+    state->references.fetch_add(1, memory_order_relaxed);
+}
+
+inline void locale_release_state(locale_state *state) noexcept {
+  if (state->immortal)
+    return;
+
+  if (state->references.fetch_sub(1, memory_order_release) != 1)
+    return;
+
+  atomic_thread_fence(memory_order_acquire);
+  delete state;
+}
+
+inline locale_state &locale_classic_state() {
+  static locale_state state;
+
+  static const bool initialized = [] {
+    state.facets.reserve(18);
+
+    state.facets.push_back(
+        {&ctype<char>::id, &locale_classic_ctype_char_control()});
+
+    state.facets.push_back(
+        {&ctype<wchar_t>::id, &locale_classic_ctype_wchar_control()});
+
+    state.facets.push_back(
+        {&collate<char>::id, &locale_classic_collate_char_control()});
+
+    state.facets.push_back(
+        {&collate<wchar_t>::id, &locale_classic_collate_wchar_control()});
+
+    state.facets.push_back(
+        {&numpunct<char>::id, &locale_classic_numpunct_char_control()});
+
+    state.facets.push_back(
+        {&numpunct<wchar_t>::id, &locale_classic_numpunct_wchar_control()});
+
+    state.facets.push_back({&codecvt<char, char, mbstate_t>::id,
+                            &locale_classic_codecvt_char_control()});
+
+    state.facets.push_back({&codecvt<char16_t, char8_t, mbstate_t>::id,
+                            &locale_classic_codecvt_utf16_control()});
+
+    state.facets.push_back({&codecvt<char32_t, char8_t, mbstate_t>::id,
+                            &locale_classic_codecvt_utf32_control()});
+
+    state.facets.push_back({&codecvt<wchar_t, char, mbstate_t>::id,
+                            &locale_classic_codecvt_wchar_control()});
+
+    state.facets.push_back({&codecvt<char16_t, char, mbstate_t>::id,
+                            &locale_classic_codecvt_char16_char_control()});
+
+    state.facets.push_back({&codecvt<char32_t, char, mbstate_t>::id,
+                            &locale_classic_codecvt_char32_char_control()});
+
+    state.facets.push_back({&moneypunct<char, false>::id,
+                            &locale_classic_moneypunct_char_control()});
+
+    state.facets.push_back({&moneypunct<wchar_t, false>::id,
+                            &locale_classic_moneypunct_wchar_control()});
+
+    state.facets.push_back({&moneypunct<char, true>::id,
+                            &locale_classic_moneypunct_intl_char_control()});
+
+    state.facets.push_back({&moneypunct<wchar_t, true>::id,
+                            &locale_classic_moneypunct_intl_wchar_control()});
+
+    state.facets.push_back(
+        {&messages<char>::id, &locale_classic_messages_char_control()});
+
+    state.facets.push_back(
+        {&messages<wchar_t>::id, &locale_classic_messages_wchar_control()});
+
+    return true;
+  }();
+
+  (void)initialized;
+
+  return state;
+}
+
+struct locale_global_storage {
+  locale_state *state;
+
+  locale_global_storage() noexcept : state(&locale_classic_state()) {}
+
+  ~locale_global_storage() { locale_release_state(state); }
+};
+
+inline locale_global_storage &locale_global() {
+  static locale_global_storage value;
+  return value;
+}
+
+[[nodiscard]]
+inline const char *locale_state_name(const locale_state *state) noexcept {
+  if (!state->named)
+    return nullptr;
+
+  if (state->static_name != nullptr)
+    return state->static_name;
+
+  return state->owned_name.c_str();
+}
+
+[[nodiscard]]
+inline bool locale_names_equal(const locale_state *left,
+                               const locale_state *right) noexcept {
+  const char *lhs = locale_state_name(left);
+  const char *rhs = locale_state_name(right);
+
+  if (lhs == nullptr || rhs == nullptr)
+    return false;
+
+  while (*lhs != '\0' && *rhs != '\0') {
+    if (*lhs != *rhs)
+      return false;
+
+    ++lhs;
+    ++rhs;
+  }
+
+  return *lhs == *rhs;
+}
+
+[[nodiscard]]
+inline locale_facet_slot *locale_find_facet(locale_state *state,
+                                            const locale::id *key) noexcept {
+  for (auto &slot : state->facets) {
+    if (slot.key == key)
+      return &slot;
+  }
+
+  return nullptr;
+}
+
+[[nodiscard]]
+inline const locale_facet_slot *
+locale_find_facet(const locale_state *state, const locale::id *key) noexcept {
+  for (const auto &slot : state->facets) {
+    if (slot.key == key)
+      return &slot;
+  }
+
+  return nullptr;
+}
+
+template <class Facet>
+[[nodiscard]]
+inline const locale::id *locale_facet_key() {
+  using bare_facet = remove_cv_t<Facet>;
+
+  static_assert(!is_volatile_v<Facet>,
+                "volatile-qualified locale facets are ill-formed");
+
+  static_assert(is_convertible_v<const bare_facet *, const locale::facet *>,
+                "locale facet must be publicly derived from locale::facet");
+
+  return &bare_facet::id;
+}
+
+[[noreturn]]
+inline void locale_missing_facet() {
+#if defined(FTL_NO_EXCEPTIONS)
+  terminate();
+#else
+  throw bad_cast{};
+#endif
+}
+
+[[noreturn]]
+inline void locale_combine_missing_facet() {
+#if defined(FTL_NO_EXCEPTIONS)
+  terminate();
+#else
+  throw runtime_error("locale::combine");
+#endif
+}
+
+} // namespace detail
+
+inline locale::locale() noexcept : state_(detail::locale_global().state) {
+  detail::locale_retain_state(state_);
+}
+
+inline locale::locale(const locale &other) noexcept : state_(other.state_) {
+  detail::locale_retain_state(state_);
+}
+
+template <class Facet>
+locale::locale(const locale &other, Facet *value) : state_(nullptr) {
+  using bare_facet = remove_cv_t<Facet>;
+
+  const id *key = detail::locale_facet_key<Facet>();
+
+  if (value == nullptr) {
+    state_ = other.state_;
+    detail::locale_retain_state(state_);
+    return;
+  }
+
+  const facet *base = static_cast<const facet *>(value);
+
+  unique_ptr<detail::locale_state> next{
+      new detail::locale_state(*other.state_, false)};
+
+  detail::locale_facet_slot *slot = detail::locale_find_facet(next.get(), key);
+
+  if (slot == nullptr) {
+    next->facets.push_back({key, nullptr});
+    slot = &next->facets.back();
+  }
+
+  // Do this after every potentially throwing state/vector operation.
+  // Until this allocation succeeds, ownership of value has not been
+  // committed to the new locale representation.
+  auto *replacement = new detail::locale_facet_control(base);
+
+  detail::locale_facet_control *previous = slot->control;
+  slot->control = replacement;
+
+  if (previous != nullptr)
+    previous->release();
+
+  state_ = next.release();
+
+  (void)sizeof(bare_facet);
+}
+
+inline locale::~locale() { detail::locale_release_state(state_); }
+
+inline const locale &locale::operator=(const locale &other) noexcept {
+  if (this == &other)
+    return *this;
+
+  detail::locale_state *replacement = other.state_;
+  detail::locale_retain_state(replacement);
+
+  detail::locale_state *previous = state_;
+  state_ = replacement;
+
+  detail::locale_release_state(previous);
+
+  return *this;
+}
+
+template <class Facet> locale locale::combine(const locale &other) const {
+  const id *key = detail::locale_facet_key<Facet>();
+
+  const detail::locale_facet_slot *source =
+      detail::locale_find_facet(other.state_, key);
+
+  if (source == nullptr)
+    detail::locale_combine_missing_facet();
+
+  unique_ptr<detail::locale_state> next{
+      new detail::locale_state(*state_, false)};
+
+  detail::locale_facet_slot *destination =
+      detail::locale_find_facet(next.get(), key);
+
+  if (destination == nullptr) {
+    next->facets.push_back({key, nullptr});
+    destination = &next->facets.back();
+  }
+
+  source->control->retain();
+
+  detail::locale_facet_control *previous = destination->control;
+  destination->control = source->control;
+
+  if (previous != nullptr)
+    previous->release();
+
+  return locale(next.release(), adopt_state_t{});
+}
+
+inline string locale::name() const {
+  if (!state_->named)
+    return string("*");
+
+  return string(detail::locale_state_name(state_));
+}
+
+inline bool locale::operator==(const locale &other) const {
+  if (state_ == other.state_)
+    return true;
+
+  if (!state_->named || !other.state_->named)
+    return false;
+
+  return detail::locale_names_equal(state_, other.state_);
+}
+
+inline locale locale::global(const locale &value) {
+  // Capture the old global before changing its anchor.
+  locale previous;
+
+  auto &global = detail::locale_global();
+
+  detail::locale_retain_state(value.state_);
+
+  detail::locale_state *old = global.state;
+  global.state = value.state_;
+
+  detail::locale_release_state(old);
+
+  // The effect on the C locale for an unnamed C++ locale is
+  // implementation-defined. Leave it alone in that case.
+  if (value.state_->named) {
+    (void)setlocale(LC_ALL, detail::locale_state_name(value.state_));
+  }
+
+  return previous;
+}
+
+inline const locale &locale::classic() {
+  static const locale value{&detail::locale_classic_state(), adopt_state_t{}};
+
+  return value;
+}
+
+template <class Facet> bool has_facet(const locale &value) noexcept {
+  const locale::id *key = detail::locale_facet_key<Facet>();
+
+  return detail::locale_find_facet(value.state_, key) != nullptr;
+}
+
+template <class Facet> const Facet &use_facet(const locale &value) {
+  using bare_facet = remove_cv_t<Facet>;
+
+  const locale::id *key = detail::locale_facet_key<Facet>();
+
+  const detail::locale_facet_slot *slot =
+      detail::locale_find_facet(value.state_, key);
+
+  if (slot == nullptr)
+    detail::locale_missing_facet();
+
+  return *static_cast<const bare_facet *>(slot->control->value);
+}
+
+template <class Character> bool isspace(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::space, value);
+}
+
+template <class Character> bool isprint(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::print, value);
+}
+
+template <class Character> bool iscntrl(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::cntrl, value);
+}
+
+template <class Character> bool isupper(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::upper, value);
+}
+
+template <class Character> bool islower(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::lower, value);
+}
+
+template <class Character> bool isalpha(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::alpha, value);
+}
+
+template <class Character> bool isdigit(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::digit, value);
+}
+
+template <class Character> bool ispunct(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::punct, value);
+}
+
+template <class Character> bool isxdigit(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::xdigit, value);
+}
+
+template <class Character> bool isalnum(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::alnum, value);
+}
+
+template <class Character> bool isgraph(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::graph, value);
+}
+
+template <class Character> bool isblank(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::blank, value);
+}
+
+template <class Character>
+Character toupper(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).toupper(value);
+}
+
+template <class Character>
+Character tolower(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).tolower(value);
+}
+
+template <class Character, class Traits, class Allocator>
+bool locale::operator()(
+    const basic_string<Character, Traits, Allocator> &left,
+    const basic_string<Character, Traits, Allocator> &right) const {
+  return use_facet<FTL_LOCALE_NAMESPACE::collate<Character>>(*this).compare(
+             left.data(), left.data() + left.size(), right.data(),
+             right.data() + right.size()) < 0;
+}
+
+FTL_END_NAMESPACE
+
+#undef FTL_LOCALE_NAMESPACE
+
+#endif

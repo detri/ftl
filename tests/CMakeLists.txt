@@ -22,13 +22,19 @@ endif ()
 function(add_ftl_test header)
     foreach (mode IN ITEMS normal replace)
         set(object ftl_${mode}_${header}_object)
+
         add_library(${object} OBJECT ${header}.cpp)
         target_compile_features(${object} PRIVATE cxx_std_23)
-        target_compile_options(${object} PRIVATE "$<$<CXX_COMPILER_ID:MSVC>:/EHsc>")
+        target_compile_options(
+                ${object}
+                PRIVATE
+                "$<$<CXX_COMPILER_ID:MSVC>:/EHsc>"
+        )
 
         if (mode STREQUAL replace)
             target_compile_definitions(${object} PRIVATE FTL_REPLACE_STL)
             target_include_directories(${object} PRIVATE ../include/ftl)
+
             if (MSVC)
                 target_compile_options(${object} PRIVATE /X)
             else ()
@@ -38,16 +44,64 @@ function(add_ftl_test header)
             target_link_libraries(${object} PRIVATE ftl)
         endif ()
 
-        set(target ftl_${mode}_${header})
+        #
+        # Replacement-mode tests for facilities whose std::* symbols may
+        # collide with the hosted standard library must not link GoogleTest.
+        #
+        # locale and its facets are especially sensitive because the hosted
+        # C++ runtime itself exports std::locale / std::ctype symbols.
+        #
+        set(ftl_standalone_replace FALSE)
+
         if (mode STREQUAL replace AND
-                header MATCHES "^(string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set)$")
-            add_executable(${target} standalone_driver.cpp $<TARGET_OBJECTS:${object}>)
+                header MATCHES
+                "^(string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|locale(_.*)?|codecvt)$")
+            set(ftl_standalone_replace TRUE)
+        endif ()
+
+        set(target ftl_${mode}_${header})
+
+        if (ftl_standalone_replace)
+            add_executable(
+                    ${target}
+                    standalone_driver.cpp
+                    $<TARGET_OBJECTS:${object}>
+            )
         else ()
-            add_executable(${target} gtest_driver.cpp $<TARGET_OBJECTS:${object}>)
+            add_executable(
+                    ${target}
+                    gtest_driver.cpp
+                    $<TARGET_OBJECTS:${object}>
+            )
+
             target_link_libraries(${target} PRIVATE GTest::gtest_main)
         endif ()
+
         target_link_libraries(${target} PRIVATE ftl)
-        target_compile_options(${target} PRIVATE "$<$<CXX_COMPILER_ID:MSVC>:/EHsc>")
+
+        if (ftl_standalone_replace AND UNIX)
+            # A replacement-mode standalone test must not get std::*
+            # implementations from the host C++ standard library.
+            target_link_options(${target} PRIVATE -nostdlib++)
+
+            if (APPLE)
+                #
+                # Keep the Itanium C++ ABI runtime for exceptions/RTTI
+                # without linking libc++ itself.
+                #
+                target_link_libraries(${target} PRIVATE c++abi)
+            else ()
+                # GCC-family ABI runtime without libstdc++.
+                target_link_libraries(${target} PRIVATE supc++)
+            endif ()
+        endif ()
+
+        target_compile_options(
+                ${target}
+                PRIVATE
+                "$<$<CXX_COMPILER_ID:MSVC>:/EHsc>"
+        )
+
         add_test(NAME "${mode}.${header}" COMMAND ${target})
     endforeach ()
 endfunction()
@@ -368,6 +422,7 @@ foreach (header IN ITEMS
         ratio
         numbers
         ctime
+        clocale
         chrono
         version
         source_location
@@ -503,6 +558,16 @@ foreach (header IN ITEMS
         latch
         barrier
         future
+        locale
+        locale_ctype
+        locale_ctype_byname
+        locale_collate
+        locale_numpunct
+        locale_codecvt
+        locale_codecvt_byname
+        locale_moneypunct
+        locale_messages
+        codecvt
 )
     add_ftl_test(${header})
 endforeach ()

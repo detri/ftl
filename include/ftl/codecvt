@@ -1,0 +1,940 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CODECVT_HEADER
+#define FTL_CODECVT_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <locale>
+#else
+#include <ftl/locale>
+#endif
+
+#ifdef FTL_REPLACE_STL
+namespace std {
+#else
+namespace ftl {
+#endif
+
+enum codecvt_mode {
+  consume_header = 4,
+  generate_header = 2,
+  little_endian = 1
+};
+
+namespace detail {
+
+inline constexpr unsigned codecvt_legacy_input_started = 1u << 28u;
+
+inline constexpr unsigned codecvt_legacy_output_started = 1u << 29u;
+
+inline constexpr unsigned codecvt_legacy_input_little = 1u << 30u;
+
+template <codecvt_mode Mode>
+inline constexpr bool codecvt_mode_enabled(codecvt_mode flag) noexcept {
+  return (static_cast<unsigned>(Mode) & static_cast<unsigned>(flag)) != 0;
+}
+
+inline bool codecvt_input_started(const mbstate_t &state) noexcept {
+  return (state.state & codecvt_legacy_input_started) != 0;
+}
+
+inline bool codecvt_output_started(const mbstate_t &state) noexcept {
+  return (state.state & codecvt_legacy_output_started) != 0;
+}
+
+inline bool codecvt_input_little_endian(const mbstate_t &state) noexcept {
+  return (state.state & codecvt_legacy_input_little) != 0;
+}
+
+inline void codecvt_mark_input_started(mbstate_t &state,
+                                       bool little = false) noexcept {
+  state.state |= codecvt_legacy_input_started;
+
+  if (little) {
+    state.state |= codecvt_legacy_input_little;
+  } else {
+    state.state &= ~codecvt_legacy_input_little;
+  }
+}
+
+inline void codecvt_mark_output_started(mbstate_t &state) noexcept {
+  state.state |= codecvt_legacy_output_started;
+}
+
+template <unsigned long Maxcode>
+inline constexpr unsigned codecvt_effective_max =
+    Maxcode < 0x10fffful ? static_cast<unsigned>(Maxcode) : 0x10ffffu;
+
+[[nodiscard]]
+constexpr int codecvt_utf8_width_for_limit(unsigned maximum) noexcept {
+  if (maximum <= 0x7fu)
+    return 1;
+
+  if (maximum <= 0x7ffu)
+    return 2;
+
+  if (maximum <= 0xffffu)
+    return 3;
+
+  return 4;
+}
+
+template <class Element>
+[[nodiscard]]
+inline bool codecvt_element_value(Element element, unsigned &value) noexcept {
+  if constexpr (is_signed_v<Element>) {
+    if (element < 0)
+      return false;
+  }
+
+  const unsigned long long raw = static_cast<unsigned long long>(element);
+
+  if (raw > 0x10ffffull)
+    return false;
+
+  value = static_cast<unsigned>(raw);
+
+  return codecvt_valid_scalar(value);
+}
+
+template <class Element>
+[[nodiscard]]
+inline bool codecvt_ucs_element_value(Element element,
+                                      unsigned &value) noexcept {
+  if (!codecvt_element_value(element, value))
+    return false;
+
+  //
+  // The deprecated codecvt_utf8 and codecvt_utf16 facets
+  // use UCS-2 when Elem is 16 bits and UCS-4 otherwise.
+  //
+  if constexpr (sizeof(Element) <= 2) {
+    if (value > 0xffffu)
+      return false;
+  }
+
+  return true;
+}
+
+template <class Element>
+[[nodiscard]]
+inline bool codecvt_can_store_ucs(unsigned value) noexcept {
+  if (!codecvt_valid_scalar(value))
+    return false;
+
+  if constexpr (sizeof(Element) <= 2) {
+    return value <= 0xffffu;
+  }
+
+  return true;
+}
+
+template <class Element>
+[[nodiscard]]
+inline bool codecvt_utf16_unit(Element element, unsigned &value) noexcept {
+  if constexpr (is_signed_v<Element>) {
+    if (element < 0)
+      return false;
+  }
+
+  const unsigned long long raw = static_cast<unsigned long long>(element);
+
+  if (raw > 0xffffull)
+    return false;
+
+  value = static_cast<unsigned>(raw);
+  return true;
+}
+
+template <class Element>
+[[nodiscard]]
+inline codecvt_decoded_scalar
+codecvt_decode_utf16_elements(const Element *first,
+                              const Element *last) noexcept {
+  if (first == last) {
+    return {codecvt_decode_status::partial, 0, 0};
+  }
+
+  unsigned first_unit = 0;
+
+  if (!codecvt_utf16_unit(*first, first_unit)) {
+    return {codecvt_decode_status::error, 0, 0};
+  }
+
+  if (first_unit >= 0xd800u && first_unit <= 0xdbffu) {
+    if (last - first < 2) {
+      return {codecvt_decode_status::partial, 0, 0};
+    }
+
+    unsigned second_unit = 0;
+
+    if (!codecvt_utf16_unit(first[1], second_unit)) {
+      return {codecvt_decode_status::error, 0, 0};
+    }
+
+    if (second_unit < 0xdc00u || second_unit > 0xdfffu) {
+      return {codecvt_decode_status::error, 0, 0};
+    }
+
+    return {codecvt_decode_status::complete,
+            0x10000u + ((first_unit - 0xd800u) << 10u) +
+                (second_unit - 0xdc00u),
+            2};
+  }
+
+  if (first_unit >= 0xdc00u && first_unit <= 0xdfffu) {
+    return {codecvt_decode_status::error, 0, 0};
+  }
+
+  return {codecvt_decode_status::complete, first_unit, 1};
+}
+
+[[nodiscard]]
+inline unsigned codecvt_read_utf16_word(const char *source,
+                                        bool little) noexcept {
+  const unsigned first = static_cast<unsigned char>(source[0]);
+
+  const unsigned second = static_cast<unsigned char>(source[1]);
+
+  if (little)
+    return first | (second << 8u);
+
+  return (first << 8u) | second;
+}
+
+inline void codecvt_write_utf16_word(char *&destination, unsigned value,
+                                     bool little) noexcept {
+  if (little) {
+    *destination++ =
+        static_cast<char>(static_cast<unsigned char>(value & 0xffu));
+
+    *destination++ =
+        static_cast<char>(static_cast<unsigned char>((value >> 8u) & 0xffu));
+  } else {
+    *destination++ =
+        static_cast<char>(static_cast<unsigned char>((value >> 8u) & 0xffu));
+
+    *destination++ =
+        static_cast<char>(static_cast<unsigned char>(value & 0xffu));
+  }
+}
+
+[[nodiscard]]
+inline codecvt_decoded_scalar codecvt_decode_utf16_bytes(const char *first,
+                                                         const char *last,
+                                                         bool little) noexcept {
+  if (last - first < 2) {
+    return {codecvt_decode_status::partial, 0, 0};
+  }
+
+  const unsigned first_unit = codecvt_read_utf16_word(first, little);
+
+  if (first_unit >= 0xd800u && first_unit <= 0xdbffu) {
+    if (last - first < 4) {
+      return {codecvt_decode_status::partial, 0, 0};
+    }
+
+    const unsigned second_unit = codecvt_read_utf16_word(first + 2, little);
+
+    if (second_unit < 0xdc00u || second_unit > 0xdfffu) {
+      return {codecvt_decode_status::error, 0, 0};
+    }
+
+    return {codecvt_decode_status::complete,
+            0x10000u + ((first_unit - 0xd800u) << 10u) +
+                (second_unit - 0xdc00u),
+            4};
+  }
+
+  if (first_unit >= 0xdc00u && first_unit <= 0xdfffu) {
+    return {codecvt_decode_status::error, 0, 0};
+  }
+
+  return {codecvt_decode_status::complete, first_unit, 2};
+}
+
+template <class Facet>
+inline int codecvt_legacy_length(const Facet &facet,
+                                 typename Facet::state_type &state,
+                                 const typename Facet::extern_type *from,
+                                 const typename Facet::extern_type *from_end,
+                                 size_t maximum) {
+  using intern_type = typename Facet::intern_type;
+
+  using extern_type = typename Facet::extern_type;
+
+  if (maximum == 0)
+    return 0;
+
+  const extern_type *current = from;
+  size_t produced = 0;
+
+  while (current != from_end && produced < maximum) {
+    intern_type buffer[2]{};
+
+    const size_t remaining = maximum - produced;
+
+    const size_t capacity = remaining < 2 ? remaining : 2;
+
+    const extern_type *from_next = current;
+
+    intern_type *to_next = buffer;
+
+    const auto result = facet.in(state, current, from_end, from_next, buffer,
+                                 buffer + capacity, to_next);
+
+    produced += static_cast<size_t>(to_next - buffer);
+
+    if (from_next == current)
+      break;
+
+    current = from_next;
+
+    if (result == codecvt_base::error || result == codecvt_base::noconv) {
+      break;
+    }
+  }
+
+  return static_cast<int>(current - from);
+}
+
+} // namespace detail
+
+template <class Elem, unsigned long Maxcode = 0x10ffff,
+          codecvt_mode Mode = static_cast<codecvt_mode>(0)>
+class codecvt_utf8 : public codecvt<Elem, char, mbstate_t> {
+public:
+  using base_type = codecvt<Elem, char, mbstate_t>;
+
+  using result = typename base_type::result;
+
+  using intern_type = Elem;
+  using extern_type = char;
+  using state_type = mbstate_t;
+
+  explicit codecvt_utf8(size_t refs = 0) : base_type(refs) {}
+
+  ~codecvt_utf8() override = default;
+
+protected:
+  result do_in(state_type &state, const extern_type *from,
+               const extern_type *from_end, const extern_type *&from_next,
+               intern_type *to, intern_type *to_end,
+               intern_type *&to_next) const override {
+    from_next = from;
+    to_next = to;
+
+    if (from == from_end)
+      return codecvt_base::ok;
+
+    const char *current = from;
+
+    bool started = detail::codecvt_input_started(state);
+
+    if (!started) {
+      if constexpr (detail::codecvt_mode_enabled<Mode>(consume_header)) {
+        const auto header = detail::codecvt_decode_utf8(current, from_end);
+
+        if (header.status == detail::codecvt_decode_status::partial) {
+          return codecvt_base::partial;
+        }
+
+        if (header.status == detail::codecvt_decode_status::error) {
+          return codecvt_base::error;
+        }
+
+        if (header.value == 0xfeffu) {
+          current += header.units;
+
+          //
+          // Keep BOM consumption transactional until at least
+          // one actual character can be produced.
+          //
+          if (current == from_end)
+            return codecvt_base::partial;
+        }
+      }
+    }
+
+    while (current != from_end) {
+      if (to_next == to_end)
+        return codecvt_base::partial;
+
+      const auto decoded = detail::codecvt_decode_utf8(current, from_end);
+
+      if (decoded.status == detail::codecvt_decode_status::partial) {
+        return codecvt_base::partial;
+      }
+
+      if (decoded.status == detail::codecvt_decode_status::error) {
+        return codecvt_base::error;
+      }
+
+      if (decoded.value > detail::codecvt_effective_max<Maxcode>) {
+        return codecvt_base::error;
+      }
+
+      if (!detail::codecvt_can_store_ucs<Elem>(decoded.value)) {
+        return codecvt_base::error;
+      }
+
+      if (!started) {
+        detail::codecvt_mark_input_started(state);
+
+        started = true;
+      }
+
+      *to_next++ = static_cast<Elem>(decoded.value);
+
+      current += decoded.units;
+      from_next = current;
+    }
+
+    return codecvt_base::ok;
+  }
+
+  result do_out(state_type &state, const intern_type *from,
+                const intern_type *from_end, const intern_type *&from_next,
+                extern_type *to, extern_type *to_end,
+                extern_type *&to_next) const override {
+    from_next = from;
+    to_next = to;
+
+    if (from == from_end)
+      return codecvt_base::ok;
+
+    const Elem *current = from;
+
+    bool started = detail::codecvt_output_started(state);
+
+    while (current != from_end) {
+      unsigned value = 0;
+
+      if (!detail::codecvt_ucs_element_value(*current, value)) {
+        return codecvt_base::error;
+      }
+
+      if (value > detail::codecvt_effective_max<Maxcode>) {
+        return codecvt_base::error;
+      }
+
+      char encoded[4]{};
+
+      const size_t count = detail::codecvt_encode_utf8(value, encoded);
+
+      if (count == 0)
+        return codecvt_base::error;
+
+      const bool need_header =
+          !started && detail::codecvt_mode_enabled<Mode>(generate_header);
+
+      const size_t required = count + (need_header ? 3u : 0u);
+
+      if (static_cast<size_t>(to_end - to_next) < required) {
+        return codecvt_base::partial;
+      }
+
+      if (!started) {
+        if (need_header) {
+          *to_next++ = static_cast<char>(0xef);
+
+          *to_next++ = static_cast<char>(0xbb);
+
+          *to_next++ = static_cast<char>(0xbf);
+        }
+
+        detail::codecvt_mark_output_started(state);
+
+        started = true;
+      }
+
+      for (size_t index = 0; index < count; ++index) {
+        *to_next++ = encoded[index];
+      }
+
+      ++current;
+      from_next = current;
+    }
+
+    return codecvt_base::ok;
+  }
+
+  result do_unshift(state_type &, extern_type *to, extern_type *,
+                    extern_type *&to_next) const override {
+    to_next = to;
+    return codecvt_base::noconv;
+  }
+
+  int do_encoding() const noexcept override {
+    if constexpr (detail::codecvt_mode_enabled<Mode>(consume_header) ||
+                  detail::codecvt_mode_enabled<Mode>(generate_header)) {
+      return -1;
+    }
+
+    constexpr unsigned elem_limit = sizeof(Elem) <= 2 ? 0xffffu : 0x10ffffu;
+
+    constexpr unsigned maximum =
+        detail::codecvt_effective_max<Maxcode> < elem_limit
+            ? detail::codecvt_effective_max<Maxcode>
+            : elem_limit;
+
+    if constexpr (maximum <= 0x7fu)
+      return 1;
+
+    return 0;
+  }
+
+  bool do_always_noconv() const noexcept override { return false; }
+
+  int do_length(state_type &state, const extern_type *from,
+                const extern_type *from_end, size_t maximum) const override {
+    return detail::codecvt_legacy_length(*this, state, from, from_end, maximum);
+  }
+
+  int do_max_length() const noexcept override {
+    constexpr unsigned elem_limit = sizeof(Elem) <= 2 ? 0xffffu : 0x10ffffu;
+
+    constexpr unsigned maximum =
+        detail::codecvt_effective_max<Maxcode> < elem_limit
+            ? detail::codecvt_effective_max<Maxcode>
+            : elem_limit;
+
+    constexpr int payload = detail::codecvt_utf8_width_for_limit(maximum);
+
+    if constexpr (detail::codecvt_mode_enabled<Mode>(consume_header)) {
+      return payload + 3;
+    }
+
+    return payload;
+  }
+};
+
+template <class Elem, unsigned long Maxcode = 0x10ffff,
+          codecvt_mode Mode = static_cast<codecvt_mode>(0)>
+class codecvt_utf16 : public codecvt<Elem, char, mbstate_t> {
+public:
+  using base_type = codecvt<Elem, char, mbstate_t>;
+
+  using result = typename base_type::result;
+
+  using intern_type = Elem;
+  using extern_type = char;
+  using state_type = mbstate_t;
+
+  explicit codecvt_utf16(size_t refs = 0) : base_type(refs) {}
+
+  ~codecvt_utf16() override = default;
+
+protected:
+  result do_in(state_type &state, const extern_type *from,
+               const extern_type *from_end, const extern_type *&from_next,
+               intern_type *to, intern_type *to_end,
+               intern_type *&to_next) const override {
+    from_next = from;
+    to_next = to;
+
+    if (from == from_end)
+      return codecvt_base::ok;
+
+    const char *current = from;
+
+    bool started = detail::codecvt_input_started(state);
+
+    bool little = started ? detail::codecvt_input_little_endian(state)
+                          : detail::codecvt_mode_enabled<Mode>(little_endian);
+
+    if (!started) {
+      if constexpr (detail::codecvt_mode_enabled<Mode>(consume_header)) {
+        if (from_end - current < 2)
+          return codecvt_base::partial;
+
+        const unsigned first = detail::codecvt_read_utf16_word(current, little);
+
+        if (first == 0xfeffu) {
+          current += 2;
+
+          if (current == from_end)
+            return codecvt_base::partial;
+        } else if (first == 0xfffeu) {
+          little = !little;
+          current += 2;
+
+          if (current == from_end)
+            return codecvt_base::partial;
+        }
+      }
+    }
+
+    while (current != from_end) {
+      if (to_next == to_end)
+        return codecvt_base::partial;
+
+      const auto decoded =
+          detail::codecvt_decode_utf16_bytes(current, from_end, little);
+
+      if (decoded.status == detail::codecvt_decode_status::partial) {
+        return codecvt_base::partial;
+      }
+
+      if (decoded.status == detail::codecvt_decode_status::error) {
+        return codecvt_base::error;
+      }
+
+      if (decoded.value > detail::codecvt_effective_max<Maxcode>) {
+        return codecvt_base::error;
+      }
+
+      if (!detail::codecvt_can_store_ucs<Elem>(decoded.value)) {
+        return codecvt_base::error;
+      }
+
+      if (!started) {
+        detail::codecvt_mark_input_started(state, little);
+
+        started = true;
+      }
+
+      *to_next++ = static_cast<Elem>(decoded.value);
+
+      current += decoded.units;
+      from_next = current;
+    }
+
+    return codecvt_base::ok;
+  }
+
+  result do_out(state_type &state, const intern_type *from,
+                const intern_type *from_end, const intern_type *&from_next,
+                extern_type *to, extern_type *to_end,
+                extern_type *&to_next) const override {
+    from_next = from;
+    to_next = to;
+
+    if (from == from_end)
+      return codecvt_base::ok;
+
+    const bool little = detail::codecvt_mode_enabled<Mode>(little_endian);
+
+    const Elem *current = from;
+
+    bool started = detail::codecvt_output_started(state);
+
+    while (current != from_end) {
+      unsigned value = 0;
+
+      if (!detail::codecvt_ucs_element_value(*current, value)) {
+        return codecvt_base::error;
+      }
+
+      if (value > detail::codecvt_effective_max<Maxcode>) {
+        return codecvt_base::error;
+      }
+
+      unsigned words[2]{};
+      size_t word_count = 0;
+
+      if (value <= 0xffffu) {
+        words[0] = value;
+        word_count = 1;
+      } else {
+        const unsigned adjusted = value - 0x10000u;
+
+        words[0] = 0xd800u + (adjusted >> 10u);
+
+        words[1] = 0xdc00u + (adjusted & 0x3ffu);
+
+        word_count = 2;
+      }
+
+      const bool need_header =
+          !started && detail::codecvt_mode_enabled<Mode>(generate_header);
+
+      const size_t required = word_count * 2u + (need_header ? 2u : 0u);
+
+      if (static_cast<size_t>(to_end - to_next) < required) {
+        return codecvt_base::partial;
+      }
+
+      if (!started) {
+        if (need_header) {
+          detail::codecvt_write_utf16_word(to_next, 0xfeffu, little);
+        }
+
+        detail::codecvt_mark_output_started(state);
+
+        started = true;
+      }
+
+      for (size_t index = 0; index < word_count; ++index) {
+        detail::codecvt_write_utf16_word(to_next, words[index], little);
+      }
+
+      ++current;
+      from_next = current;
+    }
+
+    return codecvt_base::ok;
+  }
+
+  result do_unshift(state_type &, extern_type *to, extern_type *,
+                    extern_type *&to_next) const override {
+    to_next = to;
+    return codecvt_base::noconv;
+  }
+
+  int do_encoding() const noexcept override {
+    if constexpr (detail::codecvt_mode_enabled<Mode>(consume_header) ||
+                  detail::codecvt_mode_enabled<Mode>(generate_header)) {
+      return -1;
+    }
+
+    if constexpr (sizeof(Elem) <= 2 ||
+                  detail::codecvt_effective_max<Maxcode> <= 0xffffu) {
+      return 2;
+    }
+
+    return 0;
+  }
+
+  bool do_always_noconv() const noexcept override { return false; }
+
+  int do_length(state_type &state, const extern_type *from,
+                const extern_type *from_end, size_t maximum) const override {
+    return detail::codecvt_legacy_length(*this, state, from, from_end, maximum);
+  }
+
+  int do_max_length() const noexcept override {
+    constexpr int payload =
+        sizeof(Elem) <= 2 || detail::codecvt_effective_max<Maxcode> <= 0xffffu
+            ? 2
+            : 4;
+
+    if constexpr (detail::codecvt_mode_enabled<Mode>(consume_header)) {
+      return payload + 2;
+    }
+
+    return payload;
+  }
+};
+
+template <class Elem, unsigned long Maxcode = 0x10ffff,
+          codecvt_mode Mode = static_cast<codecvt_mode>(0)>
+class codecvt_utf8_utf16 : public codecvt<Elem, char, mbstate_t> {
+public:
+  using base_type = codecvt<Elem, char, mbstate_t>;
+
+  using result = typename base_type::result;
+
+  using intern_type = Elem;
+  using extern_type = char;
+  using state_type = mbstate_t;
+
+  explicit codecvt_utf8_utf16(size_t refs = 0) : base_type(refs) {}
+
+  ~codecvt_utf8_utf16() override = default;
+
+protected:
+  result do_in(state_type &state, const extern_type *from,
+               const extern_type *from_end, const extern_type *&from_next,
+               intern_type *to, intern_type *to_end,
+               intern_type *&to_next) const override {
+    from_next = from;
+    to_next = to;
+
+    if (from == from_end)
+      return codecvt_base::ok;
+
+    const char *current = from;
+
+    bool started = detail::codecvt_input_started(state);
+
+    if (!started) {
+      if constexpr (detail::codecvt_mode_enabled<Mode>(consume_header)) {
+        const auto header = detail::codecvt_decode_utf8(current, from_end);
+
+        if (header.status == detail::codecvt_decode_status::partial) {
+          return codecvt_base::partial;
+        }
+
+        if (header.status == detail::codecvt_decode_status::error) {
+          return codecvt_base::error;
+        }
+
+        if (header.value == 0xfeffu) {
+          current += header.units;
+
+          if (current == from_end)
+            return codecvt_base::partial;
+        }
+      }
+    }
+
+    while (current != from_end) {
+      const auto decoded = detail::codecvt_decode_utf8(current, from_end);
+
+      if (decoded.status == detail::codecvt_decode_status::partial) {
+        return codecvt_base::partial;
+      }
+
+      if (decoded.status == detail::codecvt_decode_status::error) {
+        return codecvt_base::error;
+      }
+
+      if (decoded.value > detail::codecvt_effective_max<Maxcode>) {
+        return codecvt_base::error;
+      }
+
+      const size_t required = decoded.value <= 0xffffu ? 1 : 2;
+
+      if (static_cast<size_t>(to_end - to_next) < required) {
+        return codecvt_base::partial;
+      }
+
+      if (!started) {
+        detail::codecvt_mark_input_started(state);
+
+        started = true;
+      }
+
+      if (required == 1) {
+        *to_next++ = static_cast<Elem>(decoded.value);
+      } else {
+        const unsigned adjusted = decoded.value - 0x10000u;
+
+        *to_next++ = static_cast<Elem>(0xd800u + (adjusted >> 10u));
+
+        *to_next++ = static_cast<Elem>(0xdc00u + (adjusted & 0x3ffu));
+      }
+
+      current += decoded.units;
+      from_next = current;
+    }
+
+    return codecvt_base::ok;
+  }
+
+  result do_out(state_type &state, const intern_type *from,
+                const intern_type *from_end, const intern_type *&from_next,
+                extern_type *to, extern_type *to_end,
+                extern_type *&to_next) const override {
+    from_next = from;
+    to_next = to;
+
+    if (from == from_end)
+      return codecvt_base::ok;
+
+    const Elem *current = from;
+
+    bool started = detail::codecvt_output_started(state);
+
+    while (current != from_end) {
+      const auto decoded =
+          detail::codecvt_decode_utf16_elements(current, from_end);
+
+      if (decoded.status == detail::codecvt_decode_status::partial) {
+        return codecvt_base::partial;
+      }
+
+      if (decoded.status == detail::codecvt_decode_status::error) {
+        return codecvt_base::error;
+      }
+
+      if (decoded.value > detail::codecvt_effective_max<Maxcode>) {
+        return codecvt_base::error;
+      }
+
+      char encoded[4]{};
+
+      const size_t count = detail::codecvt_encode_utf8(decoded.value, encoded);
+
+      if (count == 0)
+        return codecvt_base::error;
+
+      const bool need_header =
+          !started && detail::codecvt_mode_enabled<Mode>(generate_header);
+
+      const size_t required = count + (need_header ? 3u : 0u);
+
+      if (static_cast<size_t>(to_end - to_next) < required) {
+        return codecvt_base::partial;
+      }
+
+      if (!started) {
+        if (need_header) {
+          *to_next++ = static_cast<char>(0xef);
+
+          *to_next++ = static_cast<char>(0xbb);
+
+          *to_next++ = static_cast<char>(0xbf);
+        }
+
+        detail::codecvt_mark_output_started(state);
+
+        started = true;
+      }
+
+      for (size_t index = 0; index < count; ++index) {
+        *to_next++ = encoded[index];
+      }
+
+      current += decoded.units;
+      from_next = current;
+    }
+
+    return codecvt_base::ok;
+  }
+
+  result do_unshift(state_type &, extern_type *to, extern_type *,
+                    extern_type *&to_next) const override {
+    to_next = to;
+    return codecvt_base::noconv;
+  }
+
+  int do_encoding() const noexcept override {
+    if constexpr (detail::codecvt_mode_enabled<Mode>(consume_header) ||
+                  detail::codecvt_mode_enabled<Mode>(generate_header)) {
+      return -1;
+    }
+
+    if constexpr (detail::codecvt_effective_max<Maxcode> <= 0x7fu) {
+      return 1;
+    }
+
+    return 0;
+  }
+
+  bool do_always_noconv() const noexcept override { return false; }
+
+  int do_length(state_type &state, const extern_type *from,
+                const extern_type *from_end, size_t maximum) const override {
+    return detail::codecvt_legacy_length(*this, state, from, from_end, maximum);
+  }
+
+  int do_max_length() const noexcept override {
+    //
+    // do_max_length is defined in terms of length(..., 1).
+    // A supplementary scalar needs two UTF-16 code units, so
+    // a four-byte UTF-8 sequence cannot be consumed when max == 1.
+    //
+    constexpr unsigned maximum =
+        detail::codecvt_effective_max<Maxcode> < 0xffffu
+            ? detail::codecvt_effective_max<Maxcode>
+            : 0xffffu;
+
+    constexpr int payload = detail::codecvt_utf8_width_for_limit(maximum);
+
+    if constexpr (detail::codecvt_mode_enabled<Mode>(consume_header)) {
+      return payload + 3;
+    }
+
+    return payload;
+  }
+};
+
+#ifdef FTL_REPLACE_STL
+} // namespace std
+#else
+} // namespace ftl
+#endif
+
+#endif // FTL_CODECVT_HEADER

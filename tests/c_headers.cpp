@@ -4,6 +4,7 @@
 #include <fenv.h>
 #include <inttypes.h>
 #include <limits.h>
+#include <locale.h>
 #include <math.h>
 #include <setjmp.h>
 #include <signal.h>
@@ -37,6 +38,11 @@ tm* tm_pointer = nullptr;
 
 static_assert(WCHAR_MIN <= L'A');
 static_assert(WCHAR_MAX >= L'A');
+
+static_assert(sizeof(lconv) >= sizeof(char *) * 10);
+
+[[maybe_unused]]
+lconv *lconv_pointer = nullptr;
 
 bool ftl_test() {
     assert(true);
