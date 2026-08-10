@@ -154,7 +154,7 @@
 #if __cpp_lib_semaphore < 201907L || \
     __cpp_lib_latch < 201907L || \
     __cpp_lib_barrier < 202302L
-#error Stage 6.3 coordination feature macros are incomplete
+#error Stage 6.4 coordination feature macros are incomplete
 #endif
 
 int main() {}

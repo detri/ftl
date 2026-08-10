@@ -33,6 +33,9 @@ static_assert(tested::is_destructible_v<arrival_token>);
 
 static_assert(default_barrier::max() > 0);
 
+static_assert(!tested::is_move_constructible_v<default_barrier>);
+static_assert(!tested::is_move_assignable_v<default_barrier>);
+
 struct counting_completion {
   tested::atomic<int> *calls;
 

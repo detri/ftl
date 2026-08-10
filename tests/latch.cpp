@@ -22,6 +22,9 @@ static_assert(!tested::is_copy_assignable_v<tested::latch>);
 
 static_assert(tested::latch::max() > 0);
 
+static_assert(!tested::is_move_constructible_v<tested::latch>);
+static_assert(!tested::is_move_assignable_v<tested::latch>);
+
 bool zero_latch_is_ready() {
   tested::latch latch(0);
 

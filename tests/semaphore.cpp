@@ -26,6 +26,10 @@ static_assert(tested::counting_semaphore<7>::max() >= 7);
 
 static_assert(tested::binary_semaphore::max() >= 1);
 
+static_assert(!tested::is_move_constructible_v<tested::counting_semaphore<4>>);
+
+static_assert(!tested::is_move_assignable_v<tested::counting_semaphore<4>>);
+
 bool immediate_acquisition_works() {
   tested::counting_semaphore<4> semaphore(2);
 
@@ -136,8 +140,39 @@ bool zero_timeout_still_attempts_acquire() {
          !unavailable.try_acquire_for(tested::chrono::milliseconds{0});
 }
 
+bool release_update_wakes_waiters() {
+  tested::counting_semaphore<4> semaphore(0);
+
+  tested::atomic<int> entered{0};
+  tested::atomic<int> completed{0};
+
+  auto waiter = [&] {
+    entered.fetch_add(1, tested::memory_order_release);
+
+    semaphore.acquire();
+
+    completed.fetch_add(1, tested::memory_order_relaxed);
+  };
+
+  tested::thread first(waiter);
+  tested::thread second(waiter);
+  tested::thread third(waiter);
+
+  while (entered.load(tested::memory_order_acquire) != 3)
+    tested::this_thread::yield();
+
+  semaphore.release(3);
+
+  first.join();
+  second.join();
+  third.join();
+
+  return completed.load(tested::memory_order_relaxed) == 3;
+}
+
 bool ftl_test() {
   return immediate_acquisition_works() && release_update_works() &&
+         release_update_wakes_waiters() &&
          acquire_synchronizes_with_release() &&
          acquire_blocks_until_release() && timed_acquire_times_out() &&
          timed_acquire_succeeds() && acquire_until_succeeds() &&
