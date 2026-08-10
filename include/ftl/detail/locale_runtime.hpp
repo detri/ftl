@@ -71,6 +71,8 @@ decltype(sizeof(0)) __cdecl _strxfrm_l(char *, const char *,
 decltype(sizeof(0)) __cdecl _wcsxfrm_l(wchar_t *, const wchar_t *,
                                        decltype(sizeof(0)), void *);
 
+int __cdecl _configthreadlocale(int);
+
 } // extern "C"
 
 inline native_handle create_ctype(const char *name) noexcept {
@@ -85,6 +87,38 @@ inline native_handle create_collate(const char *name) noexcept {
     return nullptr;
 
   return _create_locale(LC_COLLATE, name);
+}
+
+inline native_handle create_numeric(const char *name) noexcept {
+  if (name == nullptr)
+    return nullptr;
+
+  //
+  // LC_ALL intentionally gives the handle LC_CTYPE as well as
+  // LC_NUMERIC. numpunct<wchar_t> needs the locale's multibyte
+  // conversion rules to turn the CRT punctuation string into a
+  // wide character.
+  //
+  return _create_locale(LC_ALL, name);
+}
+
+inline wchar_t widen_first(native_handle locale, const char *source,
+                           wchar_t fallback) noexcept {
+  if (source == nullptr || *source == '\0')
+    return fallback;
+
+  decltype(sizeof(0)) length = 0;
+
+  while (source[length] != '\0')
+    ++length;
+
+  wchar_t result{};
+
+  if (_mbtowc_l(&result, source, length, locale) <= 0) {
+    return fallback;
+  }
+
+  return result;
 }
 
 inline decltype(sizeof(0)) transform_byte(native_handle locale,
@@ -257,6 +291,8 @@ decltype(sizeof(0)) strxfrm_l(char *, const char *, decltype(sizeof(0)),
 decltype(sizeof(0)) wcsxfrm_l(wchar_t *, const wchar_t *, decltype(sizeof(0)),
                               void *);
 
+int mbtowc(wchar_t *, const char *, decltype(sizeof(0)));
+
 } // extern "C"
 
 inline native_handle create_ctype(const char *name) noexcept {
@@ -275,6 +311,45 @@ inline native_handle create_collate(const char *name) noexcept {
   constexpr int collate_mask = 1 << LC_COLLATE;
 
   return newlocale(collate_mask, name, nullptr);
+}
+
+inline native_handle create_numeric(const char *name) noexcept {
+  if (name == nullptr)
+    return nullptr;
+
+  constexpr int numeric_and_ctype_mask = (1 << LC_NUMERIC) | (1 << LC_CTYPE);
+
+  return newlocale(numeric_and_ctype_mask, name, nullptr);
+}
+
+inline wchar_t widen_first(native_handle locale, const char *source,
+                           wchar_t fallback) noexcept {
+  if (source == nullptr || *source == '\0')
+    return fallback;
+
+  native_handle previous = uselocale(locale);
+
+  if (previous == nullptr)
+    return fallback;
+
+  decltype(sizeof(0)) length = 0;
+
+  while (source[length] != '\0')
+    ++length;
+
+  //
+  // Reset mbtowc's conversion state before decoding this isolated
+  // punctuation character.
+  //
+  (void)mbtowc(nullptr, nullptr, 0);
+
+  wchar_t result{};
+
+  const int converted = mbtowc(&result, source, length);
+
+  (void)uselocale(previous);
+
+  return converted > 0 ? result : fallback;
 }
 
 inline decltype(sizeof(0)) transform_byte(native_handle locale,

@@ -85,10 +85,10 @@ public:
   [[nodiscard]]
   bool operator==(const locale &other) const;
 
-template <class Character, class Traits, class Allocator>
-bool operator()(
-    const basic_string<Character, Traits, Allocator> &left,
-    const basic_string<Character, Traits, Allocator> &right) const;
+  template <class Character, class Traits, class Allocator>
+  bool
+  operator()(const basic_string<Character, Traits, Allocator> &left,
+             const basic_string<Character, Traits, Allocator> &right) const;
 
   static locale global(const locale &value);
 
@@ -896,38 +896,30 @@ namespace detail {
 
 template <class Character>
 [[nodiscard]]
-inline long collate_hash_range(
-    const Character *low,
-    const Character *high) noexcept {
+inline long collate_hash_range(const Character *low,
+                               const Character *high) noexcept {
   if (low == high)
     return 0;
 
-  const size_t count =
-      static_cast<size_t>(high - low);
+  const size_t count = static_cast<size_t>(high - low);
 
-  const auto value =
-      ftl_rapidhash::rapidhash(
-          low,
-          count * sizeof(Character));
+  const auto value = ftl_rapidhash::rapidhash(low, count * sizeof(Character));
 
   const unsigned long folded =
       static_cast<unsigned long>(value) ^
-      static_cast<unsigned long>(
-          value >> (sizeof(unsigned long) * 4));
+      static_cast<unsigned long>(value >> (sizeof(unsigned long) * 4));
 
-  const unsigned long positive_mask =
-      static_cast<unsigned long>(-1) >> 1;
+  const unsigned long positive_mask = static_cast<unsigned long>(-1) >> 1;
 
   return static_cast<long>(folded & positive_mask);
 }
 
 template <class Character>
 [[nodiscard]]
-inline int collate_lexicographical_compare(
-    const Character *low1,
-    const Character *high1,
-    const Character *low2,
-    const Character *high2) noexcept {
+inline int collate_lexicographical_compare(const Character *low1,
+                                           const Character *high1,
+                                           const Character *low2,
+                                           const Character *high2) noexcept {
   while (low1 != high1 && low2 != high2) {
     if (char_traits<Character>::lt(*low1, *low2))
       return -1;
@@ -950,38 +942,30 @@ inline int collate_lexicographical_compare(
 
 } // namespace detail
 
-template <class Character>
-class collate : public locale::facet {
-  static_assert(
-      is_same_v<Character, char> ||
-          is_same_v<Character, wchar_t>,
-      "FTL provides the standard collate specializations for "
-      "char and wchar_t");
+template <class Character> class collate : public locale::facet {
+  static_assert(is_same_v<Character, char> || is_same_v<Character, wchar_t>,
+                "FTL provides the standard collate specializations for "
+                "char and wchar_t");
 
 public:
   using char_type = Character;
   using string_type = basic_string<Character>;
 
-  explicit collate(size_t refs = 0)
-      : locale::facet(refs) {}
+  explicit collate(size_t refs = 0) : locale::facet(refs) {}
 
   [[nodiscard]]
-  int compare(const Character *low1,
-              const Character *high1,
-              const Character *low2,
-              const Character *high2) const {
+  int compare(const Character *low1, const Character *high1,
+              const Character *low2, const Character *high2) const {
     return do_compare(low1, high1, low2, high2);
   }
 
   [[nodiscard]]
-  string_type transform(const Character *low,
-                        const Character *high) const {
+  string_type transform(const Character *low, const Character *high) const {
     return do_transform(low, high);
   }
 
   [[nodiscard]]
-  long hash(const Character *low,
-            const Character *high) const {
+  long hash(const Character *low, const Character *high) const {
     return do_hash(low, high);
   }
 
@@ -990,11 +974,8 @@ public:
 protected:
   ~collate() override = default;
 
-  virtual int do_compare(
-      const Character *low1,
-      const Character *high1,
-      const Character *low2,
-      const Character *high2) const {
+  virtual int do_compare(const Character *low1, const Character *high1,
+                         const Character *low2, const Character *high2) const {
     while (low1 != high1 && low2 != high2) {
       if (char_traits<Character>::lt(*low1, *low2))
         return -1;
@@ -1015,15 +996,12 @@ protected:
     return 0;
   }
 
-  virtual string_type do_transform(
-      const Character *low,
-      const Character *high) const {
+  virtual string_type do_transform(const Character *low,
+                                   const Character *high) const {
     return string_type(low, high);
   }
 
-  virtual long do_hash(
-      const Character *low,
-      const Character *high) const {
+  virtual long do_hash(const Character *low, const Character *high) const {
     return detail::collate_hash_range(low, high);
   }
 };
@@ -1042,82 +1020,67 @@ inline void locale_named_collate_failure() {
 struct locale_named_collate_context {
   ftl_locale_runtime::native_handle native;
 
-  explicit locale_named_collate_context(
-      const char *name)
-      : native(
-            ftl_locale_runtime::create_collate(name)) {
+  explicit locale_named_collate_context(const char *name)
+      : native(ftl_locale_runtime::create_collate(name)) {
     if (native == nullptr)
       locale_named_collate_failure();
   }
 
-  locale_named_collate_context(
-      const locale_named_collate_context &) = delete;
+  locale_named_collate_context(const locale_named_collate_context &) = delete;
 
   locale_named_collate_context &
-  operator=(
-      const locale_named_collate_context &) = delete;
+  operator=(const locale_named_collate_context &) = delete;
 
-  ~locale_named_collate_context() {
-    ftl_locale_runtime::destroy(native);
-  }
+  ~locale_named_collate_context() { ftl_locale_runtime::destroy(native); }
 };
 
 template <class Character>
 [[nodiscard]]
-inline size_t locale_collate_transform_size(
-    ftl_locale_runtime::native_handle native,
-    const Character *source);
+inline size_t
+locale_collate_transform_size(ftl_locale_runtime::native_handle native,
+                              const Character *source);
 
 template <>
-inline size_t locale_collate_transform_size<char>(
-    ftl_locale_runtime::native_handle native,
-    const char *source) {
-  return ftl_locale_runtime::transform_byte(
-      native, nullptr, source, 0);
+inline size_t
+locale_collate_transform_size<char>(ftl_locale_runtime::native_handle native,
+                                    const char *source) {
+  return ftl_locale_runtime::transform_byte(native, nullptr, source, 0);
 }
 
 template <>
-inline size_t locale_collate_transform_size<wchar_t>(
-    ftl_locale_runtime::native_handle native,
-    const wchar_t *source) {
-  return ftl_locale_runtime::transform_wide(
-      native, nullptr, source, 0);
+inline size_t
+locale_collate_transform_size<wchar_t>(ftl_locale_runtime::native_handle native,
+                                       const wchar_t *source) {
+  return ftl_locale_runtime::transform_wide(native, nullptr, source, 0);
 }
 
 template <class Character>
-inline void locale_collate_transform_into(
-    ftl_locale_runtime::native_handle native,
-    Character *destination,
-    size_t count,
-    const Character *source);
+inline void
+locale_collate_transform_into(ftl_locale_runtime::native_handle native,
+                              Character *destination, size_t count,
+                              const Character *source);
 
 template <>
-inline void locale_collate_transform_into<char>(
-    ftl_locale_runtime::native_handle native,
-    char *destination,
-    size_t count,
-    const char *source) {
-  (void)ftl_locale_runtime::transform_byte(
-      native, destination, source, count);
+inline void
+locale_collate_transform_into<char>(ftl_locale_runtime::native_handle native,
+                                    char *destination, size_t count,
+                                    const char *source) {
+  (void)ftl_locale_runtime::transform_byte(native, destination, source, count);
 }
 
 template <>
-inline void locale_collate_transform_into<wchar_t>(
-    ftl_locale_runtime::native_handle native,
-    wchar_t *destination,
-    size_t count,
-    const wchar_t *source) {
-  (void)ftl_locale_runtime::transform_wide(
-      native, destination, source, count);
+inline void
+locale_collate_transform_into<wchar_t>(ftl_locale_runtime::native_handle native,
+                                       wchar_t *destination, size_t count,
+                                       const wchar_t *source) {
+  (void)ftl_locale_runtime::transform_wide(native, destination, source, count);
 }
 
 template <class Character>
 [[nodiscard]]
 inline basic_string<Character>
-locale_named_collate_transform(
-    ftl_locale_runtime::native_handle native,
-    const Character *low,
-    const Character *high) {
+locale_named_collate_transform(ftl_locale_runtime::native_handle native,
+                               const Character *low, const Character *high) {
   basic_string<Character> result;
 
   const Character *current = low;
@@ -1125,29 +1088,19 @@ locale_named_collate_transform(
   for (;;) {
     const Character *segment_end = current;
 
-    while (segment_end != high &&
-           *segment_end != Character{}) {
+    while (segment_end != high && *segment_end != Character{}) {
       ++segment_end;
     }
 
-    basic_string<Character> source(
-        current,
-        segment_end);
+    basic_string<Character> source(current, segment_end);
 
     const size_t required =
-        locale_collate_transform_size<Character>(
-            native,
-            source.c_str());
+        locale_collate_transform_size<Character>(native, source.c_str());
 
-    basic_string<Character> transformed(
-        required + 1,
-        Character{});
+    basic_string<Character> transformed(required + 1, Character{});
 
-    locale_collate_transform_into<Character>(
-        native,
-        transformed.data(),
-        required + 1,
-        source.c_str());
+    locale_collate_transform_into<Character>(native, transformed.data(),
+                                             required + 1, source.c_str());
 
     transformed.resize(required);
 
@@ -1161,14 +1114,10 @@ locale_named_collate_transform(
     // from the original C++ [low, high) range. The C runtime's
     // xfrm API itself is NUL-terminated.
     //
-    result.reserve(
-        result.size() +
-        transformed.size() * 2 +
-        1);
+    result.reserve(result.size() + transformed.size() * 2 + 1);
 
     for (Character value : transformed) {
-      result.push_back(
-          static_cast<Character>(1));
+      result.push_back(static_cast<Character>(1));
 
       result.push_back(value);
     }
@@ -1186,89 +1135,334 @@ locale_named_collate_transform(
 
 template <class Character>
 [[nodiscard]]
-inline long locale_named_collate_hash(
-    const basic_string<Character> &key) noexcept {
-  return collate_hash_range(
-      key.data(),
-      key.data() + key.size());
+inline long
+locale_named_collate_hash(const basic_string<Character> &key) noexcept {
+  return collate_hash_range(key.data(), key.data() + key.size());
+}
+
+struct locale_named_numeric_snapshot {
+  string decimal_point;
+  string thousands_sep;
+  string grouping;
+};
+
+[[noreturn]]
+inline void locale_named_numpunct_failure() {
+#if FTL_HAS_EXCEPTIONS
+  throw runtime_error("numpunct_byname");
+#else
+  terminate();
+#endif
+}
+
+#if defined(_WIN32)
+
+inline string locale_current_numeric_name() {
+  const char *current = ::setlocale(LC_NUMERIC, nullptr);
+
+  return current != nullptr ? string(current) : string("C");
+}
+
+class locale_windows_numeric_scope {
+public:
+  explicit locale_windows_numeric_scope(const char *name)
+      : previous_name_(locale_current_numeric_name()),
+        previous_mode_(ftl_locale_runtime::_configthreadlocale(1)),
+        active_(false) {
+    if (previous_mode_ == -1)
+      locale_named_numpunct_failure();
+
+    if (::setlocale(LC_NUMERIC, name) == nullptr) {
+      if (previous_mode_ == 2) {
+        (void)ftl_locale_runtime::_configthreadlocale(2);
+      }
+
+      locale_named_numpunct_failure();
+    }
+
+    active_ = true;
+  }
+
+  locale_windows_numeric_scope(const locale_windows_numeric_scope &) = delete;
+
+  locale_windows_numeric_scope &
+  operator=(const locale_windows_numeric_scope &) = delete;
+
+  ~locale_windows_numeric_scope() {
+    if (active_) {
+      (void)::setlocale(LC_NUMERIC, previous_name_.c_str());
+    }
+
+    if (previous_mode_ == 2) {
+      (void)ftl_locale_runtime::_configthreadlocale(2);
+    }
+  }
+
+private:
+  string previous_name_;
+  int previous_mode_;
+  bool active_;
+};
+
+#else
+
+class locale_posix_numeric_scope {
+public:
+  explicit locale_posix_numeric_scope(ftl_locale_runtime::native_handle locale)
+      : previous_(ftl_locale_runtime::uselocale(locale)) {
+    if (previous_ == nullptr)
+      locale_named_numpunct_failure();
+  }
+
+  locale_posix_numeric_scope(const locale_posix_numeric_scope &) = delete;
+
+  locale_posix_numeric_scope &
+  operator=(const locale_posix_numeric_scope &) = delete;
+
+  ~locale_posix_numeric_scope() {
+    (void)ftl_locale_runtime::uselocale(previous_);
+  }
+
+private:
+  ftl_locale_runtime::native_handle previous_;
+};
+
+#endif
+
+inline locale_named_numeric_snapshot
+locale_load_numeric_snapshot(const char *name,
+                             ftl_locale_runtime::native_handle native) {
+#if defined(_WIN32)
+  locale_windows_numeric_scope scope(name);
+#else
+  locale_posix_numeric_scope scope(native);
+  (void)name;
+#endif
+
+  ::lconv *information = ::localeconv();
+
+  if (information == nullptr)
+    locale_named_numpunct_failure();
+
+  locale_named_numeric_snapshot result;
+
+  if (information->decimal_point != nullptr)
+    result.decimal_point = information->decimal_point;
+
+  if (information->thousands_sep != nullptr)
+    result.thousands_sep = information->thousands_sep;
+
+  if (information->grouping != nullptr)
+    result.grouping = information->grouping;
+
+  return result;
+}
+
+struct locale_named_numpunct_context {
+  ftl_locale_runtime::native_handle native{};
+  locale_named_numeric_snapshot punctuation;
+
+  explicit locale_named_numpunct_context(const char *name)
+      : native(ftl_locale_runtime::create_numeric(name)) {
+    if (native == nullptr)
+      locale_named_numpunct_failure();
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+      punctuation = locale_load_numeric_snapshot(name, native);
+    } catch (...) {
+      ftl_locale_runtime::destroy(native);
+      native = nullptr;
+      throw;
+    }
+#else
+    punctuation = locale_load_numeric_snapshot(name, native);
+#endif
+  }
+
+  locale_named_numpunct_context(const locale_named_numpunct_context &) = delete;
+
+  locale_named_numpunct_context &
+  operator=(const locale_named_numpunct_context &) = delete;
+
+  ~locale_named_numpunct_context() { ftl_locale_runtime::destroy(native); }
+};
+
+template <class Character>
+[[nodiscard]]
+inline Character
+locale_named_numeric_character(const locale_named_numpunct_context &context,
+                               const string &value, char fallback) noexcept {
+  if (value.empty())
+    return static_cast<Character>(fallback);
+
+  if constexpr (is_same_v<Character, char>) {
+    return value[0];
+  } else {
+    return ftl_locale_runtime::widen_first(context.native, value.c_str(),
+                                           static_cast<wchar_t>(fallback));
+  }
+}
+
+template <class Character>
+[[nodiscard]]
+inline basic_string<Character> locale_ascii_string(const char *value) {
+  basic_string<Character> result;
+
+  while (*value != '\0') {
+    result.push_back(static_cast<Character>(*value++));
+  }
+
+  return result;
 }
 
 } // namespace detail
 
-template <class Character>
-class collate_byname : public collate<Character> {
-  static_assert(
-      is_same_v<Character, char> ||
-          is_same_v<Character, wchar_t>,
-      "FTL provides the standard collate_byname specializations "
-      "for char and wchar_t");
+template <class Character> class collate_byname : public collate<Character> {
+  static_assert(is_same_v<Character, char> || is_same_v<Character, wchar_t>,
+                "FTL provides the standard collate_byname specializations "
+                "for char and wchar_t");
 
 public:
   using string_type = basic_string<Character>;
 
-  explicit collate_byname(
-      const char *name,
-      size_t refs = 0)
+  explicit collate_byname(const char *name, size_t refs = 0)
       : collate<Character>(refs),
-        context_(
-            new detail::locale_named_collate_context(
-                name)) {}
+        context_(new detail::locale_named_collate_context(name)) {}
 
-  explicit collate_byname(
-      const string &name,
-      size_t refs = 0)
+  explicit collate_byname(const string &name, size_t refs = 0)
       : collate_byname(name.c_str(), refs) {}
 
 protected:
-  ~collate_byname() override {
-    delete context_;
-  }
+  ~collate_byname() override { delete context_; }
 
-  int do_compare(
-      const Character *low1,
-      const Character *high1,
-      const Character *low2,
-      const Character *high2) const override {
+  int do_compare(const Character *low1, const Character *high1,
+                 const Character *low2, const Character *high2) const override {
     const auto left =
-        detail::locale_named_collate_transform(
-            context_->native,
-            low1,
-            high1);
+        detail::locale_named_collate_transform(context_->native, low1, high1);
 
     const auto right =
-        detail::locale_named_collate_transform(
-            context_->native,
-            low2,
-            high2);
+        detail::locale_named_collate_transform(context_->native, low2, high2);
 
     return detail::collate_lexicographical_compare(
-        left.data(),
-        left.data() + left.size(),
-        right.data(),
+        left.data(), left.data() + left.size(), right.data(),
         right.data() + right.size());
   }
 
-  string_type do_transform(
-      const Character *low,
-      const Character *high) const override {
-    return detail::locale_named_collate_transform(
-        context_->native,
-        low,
-        high);
+  string_type do_transform(const Character *low,
+                           const Character *high) const override {
+    return detail::locale_named_collate_transform(context_->native, low, high);
   }
 
-  long do_hash(
-      const Character *low,
-      const Character *high) const override {
-    const auto transformed =
-        do_transform(low, high);
+  long do_hash(const Character *low, const Character *high) const override {
+    const auto transformed = do_transform(low, high);
 
-    return detail::locale_named_collate_hash(
-        transformed);
+    return detail::locale_named_collate_hash(transformed);
   }
 
 private:
   detail::locale_named_collate_context *context_;
+};
+
+template <class Character> class numpunct : public locale::facet {
+  static_assert(is_same_v<Character, char> || is_same_v<Character, wchar_t>,
+                "FTL provides the required numpunct specializations "
+                "for char and wchar_t");
+
+public:
+  using char_type = Character;
+  using string_type = basic_string<Character>;
+
+  explicit numpunct(size_t refs = 0) : locale::facet(refs) {}
+
+  [[nodiscard]]
+  char_type decimal_point() const {
+    return do_decimal_point();
+  }
+
+  [[nodiscard]]
+  char_type thousands_sep() const {
+    return do_thousands_sep();
+  }
+
+  [[nodiscard]]
+  string grouping() const {
+    return do_grouping();
+  }
+
+  [[nodiscard]]
+  string_type truename() const {
+    return do_truename();
+  }
+
+  [[nodiscard]]
+  string_type falsename() const {
+    return do_falsename();
+  }
+
+  inline static locale::id id{};
+
+protected:
+  ~numpunct() override = default;
+
+  virtual char_type do_decimal_point() const {
+    return static_cast<char_type>('.');
+  }
+
+  virtual char_type do_thousands_sep() const {
+    return static_cast<char_type>(',');
+  }
+
+  virtual string do_grouping() const { return {}; }
+
+  virtual string_type do_truename() const {
+    return detail::locale_ascii_string<char_type>("true");
+  }
+
+  virtual string_type do_falsename() const {
+    return detail::locale_ascii_string<char_type>("false");
+  }
+};
+
+template <class Character> class numpunct_byname : public numpunct<Character> {
+  static_assert(is_same_v<Character, char> || is_same_v<Character, wchar_t>,
+                "FTL provides numpunct_byname specializations "
+                "for char and wchar_t");
+
+public:
+  using char_type = Character;
+  using string_type = basic_string<Character>;
+
+  explicit numpunct_byname(const char *name, size_t refs = 0)
+      : numpunct<Character>(refs),
+        context_(new detail::locale_named_numpunct_context(name)) {}
+
+  explicit numpunct_byname(const string &name, size_t refs = 0)
+      : numpunct_byname(name.c_str(), refs) {}
+
+protected:
+  ~numpunct_byname() override { delete context_; }
+
+  char_type do_decimal_point() const override {
+    return detail::locale_named_numeric_character<Character>(
+        *context_, context_->punctuation.decimal_point, '.');
+  }
+
+  char_type do_thousands_sep() const override {
+    //
+    // The C locale reports no active grouping separator because
+    // grouping itself is empty. numpunct still requires a character
+    // result, so retain the classic comma when the runtime provides
+    // no separator.
+    //
+    return detail::locale_named_numeric_character<Character>(
+        *context_, context_->punctuation.thousands_sep, ',');
+  }
+
+  string do_grouping() const override { return context_->punctuation.grouping; }
+
+private:
+  detail::locale_named_numpunct_context *context_;
 };
 
 namespace detail {
@@ -1298,32 +1492,52 @@ struct locale_facet_control {
   }
 };
 
-struct locale_classic_collate_char final
-    : collate<char> {
-  locale_classic_collate_char()
-      : collate<char>(1) {}
+struct locale_classic_collate_char final : collate<char> {
+  locale_classic_collate_char() : collate<char>(1) {}
 
   ~locale_classic_collate_char() override = default;
 };
 
-struct locale_classic_collate_wchar final
-    : collate<wchar_t> {
-  locale_classic_collate_wchar()
-      : collate<wchar_t>(1) {}
+struct locale_classic_collate_wchar final : collate<wchar_t> {
+  locale_classic_collate_wchar() : collate<wchar_t>(1) {}
 
   ~locale_classic_collate_wchar() override = default;
 };
 
-inline locale_facet_control &
-locale_classic_collate_char_control() {
+struct locale_classic_numpunct_char final : numpunct<char> {
+  locale_classic_numpunct_char() : numpunct<char>(1) {}
+
+  ~locale_classic_numpunct_char() override = default;
+};
+
+struct locale_classic_numpunct_wchar final : numpunct<wchar_t> {
+  locale_classic_numpunct_wchar() : numpunct<wchar_t>(1) {}
+
+  ~locale_classic_numpunct_wchar() override = default;
+};
+
+inline locale_facet_control &locale_classic_numpunct_char_control() {
+  static locale_classic_numpunct_char facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &locale_classic_numpunct_wchar_control() {
+  static locale_classic_numpunct_wchar facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &locale_classic_collate_char_control() {
   static locale_classic_collate_char facet;
   static locale_facet_control control(&facet);
 
   return control;
 }
 
-inline locale_facet_control &
-locale_classic_collate_wchar_control() {
+inline locale_facet_control &locale_classic_collate_wchar_control() {
   static locale_classic_collate_wchar facet;
   static locale_facet_control control(&facet);
 
@@ -1419,7 +1633,7 @@ inline locale_state &locale_classic_state() {
   static locale_state state;
 
   static const bool initialized = [] {
-    state.facets.reserve(4);
+    state.facets.reserve(6);
 
     state.facets.push_back(
         {&ctype<char>::id, &locale_classic_ctype_char_control()});
@@ -1427,13 +1641,17 @@ inline locale_state &locale_classic_state() {
     state.facets.push_back(
         {&ctype<wchar_t>::id, &locale_classic_ctype_wchar_control()});
 
-state.facets.push_back(
-    {&collate<char>::id,
-     &locale_classic_collate_char_control()});
+    state.facets.push_back(
+        {&collate<char>::id, &locale_classic_collate_char_control()});
 
-state.facets.push_back(
-    {&collate<wchar_t>::id,
-     &locale_classic_collate_wchar_control()});
+    state.facets.push_back(
+        {&collate<wchar_t>::id, &locale_classic_collate_wchar_control()});
+
+    state.facets.push_back(
+        {&numpunct<char>::id, &locale_classic_numpunct_char_control()});
+
+    state.facets.push_back(
+        {&numpunct<wchar_t>::id, &locale_classic_numpunct_wchar_control()});
 
     return true;
   }();
@@ -1767,9 +1985,7 @@ bool locale::operator()(
     const basic_string<Character, Traits, Allocator> &left,
     const basic_string<Character, Traits, Allocator> &right) const {
   return use_facet<FTL_LOCALE_NAMESPACE::collate<Character>>(*this).compare(
-             left.data(),
-             left.data() + left.size(),
-             right.data(),
+             left.data(), left.data() + left.size(), right.data(),
              right.data() + right.size()) < 0;
 }
 
