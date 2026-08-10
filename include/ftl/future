@@ -1202,12 +1202,6 @@ private:
   Callable callable_;
 };
 
-template <class F>
-concept packaged_task_static_call_operator =
-    requires(F &value) {
-      value.operator();
-    };
-
 template <bool Static, class R, class... Args>
 struct packaged_task_function_pointer_guide;
 
@@ -1329,14 +1323,14 @@ struct packaged_task_guide<F, R (G::*)(Args...) const volatile & noexcept> {
 template <class F, class R, class... Args>
 struct packaged_task_guide<F, R (*)(Args...)>
     : packaged_task_function_pointer_guide<
-          packaged_task_static_call_operator<F>,
+          is_invocable_v<F &, Args...>,
           R,
           Args...> {};
 
 template <class F, class R, class... Args>
 struct packaged_task_guide<F, R (*)(Args...) noexcept>
     : packaged_task_function_pointer_guide<
-          packaged_task_static_call_operator<F>,
+          is_invocable_v<F &, Args...>,
           R,
           Args...> {};
 
