@@ -26,6 +26,24 @@ enum class classification {
   blank
 };
 
+struct decoded_wide {
+  enum class status {
+    complete,
+    partial,
+    error
+  };
+
+  status result;
+  wchar_t value;
+  decltype(sizeof(0)) consumed;
+};
+
+struct encoded_wide {
+  bool valid;
+  char bytes[16];
+  decltype(sizeof(0)) produced;
+};
+
 #if defined(_WIN32)
 
 extern "C" {
@@ -119,14 +137,6 @@ inline bool multibyte_is_stateful(native_handle) noexcept {
   return false;
 }
 
-struct decoded_wide {
-  enum class status { complete, partial, error };
-
-  status result;
-  wchar_t value;
-  decltype(sizeof(0)) consumed;
-};
-
 inline decoded_wide decode_wide(native_handle locale, const char *first,
                                 const char *last) noexcept {
   if (first == last) {
@@ -161,12 +171,6 @@ inline decoded_wide decode_wide(native_handle locale, const char *first,
 
   return {decoded_wide::status::error, wchar_t{}, 0};
 }
-
-struct encoded_wide {
-  bool valid;
-  char bytes[16];
-  decltype(sizeof(0)) produced;
-};
 
 inline encoded_wide encode_wide(native_handle locale, wchar_t value) noexcept {
   encoded_wide result{};
