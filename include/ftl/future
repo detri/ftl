@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdint>
 #include <detail/future_state.hpp>
+#include <detail/thread_exit.hpp>
 #include <memory>
 #include <stdexcept>
 #include <system_error>
@@ -18,6 +19,7 @@
 #include <ftl/chrono>
 #include <ftl/cstdint>
 #include <ftl/detail/future_state.hpp>
+#include <ftl/detail/thread_exit.hpp>
 #include <ftl/memory>
 #include <ftl/stdexcept>
 #include <ftl/system_error>
@@ -648,6 +650,376 @@ struct future_access {
 };
 
 } // namespace detail
+
+namespace detail {
+
+template <class State>
+class promise_thread_exit_action final : public thread_exit_action {
+public:
+  explicit promise_thread_exit_action(shared_ptr<State> state)
+      : thread_exit_action(&promise_thread_exit_action::invoke),
+        state_(move(state)) {}
+
+private:
+  static void invoke(thread_exit_action *base) noexcept {
+    auto *self = static_cast<promise_thread_exit_action *>(base);
+
+    self->state_->make_ready();
+
+    delete self;
+  }
+
+  shared_ptr<State> state_;
+};
+
+[[noreturn]]
+inline void throw_future_thread_exit_registration_error() {
+#if FTL_HAS_EXCEPTIONS
+  throw system_error(make_error_code(errc::resource_unavailable_try_again),
+                     "promise thread-exit registration");
+#else
+  terminate();
+#endif
+}
+
+template <class State, class Store>
+void promise_store_at_thread_exit(const shared_ptr<State> &state,
+                                  Store &&store) {
+  // Allocate the action before mutating the state.
+  // If allocation fails, the promise remains
+  // completely unsatisfied.
+  auto *action = new promise_thread_exit_action<State>{state};
+
+  bool stored = false;
+
+#if FTL_HAS_EXCEPTIONS
+  try {
+#endif
+
+    stored = forward<Store>(store)();
+
+#if FTL_HAS_EXCEPTIONS
+  } catch (...) {
+    delete action;
+    throw;
+  }
+#endif
+
+  if (!stored) {
+    delete action;
+
+    throw_future_error(future_errc::promise_already_satisfied);
+  }
+
+  if (!register_thread_exit_action(action)) {
+    // The result is already stored and cannot be
+    // rolled back. Publish it rather than leaving
+    // waiters permanently stranded.
+    state->make_ready();
+
+    delete action;
+
+    throw_future_thread_exit_registration_error();
+  }
+}
+
+inline exception_ptr broken_promise_exception() noexcept {
+#if FTL_HAS_EXCEPTIONS
+  try {
+    throw future_error{future_errc::broken_promise};
+  } catch (...) {
+    return current_exception();
+  }
+#else
+  return exception_ptr{};
+#endif
+}
+
+template <class R>
+void abandon_promise_state(shared_ptr<future_state<R>> &state) noexcept {
+  if (!state)
+    return;
+
+  // A stored *_at_thread_exit result is already
+  // satisfied even though it has deliberately not
+  // been published as ready yet. Do not replace it
+  // with broken_promise.
+  if (!state->is_satisfied()) {
+    state->abandon_with_exception(broken_promise_exception());
+  }
+
+  state.reset();
+}
+
+} // namespace detail
+
+template <class R> class promise {
+  static_assert(is_object_v<R>);
+  static_assert(is_destructible_v<R>);
+
+public:
+  promise() : state_(make_shared<detail::future_state<R>>()) {}
+
+  template <class Allocator>
+  promise(allocator_arg_t, const Allocator &allocator)
+      : state_(allocate_shared<detail::future_state<R>>(allocator)) {}
+
+  promise(promise &&) noexcept = default;
+
+  promise(const promise &) = delete;
+
+  ~promise() { detail::abandon_promise_state(state_); }
+
+  promise &operator=(promise &&other) noexcept {
+    if (this != &other) {
+      detail::abandon_promise_state(state_);
+
+      state_ = move(other.state_);
+    }
+
+    return *this;
+  }
+
+  promise &operator=(const promise &) = delete;
+
+  void swap(promise &other) noexcept { state_.swap(other.state_); }
+
+  future<R> get_future() {
+    auto &state = require_state();
+
+    if (!state.try_mark_future_retrieved()) {
+      detail::throw_future_error(future_errc::future_already_retrieved);
+    }
+
+    return detail::future_access::make_future<R>(state_);
+  }
+
+  void set_value(const R &value) {
+    auto &state = require_state();
+
+    if (!state.try_set_value(value)) {
+      detail::throw_future_error(future_errc::promise_already_satisfied);
+    }
+  }
+
+  void set_value(R &&value) {
+    auto &state = require_state();
+
+    if (!state.try_set_value(move(value))) {
+      detail::throw_future_error(future_errc::promise_already_satisfied);
+    }
+  }
+
+  void set_exception(exception_ptr exception) {
+    auto &state = require_state();
+
+    if (!state.try_set_exception(move(exception))) {
+      detail::throw_future_error(future_errc::promise_already_satisfied);
+    }
+  }
+
+  void set_value_at_thread_exit(const R &value) {
+    require_state();
+
+    detail::promise_store_at_thread_exit(
+        state_, [&] { return state_->try_store_value(value); });
+  }
+
+  void set_value_at_thread_exit(R &&value) {
+    require_state();
+
+    detail::promise_store_at_thread_exit(
+        state_, [&] { return state_->try_store_value(move(value)); });
+  }
+
+  void set_exception_at_thread_exit(exception_ptr exception) {
+    require_state();
+
+    detail::promise_store_at_thread_exit(
+        state_, [&] { return state_->try_store_exception(move(exception)); });
+  }
+
+private:
+  [[nodiscard]]
+  detail::future_state<R> &require_state() {
+    if (!state_) {
+      detail::throw_future_error(future_errc::no_state);
+    }
+
+    return *state_;
+  }
+
+  shared_ptr<detail::future_state<R>> state_;
+};
+
+template <class R> class promise<R &> {
+public:
+  promise() : state_(make_shared<detail::future_state<R &>>()) {}
+
+  template <class Allocator>
+  promise(allocator_arg_t, const Allocator &allocator)
+      : state_(allocate_shared<detail::future_state<R &>>(allocator)) {}
+
+  promise(promise &&) noexcept = default;
+
+  promise(const promise &) = delete;
+
+  ~promise() { detail::abandon_promise_state(state_); }
+
+  promise &operator=(promise &&other) noexcept {
+    if (this != &other) {
+      detail::abandon_promise_state(state_);
+
+      state_ = move(other.state_);
+    }
+
+    return *this;
+  }
+
+  promise &operator=(const promise &) = delete;
+
+  void swap(promise &other) noexcept { state_.swap(other.state_); }
+
+  future<R &> get_future() {
+    auto &state = require_state();
+
+    if (!state.try_mark_future_retrieved()) {
+      detail::throw_future_error(future_errc::future_already_retrieved);
+    }
+
+    return detail::future_access::make_future<R &>(state_);
+  }
+
+  void set_value(R &value) {
+    auto &state = require_state();
+
+    if (!state.try_set_value(value)) {
+      detail::throw_future_error(future_errc::promise_already_satisfied);
+    }
+  }
+
+  void set_exception(exception_ptr exception) {
+    auto &state = require_state();
+
+    if (!state.try_set_exception(move(exception))) {
+      detail::throw_future_error(future_errc::promise_already_satisfied);
+    }
+  }
+
+  void set_value_at_thread_exit(R &value) {
+    require_state();
+
+    detail::promise_store_at_thread_exit(
+        state_, [&] { return state_->try_store_value(value); });
+  }
+
+  void set_exception_at_thread_exit(exception_ptr exception) {
+    require_state();
+
+    detail::promise_store_at_thread_exit(
+        state_, [&] { return state_->try_store_exception(move(exception)); });
+  }
+
+private:
+  [[nodiscard]]
+  detail::future_state<R &> &require_state() {
+    if (!state_) {
+      detail::throw_future_error(future_errc::no_state);
+    }
+
+    return *state_;
+  }
+
+  shared_ptr<detail::future_state<R &>> state_;
+};
+
+template <> class promise<void> {
+public:
+  promise() : state_(make_shared<detail::future_state<void>>()) {}
+
+  template <class Allocator>
+  promise(allocator_arg_t, const Allocator &allocator)
+      : state_(allocate_shared<detail::future_state<void>>(allocator)) {}
+
+  promise(promise &&) noexcept = default;
+
+  promise(const promise &) = delete;
+
+  ~promise() { detail::abandon_promise_state(state_); }
+
+  promise &operator=(promise &&other) noexcept {
+    if (this != &other) {
+      detail::abandon_promise_state(state_);
+
+      state_ = move(other.state_);
+    }
+
+    return *this;
+  }
+
+  promise &operator=(const promise &) = delete;
+
+  void swap(promise &other) noexcept { state_.swap(other.state_); }
+
+  future<void> get_future() {
+    auto &state = require_state();
+
+    if (!state.try_mark_future_retrieved()) {
+      detail::throw_future_error(future_errc::future_already_retrieved);
+    }
+
+    return detail::future_access::make_future<void>(state_);
+  }
+
+  void set_value() {
+    auto &state = require_state();
+
+    if (!state.try_set_value()) {
+      detail::throw_future_error(future_errc::promise_already_satisfied);
+    }
+  }
+
+  void set_exception(exception_ptr exception) {
+    auto &state = require_state();
+
+    if (!state.try_set_exception(move(exception))) {
+      detail::throw_future_error(future_errc::promise_already_satisfied);
+    }
+  }
+
+  void set_value_at_thread_exit() {
+    require_state();
+
+    detail::promise_store_at_thread_exit(
+        state_, [&] { return state_->try_store_value(); });
+  }
+
+  void set_exception_at_thread_exit(exception_ptr exception) {
+    require_state();
+
+    detail::promise_store_at_thread_exit(
+        state_, [&] { return state_->try_store_exception(move(exception)); });
+  }
+
+private:
+  [[nodiscard]]
+  detail::future_state<void> &require_state() {
+    if (!state_) {
+      detail::throw_future_error(future_errc::no_state);
+    }
+
+    return *state_;
+  }
+
+  shared_ptr<detail::future_state<void>> state_;
+};
+
+template <class R> void swap(promise<R> &left, promise<R> &right) noexcept {
+  left.swap(right);
+}
+
+template <class R, class Allocator>
+struct uses_allocator<promise<R>, Allocator> : true_type {};
 
 FTL_FUTURE_END_NAMESPACE
 

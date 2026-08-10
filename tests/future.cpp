@@ -22,6 +22,52 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+struct promise_tls_probe {
+  tested::atomic<bool> *destroyed = nullptr;
+
+  ~promise_tls_probe() {
+    if (destroyed != nullptr) {
+      destroyed->store(true, tested::memory_order_release);
+    }
+  }
+};
+
+thread_local promise_tls_probe promise_tls_probe_instance;
+
+struct promise_allocator_counts {
+  tested::atomic<int> allocations{0};
+  tested::atomic<int> deallocations{0};
+};
+
+template <class T> struct promise_counting_allocator {
+  using value_type = T;
+
+  promise_allocator_counts *counts;
+
+  explicit promise_counting_allocator(promise_allocator_counts *value)
+      : counts(value) {}
+
+  template <class U>
+  promise_counting_allocator(
+      const promise_counting_allocator<U> &other) noexcept
+      : counts(other.counts) {}
+
+  [[nodiscard]]
+  T *allocate(tested::size_t count) {
+    counts->allocations.fetch_add(1, tested::memory_order_relaxed);
+
+    return static_cast<T *>(::operator new(sizeof(T) * count));
+  }
+
+  void deallocate(T *pointer, tested::size_t) noexcept {
+    counts->deallocations.fetch_add(1, tested::memory_order_relaxed);
+
+    ::operator delete(pointer);
+  }
+
+  template <class> friend struct promise_counting_allocator;
+};
+
 static_assert(static_cast<int>(tested::future_errc::broken_promise) != 0);
 
 static_assert(static_cast<int>(tested::future_errc::future_already_retrieved) !=
@@ -81,6 +127,26 @@ static_assert(
         int &>);
 
 static_assert(noexcept(tested::declval<tested::future<int> &>().share()));
+
+static_assert(tested::is_default_constructible_v<tested::promise<int>>);
+
+static_assert(tested::is_move_constructible_v<tested::promise<int>>);
+
+static_assert(tested::is_move_assignable_v<tested::promise<int>>);
+
+static_assert(!tested::is_copy_constructible_v<tested::promise<int>>);
+
+static_assert(!tested::is_copy_assignable_v<tested::promise<int>>);
+
+static_assert(tested::is_default_constructible_v<tested::promise<int &>>);
+
+static_assert(tested::is_default_constructible_v<tested::promise<void>>);
+
+static_assert(
+    tested::uses_allocator_v<tested::promise<int>, tested::allocator<int>>);
+
+static_assert(noexcept(tested::declval<tested::promise<int> &>().swap(
+    tested::declval<tested::promise<int> &>())));
 
 bool strings_equal(const char *left, const char *right) {
   while (*left != '\0' && *right != '\0') {
@@ -759,6 +825,403 @@ bool timed_waits_preserve_deferred_status() {
   return value.get() == 314;
 }
 
+bool promise_value_works() {
+  tested::promise<int> provider;
+
+  auto result = provider.get_future();
+
+  provider.set_value(42);
+
+  return result.get() == 42;
+}
+
+bool promise_reference_works() {
+  int target = 73;
+
+  tested::promise<int &> provider;
+
+  auto result = provider.get_future();
+
+  provider.set_value(target);
+
+  return &result.get() == &target;
+}
+
+bool promise_void_works() {
+  tested::promise<void> provider;
+
+  auto result = provider.get_future();
+
+  provider.set_value();
+
+  result.get();
+
+  return !result.valid();
+}
+
+bool promise_exception_works() {
+  tested::promise<int> provider;
+
+  auto result = provider.get_future();
+
+  provider.set_exception(tested::make_exception_ptr(stored_exception{}));
+
+  try {
+    (void)result.get();
+  } catch (const stored_exception &) {
+    return true;
+  } catch (...) {
+    return false;
+  }
+
+  return false;
+}
+
+bool promise_get_future_is_single_use() {
+  tested::promise<int> provider;
+
+  auto result = provider.get_future();
+
+  try {
+    (void)provider.get_future();
+  } catch (const tested::future_error &error) {
+    if (error.code() != tested::make_error_code(
+                            tested::future_errc::future_already_retrieved)) {
+      return false;
+    }
+  } catch (...) {
+    return false;
+  }
+
+  provider.set_value(17);
+
+  return result.get() == 17;
+}
+
+bool promise_rejects_duplicate_satisfaction() {
+  tested::promise<int> provider;
+
+  auto result = provider.get_future();
+
+  provider.set_value(18);
+
+  try {
+    provider.set_value(19);
+  } catch (const tested::future_error &error) {
+    if (error.code() != tested::make_error_code(
+                            tested::future_errc::promise_already_satisfied)) {
+      return false;
+    }
+  } catch (...) {
+    return false;
+  }
+
+  return result.get() == 18;
+}
+
+bool promise_broken_promise_works() {
+  tested::future<int> result;
+
+  {
+    tested::promise<int> provider;
+
+    result = provider.get_future();
+  }
+
+  try {
+    (void)result.get();
+  } catch (const tested::future_error &error) {
+    return error.code() ==
+           tested::make_error_code(tested::future_errc::broken_promise);
+  } catch (...) {
+    return false;
+  }
+
+  return false;
+}
+
+bool moved_from_promise_has_no_state() {
+  tested::promise<int> source;
+
+  auto result = source.get_future();
+
+  tested::promise<int> destination{tested::move(source)};
+
+  try {
+    source.set_value(1);
+  } catch (const tested::future_error &error) {
+    if (error.code() !=
+        tested::make_error_code(tested::future_errc::no_state)) {
+      return false;
+    }
+  } catch (...) {
+    return false;
+  }
+
+  destination.set_value(55);
+
+  return result.get() == 55;
+}
+
+bool promise_move_assignment_abandons_old_state() {
+  tested::promise<int> first;
+  tested::promise<int> second;
+
+  auto first_result = first.get_future();
+
+  auto second_result = second.get_future();
+
+  first = tested::move(second);
+
+  bool broken = false;
+
+  try {
+    (void)first_result.get();
+  } catch (const tested::future_error &error) {
+    broken = error.code() ==
+             tested::make_error_code(tested::future_errc::broken_promise);
+  } catch (...) {
+    return false;
+  }
+
+  if (!broken)
+    return false;
+
+  first.set_value(91);
+
+  return second_result.get() == 91;
+}
+
+bool promise_swap_preserves_associations() {
+  tested::promise<int> first;
+  tested::promise<int> second;
+
+  auto first_result = first.get_future();
+
+  auto second_result = second.get_future();
+
+  tested::swap(first, second);
+
+  first.set_value(2);
+  second.set_value(1);
+
+  return first_result.get() == 1 && second_result.get() == 2;
+}
+
+bool concurrent_promise_setters_serialize() {
+  tested::promise<int> provider;
+
+  auto result = provider.get_future();
+
+  tested::atomic<int> successes{0};
+  tested::atomic<int> satisfied_errors{0};
+
+  auto setter = [&](int value) {
+    try {
+      provider.set_value(value);
+
+      successes.fetch_add(1, tested::memory_order_relaxed);
+    } catch (const tested::future_error &error) {
+      if (error.code() == tested::make_error_code(
+                              tested::future_errc::promise_already_satisfied)) {
+        satisfied_errors.fetch_add(1, tested::memory_order_relaxed);
+      }
+    }
+  };
+
+  tested::thread first([&] { setter(11); });
+
+  tested::thread second([&] { setter(22); });
+
+  first.join();
+  second.join();
+
+  const int value = result.get();
+
+  return successes.load(tested::memory_order_relaxed) == 1 &&
+         satisfied_errors.load(tested::memory_order_relaxed) == 1 &&
+         (value == 11 || value == 22);
+}
+
+bool promise_value_at_thread_exit_is_deferred() {
+  tested::promise<int> provider;
+
+  auto result = provider.get_future();
+
+  tested::atomic<bool> stored{false};
+  tested::atomic<bool> release{false};
+
+  tested::thread worker(
+      [provider = tested::move(provider), &stored, &release]() mutable {
+        provider.set_value_at_thread_exit(314);
+
+        stored.store(true, tested::memory_order_release);
+
+        while (!release.load(tested::memory_order_acquire)) {
+          tested::this_thread::yield();
+        }
+      });
+
+  while (!stored.load(tested::memory_order_acquire)) {
+    tested::this_thread::yield();
+  }
+
+  const bool still_waiting = result.wait_for(tested::chrono::milliseconds{0}) ==
+                             tested::future_status::timeout;
+
+  release.store(true, tested::memory_order_release);
+
+  worker.join();
+
+  return still_waiting && result.get() == 314;
+}
+
+bool promise_exception_at_thread_exit_works() {
+  tested::promise<void> provider;
+
+  auto result = provider.get_future();
+
+  tested::atomic<bool> stored{false};
+  tested::atomic<bool> release{false};
+
+  tested::thread worker(
+      [provider = tested::move(provider), &stored, &release]() mutable {
+        provider.set_exception_at_thread_exit(
+            tested::make_exception_ptr(stored_exception{}));
+
+        stored.store(true, tested::memory_order_release);
+
+        while (!release.load(tested::memory_order_acquire)) {
+          tested::this_thread::yield();
+        }
+      });
+
+  while (!stored.load(tested::memory_order_acquire)) {
+    tested::this_thread::yield();
+  }
+
+  if (result.wait_for(tested::chrono::milliseconds{0}) !=
+      tested::future_status::timeout) {
+    release.store(true, tested::memory_order_release);
+
+    worker.join();
+
+    return false;
+  }
+
+  release.store(true, tested::memory_order_release);
+
+  worker.join();
+
+  try {
+    result.get();
+  } catch (const stored_exception &) {
+    return true;
+  } catch (...) {
+    return false;
+  }
+
+  return false;
+}
+
+bool promise_reference_and_void_at_thread_exit_work() {
+  int target = 812;
+
+  tested::promise<int &> reference_provider;
+  tested::promise<void> void_provider;
+
+  auto reference_result = reference_provider.get_future();
+
+  auto void_result = void_provider.get_future();
+
+  tested::atomic<bool> stored{false};
+  tested::atomic<bool> release{false};
+
+  tested::thread worker([reference_provider = tested::move(reference_provider),
+                         void_provider = tested::move(void_provider), &target,
+                         &stored, &release]() mutable {
+    reference_provider.set_value_at_thread_exit(target);
+
+    void_provider.set_value_at_thread_exit();
+
+    stored.store(true, tested::memory_order_release);
+
+    while (!release.load(tested::memory_order_acquire)) {
+      tested::this_thread::yield();
+    }
+  });
+
+  while (!stored.load(tested::memory_order_acquire)) {
+    tested::this_thread::yield();
+  }
+
+  const bool reference_waiting =
+      reference_result.wait_for(tested::chrono::milliseconds{0}) ==
+      tested::future_status::timeout;
+
+  const bool void_waiting =
+      void_result.wait_for(tested::chrono::milliseconds{0}) ==
+      tested::future_status::timeout;
+
+  release.store(true, tested::memory_order_release);
+
+  worker.join();
+
+  int &reference = reference_result.get();
+
+  void_result.get();
+
+  return reference_waiting && void_waiting && &reference == &target;
+}
+
+bool promise_thread_exit_follows_tls_destruction() {
+  tested::atomic<bool> tls_destroyed{false};
+
+  tested::promise<int> provider;
+
+  auto result = provider.get_future();
+
+  tested::thread worker(
+      [provider = tested::move(provider), &tls_destroyed]() mutable {
+        promise_tls_probe_instance.destroyed = &tls_destroyed;
+
+        provider.set_value_at_thread_exit(404);
+      });
+
+  result.wait();
+
+  const bool ordered = tls_destroyed.load(tested::memory_order_acquire);
+
+  worker.join();
+
+  return ordered && result.get() == 404;
+}
+
+bool promise_allocator_constructor_works() {
+  promise_allocator_counts counts;
+
+  {
+    using allocator_type = promise_counting_allocator<int>;
+
+    tested::promise<int> provider(tested::allocator_arg,
+                                  allocator_type{&counts});
+
+    auto result = provider.get_future();
+
+    provider.set_value(606);
+
+    if (result.get() != 606)
+      return false;
+  }
+
+  const int allocations = counts.allocations.load(tested::memory_order_relaxed);
+
+  const int deallocations =
+      counts.deallocations.load(tested::memory_order_relaxed);
+
+  return allocations != 0 && allocations == deallocations;
+}
+
 bool ftl_test() {
   return error_vocabulary_works() && value_state_works() &&
          reference_state_works() && void_state_works() &&
@@ -780,5 +1243,17 @@ bool ftl_test() {
          shared_future_waiters_share_one_state() &&
          future_moves_stored_value() &&
          throwing_get_move_still_invalidates_future() &&
-         timed_waits_preserve_deferred_status();
+         timed_waits_preserve_deferred_status() && promise_value_works() &&
+         promise_reference_works() && promise_void_works() &&
+         promise_exception_works() && promise_get_future_is_single_use() &&
+         promise_rejects_duplicate_satisfaction() &&
+         promise_broken_promise_works() && moved_from_promise_has_no_state() &&
+         promise_move_assignment_abandons_old_state() &&
+         promise_swap_preserves_associations() &&
+         concurrent_promise_setters_serialize() &&
+         promise_value_at_thread_exit_is_deferred() &&
+         promise_exception_at_thread_exit_works() &&
+         promise_reference_and_void_at_thread_exit_work() &&
+         promise_thread_exit_follows_tls_destruction() &&
+         promise_allocator_constructor_works();
 }
