@@ -1,0 +1,172 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_FUTURE_HEADER
+#define FTL_FUTURE_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <detail/future_state.hpp>
+#include <stdexcept>
+#include <system_error>
+#include <type_traits>
+#define FTL_FUTURE_BEGIN_NAMESPACE namespace std {
+#define FTL_FUTURE_END_NAMESPACE }
+#else
+#include <ftl/detail/future_state.hpp>
+#include <ftl/stdexcept>
+#include <ftl/system_error>
+#include <ftl/type_traits>
+#define FTL_FUTURE_BEGIN_NAMESPACE namespace ftl {
+#define FTL_FUTURE_END_NAMESPACE }
+#endif
+
+FTL_FUTURE_BEGIN_NAMESPACE
+
+enum class future_errc {
+  broken_promise = 1,
+  future_already_retrieved = 2,
+  promise_already_satisfied = 3,
+  no_state = 4,
+};
+
+enum class launch : unsigned int {
+  async = 1u,
+  deferred = 2u,
+};
+
+enum class future_status {
+  ready,
+  timeout,
+  deferred,
+};
+
+constexpr launch operator&(launch left, launch right) noexcept {
+  return static_cast<launch>(static_cast<unsigned int>(left) &
+                             static_cast<unsigned int>(right));
+}
+
+constexpr launch operator|(launch left, launch right) noexcept {
+  return static_cast<launch>(static_cast<unsigned int>(left) |
+                             static_cast<unsigned int>(right));
+}
+
+constexpr launch operator^(launch left, launch right) noexcept {
+  return static_cast<launch>(static_cast<unsigned int>(left) ^
+                             static_cast<unsigned int>(right));
+}
+
+constexpr launch operator~(launch value) noexcept {
+  return static_cast<launch>(~static_cast<unsigned int>(value));
+}
+
+constexpr launch &operator&=(launch &left, launch right) noexcept {
+  return left = left & right;
+}
+
+constexpr launch &operator|=(launch &left, launch right) noexcept {
+  return left = left | right;
+}
+
+constexpr launch &operator^=(launch &left, launch right) noexcept {
+  return left = left ^ right;
+}
+
+template <> struct is_error_code_enum<future_errc> : true_type {};
+
+namespace detail {
+
+inline const char *future_error_message(future_errc error) noexcept {
+  switch (error) {
+  case future_errc::broken_promise:
+    return "Broken promise";
+
+  case future_errc::future_already_retrieved:
+    return "Future already retrieved";
+
+  case future_errc::promise_already_satisfied:
+    return "Promise already satisfied";
+
+  case future_errc::no_state:
+    return "No associated state";
+  }
+
+  return "Unknown future error";
+}
+
+class future_error_category final : public error_category {
+public:
+  const char *name() const noexcept override { return "future"; }
+
+  string message(int value) const override {
+    return string{future_error_message(static_cast<future_errc>(value))};
+  }
+};
+
+} // namespace detail
+
+inline const error_category &future_category() noexcept {
+  static detail::future_error_category category;
+  return category;
+}
+
+inline error_code make_error_code(future_errc error) noexcept {
+  return {
+      static_cast<int>(error),
+      future_category(),
+  };
+}
+
+inline error_condition make_error_condition(future_errc error) noexcept {
+  return {
+      static_cast<int>(error),
+      future_category(),
+  };
+}
+
+class future_error : public logic_error {
+public:
+  explicit future_error(future_errc error)
+      : logic_error(detail::future_error_message(error)),
+        code_(make_error_code(error)) {}
+
+  [[nodiscard]]
+  const error_code &code() const noexcept {
+    return code_;
+  }
+
+  [[nodiscard]]
+  const char *what() const noexcept override {
+    return logic_error::what();
+  }
+
+private:
+  error_code code_;
+};
+
+namespace detail {
+
+[[noreturn]]
+inline void throw_future_error(future_errc error) {
+#if FTL_HAS_EXCEPTIONS
+  throw future_error{error};
+#else
+  (void)error;
+  terminate();
+#endif
+}
+
+} // namespace detail
+
+template <class R> class promise;
+
+template <class R> class future;
+
+template <class R> class shared_future;
+
+template <class> class packaged_task;
+
+FTL_FUTURE_END_NAMESPACE
+
+#undef FTL_FUTURE_BEGIN_NAMESPACE
+#undef FTL_FUTURE_END_NAMESPACE
+
+#endif // FTL_FUTURE_HEADER

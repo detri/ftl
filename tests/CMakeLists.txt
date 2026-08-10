@@ -502,6 +502,7 @@ foreach (header IN ITEMS
         semaphore
         latch
         barrier
+        future
 )
     add_ftl_test(${header})
 endforeach ()
