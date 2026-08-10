@@ -4,17 +4,25 @@
 #define FTL_FUTURE_HEADER
 
 #ifdef FTL_REPLACE_STL
+#include <chrono>
+#include <cstdint>
 #include <detail/future_state.hpp>
+#include <memory>
 #include <stdexcept>
 #include <system_error>
 #include <type_traits>
+#include <utility>
 #define FTL_FUTURE_BEGIN_NAMESPACE namespace std {
 #define FTL_FUTURE_END_NAMESPACE }
 #else
+#include <ftl/chrono>
+#include <ftl/cstdint>
 #include <ftl/detail/future_state.hpp>
+#include <ftl/memory>
 #include <ftl/stdexcept>
 #include <ftl/system_error>
 #include <ftl/type_traits>
+#include <ftl/utility>
 #define FTL_FUTURE_BEGIN_NAMESPACE namespace ftl {
 #define FTL_FUTURE_END_NAMESPACE }
 #endif
@@ -142,6 +150,14 @@ private:
   error_code code_;
 };
 
+template <class R> class promise;
+
+template <class R> class future;
+
+template <class R> class shared_future;
+
+template <class> class packaged_task;
+
 namespace detail {
 
 [[noreturn]]
@@ -154,15 +170,484 @@ inline void throw_future_error(future_errc error) {
 #endif
 }
 
+struct future_access;
+
+inline future_status
+future_status_from_wait_result(future_wait_result result) noexcept {
+  switch (result) {
+  case future_wait_result::ready:
+    return future_status::ready;
+
+  case future_wait_result::timeout:
+    return future_status::timeout;
+
+  case future_wait_result::deferred:
+    return future_status::deferred;
+  }
+
+  return future_status::timeout;
+}
+
+template <class Rep, class Period>
+uint64_t
+future_timeout_nanoseconds(const chrono::duration<Rep, Period> &duration) {
+  using wide_nanoseconds = chrono::duration<long double, nano>;
+
+  const long double value = wide_nanoseconds(duration).count();
+
+  if (!(value > 0))
+    return 0;
+
+  constexpr uint64_t maximum = 0x7fffffffffffffffULL;
+
+  constexpr long double maximum_as_float = 9223372036854775807.0L;
+
+  if (value >= maximum_as_float)
+    return maximum;
+
+  uint64_t result = static_cast<uint64_t>(value);
+
+  // Never shorten a positive timeout merely
+  // because its duration does not exactly fit
+  // integral nanoseconds.
+  if (static_cast<long double>(result) < value)
+    ++result;
+
+  return result;
+}
+
+template <class R> class future_handle {
+public:
+  future_handle() noexcept = default;
+
+  explicit future_handle(shared_ptr<future_state<R>> state) noexcept
+      : state_(move(state)) {}
+
+  [[nodiscard]]
+  bool valid() const noexcept {
+    return static_cast<bool>(state_);
+  }
+
+  void wait() const { require_state().wait(); }
+
+  template <class Rep, class Period>
+  future_status
+  wait_for(const chrono::duration<Rep, Period> &relative_time) const {
+    future_state<R> &state = require_state();
+
+    // Probe first so a deferred state does not touch
+    // the supplied duration at all.
+    const future_wait_result immediate = state.wait_for(0);
+
+    if (immediate != future_wait_result::timeout)
+      return future_status_from_wait_result(immediate);
+
+    return future_status_from_wait_result(
+        state.wait_for(future_timeout_nanoseconds(relative_time)));
+  }
+
+  template <class Clock, class Duration>
+  future_status
+  wait_until(const chrono::time_point<Clock, Duration> &absolute_time) const {
+    static_assert(chrono::is_clock_v<Clock>);
+
+    future_state<R> &state = require_state();
+
+    // A deferred function is not executed by a timed
+    // wait and reports deferred immediately.
+    const future_wait_result immediate = state.wait_for(0);
+
+    if (immediate != future_wait_result::timeout)
+      return future_status_from_wait_result(immediate);
+
+    for (;;) {
+      const auto now = Clock::now();
+
+      if (!(now < absolute_time)) {
+        return state.is_ready() ? future_status::ready : future_status::timeout;
+      }
+
+      const future_wait_result result =
+          state.wait_for(future_timeout_nanoseconds(absolute_time - now));
+
+      if (result != future_wait_result::timeout)
+        return future_status_from_wait_result(result);
+
+      // For clocks that move backwards, recompute the
+      // remaining duration rather than treating one
+      // steady-clock timeout as authoritative.
+      if (!(Clock::now() < absolute_time)) {
+        return state.is_ready() ? future_status::ready : future_status::timeout;
+      }
+    }
+  }
+
+  [[nodiscard]]
+  future_state<R> &state() const {
+    return require_state();
+  }
+
+  [[nodiscard]]
+  shared_ptr<future_state<R>> take_state() noexcept {
+    return move(state_);
+  }
+
+private:
+  [[nodiscard]]
+  future_state<R> &require_state() const {
+    if (!state_)
+      throw_future_error(future_errc::no_state);
+
+    return *state_;
+  }
+
+  shared_ptr<future_state<R>> state_;
+};
+
 } // namespace detail
 
-template <class R> class promise;
+template <class R> class future {
+  static_assert(is_object_v<R>);
+  static_assert(is_destructible_v<R>);
 
-template <class R> class future;
+  template <class> friend class shared_future;
 
-template <class R> class shared_future;
+  friend struct detail::future_access;
 
-template <class> class packaged_task;
+public:
+  future() noexcept = default;
+
+  future(future &&) noexcept = default;
+
+  future(const future &) = delete;
+
+  ~future() = default;
+
+  future &operator=(const future &) = delete;
+
+  future &operator=(future &&) noexcept = default;
+
+  shared_future<R> share() noexcept;
+
+  R get() {
+    auto state = handle_.take_state();
+
+    if (!state)
+      detail::throw_future_error(future_errc::no_state);
+
+    // take_state() occurs before waiting/retrieval so
+    // *this remains invalid even if the stored
+    // exception or R's move constructor throws.
+    state->rethrow_if_exception();
+
+    return move(state->value());
+  }
+
+  [[nodiscard]]
+  bool valid() const noexcept {
+    return handle_.valid();
+  }
+
+  void wait() const { handle_.wait(); }
+
+  template <class Rep, class Period>
+  future_status
+  wait_for(const chrono::duration<Rep, Period> &relative_time) const {
+    return handle_.wait_for(relative_time);
+  }
+
+  template <class Clock, class Duration>
+  future_status
+  wait_until(const chrono::time_point<Clock, Duration> &absolute_time) const {
+    return handle_.wait_until(absolute_time);
+  }
+
+private:
+  explicit future(shared_ptr<detail::future_state<R>> state) noexcept
+      : handle_(move(state)) {}
+
+  detail::future_handle<R> handle_;
+};
+
+template <class R> class future<R &> {
+  template <class> friend class shared_future;
+
+  friend struct detail::future_access;
+
+public:
+  future() noexcept = default;
+
+  future(future &&) noexcept = default;
+
+  future(const future &) = delete;
+
+  ~future() = default;
+
+  future &operator=(const future &) = delete;
+
+  future &operator=(future &&) noexcept = default;
+
+  shared_future<R &> share() noexcept;
+
+  R &get() {
+    auto state = handle_.take_state();
+
+    if (!state)
+      detail::throw_future_error(future_errc::no_state);
+
+    state->rethrow_if_exception();
+
+    return state->value();
+  }
+
+  [[nodiscard]]
+  bool valid() const noexcept {
+    return handle_.valid();
+  }
+
+  void wait() const { handle_.wait(); }
+
+  template <class Rep, class Period>
+  future_status
+  wait_for(const chrono::duration<Rep, Period> &relative_time) const {
+    return handle_.wait_for(relative_time);
+  }
+
+  template <class Clock, class Duration>
+  future_status
+  wait_until(const chrono::time_point<Clock, Duration> &absolute_time) const {
+    return handle_.wait_until(absolute_time);
+  }
+
+private:
+  explicit future(shared_ptr<detail::future_state<R &>> state) noexcept
+      : handle_(move(state)) {}
+
+  detail::future_handle<R &> handle_;
+};
+
+template <> class future<void> {
+  template <class> friend class shared_future;
+
+  friend struct detail::future_access;
+
+public:
+  future() noexcept = default;
+
+  future(future &&) noexcept = default;
+
+  future(const future &) = delete;
+
+  ~future() = default;
+
+  future &operator=(const future &) = delete;
+
+  future &operator=(future &&) noexcept = default;
+
+  shared_future<void> share() noexcept;
+
+  void get() {
+    auto state = handle_.take_state();
+
+    if (!state)
+      detail::throw_future_error(future_errc::no_state);
+
+    state->rethrow_if_exception();
+  }
+
+  [[nodiscard]]
+  bool valid() const noexcept {
+    return handle_.valid();
+  }
+
+  void wait() const { handle_.wait(); }
+
+  template <class Rep, class Period>
+  future_status
+  wait_for(const chrono::duration<Rep, Period> &relative_time) const {
+    return handle_.wait_for(relative_time);
+  }
+
+  template <class Clock, class Duration>
+  future_status
+  wait_until(const chrono::time_point<Clock, Duration> &absolute_time) const {
+    return handle_.wait_until(absolute_time);
+  }
+
+private:
+  explicit future(shared_ptr<detail::future_state<void>> state) noexcept
+      : handle_(move(state)) {}
+
+  detail::future_handle<void> handle_;
+};
+
+template <class R> class shared_future {
+  static_assert(is_object_v<R>);
+  static_assert(is_destructible_v<R>);
+
+public:
+  shared_future() noexcept = default;
+
+  shared_future(const shared_future &) noexcept = default;
+
+  shared_future(future<R> &&other) noexcept : handle_(move(other.handle_)) {}
+
+  shared_future(shared_future &&) noexcept = default;
+
+  ~shared_future() = default;
+
+  shared_future &operator=(const shared_future &) noexcept = default;
+
+  shared_future &operator=(shared_future &&) noexcept = default;
+
+  const R &get() const {
+    detail::future_state<R> &state = handle_.state();
+
+    state.rethrow_if_exception();
+
+    return state.value();
+  }
+
+  [[nodiscard]]
+  bool valid() const noexcept {
+    return handle_.valid();
+  }
+
+  void wait() const { handle_.wait(); }
+
+  template <class Rep, class Period>
+  future_status
+  wait_for(const chrono::duration<Rep, Period> &relative_time) const {
+    return handle_.wait_for(relative_time);
+  }
+
+  template <class Clock, class Duration>
+  future_status
+  wait_until(const chrono::time_point<Clock, Duration> &absolute_time) const {
+    return handle_.wait_until(absolute_time);
+  }
+
+private:
+  detail::future_handle<R> handle_;
+};
+
+template <class R> class shared_future<R &> {
+public:
+  shared_future() noexcept = default;
+
+  shared_future(const shared_future &) noexcept = default;
+
+  shared_future(future<R &> &&other) noexcept : handle_(move(other.handle_)) {}
+
+  shared_future(shared_future &&) noexcept = default;
+
+  ~shared_future() = default;
+
+  shared_future &operator=(const shared_future &) noexcept = default;
+
+  shared_future &operator=(shared_future &&) noexcept = default;
+
+  R &get() const {
+    detail::future_state<R &> &state = handle_.state();
+
+    state.rethrow_if_exception();
+
+    return state.value();
+  }
+
+  [[nodiscard]]
+  bool valid() const noexcept {
+    return handle_.valid();
+  }
+
+  void wait() const { handle_.wait(); }
+
+  template <class Rep, class Period>
+  future_status
+  wait_for(const chrono::duration<Rep, Period> &relative_time) const {
+    return handle_.wait_for(relative_time);
+  }
+
+  template <class Clock, class Duration>
+  future_status
+  wait_until(const chrono::time_point<Clock, Duration> &absolute_time) const {
+    return handle_.wait_until(absolute_time);
+  }
+
+private:
+  detail::future_handle<R &> handle_;
+};
+
+template <> class shared_future<void> {
+public:
+  shared_future() noexcept = default;
+
+  shared_future(const shared_future &) noexcept = default;
+
+  shared_future(future<void> &&other) noexcept : handle_(move(other.handle_)) {}
+
+  shared_future(shared_future &&) noexcept = default;
+
+  ~shared_future() = default;
+
+  shared_future &operator=(const shared_future &) noexcept = default;
+
+  shared_future &operator=(shared_future &&) noexcept = default;
+
+  void get() const {
+    detail::future_state<void> &state = handle_.state();
+
+    state.rethrow_if_exception();
+  }
+
+  [[nodiscard]]
+  bool valid() const noexcept {
+    return handle_.valid();
+  }
+
+  void wait() const { handle_.wait(); }
+
+  template <class Rep, class Period>
+  future_status
+  wait_for(const chrono::duration<Rep, Period> &relative_time) const {
+    return handle_.wait_for(relative_time);
+  }
+
+  template <class Clock, class Duration>
+  future_status
+  wait_until(const chrono::time_point<Clock, Duration> &absolute_time) const {
+    return handle_.wait_until(absolute_time);
+  }
+
+private:
+  detail::future_handle<void> handle_;
+};
+
+template <class R> shared_future<R> future<R>::share() noexcept {
+  return shared_future<R>{move(*this)};
+}
+
+template <class R> shared_future<R &> future<R &>::share() noexcept {
+  return shared_future<R &>{move(*this)};
+}
+
+inline shared_future<void> future<void>::share() noexcept {
+  return shared_future<void>{move(*this)};
+}
+
+namespace detail {
+
+// This is the narrow internal construction boundary that
+// promise, packaged_task, and async can all reuse later.
+// They do not need friendship with every future specialization.
+struct future_access {
+  template <class R>
+  static future<R> make_future(shared_ptr<future_state<R>> state) noexcept {
+    return future<R>{move(state)};
+  }
+};
+
+} // namespace detail
 
 FTL_FUTURE_END_NAMESPACE
 
