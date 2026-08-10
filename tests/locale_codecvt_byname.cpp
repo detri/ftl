@@ -236,11 +236,42 @@ bool ftl_test() {
       return false;
     }
 
-#if !defined(_WIN32)
+#if defined(__APPLE__)
 
     //
-    // Malformed native input is an error, not a request for
-    // additional source bytes.
+    // Darwin's C locale uses its stateless "NONE" encoding, in which
+    // every nonzero byte is a valid one-byte character.
+    //
+    const char extended[] = {static_cast<char>(0xff)};
+
+    wchar_t extended_output[1]{};
+
+    state = {};
+
+    from_next = nullptr;
+    to_next = nullptr;
+
+    if (facet.in(state, extended, extended + 1, from_next, extended_output,
+                 extended_output + 1, to_next) != tested::codecvt_base::ok) {
+      return false;
+    }
+
+    if (from_next != extended + 1 || to_next != extended_output + 1 ||
+        extended_output[0] != static_cast<wchar_t>(0xff)) {
+      return false;
+    }
+
+    state = {};
+
+    if (facet.length(state, extended, extended + 1, 1) != 1) {
+      return false;
+    }
+
+#elif !defined(_WIN32)
+
+    //
+    // The glibc C locale rejects bytes outside its native
+    // single-byte character repertoire.
     //
     const char invalid[] = {static_cast<char>(0xff)};
 

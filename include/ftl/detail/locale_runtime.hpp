@@ -441,7 +441,7 @@ int ___mb_cur_max(void);
 
 #else
 
-decltype(sizeof(0)) __ctype_get_mb_cur_max(void);
+decltype(sizeof(0)) __ctype_get_mb_cur_max(void) noexcept;
 
 #endif
 
