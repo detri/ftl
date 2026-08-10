@@ -3,11 +3,6 @@
 #ifndef FTL_BARRIER_HEADER
 #define FTL_BARRIER_HEADER
 
-#if !defined(__cpp_lib_barrier) || __cpp_lib_barrier < 202302L
-#undef __cpp_lib_barrier
-#define __cpp_lib_barrier 202302L
-#endif
-
 #ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <cstddef>
@@ -144,5 +139,10 @@ FTL_BARRIER_END_NAMESPACE
 
 #undef FTL_BARRIER_BEGIN_NAMESPACE
 #undef FTL_BARRIER_END_NAMESPACE
+
+#if !defined(__cpp_lib_barrier) || __cpp_lib_barrier < 202302L
+#undef __cpp_lib_barrier
+#define __cpp_lib_barrier 202302L
+#endif
 
 #endif // FTL_BARRIER_HEADER

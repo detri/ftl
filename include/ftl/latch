@@ -3,11 +3,6 @@
 #ifndef FTL_LATCH_HEADER
 #define FTL_LATCH_HEADER
 
-#if !defined(__cpp_lib_latch) || __cpp_lib_latch < 201907L
-#undef __cpp_lib_latch
-#define __cpp_lib_latch 201907L
-#endif
-
 #ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <cstddef>
@@ -72,5 +67,10 @@ FTL_LATCH_END_NAMESPACE
 
 #undef FTL_LATCH_BEGIN_NAMESPACE
 #undef FTL_LATCH_END_NAMESPACE
+
+#if !defined(__cpp_lib_latch) || __cpp_lib_latch < 201907L
+#undef __cpp_lib_latch
+#define __cpp_lib_latch 201907L
+#endif
 
 #endif // FTL_LATCH_HEADER

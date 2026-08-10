@@ -3,11 +3,6 @@
 #ifndef FTL_SEMAPHORE_HEADER
 #define FTL_SEMAPHORE_HEADER
 
-#if !defined(__cpp_lib_semaphore) || __cpp_lib_semaphore < 201907L
-#undef __cpp_lib_semaphore
-#define __cpp_lib_semaphore 201907L
-#endif
-
 #ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <chrono>
@@ -186,5 +181,10 @@ FTL_SEMAPHORE_END_NAMESPACE
 
 #undef FTL_SEMAPHORE_BEGIN_NAMESPACE
 #undef FTL_SEMAPHORE_END_NAMESPACE
+
+#if !defined(__cpp_lib_semaphore) || __cpp_lib_semaphore < 201907L
+#undef __cpp_lib_semaphore
+#define __cpp_lib_semaphore 201907L
+#endif
 
 #endif // FTL_SEMAPHORE_HEADER
