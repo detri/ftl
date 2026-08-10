@@ -1,0 +1,1143 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_LOCALE_HEADER
+#define FTL_LOCALE_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <atomic>
+#include <clocale>
+#include <cstddef>
+#include <cwctype>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <type_traits>
+#include <typeinfo>
+#include <vector>
+#else
+#include <ftl/atomic>
+#include <ftl/cwctype>
+#include <ftl/clocale>
+#include <ftl/cstddef>
+#include <ftl/memory>
+#include <ftl/stdexcept>
+#include <ftl/string>
+#include <ftl/type_traits>
+#include <ftl/typeinfo>
+#include <ftl/vector>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+class locale;
+
+template <class Facet> const Facet &use_facet(const locale &);
+
+template <class Facet> bool has_facet(const locale &) noexcept;
+
+namespace detail {
+struct locale_facet_control;
+struct locale_facet_slot;
+struct locale_state;
+} // namespace detail
+
+class locale {
+public:
+  class facet;
+  class id;
+
+  using category = int;
+
+  static constexpr category none = 0;
+  static constexpr category collate = 1 << 0;
+  static constexpr category ctype = 1 << 1;
+  static constexpr category monetary = 1 << 2;
+  static constexpr category numeric = 1 << 3;
+  static constexpr category time = 1 << 4;
+  static constexpr category messages = 1 << 5;
+  static constexpr category all =
+      collate | ctype | monetary | numeric | time | messages;
+
+  locale() noexcept;
+  locale(const locale &other) noexcept;
+
+  template <class Facet> locale(const locale &other, Facet *value);
+
+  ~locale();
+
+  const locale &operator=(const locale &other) noexcept;
+
+  template <class Facet> locale combine(const locale &other) const;
+
+  [[nodiscard]]
+  string name() const;
+
+  [[nodiscard]]
+  bool operator==(const locale &other) const;
+
+  static locale global(const locale &value);
+
+  [[nodiscard]]
+  static const locale &classic();
+
+private:
+  struct adopt_state_t {};
+
+  explicit locale(detail::locale_state *state, adopt_state_t) noexcept
+      : state_(state) {}
+
+  detail::locale_state *state_;
+
+  template <class Facet> friend const Facet &use_facet(const locale &);
+
+  template <class Facet> friend bool has_facet(const locale &) noexcept;
+};
+
+class locale::facet {
+protected:
+  explicit facet(size_t refs = 0) : refs_(refs) {}
+
+  virtual ~facet() = default;
+
+  facet(const facet &) = delete;
+  void operator=(const facet &) = delete;
+
+private:
+  size_t refs_;
+
+  friend struct detail::locale_facet_control;
+};
+
+class locale::id {
+public:
+  id() = default;
+
+  id(const id &) = delete;
+  void operator=(const id &) = delete;
+};
+
+class ctype_base {
+public:
+  using mask = unsigned short;
+
+  inline static constexpr mask space = 1u << 0;
+  inline static constexpr mask print = 1u << 1;
+  inline static constexpr mask cntrl = 1u << 2;
+  inline static constexpr mask upper = 1u << 3;
+  inline static constexpr mask lower = 1u << 4;
+  inline static constexpr mask alpha = 1u << 5;
+  inline static constexpr mask digit = 1u << 6;
+  inline static constexpr mask punct = 1u << 7;
+  inline static constexpr mask xdigit = 1u << 8;
+  inline static constexpr mask blank = 1u << 9;
+
+  inline static constexpr mask alnum = alpha | digit;
+  inline static constexpr mask graph = alnum | punct;
+};
+
+namespace detail {
+
+[[nodiscard]]
+constexpr ctype_base::mask ctype_ascii_mask(unsigned int value) noexcept {
+  using mask = ctype_base::mask;
+
+  const bool upper = value >= static_cast<unsigned>('A') &&
+                     value <= static_cast<unsigned>('Z');
+
+  const bool lower = value >= static_cast<unsigned>('a') &&
+                     value <= static_cast<unsigned>('z');
+
+  const bool alpha = upper || lower;
+
+  const bool digit = value >= static_cast<unsigned>('0') &&
+                     value <= static_cast<unsigned>('9');
+
+  const bool xdigit =
+      digit ||
+      (value >= static_cast<unsigned>('A') &&
+       value <= static_cast<unsigned>('F')) ||
+      (value >= static_cast<unsigned>('a') &&
+       value <= static_cast<unsigned>('f'));
+
+  const bool space =
+      value == static_cast<unsigned>(' ') ||
+      value == static_cast<unsigned>('\t') ||
+      value == static_cast<unsigned>('\n') ||
+      value == static_cast<unsigned>('\v') ||
+      value == static_cast<unsigned>('\f') ||
+      value == static_cast<unsigned>('\r');
+
+  const bool blank =
+      value == static_cast<unsigned>(' ') ||
+      value == static_cast<unsigned>('\t');
+
+  const bool cntrl = value <= 0x1fu || value == 0x7fu;
+  const bool print = value >= 0x20u && value <= 0x7eu;
+  const bool graph = value >= 0x21u && value <= 0x7eu;
+  const bool punct = graph && !alpha && !digit;
+
+  mask result = 0;
+
+  if (space)
+    result |= ctype_base::space;
+
+  if (print)
+    result |= ctype_base::print;
+
+  if (cntrl)
+    result |= ctype_base::cntrl;
+
+  if (upper)
+    result |= ctype_base::upper;
+
+  if (lower)
+    result |= ctype_base::lower;
+
+  if (alpha)
+    result |= ctype_base::alpha;
+
+  if (digit)
+    result |= ctype_base::digit;
+
+  if (punct)
+    result |= ctype_base::punct;
+
+  if (xdigit)
+    result |= ctype_base::xdigit;
+
+  if (blank)
+    result |= ctype_base::blank;
+
+  return result;
+}
+
+struct ctype_classic_table_storage {
+  ctype_base::mask values[256]{};
+
+  constexpr ctype_classic_table_storage() {
+    for (size_t index = 0; index < 256; ++index)
+      values[index] = ctype_ascii_mask(static_cast<unsigned int>(index));
+  }
+};
+
+inline constexpr ctype_classic_table_storage ctype_classic_table{};
+
+[[nodiscard]]
+inline ctype_base::mask ctype_wide_mask(wchar_t value) noexcept {
+  ctype_base::mask result = 0;
+
+  const wint_t wide = static_cast<wint_t>(value);
+
+  if (iswspace(wide))
+    result |= ctype_base::space;
+
+  if (iswprint(wide))
+    result |= ctype_base::print;
+
+  if (iswcntrl(wide))
+    result |= ctype_base::cntrl;
+
+  if (iswupper(wide))
+    result |= ctype_base::upper;
+
+  if (iswlower(wide))
+    result |= ctype_base::lower;
+
+  if (iswalpha(wide))
+    result |= ctype_base::alpha;
+
+  if (iswdigit(wide))
+    result |= ctype_base::digit;
+
+  if (iswpunct(wide))
+    result |= ctype_base::punct;
+
+  if (iswxdigit(wide))
+    result |= ctype_base::xdigit;
+
+  if (iswblank(wide))
+    result |= ctype_base::blank;
+
+  return result;
+}
+
+} // namespace detail
+
+template <class Character>
+class ctype : public locale::facet, public ctype_base {
+  static_assert(is_same_v<Character, wchar_t>,
+                "FTL provides standard ctype specializations for char and "
+                "wchar_t");
+
+public:
+  using char_type = Character;
+
+  explicit ctype(size_t refs = 0)
+      : locale::facet(refs) {}
+
+  [[nodiscard]]
+  bool is(mask requested, char_type value) const {
+    return do_is(requested, value);
+  }
+
+  const char_type *is(const char_type *low,
+                      const char_type *high,
+                      mask *output) const {
+    return do_is(low, high, output);
+  }
+
+  [[nodiscard]]
+  const char_type *scan_is(mask requested,
+                           const char_type *low,
+                           const char_type *high) const {
+    return do_scan_is(requested, low, high);
+  }
+
+  [[nodiscard]]
+  const char_type *scan_not(mask requested,
+                            const char_type *low,
+                            const char_type *high) const {
+    return do_scan_not(requested, low, high);
+  }
+
+  [[nodiscard]]
+  char_type toupper(char_type value) const {
+    return do_toupper(value);
+  }
+
+  const char_type *toupper(char_type *low,
+                           const char_type *high) const {
+    return do_toupper(low, high);
+  }
+
+  [[nodiscard]]
+  char_type tolower(char_type value) const {
+    return do_tolower(value);
+  }
+
+  const char_type *tolower(char_type *low,
+                           const char_type *high) const {
+    return do_tolower(low, high);
+  }
+
+  [[nodiscard]]
+  char_type widen(char value) const {
+    return do_widen(value);
+  }
+
+  const char *widen(const char *low,
+                    const char *high,
+                    char_type *output) const {
+    return do_widen(low, high, output);
+  }
+
+  [[nodiscard]]
+  char narrow(char_type value, char fallback) const {
+    return do_narrow(value, fallback);
+  }
+
+  const char_type *narrow(const char_type *low,
+                          const char_type *high,
+                          char fallback,
+                          char *output) const {
+    return do_narrow(low, high, fallback, output);
+  }
+
+  inline static locale::id id{};
+
+protected:
+  ~ctype() override = default;
+
+  virtual bool do_is(mask requested, char_type value) const {
+    return (detail::ctype_wide_mask(static_cast<wchar_t>(value)) &
+            requested) != 0;
+  }
+
+  virtual const char_type *do_is(const char_type *low,
+                                 const char_type *high,
+                                 mask *output) const {
+    for (const char_type *current = low; current != high; ++current)
+      *output++ =
+          detail::ctype_wide_mask(static_cast<wchar_t>(*current));
+
+    return high;
+  }
+
+  virtual const char_type *do_scan_is(mask requested,
+                                      const char_type *low,
+                                      const char_type *high) const {
+    while (low != high) {
+      if (do_is(requested, *low))
+        break;
+
+      ++low;
+    }
+
+    return low;
+  }
+
+  virtual const char_type *do_scan_not(mask requested,
+                                       const char_type *low,
+                                       const char_type *high) const {
+    while (low != high) {
+      if (!do_is(requested, *low))
+        break;
+
+      ++low;
+    }
+
+    return low;
+  }
+
+  virtual char_type do_toupper(char_type value) const {
+    return static_cast<char_type>(
+        towupper(static_cast<wint_t>(value)));
+  }
+
+  virtual const char_type *do_toupper(char_type *low,
+                                      const char_type *high) const {
+    for (char_type *current = low; current != high; ++current)
+      *current = do_toupper(*current);
+
+    return high;
+  }
+
+  virtual char_type do_tolower(char_type value) const {
+    return static_cast<char_type>(
+        towlower(static_cast<wint_t>(value)));
+  }
+
+  virtual const char_type *do_tolower(char_type *low,
+                                      const char_type *high) const {
+    for (char_type *current = low; current != high; ++current)
+      *current = do_tolower(*current);
+
+    return high;
+  }
+
+  virtual char_type do_widen(char value) const {
+    return static_cast<char_type>(
+        static_cast<unsigned char>(value));
+  }
+
+  virtual const char *do_widen(const char *low,
+                               const char *high,
+                               char_type *output) const {
+    while (low != high)
+      *output++ = do_widen(*low++);
+
+    return high;
+  }
+
+  virtual char do_narrow(char_type value, char fallback) const {
+    if constexpr (is_signed_v<char_type>) {
+      if (value < 0)
+        return fallback;
+    }
+
+    const auto numeric =
+        static_cast<unsigned long long>(value);
+
+    if (numeric <= 0x7fu)
+      return static_cast<char>(numeric);
+
+    return fallback;
+  }
+
+  virtual const char_type *do_narrow(const char_type *low,
+                                     const char_type *high,
+                                     char fallback,
+                                     char *output) const {
+    while (low != high)
+      *output++ = do_narrow(*low++, fallback);
+
+    return high;
+  }
+};
+
+template <>
+class ctype<char> : public locale::facet, public ctype_base {
+public:
+  using char_type = char;
+
+  explicit ctype(const mask *table = nullptr,
+                 bool delete_table = false,
+                 size_t refs = 0)
+      : locale::facet(refs),
+        table_(table),
+        delete_table_(table != nullptr && delete_table) {}
+
+  [[nodiscard]]
+  bool is(mask requested, char value) const {
+    return (table()[static_cast<unsigned char>(value)] &
+            requested) != 0;
+  }
+
+  const char *is(const char *low,
+                 const char *high,
+                 mask *output) const {
+    while (low != high) {
+      *output++ =
+          table()[static_cast<unsigned char>(*low++)];
+    }
+
+    return high;
+  }
+
+  [[nodiscard]]
+  const char *scan_is(mask requested,
+                      const char *low,
+                      const char *high) const {
+    while (low != high) {
+      if ((table()[static_cast<unsigned char>(*low)] &
+           requested) != 0)
+        break;
+
+      ++low;
+    }
+
+    return low;
+  }
+
+  [[nodiscard]]
+  const char *scan_not(mask requested,
+                       const char *low,
+                       const char *high) const {
+    while (low != high) {
+      if ((table()[static_cast<unsigned char>(*low)] &
+           requested) == 0)
+        break;
+
+      ++low;
+    }
+
+    return low;
+  }
+
+  [[nodiscard]]
+  char toupper(char value) const {
+    return do_toupper(value);
+  }
+
+  const char *toupper(char *low,
+                      const char *high) const {
+    return do_toupper(low, high);
+  }
+
+  [[nodiscard]]
+  char tolower(char value) const {
+    return do_tolower(value);
+  }
+
+  const char *tolower(char *low,
+                      const char *high) const {
+    return do_tolower(low, high);
+  }
+
+  [[nodiscard]]
+  char widen(char value) const {
+    return do_widen(value);
+  }
+
+  const char *widen(const char *low,
+                    const char *high,
+                    char *output) const {
+    return do_widen(low, high, output);
+  }
+
+  [[nodiscard]]
+  char narrow(char value, char fallback) const {
+    return do_narrow(value, fallback);
+  }
+
+  const char *narrow(const char *low,
+                     const char *high,
+                     char fallback,
+                     char *output) const {
+    return do_narrow(low, high, fallback, output);
+  }
+
+  inline static locale::id id{};
+
+  inline static constexpr size_t table_size = 256;
+
+  [[nodiscard]]
+  const mask *table() const noexcept {
+    return table_ != nullptr ? table_ : classic_table();
+  }
+
+  [[nodiscard]]
+  static const mask *classic_table() noexcept {
+    return detail::ctype_classic_table.values;
+  }
+
+protected:
+  ~ctype() override {
+    if (delete_table_)
+      delete[] table_;
+  }
+
+  virtual char do_toupper(char value) const {
+    const unsigned char character =
+        static_cast<unsigned char>(value);
+
+    if (character >= static_cast<unsigned char>('a') &&
+        character <= static_cast<unsigned char>('z')) {
+      return static_cast<char>(
+          character - static_cast<unsigned char>('a') +
+          static_cast<unsigned char>('A'));
+    }
+
+    return value;
+  }
+
+  virtual const char *do_toupper(char *low,
+                                 const char *high) const {
+    for (char *current = low; current != high; ++current)
+      *current = do_toupper(*current);
+
+    return high;
+  }
+
+  virtual char do_tolower(char value) const {
+    const unsigned char character =
+        static_cast<unsigned char>(value);
+
+    if (character >= static_cast<unsigned char>('A') &&
+        character <= static_cast<unsigned char>('Z')) {
+      return static_cast<char>(
+          character - static_cast<unsigned char>('A') +
+          static_cast<unsigned char>('a'));
+    }
+
+    return value;
+  }
+
+  virtual const char *do_tolower(char *low,
+                                 const char *high) const {
+    for (char *current = low; current != high; ++current)
+      *current = do_tolower(*current);
+
+    return high;
+  }
+
+  virtual char do_widen(char value) const {
+    return value;
+  }
+
+  virtual const char *do_widen(const char *low,
+                               const char *high,
+                               char *output) const {
+    while (low != high)
+      *output++ = *low++;
+
+    return high;
+  }
+
+  virtual char do_narrow(char value, char) const {
+    return value;
+  }
+
+  virtual const char *do_narrow(const char *low,
+                                const char *high,
+                                char,
+                                char *output) const {
+    while (low != high)
+      *output++ = *low++;
+
+    return high;
+  }
+
+private:
+  const mask *table_;
+  bool delete_table_;
+};
+
+// Named facets come with the named-locale runtime in the next slice.
+template <class Character>
+class ctype_byname;
+
+namespace detail {
+
+struct locale_facet_control {
+  atomic<size_t> references{1};
+  const locale::facet *value;
+
+  explicit locale_facet_control(const locale::facet *facet) noexcept
+      : value(facet) {}
+
+  void retain() noexcept { references.fetch_add(1, memory_order_relaxed); }
+
+  void release() noexcept {
+    if (references.fetch_sub(1, memory_order_release) != 1)
+      return;
+
+    atomic_thread_fence(memory_order_acquire);
+
+    const locale::facet *facet = value;
+    const bool destroy = facet != nullptr && facet->refs_ == 0;
+
+    delete this;
+
+    if (destroy)
+      delete facet;
+  }
+};
+
+struct locale_classic_ctype_char final : ctype<char> {
+  locale_classic_ctype_char()
+      : ctype<char>(nullptr, false, 1) {}
+
+  ~locale_classic_ctype_char() override = default;
+};
+
+struct locale_classic_ctype_wchar final : ctype<wchar_t> {
+  locale_classic_ctype_wchar()
+      : ctype<wchar_t>(1) {}
+
+  ~locale_classic_ctype_wchar() override = default;
+};
+
+inline locale_facet_control &
+locale_classic_ctype_char_control() {
+  static locale_classic_ctype_char facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+inline locale_facet_control &
+locale_classic_ctype_wchar_control() {
+  static locale_classic_ctype_wchar facet;
+  static locale_facet_control control(&facet);
+
+  return control;
+}
+
+struct locale_facet_slot {
+  const locale::id *key;
+  locale_facet_control *control;
+};
+
+struct locale_state {
+  atomic<size_t> references;
+  bool immortal;
+  bool named;
+  const char *static_name;
+  string owned_name;
+  vector<locale_facet_slot> facets;
+
+  locale_state()
+      : references(0), immortal(true), named(true), static_name("C"),
+        owned_name(), facets() {}
+
+  locale_state(const locale_state &other, bool preserve_name)
+      : references(1), immortal(false), named(preserve_name && other.named),
+        static_name(named ? other.static_name : nullptr),
+        owned_name(named && other.static_name == nullptr ? other.owned_name
+                                                         : string{}),
+        facets(other.facets) {
+    for (auto &slot : facets) {
+      if (slot.control != nullptr)
+        slot.control->retain();
+    }
+  }
+
+  locale_state(const locale_state &) = delete;
+  locale_state &operator=(const locale_state &) = delete;
+
+~locale_state() {
+  if (immortal)
+    return;
+
+  for (auto &slot : facets) {
+    if (slot.control != nullptr)
+      slot.control->release();
+  }
+}
+};
+
+inline void locale_retain_state(locale_state *state) noexcept {
+  if (!state->immortal)
+    state->references.fetch_add(1, memory_order_relaxed);
+}
+
+inline void locale_release_state(locale_state *state) noexcept {
+  if (state->immortal)
+    return;
+
+  if (state->references.fetch_sub(1, memory_order_release) != 1)
+    return;
+
+  atomic_thread_fence(memory_order_acquire);
+  delete state;
+}
+
+inline locale_state &locale_classic_state() {
+  static locale_state state;
+
+  static const bool initialized = [] {
+    state.facets.reserve(2);
+
+    state.facets.push_back(
+        {&ctype<char>::id,
+         &locale_classic_ctype_char_control()});
+
+    state.facets.push_back(
+        {&ctype<wchar_t>::id,
+         &locale_classic_ctype_wchar_control()});
+
+    return true;
+  }();
+
+  (void)initialized;
+
+  return state;
+}
+
+struct locale_global_storage {
+  locale_state *state;
+
+  locale_global_storage() noexcept : state(&locale_classic_state()) {}
+
+  ~locale_global_storage() { locale_release_state(state); }
+};
+
+inline locale_global_storage &locale_global() {
+  static locale_global_storage value;
+  return value;
+}
+
+[[nodiscard]]
+inline const char *locale_state_name(const locale_state *state) noexcept {
+  if (!state->named)
+    return nullptr;
+
+  if (state->static_name != nullptr)
+    return state->static_name;
+
+  return state->owned_name.c_str();
+}
+
+[[nodiscard]]
+inline bool locale_names_equal(const locale_state *left,
+                               const locale_state *right) noexcept {
+  const char *lhs = locale_state_name(left);
+  const char *rhs = locale_state_name(right);
+
+  if (lhs == nullptr || rhs == nullptr)
+    return false;
+
+  while (*lhs != '\0' && *rhs != '\0') {
+    if (*lhs != *rhs)
+      return false;
+
+    ++lhs;
+    ++rhs;
+  }
+
+  return *lhs == *rhs;
+}
+
+[[nodiscard]]
+inline locale_facet_slot *locale_find_facet(locale_state *state,
+                                            const locale::id *key) noexcept {
+  for (auto &slot : state->facets) {
+    if (slot.key == key)
+      return &slot;
+  }
+
+  return nullptr;
+}
+
+[[nodiscard]]
+inline const locale_facet_slot *
+locale_find_facet(const locale_state *state, const locale::id *key) noexcept {
+  for (const auto &slot : state->facets) {
+    if (slot.key == key)
+      return &slot;
+  }
+
+  return nullptr;
+}
+
+template <class Facet>
+[[nodiscard]]
+inline const locale::id *locale_facet_key() {
+  using bare_facet = remove_cv_t<Facet>;
+
+  static_assert(!is_volatile_v<Facet>,
+                "volatile-qualified locale facets are ill-formed");
+
+  static_assert(is_convertible_v<const bare_facet *, const locale::facet *>,
+                "locale facet must be publicly derived from locale::facet");
+
+  return &bare_facet::id;
+}
+
+[[noreturn]]
+inline void locale_missing_facet() {
+#if defined(FTL_NO_EXCEPTIONS)
+  terminate();
+#else
+  throw bad_cast{};
+#endif
+}
+
+[[noreturn]]
+inline void locale_combine_missing_facet() {
+#if defined(FTL_NO_EXCEPTIONS)
+  terminate();
+#else
+  throw runtime_error("locale::combine");
+#endif
+}
+
+} // namespace detail
+
+inline locale::locale() noexcept : state_(detail::locale_global().state) {
+  detail::locale_retain_state(state_);
+}
+
+inline locale::locale(const locale &other) noexcept : state_(other.state_) {
+  detail::locale_retain_state(state_);
+}
+
+template <class Facet>
+locale::locale(const locale &other, Facet *value) : state_(nullptr) {
+  using bare_facet = remove_cv_t<Facet>;
+
+  const id *key = detail::locale_facet_key<Facet>();
+
+  if (value == nullptr) {
+    state_ = other.state_;
+    detail::locale_retain_state(state_);
+    return;
+  }
+
+  const facet *base = static_cast<const facet *>(value);
+
+  unique_ptr<detail::locale_state> next{
+      new detail::locale_state(*other.state_, false)};
+
+  detail::locale_facet_slot *slot = detail::locale_find_facet(next.get(), key);
+
+  if (slot == nullptr) {
+    next->facets.push_back({key, nullptr});
+    slot = &next->facets.back();
+  }
+
+  // Do this after every potentially throwing state/vector operation.
+  // Until this allocation succeeds, ownership of value has not been
+  // committed to the new locale representation.
+  auto *replacement = new detail::locale_facet_control(base);
+
+  detail::locale_facet_control *previous = slot->control;
+  slot->control = replacement;
+
+  if (previous != nullptr)
+    previous->release();
+
+  state_ = next.release();
+
+  (void)sizeof(bare_facet);
+}
+
+inline locale::~locale() { detail::locale_release_state(state_); }
+
+inline const locale &locale::operator=(const locale &other) noexcept {
+  if (this == &other)
+    return *this;
+
+  detail::locale_state *replacement = other.state_;
+  detail::locale_retain_state(replacement);
+
+  detail::locale_state *previous = state_;
+  state_ = replacement;
+
+  detail::locale_release_state(previous);
+
+  return *this;
+}
+
+template <class Facet> locale locale::combine(const locale &other) const {
+  const id *key = detail::locale_facet_key<Facet>();
+
+  const detail::locale_facet_slot *source =
+      detail::locale_find_facet(other.state_, key);
+
+  if (source == nullptr)
+    detail::locale_combine_missing_facet();
+
+  unique_ptr<detail::locale_state> next{
+      new detail::locale_state(*state_, false)};
+
+  detail::locale_facet_slot *destination =
+      detail::locale_find_facet(next.get(), key);
+
+  if (destination == nullptr) {
+    next->facets.push_back({key, nullptr});
+    destination = &next->facets.back();
+  }
+
+  source->control->retain();
+
+  detail::locale_facet_control *previous = destination->control;
+  destination->control = source->control;
+
+  if (previous != nullptr)
+    previous->release();
+
+  return locale(next.release(), adopt_state_t{});
+}
+
+inline string locale::name() const {
+  if (!state_->named)
+    return string("*");
+
+  return string(detail::locale_state_name(state_));
+}
+
+inline bool locale::operator==(const locale &other) const {
+  if (state_ == other.state_)
+    return true;
+
+  if (!state_->named || !other.state_->named)
+    return false;
+
+  return detail::locale_names_equal(state_, other.state_);
+}
+
+inline locale locale::global(const locale &value) {
+  // Capture the old global before changing its anchor.
+  locale previous;
+
+  auto &global = detail::locale_global();
+
+  detail::locale_retain_state(value.state_);
+
+  detail::locale_state *old = global.state;
+  global.state = value.state_;
+
+  detail::locale_release_state(old);
+
+  // The effect on the C locale for an unnamed C++ locale is
+  // implementation-defined. Leave it alone in that case.
+  if (value.state_->named) {
+    (void)setlocale(LC_ALL, detail::locale_state_name(value.state_));
+  }
+
+  return previous;
+}
+
+inline const locale &locale::classic() {
+  static const locale value{&detail::locale_classic_state(), adopt_state_t{}};
+
+  return value;
+}
+
+template <class Facet> bool has_facet(const locale &value) noexcept {
+  const locale::id *key = detail::locale_facet_key<Facet>();
+
+  return detail::locale_find_facet(value.state_, key) != nullptr;
+}
+
+template <class Facet> const Facet &use_facet(const locale &value) {
+  using bare_facet = remove_cv_t<Facet>;
+
+  const locale::id *key = detail::locale_facet_key<Facet>();
+
+  const detail::locale_facet_slot *slot =
+      detail::locale_find_facet(value.state_, key);
+
+  if (slot == nullptr)
+    detail::locale_missing_facet();
+
+  return *static_cast<const bare_facet *>(slot->control->value);
+}
+
+template <class Character>
+bool isspace(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(
+      ctype_base::space, value);
+}
+
+template <class Character>
+bool isprint(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(
+      ctype_base::print, value);
+}
+
+template <class Character>
+bool iscntrl(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(
+      ctype_base::cntrl, value);
+}
+
+template <class Character>
+bool isupper(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(
+      ctype_base::upper, value);
+}
+
+template <class Character>
+bool islower(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(
+      ctype_base::lower, value);
+}
+
+template <class Character>
+bool isalpha(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(
+      ctype_base::alpha, value);
+}
+
+template <class Character>
+bool isdigit(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(
+      ctype_base::digit, value);
+}
+
+template <class Character>
+bool ispunct(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(
+      ctype_base::punct, value);
+}
+
+template <class Character>
+bool isxdigit(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(
+      ctype_base::xdigit, value);
+}
+
+template <class Character>
+bool isalnum(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(
+      ctype_base::alnum, value);
+}
+
+template <class Character>
+bool isgraph(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(
+      ctype_base::graph, value);
+}
+
+template <class Character>
+bool isblank(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(
+      ctype_base::blank, value);
+}
+
+template <class Character>
+Character toupper(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).toupper(value);
+}
+
+template <class Character>
+Character tolower(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).tolower(value);
+}
+
+FTL_END_NAMESPACE
+
+#endif

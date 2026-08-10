@@ -40,7 +40,7 @@ function(add_ftl_test header)
 
         set(target ftl_${mode}_${header})
         if (mode STREQUAL replace AND
-                header MATCHES "^(string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set)$")
+                header MATCHES "^(string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|locale(_.*)?)$")
             add_executable(${target} standalone_driver.cpp $<TARGET_OBJECTS:${object}>)
         else ()
             add_executable(${target} gtest_driver.cpp $<TARGET_OBJECTS:${object}>)
@@ -504,6 +504,8 @@ foreach (header IN ITEMS
         latch
         barrier
         future
+        locale
+        locale_ctype
 )
     add_ftl_test(${header})
 endforeach ()
