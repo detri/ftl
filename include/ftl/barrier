@@ -1,0 +1,148 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_BARRIER_HEADER
+#define FTL_BARRIER_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <detail/mutex.hpp>
+#include <limits>
+#include <type_traits>
+#include <utility>
+#define FTL_BARRIER_BEGIN_NAMESPACE namespace std {
+#define FTL_BARRIER_END_NAMESPACE }
+#else
+#include <ftl/atomic>
+#include <ftl/cstddef>
+#include <ftl/cstdint>
+#include <ftl/detail/mutex.hpp>
+#include <ftl/limits>
+#include <ftl/type_traits>
+#include <ftl/utility>
+#define FTL_BARRIER_BEGIN_NAMESPACE namespace ftl {
+#define FTL_BARRIER_END_NAMESPACE }
+#endif
+
+FTL_BARRIER_BEGIN_NAMESPACE
+
+namespace detail {
+
+struct barrier_default_completion {
+  constexpr void operator()() noexcept {}
+};
+
+} // namespace detail
+
+template <class CompletionFunction = detail::barrier_default_completion>
+class barrier {
+  static_assert(is_nothrow_invocable_v<CompletionFunction &>);
+
+public:
+  class arrival_token {
+  public:
+    arrival_token(arrival_token &&) noexcept = default;
+
+    arrival_token &operator=(arrival_token &&) noexcept = default;
+
+    arrival_token(const arrival_token &) = delete;
+
+    arrival_token &operator=(const arrival_token &) = delete;
+
+    ~arrival_token() = default;
+
+  private:
+    friend class barrier;
+
+    explicit arrival_token(uint64_t phase) noexcept : phase_(phase) {}
+
+    uint64_t phase_;
+  };
+
+  static constexpr ptrdiff_t max() noexcept {
+    return numeric_limits<ptrdiff_t>::max();
+  }
+
+  constexpr explicit barrier(
+      ptrdiff_t expected, CompletionFunction completion = CompletionFunction())
+      : completion_(move(completion)), expected_(expected),
+        remaining_(expected) {}
+
+  ~barrier() = default;
+
+  barrier(const barrier &) = delete;
+
+  barrier &operator=(const barrier &) = delete;
+
+  [[nodiscard]]
+  arrival_token arrive(ptrdiff_t update = 1) {
+    gate_.lock();
+
+    const uint64_t phase = phase_.load(memory_order_relaxed);
+
+    remaining_ -= update;
+
+    if (remaining_ == 0)
+      complete_phase();
+
+    gate_.unlock();
+
+    return arrival_token{phase};
+  }
+
+  void wait(arrival_token &&arrival) const {
+    phase_.wait(arrival.phase_, memory_order_acquire);
+  }
+
+  void arrive_and_wait() {
+    auto arrival = arrive();
+
+    wait(move(arrival));
+  }
+
+  void arrive_and_drop() {
+    gate_.lock();
+
+    --expected_;
+    --remaining_;
+
+    if (remaining_ == 0)
+      complete_phase();
+
+    gate_.unlock();
+  }
+
+private:
+  void complete_phase() noexcept {
+    completion_();
+
+    remaining_ = expected_;
+
+    (void)phase_.fetch_add(uint64_t{1}, memory_order_release);
+
+    phase_.notify_all();
+  }
+
+  [[no_unique_address]]
+  CompletionFunction completion_;
+
+  detail::mutex_state gate_;
+
+  ptrdiff_t expected_;
+  ptrdiff_t remaining_;
+
+  atomic<uint64_t> phase_{0};
+};
+
+FTL_BARRIER_END_NAMESPACE
+
+#undef FTL_BARRIER_BEGIN_NAMESPACE
+#undef FTL_BARRIER_END_NAMESPACE
+
+#if !defined(__cpp_lib_barrier) || __cpp_lib_barrier < 202302L
+#undef __cpp_lib_barrier
+#define __cpp_lib_barrier 202302L
+#endif
+
+#endif // FTL_BARRIER_HEADER

@@ -168,6 +168,9 @@ dependency order, not hundreds of individual overloads.
 | `<mutex>`              | Stage 6.3         |
 | `<shared_mutex>`       | Stage 6.3         |
 | `<condition_variable>` | Stage 6.3         |
+| `<semaphore>`          | Stage 6.4         |
+| `<latch>`              | Stage 6.4         |
+| `<barrier>`            | Stage 6.4         |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -205,7 +208,7 @@ remain required when C++23 still specifies them; they are not silently dropped.
 | Text/encoding            | `<codecvt>`, `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                               |
 | Errors/time/localization | `<locale>`, `<clocale>`                                                                                                                                            |
 | I/O/formatting/files     | `<cstdio>`, `<fstream>`, `<iomanip>`, `<iostream>`, `<ostream>`, `<sstream>`, `<spanstream>`, `<strstream>`, `<syncstream>`, `<filesystem>`, `<format>`, `<print>` |
-| Concurrency              | `<barrier>`, `<condition_variable>`, `<future>`, `<latch>`, `<mutex>`, `<semaphore>`, `<shared_mutex>`                                                             |
+| Concurrency              | `<future>`                                                                                                                                                         |
 
 Freestanding C compatibility also requires deciding and documenting how the
 corresponding `.h` spellings are supplied. That is part of the relevant
@@ -540,7 +543,7 @@ Take these closures in order:
    `<stop_token>` complete, with `<thread>` stream insertion and formatting
    deferred to Stage 7
 3. `<mutex>` + `<shared_mutex>` + `<condition_variable>` — **complete**
-4. `<semaphore>` + `<latch>` + `<barrier>`
+4. `<semaphore>` + `<latch>` + `<barrier>` — **complete**
 5. `<future>`
 
 Stage 6.1 completes the C++23 atomic surface, including generic lock-free and
@@ -609,6 +612,8 @@ TLS callback ordered after dynamic TLS destruction. POSIX targets defer FTL
 thread-exit actions through an additional pthread thread-specific-data
 destructor pass so language TLS destruction completes before deferred mutex
 unlock and notification.
+
+
 
 **Exit:** the full memory model and synchronization API pass stress, sanitizer,
 and platform shutdown/lifetime tests on every supported toolchain.

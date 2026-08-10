@@ -1,0 +1,190 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_SEMAPHORE_HEADER
+#define FTL_SEMAPHORE_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <atomic>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <detail/wait_notify.hpp>
+#include <limits>
+#define FTL_SEMAPHORE_BEGIN_NAMESPACE namespace std {
+#define FTL_SEMAPHORE_END_NAMESPACE }
+#else
+#include <ftl/atomic>
+#include <ftl/chrono>
+#include <ftl/cstddef>
+#include <ftl/cstdint>
+#include <ftl/detail/wait_notify.hpp>
+#include <ftl/limits>
+#define FTL_SEMAPHORE_BEGIN_NAMESPACE namespace ftl {
+#define FTL_SEMAPHORE_END_NAMESPACE }
+#endif
+
+FTL_SEMAPHORE_BEGIN_NAMESPACE
+
+namespace detail {
+
+template <class Rep, class Period>
+uint64_t
+semaphore_timeout_nanoseconds(const chrono::duration<Rep, Period> &duration) {
+  using wide_nanoseconds = chrono::duration<long double, nano>;
+
+  const long double value = wide_nanoseconds(duration).count();
+
+  if (!(value > 0))
+    return 0;
+
+  constexpr uint64_t maximum = 0x7fffffffffffffffULL;
+
+  constexpr long double maximum_as_float = 9223372036854775807.0L;
+
+  if (value >= maximum_as_float)
+    return maximum;
+
+  uint64_t result = static_cast<uint64_t>(value);
+
+  // Never round a positive timeout downward.
+  if (static_cast<long double>(result) < value)
+    ++result;
+
+  return result;
+}
+
+} // namespace detail
+
+template <ptrdiff_t least_max_value = numeric_limits<ptrdiff_t>::max()>
+class counting_semaphore {
+  static_assert(least_max_value >= 0);
+
+public:
+  static constexpr ptrdiff_t max() noexcept {
+    return numeric_limits<ptrdiff_t>::max();
+  }
+
+  constexpr explicit counting_semaphore(ptrdiff_t desired)
+      : counter_(desired) {}
+
+  ~counting_semaphore() = default;
+
+  counting_semaphore(const counting_semaphore &) = delete;
+
+  counting_semaphore &operator=(const counting_semaphore &) = delete;
+
+  void release(ptrdiff_t update = 1) {
+    atomic_ref<ptrdiff_t> counter{counter_};
+
+    (void)counter.fetch_add(update, memory_order_release);
+
+    if (update != 0)
+      counter.notify_all();
+  }
+
+  void acquire() {
+    atomic_ref<ptrdiff_t> counter{counter_};
+
+    for (;;) {
+      if (try_acquire())
+        return;
+
+      counter.wait(ptrdiff_t{0}, memory_order_relaxed);
+    }
+  }
+
+  bool try_acquire() noexcept {
+    atomic_ref<ptrdiff_t> counter{counter_};
+
+    ptrdiff_t current = counter.load(memory_order_relaxed);
+
+    while (current > 0) {
+      if (counter.compare_exchange_weak(current, current - 1,
+                                        memory_order_acquire,
+                                        memory_order_relaxed)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  template <class Rep, class Period>
+  bool try_acquire_for(const chrono::duration<Rep, Period> &relative_time) {
+    if (try_acquire())
+      return true;
+
+    const uint64_t timeout =
+        detail::semaphore_timeout_nanoseconds(relative_time);
+
+    if (timeout == 0)
+      return false;
+
+    return try_acquire_before(detail::wait_deadline_after(timeout));
+  }
+
+  template <class Clock, class Duration>
+  bool
+  try_acquire_until(const chrono::time_point<Clock, Duration> &absolute_time) {
+    for (;;) {
+      if (try_acquire())
+        return true;
+
+      const auto now = Clock::now();
+
+      if (!(now < absolute_time))
+        return false;
+
+      const uint64_t timeout =
+          detail::semaphore_timeout_nanoseconds(absolute_time - now);
+
+      atomic_ref<ptrdiff_t> counter{counter_};
+
+      const uint64_t deadline = detail::wait_deadline_after(timeout);
+
+      const bool changed =
+          detail::atomic_wait_until_changed_until<sizeof(ptrdiff_t)>(
+              &counter_, ptrdiff_t{0}, deadline, [&counter]() noexcept {
+                return counter.load(memory_order_relaxed);
+              });
+
+      if (!changed && !(Clock::now() < absolute_time))
+        return try_acquire();
+    }
+  }
+
+private:
+  bool try_acquire_before(uint64_t deadline) noexcept {
+    atomic_ref<ptrdiff_t> counter{counter_};
+
+    for (;;) {
+      if (try_acquire())
+        return true;
+
+      if (!detail::atomic_wait_until_changed_until<sizeof(ptrdiff_t)>(
+              &counter_, ptrdiff_t{0}, deadline, [&counter]() noexcept {
+                return counter.load(memory_order_relaxed);
+              })) {
+        // Close the timeout/release race with one
+        // final acquisition attempt.
+        return try_acquire();
+      }
+    }
+  }
+
+  alignas(atomic_ref<ptrdiff_t>::required_alignment) ptrdiff_t counter_;
+};
+
+using binary_semaphore = counting_semaphore<1>;
+
+FTL_SEMAPHORE_END_NAMESPACE
+
+#undef FTL_SEMAPHORE_BEGIN_NAMESPACE
+#undef FTL_SEMAPHORE_END_NAMESPACE
+
+#if !defined(__cpp_lib_semaphore) || __cpp_lib_semaphore < 201907L
+#undef __cpp_lib_semaphore
+#define __cpp_lib_semaphore 201907L
+#endif
+
+#endif // FTL_SEMAPHORE_HEADER

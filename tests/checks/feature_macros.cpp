@@ -1,12 +1,15 @@
 #include <ftl/any>
 #include <ftl/atomic>
+#include <ftl/barrier>
 #include <ftl/bit>
 #include <ftl/bitset>
 #include <ftl/cstddef>
 #include <ftl/expected>
+#include <ftl/latch>
 #include <ftl/numbers>
 #include <ftl/optional>
 #include <ftl/ranges>
+#include <ftl/semaphore>
 #include <ftl/source_location>
 #include <ftl/stdfloat>
 #include <ftl/stop_token>
@@ -146,6 +149,12 @@
 
 #if __cpp_lib_jthread < 201911L
 #error Stage 6.2 stop_token/thread feature macros are incomplete
+#endif
+
+#if __cpp_lib_semaphore < 201907L || \
+    __cpp_lib_latch < 201907L || \
+    __cpp_lib_barrier < 202302L
+#error Stage 6.4 coordination feature macros are incomplete
 #endif
 
 int main() {}

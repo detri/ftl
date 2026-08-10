@@ -190,6 +190,8 @@ add_ftl_compile_fail_check(flat_map_rejects_mismatched_container
         checks/flat_map_mismatched_container_compile_fail.cpp)
 add_ftl_compile_fail_check(flat_set_rejects_mismatched_container
         checks/flat_set_mismatched_container_compile_fail.cpp)
+add_ftl_compile_fail_check(semaphore_rejects_negative_least_max checks/semaphore_negative_least_max_compile_fail.cpp)
+add_ftl_compile_fail_check(barrier_rejects_throwing_completion checks/barrier_throwing_completion_compile_fail.cpp)
 add_ftl_standalone_check(feature_macros checks/feature_macros.cpp)
 add_ftl_standalone_check(no_allocation checks/no_allocation.cpp)
 add_ftl_freestanding_link_check(freestanding_link checks/freestanding_link.cpp)
@@ -497,6 +499,9 @@ foreach (header IN ITEMS
         mutex
         shared_mutex
         condition_variable
+        semaphore
+        latch
+        barrier
 )
     add_ftl_test(${header})
 endforeach ()
