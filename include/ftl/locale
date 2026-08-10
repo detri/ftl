@@ -2629,6 +2629,17 @@ private:
   detail::locale_named_numpunct_context *context_;
 };
 
+class time_base {
+public:
+  enum dateorder {
+    no_order,
+    dmy,
+    mdy,
+    ymd,
+    ydm
+  };
+};
+
 class money_base {
 public:
   enum part { none, space, symbol, sign, value };

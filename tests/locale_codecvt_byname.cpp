@@ -193,6 +193,15 @@ bool ftl_test() {
 
     const auto &facet = tested::use_facet<wide_codec>(value);
 
+    //
+    // The C locale is a fixed one-byte native encoding.
+    //
+    if (facet.encoding() != 1)
+      return false;
+
+    if (facet.max_length() != 1)
+      return false;
+
     const char source[] = "Az7";
 
     wchar_t wide[3]{};
@@ -226,6 +235,38 @@ bool ftl_test() {
     if (roundtrip[0] != 'A' || roundtrip[1] != 'z' || roundtrip[2] != '7') {
       return false;
     }
+
+#if !defined(_WIN32)
+
+    //
+    // Malformed native input is an error, not a request for
+    // additional source bytes.
+    //
+    const char invalid[] = {static_cast<char>(0xff)};
+
+    wchar_t invalid_output[1]{};
+
+    state = {};
+
+    from_next = nullptr;
+    to_next = nullptr;
+
+    if (facet.in(state, invalid, invalid + 1, from_next, invalid_output,
+                 invalid_output + 1, to_next) != tested::codecvt_base::error) {
+      return false;
+    }
+
+    if (from_next != invalid || to_next != invalid_output) {
+      return false;
+    }
+
+    state = {};
+
+    if (facet.length(state, invalid, invalid + 1, 1) != 0) {
+      return false;
+    }
+
+#endif
   }
 
   //

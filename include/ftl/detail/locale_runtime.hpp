@@ -410,6 +410,7 @@ int toupper_l(int, void *);
 int tolower_l(int, void *);
 
 unsigned int towupper_l(unsigned int, void *);
+
 unsigned int towlower_l(unsigned int, void *);
 
 unsigned int btowc(int);
@@ -424,6 +425,25 @@ decltype(sizeof(0)) wcsxfrm_l(wchar_t *, const wchar_t *, decltype(sizeof(0)),
 int mbtowc(wchar_t *, const char *, decltype(sizeof(0)));
 
 int wctomb(char *, wchar_t);
+
+//
+// The native mbstate_t representation is deliberately opaque
+// to FTL. codecvt_byname only supports stateless native
+// encodings, so the restartable conversion state is always
+// supplied as nullptr.
+//
+decltype(sizeof(0)) mbrtowc(wchar_t *, const char *, decltype(sizeof(0)),
+                            void *);
+
+#if defined(__APPLE__)
+
+int ___mb_cur_max(void);
+
+#else
+
+decltype(sizeof(0)) __ctype_get_mb_cur_max(void);
+
+#endif
 
 } // extern "C"
 
@@ -534,13 +554,29 @@ inline void close_message_catalog(native_catalog catalog) noexcept {
     (void)::catclose(catalog);
 }
 
-inline int multibyte_max_length(native_handle) noexcept {
-  //
-  // Supported FTL POSIX targets use libc multibyte encodings whose
-  // maximum representation fits comfortably in this bound. Returning
-  // an upper bound is permitted by codecvt::max_length().
-  //
-  return 16;
+inline int multibyte_max_length(native_handle locale) noexcept {
+  native_handle previous = uselocale(locale);
+
+  if (previous == nullptr)
+    return 1;
+
+#if defined(__APPLE__)
+
+  const int native_max = ___mb_cur_max();
+
+  (void)uselocale(previous);
+
+  return native_max > 0 ? native_max : 1;
+
+#else
+
+  const auto native_max = __ctype_get_mb_cur_max();
+
+  (void)uselocale(previous);
+
+  return native_max > 0 ? static_cast<int>(native_max) : 1;
+
+#endif
 }
 
 inline bool multibyte_is_stateful(native_handle locale) noexcept {
@@ -569,35 +605,42 @@ inline decoded_wide decode_wide(native_handle locale, const char *first,
   }
 
   //
-  // The named-codecvt implementation deliberately supports
-  // stateless native encodings. Reset the non-restartable C
-  // conversion state for each scalar.
+  // codecvt_byname rejects state-dependent native encodings,
+  // so using mbrtowc's internal state is sufficient. Reset it
+  // around each isolated scalar so a partial/error result never
+  // contaminates the next call.
   //
-  (void)mbtowc(nullptr, nullptr, 0);
+  const char reset_sequence[] = "";
+
+  (void)mbrtowc(nullptr, reset_sequence, 1, nullptr);
 
   wchar_t value{};
 
   const auto available = static_cast<decltype(sizeof(0))>(last - first);
 
-  const int result = mbtowc(&value, first, available);
+  const auto result = mbrtowc(&value, first, available, nullptr);
+
+  (void)mbrtowc(nullptr, reset_sequence, 1, nullptr);
 
   (void)uselocale(previous);
 
-  if (result > 0) {
-    return {decoded_wide::status::complete, value,
-            static_cast<decltype(sizeof(0))>(result)};
+  constexpr auto conversion_error = static_cast<decltype(sizeof(0))>(-1);
+
+  constexpr auto conversion_partial = static_cast<decltype(sizeof(0))>(-2);
+
+  if (result == conversion_partial) {
+    return {decoded_wide::status::partial, wchar_t{}, 0};
+  }
+
+  if (result == conversion_error) {
+    return {decoded_wide::status::error, wchar_t{}, 0};
   }
 
   if (result == 0) {
     return {decoded_wide::status::complete, wchar_t{}, 1};
   }
 
-  if (available <
-      static_cast<decltype(sizeof(0))>(multibyte_max_length(locale))) {
-    return {decoded_wide::status::partial, wchar_t{}, 0};
-  }
-
-  return {decoded_wide::status::error, wchar_t{}, 0};
+  return {decoded_wide::status::complete, value, result};
 }
 
 inline encoded_wide encode_wide(native_handle locale, wchar_t value) noexcept {

@@ -8,6 +8,14 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+static_assert(tested::time_base::no_order == 0);
+
+static_assert(tested::time_base::dmy != tested::time_base::mdy);
+
+static_assert(tested::time_base::mdy != tested::time_base::ymd);
+
+static_assert(tested::time_base::ymd != tested::time_base::ydm);
+
 struct counting_facet : tested::locale::facet {
   static tested::locale::id id;
 

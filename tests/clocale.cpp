@@ -20,6 +20,30 @@ static_assert(LC_ALL != LC_MONETARY);
 static_assert(LC_ALL != LC_NUMERIC);
 static_assert(LC_ALL != LC_TIME);
 
+#if defined(__APPLE__)
+
+static_assert(__builtin_offsetof(tested::lconv, int_p_cs_precedes) <
+              __builtin_offsetof(tested::lconv, int_n_cs_precedes));
+
+static_assert(__builtin_offsetof(tested::lconv, int_n_cs_precedes) <
+              __builtin_offsetof(tested::lconv, int_p_sep_by_space));
+
+static_assert(__builtin_offsetof(tested::lconv, int_p_sep_by_space) <
+              __builtin_offsetof(tested::lconv, int_n_sep_by_space));
+
+#else
+
+static_assert(__builtin_offsetof(tested::lconv, int_p_cs_precedes) <
+              __builtin_offsetof(tested::lconv, int_p_sep_by_space));
+
+static_assert(__builtin_offsetof(tested::lconv, int_p_sep_by_space) <
+              __builtin_offsetof(tested::lconv, int_n_cs_precedes));
+
+static_assert(__builtin_offsetof(tested::lconv, int_n_cs_precedes) <
+              __builtin_offsetof(tested::lconv, int_n_sep_by_space));
+
+#endif
+
 bool ftl_test() {
   const char *current = tested::setlocale(LC_ALL, nullptr);
 

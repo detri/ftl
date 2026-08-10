@@ -60,10 +60,25 @@ struct lconv {
   char p_sign_posn;
   char n_sign_posn;
 
+#if defined(__APPLE__)
+
+  //
+  // Darwin's native lconv ABI orders the international
+  // positive/negative fields differently from glibc.
+  //
+  char int_p_cs_precedes;
+  char int_n_cs_precedes;
+  char int_p_sep_by_space;
+  char int_n_sep_by_space;
+
+#else
+
   char int_p_cs_precedes;
   char int_p_sep_by_space;
   char int_n_cs_precedes;
   char int_n_sep_by_space;
+
+#endif
 
   char int_p_sign_posn;
   char int_n_sign_posn;

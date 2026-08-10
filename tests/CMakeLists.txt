@@ -79,9 +79,21 @@ function(add_ftl_test header)
 
         target_link_libraries(${target} PRIVATE ftl)
 
-        if (ftl_standalone_replace AND UNIX AND NOT APPLE)
+        if (ftl_standalone_replace AND UNIX)
+            # A replacement-mode standalone test must not get std::*
+            # implementations from the host C++ standard library.
             target_link_options(${target} PRIVATE -nostdlib++)
-            target_link_libraries(${target} PRIVATE supc++)
+
+            if (APPLE)
+                #
+                # Keep the Itanium C++ ABI runtime for exceptions/RTTI
+                # without linking libc++ itself.
+                #
+                target_link_libraries(${target} PRIVATE c++abi)
+            else ()
+                # GCC-family ABI runtime without libstdc++.
+                target_link_libraries(${target} PRIVATE supc++)
+            endif ()
         endif ()
 
         target_compile_options(
