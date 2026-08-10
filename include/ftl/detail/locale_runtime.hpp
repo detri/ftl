@@ -9,9 +9,19 @@
 #include <ftl/locale.h>
 #endif
 
+#if !defined(_WIN32)
+#include <nl_types.h>
+#endif
+
 namespace ftl_locale_runtime {
 
 using native_handle = void *;
+
+#if defined(_WIN32)
+using native_catalog = void *;
+#else
+using native_catalog = ::nl_catd;
+#endif
 
 enum class classification {
   space,
@@ -128,6 +138,34 @@ inline native_handle create_monetary(const char *name) noexcept {
   //
   return _create_locale(LC_ALL, name);
 }
+
+inline native_handle create_messages(const char *name) noexcept {
+  if (name == nullptr)
+    return nullptr;
+
+  //
+  // Windows has no POSIX message-catalog CRT facility.
+  // Still create a native locale so messages_byname validates
+  // the requested locale consistently with the other facets.
+  //
+  return _create_locale(LC_ALL, name);
+}
+
+inline bool message_catalog_valid(native_catalog catalog) noexcept {
+  return catalog != nullptr;
+}
+
+inline native_catalog open_message_catalog(native_handle,
+                                           const char *) noexcept {
+  return nullptr;
+}
+
+inline const char *get_message_catalog(native_catalog, int, int,
+                                       const char *fallback) noexcept {
+  return fallback;
+}
+
+inline void close_message_catalog(native_catalog) noexcept {}
 
 inline int multibyte_max_length(native_handle locale) noexcept {
   const int result = ___mb_cur_max_l_func(locale);
@@ -389,40 +427,111 @@ int wctomb(char *, wchar_t);
 
 } // extern "C"
 
+#if defined(__APPLE__)
+
+inline constexpr int native_collate_mask = 1 << 0;
+
+inline constexpr int native_ctype_mask = 1 << 1;
+
+inline constexpr int native_messages_mask = 1 << 2;
+
+inline constexpr int native_monetary_mask = 1 << 3;
+
+inline constexpr int native_numeric_mask = 1 << 4;
+
+inline constexpr int native_time_mask = 1 << 5;
+
+#else
+
+inline constexpr int native_ctype_mask = 1 << LC_CTYPE;
+
+inline constexpr int native_numeric_mask = 1 << LC_NUMERIC;
+
+inline constexpr int native_time_mask = 1 << LC_TIME;
+
+inline constexpr int native_collate_mask = 1 << LC_COLLATE;
+
+inline constexpr int native_monetary_mask = 1 << LC_MONETARY;
+
+/*
+ * glibc/Linux LC_MESSAGES is category 5.
+ * It is deliberately private here because LC_MESSAGES is a POSIX
+ * extension and therefore isn't part of FTL's ISO C <locale.h>.
+ */
+inline constexpr int native_messages_mask = 1 << 5;
+
+#endif
+
 inline native_handle create_ctype(const char *name) noexcept {
   if (name == nullptr)
     return nullptr;
 
-  constexpr int ctype_mask = 1 << LC_CTYPE;
-
-  return newlocale(ctype_mask, name, nullptr);
+  return newlocale(native_ctype_mask, name, nullptr);
 }
 
 inline native_handle create_collate(const char *name) noexcept {
   if (name == nullptr)
     return nullptr;
 
-  constexpr int collate_mask = 1 << LC_COLLATE;
-
-  return newlocale(collate_mask, name, nullptr);
+  return newlocale(native_collate_mask, name, nullptr);
 }
 
 inline native_handle create_numeric(const char *name) noexcept {
   if (name == nullptr)
     return nullptr;
 
-  constexpr int numeric_and_ctype_mask = (1 << LC_NUMERIC) | (1 << LC_CTYPE);
-
-  return newlocale(numeric_and_ctype_mask, name, nullptr);
+  return newlocale(native_numeric_mask | native_ctype_mask, name, nullptr);
 }
 
 inline native_handle create_monetary(const char *name) noexcept {
   if (name == nullptr)
     return nullptr;
 
-  constexpr int monetary_and_ctype_mask = (1 << LC_MONETARY) | (1 << LC_CTYPE);
+  return newlocale(native_monetary_mask | native_ctype_mask, name, nullptr);
+}
 
-  return newlocale(monetary_and_ctype_mask, name, nullptr);
+inline native_handle create_messages(const char *name) noexcept {
+  if (name == nullptr)
+    return nullptr;
+
+  return newlocale(native_messages_mask, name, nullptr);
+}
+
+inline native_catalog invalid_message_catalog() noexcept {
+  return reinterpret_cast<native_catalog>(static_cast<__INTPTR_TYPE__>(-1));
+}
+
+inline bool message_catalog_valid(native_catalog catalog) noexcept {
+  return catalog != invalid_message_catalog();
+}
+
+inline native_catalog open_message_catalog(native_handle locale,
+                                           const char *name) noexcept {
+  if (locale == nullptr || name == nullptr) {
+    return invalid_message_catalog();
+  }
+
+  native_handle previous = uselocale(locale);
+
+  if (previous == nullptr)
+    return invalid_message_catalog();
+
+  native_catalog result = ::catopen(name, NL_CAT_LOCALE);
+
+  (void)uselocale(previous);
+
+  return result;
+}
+
+inline const char *get_message_catalog(native_catalog catalog, int set,
+                                       int message,
+                                       const char *fallback) noexcept {
+  return ::catgets(catalog, set, message, fallback);
+}
+
+inline void close_message_catalog(native_catalog catalog) noexcept {
+  if (message_catalog_valid(catalog))
+    (void)::catclose(catalog);
 }
 
 inline int multibyte_max_length(native_handle) noexcept {

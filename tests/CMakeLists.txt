@@ -554,6 +554,7 @@ foreach (header IN ITEMS
         locale_codecvt
         locale_codecvt_byname
         locale_moneypunct
+        locale_messages
         codecvt
 )
     add_ftl_test(${header})
