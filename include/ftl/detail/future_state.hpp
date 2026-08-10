@@ -12,6 +12,7 @@
 #include <memory>
 #include <new>
 #include <utility>
+#define FTL_FUTURE_STATE_NAMESPACE std
 #define FTL_FUTURE_STATE_BEGIN_NAMESPACE namespace std::detail {
 #define FTL_FUTURE_STATE_END_NAMESPACE }
 #else
@@ -23,6 +24,7 @@
 #include <ftl/memory>
 #include <ftl/new>
 #include <ftl/utility>
+#define FTL_FUTURE_STATE_NAMESPACE ftl
 #define FTL_FUTURE_STATE_BEGIN_NAMESPACE namespace ftl::detail {
 #define FTL_FUTURE_STATE_END_NAMESPACE }
 #endif
@@ -182,7 +184,7 @@ public:
     }
 
 #if FTL_HAS_EXCEPTIONS
-    rethrow_exception(exception_);
+    FTL_FUTURE_STATE_NAMESPACE::rethrow_exception(exception_);
 #else
     terminate();
 #endif
