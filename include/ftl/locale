@@ -8,6 +8,7 @@
 #include <clocale>
 #include <cstddef>
 #include <cwctype>
+#include <detail/locale_runtime.hpp>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -16,9 +17,10 @@
 #include <vector>
 #else
 #include <ftl/atomic>
-#include <ftl/cwctype>
 #include <ftl/clocale>
 #include <ftl/cstddef>
+#include <ftl/cwctype>
+#include <ftl/detail/locale_runtime.hpp>
 #include <ftl/memory>
 #include <ftl/stdexcept>
 #include <ftl/string>
@@ -152,24 +154,21 @@ constexpr ctype_base::mask ctype_ascii_mask(unsigned int value) noexcept {
   const bool digit = value >= static_cast<unsigned>('0') &&
                      value <= static_cast<unsigned>('9');
 
-  const bool xdigit =
-      digit ||
-      (value >= static_cast<unsigned>('A') &&
-       value <= static_cast<unsigned>('F')) ||
-      (value >= static_cast<unsigned>('a') &&
-       value <= static_cast<unsigned>('f'));
+  const bool xdigit = digit ||
+                      (value >= static_cast<unsigned>('A') &&
+                       value <= static_cast<unsigned>('F')) ||
+                      (value >= static_cast<unsigned>('a') &&
+                       value <= static_cast<unsigned>('f'));
 
-  const bool space =
-      value == static_cast<unsigned>(' ') ||
-      value == static_cast<unsigned>('\t') ||
-      value == static_cast<unsigned>('\n') ||
-      value == static_cast<unsigned>('\v') ||
-      value == static_cast<unsigned>('\f') ||
-      value == static_cast<unsigned>('\r');
+  const bool space = value == static_cast<unsigned>(' ') ||
+                     value == static_cast<unsigned>('\t') ||
+                     value == static_cast<unsigned>('\n') ||
+                     value == static_cast<unsigned>('\v') ||
+                     value == static_cast<unsigned>('\f') ||
+                     value == static_cast<unsigned>('\r');
 
-  const bool blank =
-      value == static_cast<unsigned>(' ') ||
-      value == static_cast<unsigned>('\t');
+  const bool blank = value == static_cast<unsigned>(' ') ||
+                     value == static_cast<unsigned>('\t');
 
   const bool cntrl = value <= 0x1fu || value == 0x7fu;
   const bool print = value >= 0x20u && value <= 0x7eu;
@@ -272,30 +271,26 @@ class ctype : public locale::facet, public ctype_base {
 public:
   using char_type = Character;
 
-  explicit ctype(size_t refs = 0)
-      : locale::facet(refs) {}
+  explicit ctype(size_t refs = 0) : locale::facet(refs) {}
 
   [[nodiscard]]
   bool is(mask requested, char_type value) const {
     return do_is(requested, value);
   }
 
-  const char_type *is(const char_type *low,
-                      const char_type *high,
+  const char_type *is(const char_type *low, const char_type *high,
                       mask *output) const {
     return do_is(low, high, output);
   }
 
   [[nodiscard]]
-  const char_type *scan_is(mask requested,
-                           const char_type *low,
+  const char_type *scan_is(mask requested, const char_type *low,
                            const char_type *high) const {
     return do_scan_is(requested, low, high);
   }
 
   [[nodiscard]]
-  const char_type *scan_not(mask requested,
-                            const char_type *low,
+  const char_type *scan_not(mask requested, const char_type *low,
                             const char_type *high) const {
     return do_scan_not(requested, low, high);
   }
@@ -305,8 +300,7 @@ public:
     return do_toupper(value);
   }
 
-  const char_type *toupper(char_type *low,
-                           const char_type *high) const {
+  const char_type *toupper(char_type *low, const char_type *high) const {
     return do_toupper(low, high);
   }
 
@@ -315,8 +309,7 @@ public:
     return do_tolower(value);
   }
 
-  const char_type *tolower(char_type *low,
-                           const char_type *high) const {
+  const char_type *tolower(char_type *low, const char_type *high) const {
     return do_tolower(low, high);
   }
 
@@ -325,8 +318,7 @@ public:
     return do_widen(value);
   }
 
-  const char *widen(const char *low,
-                    const char *high,
+  const char *widen(const char *low, const char *high,
                     char_type *output) const {
     return do_widen(low, high, output);
   }
@@ -336,10 +328,8 @@ public:
     return do_narrow(value, fallback);
   }
 
-  const char_type *narrow(const char_type *low,
-                          const char_type *high,
-                          char fallback,
-                          char *output) const {
+  const char_type *narrow(const char_type *low, const char_type *high,
+                          char fallback, char *output) const {
     return do_narrow(low, high, fallback, output);
   }
 
@@ -349,22 +339,19 @@ protected:
   ~ctype() override = default;
 
   virtual bool do_is(mask requested, char_type value) const {
-    return (detail::ctype_wide_mask(static_cast<wchar_t>(value)) &
-            requested) != 0;
+    return (detail::ctype_wide_mask(static_cast<wchar_t>(value)) & requested) !=
+           0;
   }
 
-  virtual const char_type *do_is(const char_type *low,
-                                 const char_type *high,
+  virtual const char_type *do_is(const char_type *low, const char_type *high,
                                  mask *output) const {
     for (const char_type *current = low; current != high; ++current)
-      *output++ =
-          detail::ctype_wide_mask(static_cast<wchar_t>(*current));
+      *output++ = detail::ctype_wide_mask(static_cast<wchar_t>(*current));
 
     return high;
   }
 
-  virtual const char_type *do_scan_is(mask requested,
-                                      const char_type *low,
+  virtual const char_type *do_scan_is(mask requested, const char_type *low,
                                       const char_type *high) const {
     while (low != high) {
       if (do_is(requested, *low))
@@ -376,8 +363,7 @@ protected:
     return low;
   }
 
-  virtual const char_type *do_scan_not(mask requested,
-                                       const char_type *low,
+  virtual const char_type *do_scan_not(mask requested, const char_type *low,
                                        const char_type *high) const {
     while (low != high) {
       if (!do_is(requested, *low))
@@ -390,8 +376,7 @@ protected:
   }
 
   virtual char_type do_toupper(char_type value) const {
-    return static_cast<char_type>(
-        towupper(static_cast<wint_t>(value)));
+    return static_cast<char_type>(towupper(static_cast<wint_t>(value)));
   }
 
   virtual const char_type *do_toupper(char_type *low,
@@ -403,8 +388,7 @@ protected:
   }
 
   virtual char_type do_tolower(char_type value) const {
-    return static_cast<char_type>(
-        towlower(static_cast<wint_t>(value)));
+    return static_cast<char_type>(towlower(static_cast<wint_t>(value)));
   }
 
   virtual const char_type *do_tolower(char_type *low,
@@ -416,12 +400,10 @@ protected:
   }
 
   virtual char_type do_widen(char value) const {
-    return static_cast<char_type>(
-        static_cast<unsigned char>(value));
+    return static_cast<char_type>(static_cast<unsigned char>(value));
   }
 
-  virtual const char *do_widen(const char *low,
-                               const char *high,
+  virtual const char *do_widen(const char *low, const char *high,
                                char_type *output) const {
     while (low != high)
       *output++ = do_widen(*low++);
@@ -435,8 +417,7 @@ protected:
         return fallback;
     }
 
-    const auto numeric =
-        static_cast<unsigned long long>(value);
+    const auto numeric = static_cast<unsigned long long>(value);
 
     if (numeric <= 0x7fu)
       return static_cast<char>(numeric);
@@ -445,8 +426,7 @@ protected:
   }
 
   virtual const char_type *do_narrow(const char_type *low,
-                                     const char_type *high,
-                                     char fallback,
+                                     const char_type *high, char fallback,
                                      char *output) const {
     while (low != high)
       *output++ = do_narrow(*low++, fallback);
@@ -455,42 +435,32 @@ protected:
   }
 };
 
-template <>
-class ctype<char> : public locale::facet, public ctype_base {
+template <> class ctype<char> : public locale::facet, public ctype_base {
 public:
   using char_type = char;
 
-  explicit ctype(const mask *table = nullptr,
-                 bool delete_table = false,
+  explicit ctype(const mask *table = nullptr, bool delete_table = false,
                  size_t refs = 0)
-      : locale::facet(refs),
-        table_(table),
+      : locale::facet(refs), table_(table),
         delete_table_(table != nullptr && delete_table) {}
 
   [[nodiscard]]
   bool is(mask requested, char value) const {
-    return (table()[static_cast<unsigned char>(value)] &
-            requested) != 0;
+    return (table()[static_cast<unsigned char>(value)] & requested) != 0;
   }
 
-  const char *is(const char *low,
-                 const char *high,
-                 mask *output) const {
+  const char *is(const char *low, const char *high, mask *output) const {
     while (low != high) {
-      *output++ =
-          table()[static_cast<unsigned char>(*low++)];
+      *output++ = table()[static_cast<unsigned char>(*low++)];
     }
 
     return high;
   }
 
   [[nodiscard]]
-  const char *scan_is(mask requested,
-                      const char *low,
-                      const char *high) const {
+  const char *scan_is(mask requested, const char *low, const char *high) const {
     while (low != high) {
-      if ((table()[static_cast<unsigned char>(*low)] &
-           requested) != 0)
+      if ((table()[static_cast<unsigned char>(*low)] & requested) != 0)
         break;
 
       ++low;
@@ -500,12 +470,10 @@ public:
   }
 
   [[nodiscard]]
-  const char *scan_not(mask requested,
-                       const char *low,
+  const char *scan_not(mask requested, const char *low,
                        const char *high) const {
     while (low != high) {
-      if ((table()[static_cast<unsigned char>(*low)] &
-           requested) == 0)
+      if ((table()[static_cast<unsigned char>(*low)] & requested) == 0)
         break;
 
       ++low;
@@ -519,8 +487,7 @@ public:
     return do_toupper(value);
   }
 
-  const char *toupper(char *low,
-                      const char *high) const {
+  const char *toupper(char *low, const char *high) const {
     return do_toupper(low, high);
   }
 
@@ -529,8 +496,7 @@ public:
     return do_tolower(value);
   }
 
-  const char *tolower(char *low,
-                      const char *high) const {
+  const char *tolower(char *low, const char *high) const {
     return do_tolower(low, high);
   }
 
@@ -539,9 +505,7 @@ public:
     return do_widen(value);
   }
 
-  const char *widen(const char *low,
-                    const char *high,
-                    char *output) const {
+  const char *widen(const char *low, const char *high, char *output) const {
     return do_widen(low, high, output);
   }
 
@@ -550,9 +514,7 @@ public:
     return do_narrow(value, fallback);
   }
 
-  const char *narrow(const char *low,
-                     const char *high,
-                     char fallback,
+  const char *narrow(const char *low, const char *high, char fallback,
                      char *output) const {
     return do_narrow(low, high, fallback, output);
   }
@@ -578,21 +540,18 @@ protected:
   }
 
   virtual char do_toupper(char value) const {
-    const unsigned char character =
-        static_cast<unsigned char>(value);
+    const unsigned char character = static_cast<unsigned char>(value);
 
     if (character >= static_cast<unsigned char>('a') &&
         character <= static_cast<unsigned char>('z')) {
-      return static_cast<char>(
-          character - static_cast<unsigned char>('a') +
-          static_cast<unsigned char>('A'));
+      return static_cast<char>(character - static_cast<unsigned char>('a') +
+                               static_cast<unsigned char>('A'));
     }
 
     return value;
   }
 
-  virtual const char *do_toupper(char *low,
-                                 const char *high) const {
+  virtual const char *do_toupper(char *low, const char *high) const {
     for (char *current = low; current != high; ++current)
       *current = do_toupper(*current);
 
@@ -600,33 +559,27 @@ protected:
   }
 
   virtual char do_tolower(char value) const {
-    const unsigned char character =
-        static_cast<unsigned char>(value);
+    const unsigned char character = static_cast<unsigned char>(value);
 
     if (character >= static_cast<unsigned char>('A') &&
         character <= static_cast<unsigned char>('Z')) {
-      return static_cast<char>(
-          character - static_cast<unsigned char>('A') +
-          static_cast<unsigned char>('a'));
+      return static_cast<char>(character - static_cast<unsigned char>('A') +
+                               static_cast<unsigned char>('a'));
     }
 
     return value;
   }
 
-  virtual const char *do_tolower(char *low,
-                                 const char *high) const {
+  virtual const char *do_tolower(char *low, const char *high) const {
     for (char *current = low; current != high; ++current)
       *current = do_tolower(*current);
 
     return high;
   }
 
-  virtual char do_widen(char value) const {
-    return value;
-  }
+  virtual char do_widen(char value) const { return value; }
 
-  virtual const char *do_widen(const char *low,
-                               const char *high,
+  virtual const char *do_widen(const char *low, const char *high,
                                char *output) const {
     while (low != high)
       *output++ = *low++;
@@ -634,13 +587,9 @@ protected:
     return high;
   }
 
-  virtual char do_narrow(char value, char) const {
-    return value;
-  }
+  virtual char do_narrow(char value, char) const { return value; }
 
-  virtual const char *do_narrow(const char *low,
-                                const char *high,
-                                char,
+  virtual const char *do_narrow(const char *low, const char *high, char,
                                 char *output) const {
     while (low != high)
       *output++ = *low++;
@@ -654,8 +603,281 @@ private:
 };
 
 // Named facets come with the named-locale runtime in the next slice.
-template <class Character>
-class ctype_byname;
+template <class Character> class ctype_byname;
+
+namespace detail {
+
+[[noreturn]]
+inline void locale_named_ctype_failure() {
+#if defined(FTL_NO_EXCEPTIONS)
+  terminate();
+#else
+  throw runtime_error("ctype_byname");
+#endif
+}
+
+struct locale_named_ctype_context {
+  ftl_locale_runtime::native_handle native;
+
+  explicit locale_named_ctype_context(const char *name)
+      : native(ftl_locale_runtime::create_ctype(name)) {
+    if (native == nullptr)
+      locale_named_ctype_failure();
+  }
+
+  locale_named_ctype_context(const locale_named_ctype_context &) = delete;
+
+  locale_named_ctype_context &
+  operator=(const locale_named_ctype_context &) = delete;
+
+  ~locale_named_ctype_context() { ftl_locale_runtime::destroy(native); }
+};
+
+[[nodiscard]]
+inline ctype_base::mask
+locale_named_ctype_byte_mask(ftl_locale_runtime::native_handle native,
+                             unsigned char value) noexcept {
+  using runtime_class = ftl_locale_runtime::classification;
+
+  ctype_base::mask result = 0;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::space))
+    result |= ctype_base::space;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::print))
+    result |= ctype_base::print;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::cntrl))
+    result |= ctype_base::cntrl;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::upper))
+    result |= ctype_base::upper;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::lower))
+    result |= ctype_base::lower;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::alpha))
+    result |= ctype_base::alpha;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::digit))
+    result |= ctype_base::digit;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::punct))
+    result |= ctype_base::punct;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::xdigit))
+    result |= ctype_base::xdigit;
+
+  if (ftl_locale_runtime::classify_byte(native, value, runtime_class::blank))
+    result |= ctype_base::blank;
+
+  return result;
+}
+
+[[nodiscard]]
+inline ctype_base::mask
+locale_named_ctype_wide_mask(ftl_locale_runtime::native_handle native,
+                             wchar_t value) noexcept {
+  using runtime_class = ftl_locale_runtime::classification;
+
+  ctype_base::mask result = 0;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::space))
+    result |= ctype_base::space;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::print))
+    result |= ctype_base::print;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::cntrl))
+    result |= ctype_base::cntrl;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::upper))
+    result |= ctype_base::upper;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::lower))
+    result |= ctype_base::lower;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::alpha))
+    result |= ctype_base::alpha;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::digit))
+    result |= ctype_base::digit;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::punct))
+    result |= ctype_base::punct;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::xdigit))
+    result |= ctype_base::xdigit;
+
+  if (ftl_locale_runtime::classify_wide(native, value, runtime_class::blank))
+    result |= ctype_base::blank;
+
+  return result;
+}
+
+struct locale_named_ctype_char_context : locale_named_ctype_context {
+  ctype_base::mask table[ctype<char>::table_size]{};
+
+  explicit locale_named_ctype_char_context(const char *name)
+      : locale_named_ctype_context(name) {
+    for (size_t index = 0; index < ctype<char>::table_size; ++index) {
+      table[index] = locale_named_ctype_byte_mask(
+          native, static_cast<unsigned char>(index));
+    }
+  }
+};
+
+} // namespace detail
+
+template <> class ctype_byname<char> : public ctype<char> {
+public:
+  using mask = typename ctype<char>::mask;
+
+  explicit ctype_byname(const char *name, size_t refs = 0)
+      : ctype_byname(new detail::locale_named_ctype_char_context(name), refs) {}
+
+  explicit ctype_byname(const string &name, size_t refs = 0)
+      : ctype_byname(name.c_str(), refs) {}
+
+protected:
+  ~ctype_byname() override { delete context_; }
+
+  char do_toupper(char value) const override {
+    return ftl_locale_runtime::toupper_byte(context_->native, value);
+  }
+
+  const char *do_toupper(char *low, const char *high) const override {
+    for (char *current = low; current != high; ++current) {
+      *current = do_toupper(*current);
+    }
+
+    return high;
+  }
+
+  char do_tolower(char value) const override {
+    return ftl_locale_runtime::tolower_byte(context_->native, value);
+  }
+
+  const char *do_tolower(char *low, const char *high) const override {
+    for (char *current = low; current != high; ++current) {
+      *current = do_tolower(*current);
+    }
+
+    return high;
+  }
+
+private:
+  explicit ctype_byname(detail::locale_named_ctype_char_context *context,
+                        size_t refs)
+      : ctype<char>(context->table, false, refs), context_(context) {}
+
+  detail::locale_named_ctype_char_context *context_;
+};
+
+template <> class ctype_byname<wchar_t> : public ctype<wchar_t> {
+public:
+  using mask = typename ctype<wchar_t>::mask;
+
+  explicit ctype_byname(const char *name, size_t refs = 0)
+      : ctype<wchar_t>(refs),
+        context_(new detail::locale_named_ctype_context(name)) {}
+
+  explicit ctype_byname(const string &name, size_t refs = 0)
+      : ctype_byname(name.c_str(), refs) {}
+
+protected:
+  ~ctype_byname() override { delete context_; }
+
+  bool do_is(mask requested, wchar_t value) const override {
+    return (detail::locale_named_ctype_wide_mask(context_->native, value) &
+            requested) != 0;
+  }
+
+  const wchar_t *do_is(const wchar_t *low, const wchar_t *high,
+                       mask *output) const override {
+    while (low != high) {
+      *output++ =
+          detail::locale_named_ctype_wide_mask(context_->native, *low++);
+    }
+
+    return high;
+  }
+
+  const wchar_t *do_scan_is(mask requested, const wchar_t *low,
+                            const wchar_t *high) const override {
+    while (low != high) {
+      if (do_is(requested, *low))
+        break;
+
+      ++low;
+    }
+
+    return low;
+  }
+
+  const wchar_t *do_scan_not(mask requested, const wchar_t *low,
+                             const wchar_t *high) const override {
+    while (low != high) {
+      if (!do_is(requested, *low))
+        break;
+
+      ++low;
+    }
+
+    return low;
+  }
+
+  wchar_t do_toupper(wchar_t value) const override {
+    return ftl_locale_runtime::toupper_wide(context_->native, value);
+  }
+
+  const wchar_t *do_toupper(wchar_t *low, const wchar_t *high) const override {
+    for (wchar_t *current = low; current != high; ++current) {
+      *current = do_toupper(*current);
+    }
+
+    return high;
+  }
+
+  wchar_t do_tolower(wchar_t value) const override {
+    return ftl_locale_runtime::tolower_wide(context_->native, value);
+  }
+
+  const wchar_t *do_tolower(wchar_t *low, const wchar_t *high) const override {
+    for (wchar_t *current = low; current != high; ++current) {
+      *current = do_tolower(*current);
+    }
+
+    return high;
+  }
+
+  wchar_t do_widen(char value) const override {
+    return ftl_locale_runtime::widen(context_->native, value);
+  }
+
+  const char *do_widen(const char *low, const char *high,
+                       wchar_t *output) const override {
+    while (low != high)
+      *output++ = do_widen(*low++);
+
+    return high;
+  }
+
+  char do_narrow(wchar_t value, char fallback) const override {
+    return ftl_locale_runtime::narrow(context_->native, value, fallback);
+  }
+
+  const wchar_t *do_narrow(const wchar_t *low, const wchar_t *high,
+                           char fallback, char *output) const override {
+    while (low != high)
+      *output++ = do_narrow(*low++, fallback);
+
+    return high;
+  }
+
+private:
+  detail::locale_named_ctype_context *context_;
+};
 
 namespace detail {
 
@@ -685,29 +907,25 @@ struct locale_facet_control {
 };
 
 struct locale_classic_ctype_char final : ctype<char> {
-  locale_classic_ctype_char()
-      : ctype<char>(nullptr, false, 1) {}
+  locale_classic_ctype_char() : ctype<char>(nullptr, false, 1) {}
 
   ~locale_classic_ctype_char() override = default;
 };
 
 struct locale_classic_ctype_wchar final : ctype<wchar_t> {
-  locale_classic_ctype_wchar()
-      : ctype<wchar_t>(1) {}
+  locale_classic_ctype_wchar() : ctype<wchar_t>(1) {}
 
   ~locale_classic_ctype_wchar() override = default;
 };
 
-inline locale_facet_control &
-locale_classic_ctype_char_control() {
+inline locale_facet_control &locale_classic_ctype_char_control() {
   static locale_classic_ctype_char facet;
   static locale_facet_control control(&facet);
 
   return control;
 }
 
-inline locale_facet_control &
-locale_classic_ctype_wchar_control() {
+inline locale_facet_control &locale_classic_ctype_wchar_control() {
   static locale_classic_ctype_wchar facet;
   static locale_facet_control control(&facet);
 
@@ -746,15 +964,15 @@ struct locale_state {
   locale_state(const locale_state &) = delete;
   locale_state &operator=(const locale_state &) = delete;
 
-~locale_state() {
-  if (immortal)
-    return;
+  ~locale_state() {
+    if (immortal)
+      return;
 
-  for (auto &slot : facets) {
-    if (slot.control != nullptr)
-      slot.control->release();
+    for (auto &slot : facets) {
+      if (slot.control != nullptr)
+        slot.control->release();
+    }
   }
-}
 };
 
 inline void locale_retain_state(locale_state *state) noexcept {
@@ -780,12 +998,10 @@ inline locale_state &locale_classic_state() {
     state.facets.reserve(2);
 
     state.facets.push_back(
-        {&ctype<char>::id,
-         &locale_classic_ctype_char_control()});
+        {&ctype<char>::id, &locale_classic_ctype_char_control()});
 
     state.facets.push_back(
-        {&ctype<wchar_t>::id,
-         &locale_classic_ctype_wchar_control()});
+        {&ctype<wchar_t>::id, &locale_classic_ctype_wchar_control()});
 
     return true;
   }();
@@ -1056,76 +1272,52 @@ template <class Facet> const Facet &use_facet(const locale &value) {
   return *static_cast<const bare_facet *>(slot->control->value);
 }
 
-template <class Character>
-bool isspace(Character value, const locale &where) {
-  return use_facet<ctype<Character>>(where).is(
-      ctype_base::space, value);
+template <class Character> bool isspace(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::space, value);
 }
 
-template <class Character>
-bool isprint(Character value, const locale &where) {
-  return use_facet<ctype<Character>>(where).is(
-      ctype_base::print, value);
+template <class Character> bool isprint(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::print, value);
 }
 
-template <class Character>
-bool iscntrl(Character value, const locale &where) {
-  return use_facet<ctype<Character>>(where).is(
-      ctype_base::cntrl, value);
+template <class Character> bool iscntrl(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::cntrl, value);
 }
 
-template <class Character>
-bool isupper(Character value, const locale &where) {
-  return use_facet<ctype<Character>>(where).is(
-      ctype_base::upper, value);
+template <class Character> bool isupper(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::upper, value);
 }
 
-template <class Character>
-bool islower(Character value, const locale &where) {
-  return use_facet<ctype<Character>>(where).is(
-      ctype_base::lower, value);
+template <class Character> bool islower(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::lower, value);
 }
 
-template <class Character>
-bool isalpha(Character value, const locale &where) {
-  return use_facet<ctype<Character>>(where).is(
-      ctype_base::alpha, value);
+template <class Character> bool isalpha(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::alpha, value);
 }
 
-template <class Character>
-bool isdigit(Character value, const locale &where) {
-  return use_facet<ctype<Character>>(where).is(
-      ctype_base::digit, value);
+template <class Character> bool isdigit(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::digit, value);
 }
 
-template <class Character>
-bool ispunct(Character value, const locale &where) {
-  return use_facet<ctype<Character>>(where).is(
-      ctype_base::punct, value);
+template <class Character> bool ispunct(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::punct, value);
 }
 
-template <class Character>
-bool isxdigit(Character value, const locale &where) {
-  return use_facet<ctype<Character>>(where).is(
-      ctype_base::xdigit, value);
+template <class Character> bool isxdigit(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::xdigit, value);
 }
 
-template <class Character>
-bool isalnum(Character value, const locale &where) {
-  return use_facet<ctype<Character>>(where).is(
-      ctype_base::alnum, value);
+template <class Character> bool isalnum(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::alnum, value);
 }
 
-template <class Character>
-bool isgraph(Character value, const locale &where) {
-  return use_facet<ctype<Character>>(where).is(
-      ctype_base::graph, value);
+template <class Character> bool isgraph(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::graph, value);
 }
 
-template <class Character>
-bool isblank(Character value, const locale &where) {
-  return use_facet<ctype<Character>>(where).is(
-      ctype_base::blank, value);
+template <class Character> bool isblank(Character value, const locale &where) {
+  return use_facet<ctype<Character>>(where).is(ctype_base::blank, value);
 }
 
 template <class Character>
