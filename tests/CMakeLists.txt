@@ -497,6 +497,9 @@ foreach (header IN ITEMS
         mutex
         shared_mutex
         condition_variable
+        semaphore
+        latch
+        barrier
 )
     add_ftl_test(${header})
 endforeach ()

@@ -1,0 +1,76 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_LATCH_HEADER
+#define FTL_LATCH_HEADER
+
+#if !defined(__cpp_lib_latch) || __cpp_lib_latch < 201907L
+#undef __cpp_lib_latch
+#define __cpp_lib_latch 201907L
+#endif
+
+#ifdef FTL_REPLACE_STL
+#include <atomic>
+#include <cstddef>
+#include <limits>
+#define FTL_LATCH_BEGIN_NAMESPACE namespace std {
+#define FTL_LATCH_END_NAMESPACE }
+#else
+#include <ftl/atomic>
+#include <ftl/cstddef>
+#include <ftl/limits>
+#define FTL_LATCH_BEGIN_NAMESPACE namespace ftl {
+#define FTL_LATCH_END_NAMESPACE }
+#endif
+
+FTL_LATCH_BEGIN_NAMESPACE
+
+class latch {
+public:
+  static constexpr ptrdiff_t max() noexcept {
+    return numeric_limits<ptrdiff_t>::max();
+  }
+
+  constexpr explicit latch(ptrdiff_t expected) : counter_(expected) {}
+
+  ~latch() = default;
+
+  latch(const latch &) = delete;
+
+  latch &operator=(const latch &) = delete;
+
+  void count_down(ptrdiff_t update = 1) {
+    const ptrdiff_t previous = counter_.fetch_sub(update, memory_order_acq_rel);
+
+    if (previous == update)
+      counter_.notify_all();
+  }
+
+  bool try_wait() const noexcept {
+    return counter_.load(memory_order_acquire) == 0;
+  }
+
+  void wait() const {
+    ptrdiff_t current = counter_.load(memory_order_acquire);
+
+    while (current != 0) {
+      counter_.wait(current, memory_order_acquire);
+
+      current = counter_.load(memory_order_acquire);
+    }
+  }
+
+  void arrive_and_wait(ptrdiff_t update = 1) {
+    count_down(update);
+    wait();
+  }
+
+private:
+  atomic<ptrdiff_t> counter_;
+};
+
+FTL_LATCH_END_NAMESPACE
+
+#undef FTL_LATCH_BEGIN_NAMESPACE
+#undef FTL_LATCH_END_NAMESPACE
+
+#endif // FTL_LATCH_HEADER
