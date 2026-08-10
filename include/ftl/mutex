@@ -431,7 +431,7 @@ public:
     owns_ = true;
   }
 
-  bool try_lock() noexcept {
+  bool try_lock() {
     require_lockable();
 
     owns_ = mutex_->try_lock();

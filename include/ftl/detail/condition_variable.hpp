@@ -102,10 +102,9 @@ bool condition_wait_until(
     const chrono::time_point<Clock, Duration> &absolute_time) {
   const auto now = Clock::now();
 
-  if (!(now < absolute_time))
-    return true;
-
-  const uint64_t timeout = mutex_timeout_nanoseconds(absolute_time - now);
+  const uint64_t timeout = now < absolute_time
+                               ? mutex_timeout_nanoseconds(absolute_time - now)
+                               : uint64_t{0};
 
   const uint64_t deadline = wait_deadline_after(timeout);
 
@@ -146,10 +145,9 @@ bool condition_wait_until_interruptible(
     const chrono::time_point<Clock, Duration> &absolute_time) {
   const auto now = Clock::now();
 
-  if (!(now < absolute_time))
-    return true;
-
-  const uint64_t timeout = mutex_timeout_nanoseconds(absolute_time - now);
+  const uint64_t timeout = now < absolute_time
+                               ? mutex_timeout_nanoseconds(absolute_time - now)
+                               : uint64_t{0};
 
   const uint64_t deadline = wait_deadline_after(timeout);
 

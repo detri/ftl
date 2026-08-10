@@ -36,6 +36,22 @@ static_assert(
 static_assert(
     noexcept(tested::declval<tested::condition_variable &>().notify_all()));
 
+struct tracking_lock {
+  void lock() {
+    ++lock_calls;
+    locked = true;
+  }
+
+  void unlock() {
+    ++unlock_calls;
+    locked = false;
+  }
+
+  bool locked = true;
+  int lock_calls = 0;
+  int unlock_calls = 0;
+};
+
 struct thread_exit_probe {
   tested::atomic<bool> *destroyed = nullptr;
 
@@ -46,7 +62,9 @@ struct thread_exit_probe {
   }
 };
 
-thread_local thread_exit_probe exit_probe;
+thread_local thread_exit_probe early_exit_probe;
+
+thread_local thread_exit_probe late_exit_probe;
 
 bool condition_variable_predicate_wait_works() {
   tested::mutex mutex;
@@ -298,29 +316,41 @@ bool notify_all_at_thread_exit_works() {
 
   bool finished = false;
 
-  tested::atomic<bool> tls_destroyed{false};
+  tested::atomic<bool> early_tls_destroyed{false};
+
+  tested::atomic<bool> late_tls_destroyed{false};
 
   tested::unique_lock lock(mutex);
 
   tested::thread worker([&] {
-    exit_probe.destroyed = &tls_destroyed;
+    // Construct one TLS object before registration.
+    early_exit_probe.destroyed = &early_tls_destroyed;
 
     tested::unique_lock worker_lock(mutex);
 
     finished = true;
 
     tested::notify_all_at_thread_exit(condition, tested::move(worker_lock));
+
+    // This is the important half of the test:
+    // construct TLS *after* the notification has
+    // already been registered.
+    late_exit_probe.destroyed = &late_tls_destroyed;
   });
 
   condition.wait(lock, [&] { return finished; });
 
-  const bool destroyed_before_wake =
-      tls_destroyed.load(tested::memory_order_acquire);
+  // Acquiring the mutex after the deferred
+  // notification must occur after destruction of
+  // every thread-storage-duration object, including
+  // one initialized after registration.
+  const bool result = early_tls_destroyed.load(tested::memory_order_acquire) &&
+                      late_tls_destroyed.load(tested::memory_order_acquire);
 
   lock.unlock();
   worker.join();
 
-  return destroyed_before_wake;
+  return result;
 }
 
 bool repeated_notifications_do_not_break_waiting() {
@@ -364,6 +394,16 @@ bool repeated_notifications_do_not_break_waiting() {
   return observed;
 }
 
+bool expired_wait_releases_and_reacquires() {
+  tested::condition_variable_any condition;
+  tracking_lock lock;
+
+  const auto result = condition.wait_for(lock, tested::chrono::milliseconds{0});
+
+  return result == tested::cv_status::timeout && lock.locked &&
+         lock.unlock_calls == 1 && lock.lock_calls == 1;
+}
+
 bool ftl_test() {
   return condition_variable_predicate_wait_works() &&
          notify_all_wakes_waiters() &&
@@ -376,5 +416,6 @@ bool ftl_test() {
          condition_variable_any_stopped_predicate_wins() &&
          condition_variable_any_interruptible_timeout_works() &&
          notify_all_at_thread_exit_works() &&
-         repeated_notifications_do_not_break_waiting();
+         repeated_notifications_do_not_break_waiting() &&
+         expired_wait_releases_and_reacquires();
 }
