@@ -568,6 +568,7 @@ foreach (header IN ITEMS
         locale_moneypunct
         locale_messages
         codecvt
+        format
 )
     add_ftl_test(${header})
 endforeach ()
