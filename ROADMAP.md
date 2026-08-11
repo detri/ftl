@@ -718,6 +718,14 @@ Take these closures in order:
    Windows runtime alone converts them to UTF-16 and `\\` at the OS boundary.
 7. `<regex>`.
 
+The Stage 7.6 closure is audited against ISO/IEC 14882:2024 clauses 31.12.4
+through 31.12.13 and deprecated Annex D.29. It includes the complete path,
+error/status, directory entry and iterator, recursive iterator, operation,
+hash, range-integration, and `u8path` surfaces. The uniform UTF-8 `/` pathname
+model is FTL's implementation-defined native encoding and separator choice;
+raw `\\` is not a second Windows path syntax and is rejected at the Win32
+boundary.
+
 Stage 7 deliberately separates the dependency-independent locale core from
 the stream-dependent locale facets. This is a dependency split, not a reduced
 completion standard: `<locale>` moves to the complete inventory only after its

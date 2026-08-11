@@ -49,13 +49,15 @@ using native_directory_callback = bool (*)(const char *, native_file_kind,
                                            native_io_error &) noexcept;
 [[nodiscard]] bool native_create_directory(const char *,
                                            native_io_error &) noexcept;
+[[nodiscard]] bool native_create_directory_from(const char *, const char *,
+                                                native_io_error &) noexcept;
 [[nodiscard]] bool native_remove(const char *, bool &,
                                  native_io_error &) noexcept;
 [[nodiscard]] bool native_resize_file(const char *, unsigned long long,
                                       native_io_error &) noexcept;
 [[nodiscard]] bool native_set_write_time(const char *, long long,
                                          native_io_error &) noexcept;
-[[nodiscard]] bool native_set_permissions(const char *, unsigned, bool,
+[[nodiscard]] bool native_set_permissions(const char *, unsigned, bool, bool,
                                           native_io_error &) noexcept;
 [[nodiscard]] bool native_create_hard_link(const char *, const char *,
                                            native_io_error &) noexcept;
@@ -74,6 +76,12 @@ using native_directory_callback = bool (*)(const char *, native_file_kind,
 [[nodiscard]] bool native_absolute_path(const char *, char *, native_io_size,
                                         native_io_size &,
                                         native_io_error &) noexcept;
+[[nodiscard]] bool native_canonical_path(const char *, char *, native_io_size,
+                                         native_io_size &,
+                                         native_io_error &) noexcept;
+[[nodiscard]] bool native_temp_directory(char *, native_io_size,
+                                         native_io_size &,
+                                         native_io_error &) noexcept;
 
 } // namespace ftl::detail
 #endif

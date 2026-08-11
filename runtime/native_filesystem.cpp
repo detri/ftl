@@ -16,6 +16,12 @@ using namespace ftl::detail;
 
 bool wide_path(const char *source, wchar_t *result, int capacity,
                native_io_error &error) noexcept {
+  for (const char *current = source; *current; ++current) {
+    if (*current == '\\') {
+      error.value = ERROR_INVALID_NAME;
+      return false;
+    }
+  }
   int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, source, -1, result,
                               capacity);
   if (!n) {
@@ -52,9 +58,11 @@ native_file_kind kind(DWORD attributes) noexcept {
 }
 
 long long ticks(FILETIME t) noexcept {
-  return static_cast<long long>(
+  constexpr long long windows_epoch = 116444736000000000LL;
+  auto value = static_cast<long long>(
       (static_cast<unsigned long long>(t.dwHighDateTime) << 32) |
       t.dwLowDateTime);
+  return (value - windows_epoch) * 100;
 }
 } // namespace
 
@@ -136,6 +144,17 @@ bool native_create_directory(const char *p, native_io_error &e) noexcept {
   }
   return true;
 }
+bool native_create_directory_from(const char *p, const char *attributes,
+                                  native_io_error &e) noexcept {
+  wchar_t path[32768], source[32768];
+  if (!wide_path(p, path, 32768, e) || !wide_path(attributes, source, 32768, e))
+    return false;
+  if (!CreateDirectoryExW(source, path, nullptr)) {
+    e.value = GetLastError();
+    return false;
+  }
+  return true;
+}
 bool native_remove(const char *p, bool &removed, native_io_error &e) noexcept {
   wchar_t path[32768];
   if (!wide_path(p, path, 32768, e))
@@ -192,8 +211,9 @@ bool native_set_write_time(const char *p, long long value,
     e.value = GetLastError();
     return false;
   }
+  constexpr long long windows_epoch = 116444736000000000LL;
   ULARGE_INTEGER u;
-  u.QuadPart = value;
+  u.QuadPart = static_cast<unsigned long long>(value / 100 + windows_epoch);
   FILETIME t{u.LowPart, u.HighPart};
   bool ok = SetFileTime(h, nullptr, nullptr, &t) != 0;
   if (!ok)
@@ -201,7 +221,7 @@ bool native_set_write_time(const char *p, long long value,
   CloseHandle(h);
   return ok;
 }
-bool native_set_permissions(const char *p, unsigned bits, bool add,
+bool native_set_permissions(const char *p, unsigned bits, bool add, bool,
                             native_io_error &e) noexcept {
   wchar_t path[32768];
   if (!wide_path(p, path, 32768, e))
@@ -259,14 +279,38 @@ bool native_read_symlink(const char *p, char *out, native_io_size cap,
     e.value = GetLastError();
     return false;
   }
-  DWORD got = GetFinalPathNameByHandleW(h, wide, 32768, FILE_NAME_NORMALIZED);
+  struct reparse_data {
+    DWORD tag;
+    WORD data_length;
+    WORD reserved;
+    WORD substitute_offset;
+    WORD substitute_length;
+    WORD print_offset;
+    WORD print_length;
+    DWORD flags;
+    wchar_t buffer[8192];
+  } data{};
+  DWORD got{};
+  BOOL ok = DeviceIoControl(h, 0x000900A8UL, nullptr, 0, &data, sizeof data,
+                            &got, nullptr);
   CloseHandle(h);
-  if (!got || got >= 32768) {
+  if (!ok || data.tag != IO_REPARSE_TAG_SYMLINK) {
     e.value = GetLastError();
     return false;
   }
+  WORD offset = data.print_length ? data.print_offset : data.substitute_offset;
+  WORD bytes = data.print_length ? data.print_length : data.substitute_length;
+  auto count = static_cast<size_t>(bytes / sizeof(wchar_t));
+  if (count >= 32768) {
+    e.value = ERROR_INSUFFICIENT_BUFFER;
+    return false;
+  }
+  const wchar_t *source = reinterpret_cast<const wchar_t *>(
+      reinterpret_cast<const unsigned char *>(data.buffer) + offset);
+  memcpy(wide, source, count * sizeof(wchar_t));
+  wide[count] = 0;
   const wchar_t *s = wide;
-  if (wcsncmp(s, L"\\\\?\\", 4) == 0)
+  if (!data.print_length && wcsncmp(s, L"\\??\\", 4) == 0)
     s += 4;
   int z;
   if (!utf8(s, out, static_cast<int>(cap), z, e))
@@ -352,6 +396,46 @@ bool native_absolute_path(const char *p, char *out, native_io_size cap,
   n = z;
   return true;
 }
+bool native_canonical_path(const char *p, char *out, native_io_size cap,
+                           native_io_size &n, native_io_error &e) noexcept {
+  wchar_t path[32768], full[32768];
+  if (!wide_path(p, path, 32768, e))
+    return false;
+  HANDLE handle = CreateFileW(
+      path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+      OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+  if (handle == INVALID_HANDLE_VALUE) {
+    e.value = GetLastError();
+    return false;
+  }
+  DWORD got =
+      GetFinalPathNameByHandleW(handle, full, 32768, FILE_NAME_NORMALIZED);
+  CloseHandle(handle);
+  if (!got || got >= 32768) {
+    e.value = GetLastError();
+    return false;
+  }
+  const wchar_t *value = wcsncmp(full, L"\\\\?\\", 4) == 0 ? full + 4 : full;
+  int size;
+  if (!utf8(value, out, static_cast<int>(cap), size, e))
+    return false;
+  n = static_cast<native_io_size>(size);
+  return true;
+}
+bool native_temp_directory(char *out, native_io_size cap, native_io_size &n,
+                           native_io_error &e) noexcept {
+  wchar_t path[32768];
+  DWORD got = GetTempPathW(32768, path);
+  if (!got || got >= 32768) {
+    e.value = GetLastError();
+    return false;
+  }
+  int size;
+  if (!utf8(path, out, static_cast<int>(cap), size, e))
+    return false;
+  n = static_cast<native_io_size>(size);
+  return true;
+}
 } // namespace ftl::detail
 
 #else
@@ -429,6 +513,15 @@ bool native_create_directory(const char *p, native_io_error &e) noexcept {
   }
   return true;
 }
+bool native_create_directory_from(const char *p, const char *attributes,
+                                  native_io_error &e) noexcept {
+  struct stat info{};
+  if (stat(attributes, &info) || mkdir(p, info.st_mode)) {
+    e.value = errno;
+    return false;
+  }
+  return true;
+}
 bool native_remove(const char *p, bool &r, native_io_error &e) noexcept {
   struct stat s{};
   if (lstat(p, &s)) {
@@ -456,7 +549,13 @@ bool native_resize_file(const char *p, unsigned long long n,
 }
 bool native_set_write_time(const char *p, long long n,
                            native_io_error &e) noexcept {
-  timespec t[2]{{0, UTIME_OMIT}, {n / 1000000000LL, n % 1000000000LL}};
+  long long seconds = n / 1000000000LL;
+  long long nanoseconds = n % 1000000000LL;
+  if (nanoseconds < 0) {
+    nanoseconds += 1000000000LL;
+    --seconds;
+  }
+  timespec t[2]{{0, UTIME_OMIT}, {seconds, nanoseconds}};
   if (utimensat(AT_FDCWD, p, t, 0)) {
     e.value = errno;
     return false;
@@ -464,14 +563,19 @@ bool native_set_write_time(const char *p, long long n,
   return true;
 }
 bool native_set_permissions(const char *p, unsigned bits, bool add,
-                            native_io_error &e) noexcept {
+                            bool nofollow, native_io_error &e) noexcept {
   struct stat s{};
-  if (stat(p, &s)) {
+  if ((nofollow ? lstat(p, &s) : stat(p, &s))) {
     e.value = errno;
     return false;
   }
   mode_t m = add ? (s.st_mode | bits) : (bits);
-  if (chmod(p, m)) {
+#if defined(AT_SYMLINK_NOFOLLOW)
+  int result = fchmodat(AT_FDCWD, p, m, nofollow ? AT_SYMLINK_NOFOLLOW : 0);
+#else
+  int result = chmod(p, m);
+#endif
+  if (result) {
     e.value = errno;
     return false;
   }
@@ -622,6 +726,36 @@ bool native_absolute_path(const char *p, char *out, native_io_size cap,
     out[n++] = '/';
   memcpy(out + n, p, m + 1);
   n += m;
+  return true;
+}
+bool native_canonical_path(const char *p, char *out, native_io_size cap,
+                           native_io_size &n, native_io_error &e) noexcept {
+  char *value = realpath(p, nullptr);
+  if (!value) {
+    e.value = errno;
+    return false;
+  }
+  n = strlen(value);
+  if (n >= cap) {
+    free(value);
+    e.value = ENAMETOOLONG;
+    return false;
+  }
+  memcpy(out, value, n + 1);
+  free(value);
+  return true;
+}
+bool native_temp_directory(char *out, native_io_size cap, native_io_size &n,
+                           native_io_error &e) noexcept {
+  const char *value = getenv("TMPDIR");
+  if (!value || !*value)
+    value = "/tmp";
+  n = strlen(value);
+  if (n >= cap) {
+    e.value = ENAMETOOLONG;
+    return false;
+  }
+  memcpy(out, value, n + 1);
   return true;
 }
 } // namespace ftl::detail

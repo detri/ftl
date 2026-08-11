@@ -5,6 +5,7 @@
 #include <ftl/bitset>
 #include <ftl/cstddef>
 #include <ftl/expected>
+#include <ftl/filesystem>
 #include <ftl/ios>
 #include <ftl/latch>
 #include <ftl/numbers>
@@ -157,6 +158,10 @@
 
 #if __cpp_lib_spanstream < 202106L || __cpp_lib_syncbuf < 201803L
 #error Stage 7.5 stream feature macros are incomplete
+#endif
+
+#if __cpp_lib_filesystem < 201703L
+#error Stage 7.6 filesystem feature macro is incomplete
 #endif
 
 #if __cpp_lib_semaphore < 201907L || __cpp_lib_latch < 201907L ||              \
