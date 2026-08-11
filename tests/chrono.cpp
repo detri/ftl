@@ -1,9 +1,11 @@
 #ifdef FTL_REPLACE_STL
 #include <chrono>
+#include <detail/tzdb_runtime.hpp>
 #include <format>
 namespace tested = std;
 #else
 #include <ftl/chrono>
+#include <ftl/detail/tzdb_runtime.hpp>
 #include <ftl/format>
 namespace tested = ftl;
 #endif
@@ -456,6 +458,162 @@ bool chrono_format_errors_work() {
   return true;
 }
 
+bool chrono_tzdb_runtime_works() {
+  namespace tz = tested::detail::tzdb_runtime;
+
+  /*
+   * Canonical name lookup.
+   */
+  const auto new_york = tz::locate_zone("America/New_York");
+
+  if (!new_york)
+    return false;
+
+  if (!equal_text(tz::zone_name(new_york), "America/New_York"))
+    return false;
+
+  /*
+   * backward contains:
+   *
+   *   Link America/New_York US/Eastern
+   *
+   * buildtzdb resolves links to final Zone indices, so both names must
+   * identify the same generated zone.
+   */
+  const auto eastern_link = tz::find_link("US/Eastern");
+
+  if (!eastern_link)
+    return false;
+
+  if (!equal_text(tz::link_name(eastern_link), "US/Eastern"))
+    return false;
+
+  const auto eastern_target = tz::link_target(eastern_link);
+
+  if (!eastern_target || eastern_target.index != new_york.index)
+    return false;
+
+  const auto eastern = tz::locate_zone("US/Eastern");
+
+  if (!eastern || eastern.index != new_york.index)
+    return false;
+
+  if (tz::locate_zone("Definitely/Not_A_Zone"))
+    return false;
+
+  /*
+   * 2024-03-10 07:00:00 UTC is the New York spring-forward
+   * transition.
+   *
+   * The second immediately before it must still be EST.
+   */
+  const auto before_spring = tz::lookup(new_york, 1710053999LL);
+
+  if (!before_spring)
+    return false;
+
+  if (before_spring.offset_seconds != -5 * 60 * 60)
+    return false;
+
+  if (before_spring.save_minutes != 0)
+    return false;
+
+  if (!equal_text(before_spring.abbreviation, "EST"))
+    return false;
+
+  if (before_spring.end != 1710054000LL)
+    return false;
+
+  /*
+   * Exact equality with transition.begin belongs to the new state.
+   */
+  const auto spring = tz::lookup(new_york, 1710054000LL);
+
+  if (!spring)
+    return false;
+
+  if (spring.begin_unbounded)
+    return false;
+
+  if (spring.begin != 1710054000LL)
+    return false;
+
+  if (spring.offset_seconds != -4 * 60 * 60)
+    return false;
+
+  if (spring.save_minutes != 60)
+    return false;
+
+  if (!equal_text(spring.abbreviation, "EDT"))
+    return false;
+
+  /*
+   * 2024-11-03 06:00:00 UTC is the corresponding fall-back.
+   */
+  if (spring.end != 1730613600LL)
+    return false;
+
+  const auto fall = tz::lookup(new_york, 1730613600LL);
+
+  if (!fall)
+    return false;
+
+  if (fall.begin != 1730613600LL)
+    return false;
+
+  if (fall.offset_seconds != -5 * 60 * 60)
+    return false;
+
+  if (fall.save_minutes != 0)
+    return false;
+
+  if (!equal_text(fall.abbreviation, "EST"))
+    return false;
+
+  /*
+   * A no-DST zone exercises the generated initial-state path.
+   */
+  const auto utc = tz::locate_zone("Etc/UTC");
+
+  if (!utc)
+    return false;
+
+  const auto utc_epoch = tz::lookup(utc, 0);
+
+  if (!utc_epoch)
+    return false;
+
+  if (utc_epoch.offset_seconds != 0)
+    return false;
+
+  if (utc_epoch.save_minutes != 0)
+    return false;
+
+  if (!equal_text(utc_epoch.abbreviation, "UTC"))
+    return false;
+
+  /*
+   * The current runtime slice must never pretend that the generated
+   * transition table knows anything past its coverage horizon.
+   */
+  const auto last_precomputed =
+      tz::lookup(new_york, tz::precomputed_until() - 1);
+
+  if (!last_precomputed)
+    return false;
+
+  if (!last_precomputed.end_is_horizon)
+    return false;
+
+  if (last_precomputed.end != tz::precomputed_until())
+    return false;
+
+  if (tz::lookup(new_york, tz::precomputed_until()))
+    return false;
+
+  return true;
+}
+
 bool ftl_test() {
   if (!(system_clock::now().time_since_epoch() > seconds{0})) {
     return false;
@@ -478,6 +636,9 @@ bool ftl_test() {
     return false;
 
   if (!chrono_clock_formatting_works())
+    return false;
+
+  if (!chrono_tzdb_runtime_works())
     return false;
 
   return true;
