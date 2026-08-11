@@ -150,7 +150,7 @@ void write_if_changed(const std::filesystem::path &path,
 
 } // namespace
 
-void emit_database(const database &input,
+void emit_database(const database &input, const compiled_database &compiled,
                    const std::filesystem::path &output_path) {
 
   database db = input;
@@ -169,10 +169,55 @@ void emit_database(const database &input,
       throw std::runtime_error("duplicate Zone: " + db.zones[i].name);
   }
 
+  /*
+   * compile_transitions() promises a name-sorted zone table.
+   *
+   * The generated raw Zone table is also name-sorted here, so enforce
+   * that the two views of the database remain in exact lockstep before
+   * writing index-based records.
+   */
+  if (compiled.zones.size() != db.zones.size()) {
+    throw std::runtime_error(
+        "compiled zone count does not match parsed zone count");
+  }
+
+  for (std::size_t i = 0; i < db.zones.size(); ++i) {
+    const auto &raw = db.zones[i];
+    const auto &cz = compiled.zones[i];
+
+    if (raw.name != cz.name) {
+      throw std::runtime_error("compiled zone order disagrees with parsed "
+                               "zone order at '" +
+                               raw.name + "'");
+    }
+
+    if (cz.precomputed_until != compiled.precomputed_until) {
+      throw std::runtime_error("zone '" + cz.name +
+                               "' has inconsistent transition horizon");
+    }
+
+    bool have_previous = false;
+    std::int64_t previous = 0;
+
+    for (const auto &transition : cz.transitions) {
+      if (transition.at >= compiled.precomputed_until) {
+        throw std::runtime_error("zone '" + cz.name +
+                                 "' contains transition at or beyond horizon");
+      }
+
+      if (have_previous && transition.at <= previous) {
+        throw std::runtime_error("zone '" + cz.name +
+                                 "' has non-increasing compiled transitions");
+      }
+
+      previous = transition.at;
+      have_previous = true;
+    }
+  }
+
   std::unordered_map<std::string, unsigned> zone_indices;
 
   for (unsigned i = 0; i < static_cast<unsigned>(db.zones.size()); ++i) {
-
     zone_indices.emplace(db.zones[i].name, i);
   }
 
@@ -294,6 +339,18 @@ void emit_database(const database &input,
   for (const auto &l : links)
     strings.add(l.name);
 
+  /*
+   * Compiled states contain fully resolved abbreviations. These must
+   * participate in the same interned string table as the raw tzdb
+   * material.
+   */
+  for (const auto &z : compiled.zones) {
+    strings.add(z.initial.abbreviation);
+
+    for (const auto &transition : z.transitions)
+      strings.add(transition.state.abbreviation);
+  }
+
   strings.build();
 
   struct flattened_rule_set {
@@ -318,18 +375,38 @@ void emit_database(const database &input,
 
   struct flattened_zone {
     std::string name;
+
     unsigned era_begin = 0;
     unsigned era_count = 0;
+
+    unsigned transition_begin = 0;
+    unsigned transition_count = 0;
+
+    compiled_state initial;
   };
 
   std::vector<flattened_zone> flat_zones;
   std::vector<zone_era> flat_eras;
 
-  for (const auto &z : db.zones) {
+  unsigned transition_begin = 0;
+
+  for (std::size_t i = 0; i < db.zones.size(); ++i) {
+    const auto &z = db.zones[i];
+    const auto &cz = compiled.zones[i];
+
     flattened_zone result;
+
     result.name = z.name;
+
     result.era_begin = static_cast<unsigned>(flat_eras.size());
     result.era_count = static_cast<unsigned>(z.eras.size());
+
+    result.transition_begin = transition_begin;
+    result.transition_count = static_cast<unsigned>(cz.transitions.size());
+
+    result.initial = cz.initial;
+
+    transition_begin += result.transition_count;
 
     flat_eras.insert(flat_eras.end(), z.eras.begin(), z.eras.end());
 
@@ -410,10 +487,25 @@ struct era_record {
     time_basis until_basis;
 };
 
+struct transition_record {
+    long long begin;
+    int offset_seconds;
+    int save_minutes;
+    unsigned abbreviation;
+};
+
 struct zone_record {
     unsigned name;
+
     unsigned era_begin;
     unsigned era_count;
+
+    unsigned transition_begin;
+    unsigned transition_count;
+
+    int initial_offset_seconds;
+    int initial_save_minutes;
+    unsigned initial_abbreviation;
 };
 
 struct link_record {
@@ -432,6 +524,9 @@ inline constexpr unsigned no_rule_set = ~0u;
 
   out << "inline constexpr char version[] = \"" << escape_string(db.version)
       << "\";\n\n";
+
+  out << "inline constexpr long long precomputed_until = "
+      << compiled.precomputed_until << "LL;\n\n";
 
   out << "inline constexpr char strings[] = \"" << escape_string(strings.data())
       << "\";\n\n";
@@ -497,11 +592,27 @@ inline constexpr unsigned no_rule_set = ~0u;
 
   out << "};\n\n";
 
+  out << "inline constexpr transition_record transitions[] = {\n";
+
+  for (const auto &z : compiled.zones) {
+    for (const auto &transition : z.transitions) {
+      out << "    { " << transition.at << "LL, "
+          << transition.state.offset_seconds << ", "
+          << transition.state.save_minutes << ", "
+          << strings.offset(transition.state.abbreviation) << " },\n";
+    }
+  }
+
+  out << "};\n\n";
+
   out << "inline constexpr zone_record zones[] = {\n";
 
   for (const auto &z : flat_zones) {
     out << "    { " << strings.offset(z.name) << ", " << z.era_begin << ", "
-        << z.era_count << " },\n";
+        << z.era_count << ", " << z.transition_begin << ", "
+        << z.transition_count << ", " << z.initial.offset_seconds << ", "
+        << z.initial.save_minutes << ", "
+        << strings.offset(z.initial.abbreviation) << " },\n";
   }
 
   out << "};\n\n";

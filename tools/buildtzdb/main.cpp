@@ -1,6 +1,6 @@
 #include "emit.hpp"
-#include "transitions.hpp"
 #include "parser.hpp"
+#include "transitions.hpp"
 
 #include <exception>
 #include <filesystem>
@@ -28,14 +28,12 @@ int main(int argc, char **argv) {
       transition_count += zone.transitions.size();
 
       if (zone.transitions.size() > largest_count) {
-
         largest_count = zone.transitions.size();
-
         largest_zone = zone.name;
       }
     }
 
-    ftl_tzdb_tool::emit_database(db, output);
+    ftl_tzdb_tool::emit_database(db, compiled, output);
 
     std::cout << "tzdb " << db.version << ": " << db.zones.size() << " zones, "
               << db.links.size() << " links, " << db.rules.size() << " rules, "
@@ -49,7 +47,6 @@ int main(int argc, char **argv) {
 
   } catch (const std::exception &e) {
     std::cerr << "buildtzdb: " << e.what() << '\n';
-
     return 1;
   }
 }
