@@ -1133,23 +1133,23 @@ private:
     return m;
   }
 
-int named_class(const char *n, bool inv) {
-  klass k;
-  item x;
+  int named_class(const char *n, bool inv) {
+    klass k;
+    item x;
 
-  x.type = item::kind::named;
-  x.invert = inv;
-  x.mask = class_mask(n);
+    x.type = item::kind::named;
+    x.invert = inv;
+    x.mask = class_mask(n);
 
-  k.items.push_back(move(x));
+    k.items.push_back(move(x));
 
-  size_t ci = classes_.size();
-  classes_.push_back(move(k));
+    size_t ci = classes_.size();
+    classes_.push_back(move(k));
 
-  int i = add(node::kind::klass);
-  nodes_[i].aux = ci;
-  return i;
-}
+    int i = add(node::kind::klass);
+    nodes_[i].aux = ci;
+    return i;
+  }
 
   C escaped_char(C e) {
     if (ascii_eq(e, 'a'))
@@ -2127,6 +2127,7 @@ rx_run(const rx_program<C, Tr> &p, const basic_string<C> &s, size_t start,
        size_t capcount, size_t target_begin, bool prev_available, C prev_char,
        const vector<rx_cap> *seed = nullptr, bool capture_zero = true) {
   using O = typename rx_inst<C>::code;
+
   const size_t npos = static_cast<size_t>(-1);
 
   auto wordmask = [&] {
@@ -2149,6 +2150,41 @@ rx_run(const rx_program<C, Tr> &p, const basic_string<C> &s, size_t start,
   stack.push_back(move(init));
 
   rx_result best;
+
+  //
+  // When two POSIX paths produce the same total match length, compare
+  // marked subexpressions in opening-parenthesis order. That order gives
+  // the POSIX priority order: earlier / higher-level subexpressions win.
+  //
+  // A participating null match outranks a non-participating subexpression.
+  //
+  auto better_posix_submatches = [&](const vector<rx_cap> &candidate,
+                                     const vector<rx_cap> &incumbent) {
+    size_t count = candidate.size() < incumbent.size() ? candidate.size()
+                                                       : incumbent.size();
+
+    //
+    // Capture zero is the already-tied complete match.
+    //
+    for (size_t i = 1; i < count; ++i) {
+      const auto &a = candidate[i];
+      const auto &b = incumbent[i];
+
+      if (a.matched != b.matched)
+        return a.matched;
+
+      if (!a.matched)
+        continue;
+
+      size_t alen = a.second - a.first;
+      size_t blen = b.second - b.first;
+
+      if (alen != blen)
+        return alen > blen;
+    }
+
+    return false;
+  };
 
   size_t budget = (s.size() + 1) * (p.code.size() + 1) * 512 + 100000;
 
@@ -2178,8 +2214,18 @@ rx_run(const rx_program<C, Tr> &p, const basic_string<C> &s, size_t start,
         if (st.pos >= s.size())
           goto fail;
 
+        //
+        // ECMAScript dot excludes LineTerminator characters.
+        //
         if (syntax_has(p.flags, regex_constants::ECMAScript) &&
             rx_line_term(s[st.pos]))
+          goto fail;
+
+        //
+        // POSIX BRE/ERE period matches every supported character except
+        // NUL. awk/grep/egrep are POSIX-derived grammars as well.
+        //
+        if (rx_posix<C, Tr>(p.flags) && s[st.pos] == C{})
           goto fail;
 
         ++st.pos;
@@ -2411,11 +2457,22 @@ rx_run(const rx_program<C, Tr> &p, const basic_string<C> &s, size_t start,
           st.caps[0].matched = true;
         }
 
+        //
+        // ECMAScript preserves ordered-backtracking priority.
+        //
         if (!rx_posix<C, Tr>(p.flags))
           return {true, st.pos, move(st.caps)};
 
-        if (!best.ok || st.pos > best.end)
+        //
+        // POSIX first maximizes the complete match, then resolves equal
+        // complete matches by maximizing marked subexpressions from left
+        // to right.
+        //
+        if (!best.ok || st.pos > best.end ||
+            (st.pos == best.end &&
+             better_posix_submatches(st.caps, best.caps))) {
           best = {true, st.pos, move(st.caps)};
+        }
 
         goto fail;
       }
@@ -2514,19 +2571,31 @@ public:
   template <class It>
   basic_regex &assign(It first, It last, flag_type f = ECMAScript) {
     string_type pat(first, last);
+
+    //
+    // The public flag value must remain exactly what the caller supplied.
+    // A missing grammar bit means "use ECMAScript", but it does not mean
+    // that flags() gains the ECMAScript bit.
+    //
     flag_type nf = detail::normalize_syntax(f);
+
     detail::rx_parser<CharT, Traits> parser(pat.data(), pat.data() + pat.size(),
                                             nf, traits_);
+
     int root = parser.parse();
+
     detail::rx_compiler<CharT, Traits> compiler(parser.nodes(),
                                                 parser.classes(), nf);
+
     auto prog = compiler.compile(root);
+
     pattern_ = move(pat);
-    flags_ = nf;
+    flags_ = f;
     marks_ = parser.marks();
     capture_count_ = parser.captures();
     program_ = move(prog);
     valid_ = true;
+
     return *this;
   }
 
@@ -2618,8 +2687,7 @@ public:
 
   difference_type length(size_type n = 0) const { return (*this)[n].length(); }
   difference_type position(size_type n = 0) const {
-    const auto &s = (*this)[n];
-    return s.matched ? distance(origin_, s.first) : difference_type(-1);
+    return distance(origin_, (*this)[n].first);
   }
   string_type str(size_type n = 0) const { return (*this)[n].str(); }
 
@@ -2639,71 +2707,134 @@ public:
              regex_constants::match_flag_type flags =
                  regex_constants::format_default) const {
     using namespace regex_constants;
+
     auto emit = [&](const value_type &s) {
-      if (s.matched)
+      if (s.matched) {
         for (auto i = s.first; i != s.second; ++i)
           *out++ = *i;
+      }
     };
 
+    //
+    // POSIX sed replacement syntax.
+    //
     if (detail::match_has(flags, format_sed)) {
       for (auto p = ff; p != fl; ++p) {
-        if (detail::ascii_eq(*p, '&'))
+        if (detail::ascii_eq(*p, '&')) {
           emit((*this)[0]);
-        else if (detail::ascii_eq(*p, '\\') && p + 1 != fl) {
+          continue;
+        }
+
+        if (detail::ascii_eq(*p, '\\') && p + 1 != fl) {
           ++p;
-          if (detail::ascii_digit(*p))
-            emit(
-                (*this)[static_cast<size_t>(*p - static_cast<char_type>('0'))]);
-          else
+
+          if (detail::ascii_digit(*p)) {
+            size_t n = static_cast<size_t>(*p - static_cast<char_type>('0'));
+
+            emit((*this)[n]);
+          } else {
             *out++ = *p;
-        } else
-          *out++ = *p;
+          }
+
+          continue;
+        }
+
+        *out++ = *p;
       }
+
       return out;
     }
+
+    //
+    // ECMAScript replacement syntax.
+    //
+    const size_t capture_count =
+        size() == 0 ? 0 : static_cast<size_t>(size() - 1);
 
     for (auto p = ff; p != fl; ++p) {
       if (!detail::ascii_eq(*p, '$') || p + 1 == fl) {
         *out++ = *p;
         continue;
       }
+
       auto q = p + 1;
+
       if (detail::ascii_eq(*q, '$')) {
         *out++ = static_cast<char_type>('$');
         p = q;
         continue;
       }
+
       if (detail::ascii_eq(*q, '&')) {
         emit((*this)[0]);
         p = q;
         continue;
       }
+
       if (detail::ascii_eq(*q, '`')) {
         emit(prefix_);
         p = q;
         continue;
       }
+
       if (detail::ascii_eq(*q, '\'')) {
         emit(suffix_);
         p = q;
         continue;
       }
+
       if (detail::ascii_digit(*q)) {
-        size_t n = static_cast<size_t>(*q - static_cast<char_type>('0'));
+        size_t digit_count = 1;
+
         if (q + 1 != fl && detail::ascii_digit(*(q + 1))) {
-          size_t n2 = n * 10 + static_cast<size_t>(*(q + 1) -
-                                                   static_cast<char_type>('0'));
-          if (n2 < size()) {
-            n = n2;
-            ++q;
+          digit_count = 2;
+        }
+
+        size_t n = static_cast<size_t>(*q - static_cast<char_type>('0'));
+
+        if (digit_count == 2) {
+          n = n * 10 +
+              static_cast<size_t>(*(q + 1) - static_cast<char_type>('0'));
+
+          //
+          // ECMAScript's two-digit fallback:
+          //
+          //   $10 with one capture => $1 followed by literal '0'.
+          //
+          if (n > capture_count) {
+            digit_count = 1;
+            n = static_cast<size_t>(*q - static_cast<char_type>('0'));
           }
         }
-        emit((*this)[n]);
-        p = q;
+
+        if (n >= 1 && n <= capture_count) {
+          emit((*this)[n]);
+
+          if (digit_count == 2)
+            ++q;
+
+          p = q;
+          continue;
+        }
+
+        //
+        // Invalid numeric references are literal, including $0.
+        //
+        *out++ = static_cast<char_type>('$');
+
+        for (size_t i = 0; i < digit_count; ++i)
+          *out++ = *(q + static_cast<ptrdiff_t>(i));
+
+        p = q + static_cast<ptrdiff_t>(digit_count - 1);
         continue;
       }
+
+      //
+      // '$' followed by anything else is literal.
+      //
       *out++ = *p;
     }
+
     return out;
   }
 

@@ -14,9 +14,7 @@ struct regex4_traits : tested::regex_traits<char> {
   using base = tested::regex_traits<char>;
   using string_type = typename base::string_type;
 
-  char translate(char c) const {
-    return c;
-  }
+  char translate(char c) const { return c; }
 
   char translate_nocase(char c) const {
     if (c >= 'A' && c <= 'Z')
@@ -25,8 +23,7 @@ struct regex4_traits : tested::regex_traits<char> {
     return c;
   }
 
-  template <class It>
-  string_type lookup_collatename(It first, It last) const {
+  template <class It> string_type lookup_collatename(It first, It last) const {
     string_type s(first, last);
 
     if (s.size() == 1)
@@ -41,8 +38,7 @@ struct regex4_traits : tested::regex_traits<char> {
     return {};
   }
 
-  template <class It>
-  string_type transform(It first, It last) const {
+  template <class It> string_type transform(It first, It last) const {
     string_type s(first, last);
     string_type out;
 
@@ -70,8 +66,7 @@ struct regex4_traits : tested::regex_traits<char> {
     return out;
   }
 
-  template <class It>
-  string_type transform_primary(It first, It last) const {
+  template <class It> string_type transform_primary(It first, It last) const {
     string_type s(first, last);
 
     for (auto &c : s)
@@ -81,8 +76,7 @@ struct regex4_traits : tested::regex_traits<char> {
   }
 };
 
-using regex4_regex =
-    tested::basic_regex<char, regex4_traits>;
+using regex4_regex = tested::basic_regex<char, regex4_traits>;
 
 static bool basic_match() {
   tested::regex r("(a+)(b)");
@@ -1194,6 +1188,145 @@ static bool collated_range_icase() {
          tested::regex_match("A", r) && !tested::regex_match("D", r);
 }
 
+static bool exact_flags_preserved() {
+  using namespace tested::regex_constants;
+
+  auto f = icase | optimize;
+
+  tested::regex r("abc", f);
+
+  if (r.flags() != f)
+    return false;
+
+  r.assign("def", nosubs | collate);
+
+  return r.flags() == (nosubs | collate);
+}
+
+static bool unmatched_position_is_end() {
+  tested::cmatch m;
+
+  tested::regex r("(a)?b");
+
+  if (!tested::regex_match("b", m, r))
+    return false;
+
+  if (m.size() != 2)
+    return false;
+
+  if (m[1].matched)
+    return false;
+
+  //
+  // Unmatched first/second point to the end of the searched sequence.
+  //
+  if (m.position(1) != 1)
+    return false;
+
+  //
+  // operator[] for an out-of-range subexpression also yields the
+  // unmatched sentinel.
+  //
+  return m.position(99) == 1;
+}
+
+static bool ecma_format_numeric_references() {
+  tested::cmatch m;
+
+  tested::regex r("(a)");
+
+  if (!tested::regex_match("a", m, r))
+    return false;
+
+  if (m.format("$0") != "$0")
+    return false;
+
+  if (m.format("$2") != "$2")
+    return false;
+
+  if (m.format("$10") != "a0")
+    return false;
+
+  if (m.format("$01") != "a")
+    return false;
+
+  if (m.format("$00") != "$00")
+    return false;
+
+  tested::regex optional("(a)?b");
+
+  if (!tested::regex_match("b", m, optional))
+    return false;
+
+  //
+  // Existing-but-nonparticipating capture => empty substitution.
+  //
+  return m.format("$1").empty();
+}
+
+static bool posix_subexpression_longest_tiebreak() {
+  using namespace tested::regex_constants;
+
+  tested::cmatch m;
+
+  //
+  // Both paths consume the complete "aa":
+  //
+  //   (a)(a)
+  //   (aa)("")
+  //
+  // POSIX requires capture 1, the earlier subexpression, to receive
+  // the longer string.
+  //
+  tested::regex r("(a|aa)(a?)", extended);
+
+  if (!tested::regex_match("aa", m, r))
+    return false;
+
+  if (m.size() != 3)
+    return false;
+
+  if (m[0].str() != "aa")
+    return false;
+
+  if (m[1].str() != "aa")
+    return false;
+
+  if (!m[2].matched)
+    return false;
+
+  return m[2].str().empty();
+}
+
+static bool posix_dot_rejects_nul() {
+  using namespace tested::regex_constants;
+
+  const char input[] = {'\0'};
+
+  //
+  // ECMAScript dot may match NUL; it is not a LineTerminator.
+  //
+  if (!tested::regex_match(input, input + 1, tested::regex(".", ECMAScript)))
+    return false;
+
+  //
+  // POSIX BRE/ERE period excludes NUL.
+  //
+  if (tested::regex_match(input, input + 1, tested::regex(".", basic)))
+    return false;
+
+  if (tested::regex_match(input, input + 1, tested::regex(".", extended)))
+    return false;
+
+  if (tested::regex_match(input, input + 1, tested::regex(".", grep)))
+    return false;
+
+  if (tested::regex_match(input, input + 1, tested::regex(".", egrep)))
+    return false;
+
+  return !tested::regex_match(input, input + 1, tested::regex(".", awk));
+}
+
 bool ftl_test() {
   return basic_match() && search_works() && alternation_quantifiers() &&
          classes_and_escapes() && anchors_and_boundaries() && icase_works() &&
@@ -1224,5 +1357,9 @@ bool ftl_test() {
          regex_traits_transform_surface() && regex_traits_classname_case() &&
          collating_element_works() && custom_collating_digraph() &&
          equivalence_class_works() && collated_range_works() &&
-         collated_range_icase();
+         collated_range_icase() &&
+
+         exact_flags_preserved() && unmatched_position_is_end() &&
+         ecma_format_numeric_references() &&
+         posix_subexpression_longest_tiebreak() && posix_dot_rejects_nul();
 }
