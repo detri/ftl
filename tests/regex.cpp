@@ -10,6 +10,80 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+struct regex4_traits : tested::regex_traits<char> {
+  using base = tested::regex_traits<char>;
+  using string_type = typename base::string_type;
+
+  char translate(char c) const {
+    return c;
+  }
+
+  char translate_nocase(char c) const {
+    if (c >= 'A' && c <= 'Z')
+      return static_cast<char>(c - 'A' + 'a');
+
+    return c;
+  }
+
+  template <class It>
+  string_type lookup_collatename(It first, It last) const {
+    string_type s(first, last);
+
+    if (s.size() == 1)
+      return s;
+
+    //
+    // Pretend this locale has the traditional "ch" digraph.
+    //
+    if (s == "ch")
+      return s;
+
+    return {};
+  }
+
+  template <class It>
+  string_type transform(It first, It last) const {
+    string_type s(first, last);
+    string_type out;
+
+    out.reserve(s.size());
+
+    //
+    // Deliberately define:
+    //
+    //   c < b < a
+    //
+    // so the test can prove that collated ranges use transform()
+    // rather than raw character-code ordering.
+    //
+    for (char c : s) {
+      if (c == 'c')
+        out.push_back('1');
+      else if (c == 'b')
+        out.push_back('2');
+      else if (c == 'a')
+        out.push_back('3');
+      else
+        out.push_back(c);
+    }
+
+    return out;
+  }
+
+  template <class It>
+  string_type transform_primary(It first, It last) const {
+    string_type s(first, last);
+
+    for (auto &c : s)
+      c = translate_nocase(c);
+
+    return s;
+  }
+};
+
+using regex4_regex =
+    tested::basic_regex<char, regex4_traits>;
+
 static bool basic_match() {
   tested::regex r("(a+)(b)");
   tested::cmatch m;
@@ -945,6 +1019,181 @@ static bool posix_syntax_errors() {
   return true;
 }
 
+static bool regex_traits_transform_surface() {
+  tested::regex_traits<char> tr;
+
+  tested::string s = "abc";
+
+  const auto &facet = tested::use_facet<tested::collate<char>>(tr.getloc());
+
+  auto expected = facet.transform(s.data(), s.data() + s.size());
+
+  if (tr.transform(s.begin(), s.end()) != expected)
+    return false;
+
+  tested::string empty;
+
+  auto expected_empty =
+      facet.transform(empty.data(), empty.data() + empty.size());
+
+  if (tr.transform(empty.begin(), empty.end()) != expected_empty)
+    return false;
+
+  //
+  // The classic facet does not expose primary-weight decomposition.
+  //
+  tr.imbue(tested::locale::classic());
+
+  tested::string one = "a";
+
+  return tr.transform_primary(one.begin(), one.end()).empty();
+}
+
+static bool regex_traits_classname_case() {
+  tested::regex_traits<char> tr;
+
+  tested::string upper = "ALPHA";
+
+  auto alpha = tr.lookup_classname(upper.begin(), upper.end());
+
+  if (!alpha)
+    return false;
+
+  if (!tr.isctype('A', alpha) || !tr.isctype('z', alpha))
+    return false;
+
+  tested::string lower = "LoWeR";
+
+  auto folded = tr.lookup_classname(lower.begin(), lower.end(), true);
+
+  if (!folded)
+    return false;
+
+  return tr.isctype('A', folded) && tr.isctype('z', folded) &&
+         !tr.isctype('7', folded);
+}
+
+static bool collating_element_works() {
+  tested::cmatch m;
+
+  //
+  // FTL's default traits already recognizes the symbolic collating
+  // name "newline".
+  //
+  tested::regex newline("[[.newline.]]");
+
+  if (!tested::regex_match("\n", m, newline))
+    return false;
+
+  try {
+    tested::regex bad("[[.definitely-not-a-collating-element.]]");
+
+    return false;
+  } catch (const tested::regex_error &e) {
+    if (e.code() != tested::regex_constants::error_collate)
+      return false;
+  }
+
+  return true;
+}
+
+static bool custom_collating_digraph() {
+  regex4_regex r("[[.ch.]]");
+
+  if (!tested::regex_match("ch", r))
+    return false;
+
+  if (tested::regex_match("c", r))
+    return false;
+
+  if (tested::regex_match("h", r))
+    return false;
+
+  regex4_regex neg("[^[.ch.]]");
+
+  if (tested::regex_match("ch", neg))
+    return false;
+
+  if (!tested::regex_match("x", neg))
+    return false;
+
+  return true;
+}
+
+static bool equivalence_class_works() {
+  //
+  // Default regex_traits cannot manufacture a primary sort key, so
+  // N4950 requires the equivalence expression to be rejected.
+  //
+  try {
+    tested::regex bad("[[=a=]]");
+    return false;
+  } catch (const tested::regex_error &e) {
+    if (e.code() != tested::regex_constants::error_collate)
+      return false;
+  }
+
+  //
+  // A custom Traits implementation that supplies primary keys makes
+  // the exact same grammar usable.
+  //
+  regex4_regex r("[[=a=]]");
+
+  if (!tested::regex_match("a", r))
+    return false;
+
+  if (!tested::regex_match("A", r))
+    return false;
+
+  if (tested::regex_match("b", r))
+    return false;
+
+  return true;
+}
+
+static bool collated_range_works() {
+  using namespace tested::regex_constants;
+
+  //
+  // Raw code-point order says c-a is backwards.
+  //
+  try {
+    regex4_regex bad("[c-a]");
+    return false;
+  } catch (const tested::regex_error &e) {
+    if (e.code() != error_range)
+      return false;
+  }
+
+  //
+  // Our custom transform defines c < b < a.
+  //
+  regex4_regex r("[c-a]", ECMAScript | collate);
+
+  if (!tested::regex_match("c", r))
+    return false;
+
+  if (!tested::regex_match("b", r))
+    return false;
+
+  if (!tested::regex_match("a", r))
+    return false;
+
+  if (tested::regex_match("d", r))
+    return false;
+
+  return true;
+}
+
+static bool collated_range_icase() {
+  using namespace tested::regex_constants;
+
+  regex4_regex r("[c-a]", ECMAScript | collate | icase);
+
+  return tested::regex_match("C", r) && tested::regex_match("B", r) &&
+         tested::regex_match("A", r) && !tested::regex_match("D", r);
+}
+
 bool ftl_test() {
   return basic_match() && search_works() && alternation_quantifiers() &&
          classes_and_escapes() && anchors_and_boundaries() && icase_works() &&
@@ -970,5 +1219,10 @@ bool ftl_test() {
          posix_grep_grammar() && posix_egrep_grammar() && posix_awk_grammar() &&
          posix_leftmost_longest() && posix_dot_semantics() &&
          posix_multiline_is_ecma_only() && posix_bracket_escape_rules() &&
-         posix_syntax_errors();
+         posix_syntax_errors() &&
+
+         regex_traits_transform_surface() && regex_traits_classname_case() &&
+         collating_element_works() && custom_collating_digraph() &&
+         equivalence_class_works() && collated_range_works() &&
+         collated_range_icase();
 }

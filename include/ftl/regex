@@ -256,21 +256,25 @@ public:
 
   template <class It> string_type transform(It first, It last) const {
     string_type s(first, last);
-    if (s.empty())
-      return {};
+
     return use_facet<collate<char_type>>(loc_).transform(s.data(),
                                                          s.data() + s.size());
   }
 
   template <class It> string_type transform_primary(It first, It last) const {
-    string_type s(first, last);
-    auto &ct = use_facet<ctype<char_type>>(loc_);
-    for (auto &c : s)
-      c = ct.tolower(c);
-    if (s.empty())
-      return {};
-    return use_facet<collate<char_type>>(loc_).transform(s.data(),
-                                                         s.data() + s.size());
+    (void)first;
+    (void)last;
+
+    //
+    // [re.traits] permits an empty result unless the active
+    // collate_byname sort-key representation is known and can be
+    // converted into a primary sort key.
+    //
+    // FTL's locale backend currently exposes complete collation keys,
+    // but not their primary-weight decomposition, so do not manufacture
+    // a false primary key by merely lowercasing the full key.
+    //
+    return {};
   }
 
   template <class It> string_type lookup_collatename(It first, It last) const {
@@ -299,35 +303,55 @@ public:
   template <class It>
   char_class_type lookup_classname(It first, It last, bool fold = false) const {
     string_type s(first, last);
-    if (fold)
-      for (auto &c : s)
-        c = translate_nocase(c);
+
+    //
+    // The spelling of a class name is itself case-insensitive,
+    // independently of whether matching uses icase.
+    //
+    auto &ct = use_facet<ctype<char_type>>(loc_);
+
+    for (auto &c : s)
+      c = ct.tolower(c);
+
     if (name(s, "alnum"))
       return cc_alnum;
+
     if (name(s, "alpha"))
       return cc_alpha;
+
     if (name(s, "blank"))
       return cc_blank;
+
     if (name(s, "cntrl"))
       return cc_cntrl;
+
     if (name(s, "digit") || name(s, "d"))
       return cc_digit;
+
     if (name(s, "graph"))
       return cc_graph;
+
     if (name(s, "lower"))
-      return fold ? cc_lower | cc_upper : cc_lower;
+      return fold ? cc_alpha : cc_lower;
+
     if (name(s, "print"))
       return cc_print;
+
     if (name(s, "punct"))
       return cc_punct;
+
     if (name(s, "space") || name(s, "s"))
       return cc_space;
+
     if (name(s, "upper"))
-      return fold ? cc_lower | cc_upper : cc_upper;
+      return fold ? cc_alpha : cc_upper;
+
     if (name(s, "xdigit"))
       return cc_xdigit;
+
     if (name(s, "word") || name(s, "w"))
       return cc_word;
+
     return 0;
   }
 
@@ -494,13 +518,42 @@ basic_ostream<C, ST> &operator<<(basic_ostream<C, ST> &os,
 namespace detail {
 
 template <class C, class Tr> struct rx_class_item {
-  bool named = false, invert = false;
+  using string_type = typename Tr::string_type;
+
+  enum class kind { range, named, collating, equivalence } type = kind::range;
+
+  bool invert = false;
+  bool collated_range = false;
+
   C lo{}, hi{};
   typename Tr::char_class_type mask{};
+
+  //
+  // collating:
+  //   value = resolved collating element
+  //
+  // equivalence:
+  //   value = primary sort key
+  //
+  // collated range:
+  //   value = lower sort key
+  //   upper = upper sort key
+  //
+  string_type value;
+  string_type upper;
 };
 
 template <class C, class Tr> struct rx_class {
   bool negate = false;
+
+  //
+  // Equivalence classes and collated ranges may need to consider a
+  // two-character collating element. This mirrors the practical
+  // digraph path used by major std::regex implementations while
+  // explicit [.name.] atoms themselves may contain more characters.
+  //
+  bool might_have_digraph = false;
+
   vector<rx_class_item<C, Tr>> items;
 };
 
@@ -597,8 +650,7 @@ public:
     // backreferences are validated when parsed; ERE/AWK do not have them.
     if (ecma_mode()) {
       for (const auto &n : nodes_) {
-        if (n.type == node::kind::backref &&
-            (n.aux == 0 || n.aux > marks_))
+        if (n.type == node::kind::backref && (n.aux == 0 || n.aux > marks_))
           regex_fail(regex_constants::error_backref);
       }
     }
@@ -618,13 +670,9 @@ public:
 private:
   bool eof(size_t d = 0) const { return pos_ + d >= n_; }
 
-  C peek(size_t d = 0) const {
-    return eof(d) ? C{} : p_[pos_ + d];
-  }
+  C peek(size_t d = 0) const { return eof(d) ? C{} : p_[pos_ + d]; }
 
-  C get() {
-    return eof() ? C{} : p_[pos_++];
-  }
+  C get() { return eof() ? C{} : p_[pos_++]; }
 
   bool take(char c) {
     if (!eof() && ascii_eq(peek(), c)) {
@@ -639,24 +687,18 @@ private:
     return syntax_has(flags_, f);
   }
 
-  bool ecma_mode() const {
-    return has(regex_constants::ECMAScript);
-  }
+  bool ecma_mode() const { return has(regex_constants::ECMAScript); }
 
   bool bre_mode() const {
-    return has(regex_constants::basic) ||
-           has(regex_constants::grep);
+    return has(regex_constants::basic) || has(regex_constants::grep);
   }
 
   bool ere_mode() const {
-    return has(regex_constants::extended) ||
-           has(regex_constants::awk) ||
+    return has(regex_constants::extended) || has(regex_constants::awk) ||
            has(regex_constants::egrep);
   }
 
-  bool awk_mode() const {
-    return has(regex_constants::awk);
-  }
+  bool awk_mode() const { return has(regex_constants::awk); }
 
   int add(typename node::kind k) {
     node x;
@@ -689,16 +731,10 @@ private:
   }
 
   bool bre_close() const {
-    return !eof(1) &&
-           ascii_eq(peek(), '\\') &&
-           ascii_eq(peek(1), ')');
+    return !eof(1) && ascii_eq(peek(), '\\') && ascii_eq(peek(1), ')');
   }
 
-  bool is_alt() const {
-    return !bre_mode() &&
-           !eof() &&
-           ascii_eq(peek(), '|');
-  }
+  bool is_alt() const { return !bre_mode() && !eof() && ascii_eq(peek(), '|'); }
 
   int parse_grep_like(bool extended_syntax) {
     size_t whole = n_;
@@ -757,9 +793,7 @@ private:
         break;
 
       // In BRE, $ is an anchor at the end of the entire BRE.
-      if (!in_group &&
-          ascii_eq(peek(), '$') &&
-          pos_ + 1 == n_) {
+      if (!in_group && ascii_eq(peek(), '$') && pos_ + 1 == n_) {
         ++pos_;
         out = append(out, add(node::kind::eol));
         break;
@@ -782,9 +816,7 @@ private:
       mn = 0;
       mx = inf;
       q = true;
-    } else if (!eof(1) &&
-               ascii_eq(peek(), '\\') &&
-               ascii_eq(peek(1), '{')) {
+    } else if (!eof(1) && ascii_eq(peek(), '\\') && ascii_eq(peek(1), '{')) {
       pos_ += 2;
       interval(true, mn, mx);
       q = true;
@@ -794,9 +826,7 @@ private:
       return a;
 
     if ((!eof() && ascii_eq(peek(), '*')) ||
-        (!eof(1) &&
-         ascii_eq(peek(), '\\') &&
-         ascii_eq(peek(1), '{')))
+        (!eof(1) && ascii_eq(peek(), '\\') && ascii_eq(peek(1), '{')))
       regex_fail(regex_constants::error_badrepeat);
 
     int i = unary(node::kind::repeat, a);
@@ -842,8 +872,7 @@ private:
       if (ascii_eq(e, '{'))
         regex_fail(regex_constants::error_badrepeat);
 
-      if (e >= static_cast<C>('1') &&
-          e <= static_cast<C>('9')) {
+      if (e >= static_cast<C>('1') && e <= static_cast<C>('9')) {
         int v = traits_.value(e, 10);
 
         if (v <= 0 || static_cast<size_t>(v) > marks_)
@@ -854,12 +883,8 @@ private:
         return i;
       }
 
-      if (ascii_eq(e, '^') ||
-          ascii_eq(e, '.') ||
-          ascii_eq(e, '*') ||
-          ascii_eq(e, '[') ||
-          ascii_eq(e, '$') ||
-          ascii_eq(e, '\\'))
+      if (ascii_eq(e, '^') || ascii_eq(e, '.') || ascii_eq(e, '*') ||
+          ascii_eq(e, '[') || ascii_eq(e, '$') || ascii_eq(e, '\\'))
         return literal(e);
 
       regex_fail(regex_constants::error_escape);
@@ -937,10 +962,7 @@ private:
       bool close;
 
       if (bre) {
-        close =
-            !eof(1) &&
-            ascii_eq(peek(), '\\') &&
-            ascii_eq(peek(1), '}');
+        close = !eof(1) && ascii_eq(peek(), '\\') && ascii_eq(peek(1), '}');
       } else {
         close = !eof() && ascii_eq(peek(), '}');
       }
@@ -949,9 +971,7 @@ private:
     }
 
     if (bre) {
-      if (eof(1) ||
-          !ascii_eq(peek(), '\\') ||
-          !ascii_eq(peek(1), '}'))
+      if (eof(1) || !ascii_eq(peek(), '\\') || !ascii_eq(peek(1), '}'))
         regex_fail(regex_constants::error_brace);
 
       pos_ += 2;
@@ -994,12 +1014,9 @@ private:
 
     auto k = nodes_[static_cast<size_t>(a)].type;
 
-    if (k == node::kind::bol ||
-        k == node::kind::eol ||
-        k == node::kind::word_boundary ||
-        k == node::kind::not_word_boundary ||
-        k == node::kind::look_pos ||
-        k == node::kind::look_neg)
+    if (k == node::kind::bol || k == node::kind::eol ||
+        k == node::kind::word_boundary || k == node::kind::not_word_boundary ||
+        k == node::kind::look_pos || k == node::kind::look_neg)
       regex_fail(regex_constants::error_badrepeat);
 
     bool greedy = true;
@@ -1010,8 +1027,7 @@ private:
 
     if ((!eof() && ascii_eq(peek(), '*')) ||
         (!eof() && ascii_eq(peek(), '+')) ||
-        (!eof() && ascii_eq(peek(), '?')) ||
-        (!eof() && ascii_eq(peek(), '{')))
+        (!eof() && ascii_eq(peek(), '?')) || (!eof() && ascii_eq(peek(), '{')))
       regex_fail(regex_constants::error_badrepeat);
 
     int i = unary(node::kind::repeat, a);
@@ -1043,10 +1059,8 @@ private:
     if (take('\\'))
       return escape_atom();
 
-    if (ascii_eq(peek(), '*') ||
-        ascii_eq(peek(), '+') ||
-        ascii_eq(peek(), '?') ||
-        ascii_eq(peek(), '{'))
+    if (ascii_eq(peek(), '*') || ascii_eq(peek(), '+') ||
+        ascii_eq(peek(), '?') || ascii_eq(peek(), '{'))
       regex_fail(regex_constants::error_badrepeat);
 
     if (ascii_eq(peek(), ')')) {
@@ -1110,10 +1124,8 @@ private:
   typename Tr::char_class_type class_mask(const char *n) const {
     auto s = ascii_string<C>(n);
 
-    auto m = traits_.lookup_classname(
-        s.begin(),
-        s.end(),
-        has(regex_constants::icase));
+    auto m = traits_.lookup_classname(s.begin(), s.end(),
+                                      has(regex_constants::icase));
 
     if (!m)
       regex_fail(regex_constants::error_ctype);
@@ -1121,23 +1133,23 @@ private:
     return m;
   }
 
-  int named_class(const char *n, bool inv) {
-    klass k;
-    item x;
+int named_class(const char *n, bool inv) {
+  klass k;
+  item x;
 
-    x.named = true;
-    x.invert = inv;
-    x.mask = class_mask(n);
+  x.type = item::kind::named;
+  x.invert = inv;
+  x.mask = class_mask(n);
 
-    k.items.push_back(x);
+  k.items.push_back(move(x));
 
-    size_t ci = classes_.size();
-    classes_.push_back(move(k));
+  size_t ci = classes_.size();
+  classes_.push_back(move(k));
 
-    int i = add(node::kind::klass);
-    nodes_[i].aux = ci;
-    return i;
-  }
+  int i = add(node::kind::klass);
+  nodes_[i].aux = ci;
+  return i;
+}
 
   C escaped_char(C e) {
     if (ascii_eq(e, 'a'))
@@ -1175,8 +1187,7 @@ private:
     }
 
     if (unicode &&
-        v > static_cast<unsigned long long>(
-                (numeric_limits<C>::max)()))
+        v > static_cast<unsigned long long>((numeric_limits<C>::max)()))
       regex_fail(regex_constants::error_escape);
 
     return static_cast<C>(v);
@@ -1204,20 +1215,15 @@ private:
     if (ascii_eq(e, 'v'))
       return static_cast<C>('\v');
 
-    if (e >= static_cast<C>('0') &&
-        e <= static_cast<C>('7')) {
-      unsigned v =
-          static_cast<unsigned>(e - static_cast<C>('0'));
+    if (e >= static_cast<C>('0') && e <= static_cast<C>('7')) {
+      unsigned v = static_cast<unsigned>(e - static_cast<C>('0'));
 
       for (unsigned i = 0; i < 2; ++i) {
-        if (eof() ||
-            peek() < static_cast<C>('0') ||
+        if (eof() || peek() < static_cast<C>('0') ||
             peek() > static_cast<C>('7'))
           break;
 
-        v = v * 8 +
-            static_cast<unsigned>(
-                get() - static_cast<C>('0'));
+        v = v * 8 + static_cast<unsigned>(get() - static_cast<C>('0'));
       }
 
       return static_cast<C>(v);
@@ -1234,18 +1240,10 @@ private:
 
     if (!ecma_mode()) {
       // Escaping an ERE special character makes it literal.
-      if (ascii_eq(e, '^') ||
-          ascii_eq(e, '.') ||
-          ascii_eq(e, '*') ||
-          ascii_eq(e, '[') ||
-          ascii_eq(e, '$') ||
-          ascii_eq(e, '\\') ||
-          ascii_eq(e, '(') ||
-          ascii_eq(e, ')') ||
-          ascii_eq(e, '|') ||
-          ascii_eq(e, '+') ||
-          ascii_eq(e, '?') ||
-          ascii_eq(e, '{') ||
+      if (ascii_eq(e, '^') || ascii_eq(e, '.') || ascii_eq(e, '*') ||
+          ascii_eq(e, '[') || ascii_eq(e, '$') || ascii_eq(e, '\\') ||
+          ascii_eq(e, '(') || ascii_eq(e, ')') || ascii_eq(e, '|') ||
+          ascii_eq(e, '+') || ascii_eq(e, '?') || ascii_eq(e, '{') ||
           ascii_eq(e, '}'))
         return literal(e);
 
@@ -1294,18 +1292,14 @@ private:
 
       C c = get();
 
-      bool letter =
-          (c >= static_cast<C>('a') &&
-           c <= static_cast<C>('z')) ||
-          (c >= static_cast<C>('A') &&
-           c <= static_cast<C>('Z'));
+      bool letter = (c >= static_cast<C>('a') && c <= static_cast<C>('z')) ||
+                    (c >= static_cast<C>('A') && c <= static_cast<C>('Z'));
 
       if (!letter)
         regex_fail(regex_constants::error_escape);
 
       return literal(
-          static_cast<C>(
-              static_cast<unsigned long long>(c) & 31ull));
+          static_cast<C>(static_cast<unsigned long long>(c) & 31ull));
     }
 
     if (ascii_eq(e, '0')) {
@@ -1315,8 +1309,7 @@ private:
       return literal(C{});
     }
 
-    if (e >= static_cast<C>('1') &&
-        e <= static_cast<C>('9')) {
+    if (e >= static_cast<C>('1') && e <= static_cast<C>('9')) {
       int first = traits_.value(e, 10);
 
       if (first <= 0)
@@ -1347,57 +1340,131 @@ private:
 
   struct class_atom {
     bool simple = true;
+    bool rangeable = true;
+
     C ch{};
+
     item value{};
+    typename Tr::string_type sequence;
   };
 
-  class_atom class_value() {
+  class_atom simple_class_atom(C c) {
     class_atom a;
+    a.ch = c;
+    a.sequence.push_back(c);
+    return a;
+  }
 
-    // POSIX named character class.
-    if (ascii_eq(peek(), '[') &&
-        !eof(1) &&
-        ascii_eq(peek(1), ':')) {
-      pos_ += 2;
+  basic_string<C> bracket_name(char delimiter) {
+    //
+    // Called while positioned at the '[' of:
+    //
+    //   [:name:]
+    //   [.name.]
+    //   [=name=]
+    //
+    pos_ += 2;
 
-      basic_string<C> name;
+    basic_string<C> name;
 
-      while (!(ascii_eq(peek(), ':') &&
-               !eof(1) &&
-               ascii_eq(peek(1), ']'))) {
-        if (eof())
-          regex_fail(regex_constants::error_brack);
+    while (
+        !(ascii_eq(peek(), delimiter) && !eof(1) && ascii_eq(peek(1), ']'))) {
+      if (eof())
+        regex_fail(regex_constants::error_brack);
 
-        name.push_back(get());
-      }
-
-      pos_ += 2;
-
-      a.simple = false;
-      a.value.named = true;
-      a.value.mask =
-          traits_.lookup_classname(
-              name.begin(),
-              name.end(),
-              has(regex_constants::icase));
-
-      if (!a.value.mask)
-        regex_fail(regex_constants::error_ctype);
-
-      return a;
+      name.push_back(get());
     }
 
-    // Backslash escapes inside [] are special only for ECMAScript and AWK.
+    if (name.empty())
+      regex_fail(regex_constants::error_brack);
+
+    pos_ += 2;
+    return name;
+  }
+
+  class_atom class_value() {
+    using item_kind = typename item::kind;
+
+    //
+    // POSIX / modified-ECMAScript special bracket atoms:
+    //
+    //   [:alpha:]
+    //   [.ch.]
+    //   [=a=]
+    //
+    if (ascii_eq(peek(), '[') && !eof(1)) {
+      if (ascii_eq(peek(1), ':')) {
+        auto name = bracket_name(':');
+
+        class_atom a;
+        a.simple = false;
+        a.rangeable = false;
+        a.value.type = item_kind::named;
+
+        a.value.mask = traits_.lookup_classname(name.begin(), name.end(),
+                                                has(regex_constants::icase));
+
+        if (!a.value.mask)
+          regex_fail(regex_constants::error_ctype);
+
+        return a;
+      }
+
+      if (ascii_eq(peek(1), '.')) {
+        auto name = bracket_name('.');
+
+        auto resolved = traits_.lookup_collatename(name.begin(), name.end());
+
+        if (resolved.empty())
+          regex_fail(regex_constants::error_collate);
+
+        class_atom a;
+        a.simple = false;
+        a.rangeable = true;
+        a.sequence = resolved;
+
+        a.value.type = item_kind::collating;
+        a.value.value = move(resolved);
+
+        return a;
+      }
+
+      if (ascii_eq(peek(1), '=')) {
+        auto name = bracket_name('=');
+
+        auto resolved = traits_.lookup_collatename(name.begin(), name.end());
+
+        if (resolved.empty())
+          regex_fail(regex_constants::error_collate);
+
+        auto primary =
+            traits_.transform_primary(resolved.begin(), resolved.end());
+
+        if (primary.empty())
+          regex_fail(regex_constants::error_collate);
+
+        class_atom a;
+        a.simple = false;
+        a.rangeable = false;
+
+        a.value.type = item_kind::equivalence;
+        a.value.value = move(primary);
+
+        return a;
+      }
+    }
+
+    //
+    // Backslash escapes inside [] belong to ECMAScript and AWK.
+    //
     if ((ecma_mode() || awk_mode()) && take('\\')) {
       if (eof())
         regex_fail(regex_constants::error_escape);
 
       C e = get();
 
-      if (awk_mode()) {
-        a.ch = awk_escape_value(e);
-        return a;
-      }
+      if (awk_mode())
+        return simple_class_atom(awk_escape_value(e));
 
       const char *name = nullptr;
       bool invert = false;
@@ -1420,52 +1487,55 @@ private:
       }
 
       if (name) {
+        class_atom a;
         a.simple = false;
-        a.value.named = true;
+        a.rangeable = false;
+
+        a.value.type = item_kind::named;
         a.value.invert = invert;
         a.value.mask = class_mask(name);
+
         return a;
       }
 
-      if (ascii_eq(e, 'x')) {
-        a.ch = hex(2);
-      } else if (ascii_eq(e, 'u')) {
-        a.ch = hex(4, true);
-      } else if (ascii_eq(e, 'c')) {
+      if (ascii_eq(e, 'x'))
+        return simple_class_atom(hex(2));
+
+      if (ascii_eq(e, 'u'))
+        return simple_class_atom(hex(4, true));
+
+      if (ascii_eq(e, 'c')) {
         if (eof())
           regex_fail(regex_constants::error_escape);
 
         C c = get();
 
-        bool letter =
-            (c >= static_cast<C>('a') &&
-             c <= static_cast<C>('z')) ||
-            (c >= static_cast<C>('A') &&
-             c <= static_cast<C>('Z'));
+        bool letter = (c >= static_cast<C>('a') && c <= static_cast<C>('z')) ||
+                      (c >= static_cast<C>('A') && c <= static_cast<C>('Z'));
 
         if (!letter)
           regex_fail(regex_constants::error_escape);
 
-        a.ch =
-            static_cast<C>(
-                static_cast<unsigned long long>(c) & 31ull);
-      } else if (ascii_eq(e, 'b')) {
-        a.ch = static_cast<C>('\b');
-      } else {
-        a.ch = escaped_char(e);
+        return simple_class_atom(
+            static_cast<C>(static_cast<unsigned long long>(c) & 31ull));
       }
 
-      return a;
+      if (ascii_eq(e, 'b'))
+        return simple_class_atom(static_cast<C>('\b'));
+
+      return simple_class_atom(escaped_char(e));
     }
 
     if (eof())
       regex_fail(regex_constants::error_brack);
 
-    a.ch = get();
-    return a;
+    return simple_class_atom(get());
   }
 
   int character_class() {
+    using item_kind = typename item::kind;
+    using string_type = typename Tr::string_type;
+
     ++pos_;
 
     klass k;
@@ -1473,10 +1543,26 @@ private:
 
     bool first = true;
 
+    auto collate_key = [&](const string_type &sequence) -> string_type {
+      string_type translated = sequence;
+
+      for (auto &c : translated) {
+        if (has(regex_constants::icase))
+          c = traits_.translate_nocase(c);
+        else
+          c = traits_.translate(c);
+      }
+
+      return traits_.transform(translated.begin(), translated.end());
+    };
+
     for (;;) {
       if (eof())
         regex_fail(regex_constants::error_brack);
 
+      //
+      // A leading ']' is literal. Any later ']' closes the class.
+      //
       if (ascii_eq(peek(), ']') && !first) {
         ++pos_;
         break;
@@ -1484,29 +1570,72 @@ private:
 
       class_atom a = class_value();
 
-      if (a.simple &&
-          !eof() &&
-          ascii_eq(peek(), '-') &&
-          !eof(1) &&
+      //
+      // Range expression.
+      //
+      if (a.rangeable && !eof() && ascii_eq(peek(), '-') && !eof(1) &&
           !ascii_eq(peek(1), ']')) {
         ++pos_;
 
         class_atom b = class_value();
 
-        if (!b.simple || b.ch < a.ch)
+        if (!b.rangeable)
           regex_fail(regex_constants::error_range);
 
         item x;
-        x.lo = a.ch;
-        x.hi = b.ch;
-        k.items.push_back(x);
+        x.type = item_kind::range;
+
+        if (has(regex_constants::collate)) {
+          x.collated_range = true;
+
+          x.value = collate_key(a.sequence);
+          x.upper = collate_key(b.sequence);
+
+          if (x.upper < x.value)
+            regex_fail(regex_constants::error_range);
+
+          //
+          // A collated range can contain locale digraphs.
+          //
+          k.might_have_digraph = true;
+        } else {
+          if (a.sequence.size() != 1 || b.sequence.size() != 1)
+            regex_fail(regex_constants::error_range);
+
+          C lo = a.sequence[0];
+          C hi = b.sequence[0];
+
+          //
+          // Preserve the existing icase range semantics.
+          //
+          if (has(regex_constants::icase)) {
+            lo = traits_.translate_nocase(lo);
+            hi = traits_.translate_nocase(hi);
+          }
+
+          if (hi < lo)
+            regex_fail(regex_constants::error_range);
+
+          x.lo = a.sequence[0];
+          x.hi = b.sequence[0];
+        }
+
+        k.items.push_back(move(x));
       } else if (a.simple) {
         item x;
+        x.type = item_kind::range;
         x.lo = a.ch;
         x.hi = a.ch;
-        k.items.push_back(x);
+
+        k.items.push_back(move(x));
       } else {
-        k.items.push_back(a.value);
+        if (a.value.type == item_kind::collating && a.value.value.size() == 2)
+          k.might_have_digraph = true;
+
+        if (a.value.type == item_kind::equivalence)
+          k.might_have_digraph = true;
+
+        k.items.push_back(move(a.value));
       }
 
       first = false;
@@ -1517,6 +1646,7 @@ private:
 
     int i = add(node::kind::klass);
     nodes_[i].aux = ci;
+
     return i;
   }
 
@@ -1802,30 +1932,183 @@ template <class C> bool rx_line_term(C c) {
 }
 
 template <class C, class Tr>
-bool rx_class_matches(const rx_class<C, Tr> &k, C c, const Tr &tr,
-                      regex_constants::syntax_option_type f) {
-  bool yes = false;
-  for (const auto &x : k.items) {
-    bool m = false;
-    if (x.named)
-      m = tr.isctype(c, x.mask);
-    else {
-      C v = c, lo = x.lo, hi = x.hi;
-      if (syntax_has(f, regex_constants::icase)) {
-        v = tr.translate_nocase(v);
-        lo = tr.translate_nocase(lo);
-        hi = tr.translate_nocase(hi);
-      }
-      m = v >= lo && v <= hi;
+size_t rx_class_match_length(const rx_class<C, Tr> &k, const basic_string<C> &s,
+                             size_t pos, const Tr &tr,
+                             regex_constants::syntax_option_type f) {
+  using item_type = rx_class_item<C, Tr>;
+  using item_kind = typename item_type::kind;
+  using string_type = typename Tr::string_type;
+
+  if (pos >= s.size())
+    return 0;
+
+  auto raw_sequence = [&](size_t count) -> string_type {
+    string_type out;
+    out.reserve(count);
+
+    for (size_t i = 0; i < count; ++i)
+      out.push_back(s[pos + i]);
+
+    return out;
+  };
+
+  auto translated_sequence = [&](size_t count) -> string_type {
+    string_type out;
+    out.reserve(count);
+
+    for (size_t i = 0; i < count; ++i) {
+      C c = s[pos + i];
+
+      if (syntax_has(f, regex_constants::icase))
+        c = tr.translate_nocase(c);
+      else if (syntax_has(f, regex_constants::collate))
+        c = tr.translate(c);
+
+      out.push_back(c);
     }
-    if (x.invert)
-      m = !m;
-    if (m) {
-      yes = true;
+
+    return out;
+  };
+
+  auto exact_collating_match = [&](const string_type &target) -> bool {
+    if (target.empty() || pos + target.size() > s.size())
+      return false;
+
+    for (size_t i = 0; i < target.size(); ++i) {
+      if (!rx_equal(s[pos + i], target[i], tr, f))
+        return false;
+    }
+
+    return true;
+  };
+
+  //
+  // libc++ likewise has a specific two-character collating-element path.
+  // We use lookup_collatename so custom traits/locales determine whether
+  // the two input characters form such an element.
+  //
+  bool digraph = false;
+
+  if (k.might_have_digraph && pos + 2 <= s.size()) {
+    auto probe = translated_sequence(2);
+
+    auto resolved = tr.lookup_collatename(probe.begin(), probe.end());
+
+    digraph = !resolved.empty();
+  }
+
+  size_t best = 0;
+
+  for (const auto &x : k.items) {
+    bool matched = false;
+    size_t consumed = 1;
+
+    switch (x.type) {
+    case item_kind::named:
+      matched = tr.isctype(s[pos], x.mask);
+      consumed = 1;
+      break;
+
+    case item_kind::range:
+      if (!x.collated_range) {
+        C value = s[pos];
+        C lo = x.lo;
+        C hi = x.hi;
+
+        if (syntax_has(f, regex_constants::icase)) {
+          value = tr.translate_nocase(value);
+          lo = tr.translate_nocase(lo);
+          hi = tr.translate_nocase(hi);
+        }
+
+        matched = lo <= value && value <= hi;
+
+        consumed = 1;
+      } else {
+        //
+        // A single character is always a candidate collating element.
+        //
+        auto one = translated_sequence(1);
+
+        auto one_key = tr.transform(one.begin(), one.end());
+
+        if (x.value <= one_key && one_key <= x.upper) {
+          matched = true;
+          consumed = 1;
+        }
+
+        //
+        // If the locale says the next two characters are a collating
+        // element, test its sort key as well.
+        //
+        if (digraph) {
+          auto two = translated_sequence(2);
+
+          auto two_key = tr.transform(two.begin(), two.end());
+
+          if (x.value <= two_key && two_key <= x.upper) {
+            matched = true;
+            consumed = 2;
+          }
+        }
+      }
+      break;
+
+    case item_kind::collating:
+      matched = exact_collating_match(x.value);
+      consumed = x.value.size();
+      break;
+
+    case item_kind::equivalence: {
+      //
+      // [re.grammar]: membership in a primary equivalence class is
+      // determined by transform_primary sort-key equality.
+      //
+      auto one = raw_sequence(1);
+
+      auto one_key = tr.transform_primary(one.begin(), one.end());
+
+      if (!one_key.empty() && one_key == x.value) {
+        matched = true;
+        consumed = 1;
+      }
+
+      if (digraph) {
+        auto two = raw_sequence(2);
+
+        auto two_key = tr.transform_primary(two.begin(), two.end());
+
+        if (!two_key.empty() && two_key == x.value) {
+          matched = true;
+          consumed = 2;
+        }
+      }
+
       break;
     }
+    }
+
+    if (x.invert) {
+      matched = !matched;
+      consumed = 1;
+    }
+
+    if (matched && consumed > best)
+      best = consumed;
   }
-  return k.negate ? !yes : yes;
+
+  if (k.negate) {
+    if (best != 0)
+      return 0;
+
+    //
+    // A negated complex class consumes the locale collating element,
+    // not half of a recognized digraph.
+    //
+    return digraph ? 2 : 1;
+  }
+
+  return best;
 }
 
 template <class C, class Tr>
@@ -1848,10 +2131,9 @@ rx_run(const rx_program<C, Tr> &p, const basic_string<C> &s, size_t start,
 
   auto wordmask = [&] {
     auto x = ascii_string<C>("word");
-    return tr.lookup_classname(
-        x.begin(),
-        x.end(),
-        syntax_has(p.flags, regex_constants::icase));
+
+    return tr.lookup_classname(x.begin(), x.end(),
+                               syntax_has(p.flags, regex_constants::icase));
   }();
 
   rx_state init;
@@ -1868,11 +2150,7 @@ rx_run(const rx_program<C, Tr> &p, const basic_string<C> &s, size_t start,
 
   rx_result best;
 
-  size_t budget =
-      (s.size() + 1) *
-          (p.code.size() + 1) *
-          512 +
-      100000;
+  size_t budget = (s.size() + 1) * (p.code.size() + 1) * 512 + 100000;
 
   while (!stack.empty()) {
     rx_state st = move(stack.back());
@@ -1889,12 +2167,7 @@ rx_run(const rx_program<C, Tr> &p, const basic_string<C> &s, size_t start,
 
       switch (in.op) {
       case O::literal:
-        if (st.pos >= s.size() ||
-            !rx_equal(
-                s[st.pos],
-                in.ch,
-                tr,
-                p.flags))
+        if (st.pos >= s.size() || !rx_equal(s[st.pos], in.ch, tr, p.flags))
           goto fail;
 
         ++st.pos;
@@ -1905,11 +2178,7 @@ rx_run(const rx_program<C, Tr> &p, const basic_string<C> &s, size_t start,
         if (st.pos >= s.size())
           goto fail;
 
-        // ECMAScript '.' excludes its line terminators.
-        // POSIX BRE/ERE '.' is not given that ECMAScript restriction.
-        if (syntax_has(
-                p.flags,
-                regex_constants::ECMAScript) &&
+        if (syntax_has(p.flags, regex_constants::ECMAScript) &&
             rx_line_term(s[st.pos]))
           goto fail;
 
@@ -1917,19 +2186,20 @@ rx_run(const rx_program<C, Tr> &p, const basic_string<C> &s, size_t start,
         ++st.pc;
         break;
 
-      case O::klass:
-        if (st.pos >= s.size() ||
-            in.aux >= p.classes.size() ||
-            !rx_class_matches(
-                p.classes[in.aux],
-                s[st.pos],
-                tr,
-                p.flags))
+      case O::klass: {
+        if (st.pos >= s.size() || in.aux >= p.classes.size())
           goto fail;
 
-        ++st.pos;
+        size_t consumed =
+            rx_class_match_length(p.classes[in.aux], s, st.pos, tr, p.flags);
+
+        if (consumed == 0)
+          goto fail;
+
+        st.pos += consumed;
         ++st.pc;
         break;
+      }
 
       case O::split: {
         rx_state alt = st;
@@ -1986,34 +2256,20 @@ rx_run(const rx_program<C, Tr> &p, const basic_string<C> &s, size_t start,
       case O::bol: {
         bool ok = false;
 
-        // multiline has specified anchor semantics only for ECMAScript.
-        bool multi =
-            syntax_has(
-                p.flags,
-                regex_constants::ECMAScript) &&
-            syntax_has(
-                p.flags,
-                regex_constants::multiline);
+        bool multi = syntax_has(p.flags, regex_constants::ECMAScript) &&
+                     syntax_has(p.flags, regex_constants::multiline);
 
         if (st.pos == target_begin) {
           if (prev_available) {
-            C prev =
-                st.pos > 0
-                    ? s[st.pos - 1]
-                    : prev_char;
+            C prev = st.pos > 0 ? s[st.pos - 1] : prev_char;
 
             ok = multi && rx_line_term(prev);
           } else {
-            ok = !match_has(
-                mf,
-                regex_constants::match_not_bol);
+            ok = !match_has(mf, regex_constants::match_not_bol);
           }
         }
 
-        if (!ok &&
-            multi &&
-            st.pos != target_begin &&
-            st.pos > 0)
+        if (!ok && multi && st.pos != target_begin && st.pos > 0)
           ok = rx_line_term(s[st.pos - 1]);
 
         if (!ok)
@@ -2024,23 +2280,13 @@ rx_run(const rx_program<C, Tr> &p, const basic_string<C> &s, size_t start,
       }
 
       case O::eol: {
-        bool ok =
-            st.pos == s.size() &&
-            !match_has(
-                mf,
-                regex_constants::match_not_eol);
+        bool ok = st.pos == s.size() &&
+                  !match_has(mf, regex_constants::match_not_eol);
 
-        bool multi =
-            syntax_has(
-                p.flags,
-                regex_constants::ECMAScript) &&
-            syntax_has(
-                p.flags,
-                regex_constants::multiline);
+        bool multi = syntax_has(p.flags, regex_constants::ECMAScript) &&
+                     syntax_has(p.flags, regex_constants::multiline);
 
-        if (!ok &&
-            multi &&
-            st.pos < s.size())
+        if (!ok && multi && st.pos < s.size())
           ok = rx_line_term(s[st.pos]);
 
         if (!ok)
@@ -2056,42 +2302,26 @@ rx_run(const rx_program<C, Tr> &p, const basic_string<C> &s, size_t start,
 
         if (st.pos == target_begin) {
           if (prev_available) {
-            C prev =
-                st.pos > 0
-                    ? s[st.pos - 1]
-                    : prev_char;
+            C prev = st.pos > 0 ? s[st.pos - 1] : prev_char;
 
             l = tr.isctype(prev, wordmask);
           }
         } else if (st.pos > 0) {
-          l = tr.isctype(
-              s[st.pos - 1],
-              wordmask);
+          l = tr.isctype(s[st.pos - 1], wordmask);
         }
 
-        bool r =
-            st.pos < s.size() &&
-            tr.isctype(
-                s[st.pos],
-                wordmask);
+        bool r = st.pos < s.size() && tr.isctype(s[st.pos], wordmask);
 
         bool bow = !l && r;
         bool eow = l && !r;
         bool b = bow || eow;
 
-        if (bow &&
-            st.pos == target_begin &&
-            !prev_available &&
-            match_has(
-                mf,
-                regex_constants::match_not_bow))
+        if (bow && st.pos == target_begin && !prev_available &&
+            match_has(mf, regex_constants::match_not_bow))
           b = false;
 
-        if (eow &&
-            st.pos == s.size() &&
-            match_has(
-                mf,
-                regex_constants::match_not_eow))
+        if (eow && st.pos == s.size() &&
+            match_has(mf, regex_constants::match_not_eow))
           b = false;
 
         if (in.op == O::not_word_boundary)
@@ -2121,11 +2351,7 @@ rx_run(const rx_program<C, Tr> &p, const basic_string<C> &s, size_t start,
           goto fail;
 
         for (size_t i = 0; i < len; ++i) {
-          if (!rx_equal(
-                  s[a + i],
-                  s[st.pos + i],
-                  tr,
-                  p.flags))
+          if (!rx_equal(s[a + i], s[st.pos + i], tr, p.flags))
             goto fail;
         }
 
@@ -2143,8 +2369,7 @@ rx_run(const rx_program<C, Tr> &p, const basic_string<C> &s, size_t start,
         break;
 
       case O::progress:
-        if (in.aux >= st.guards.size() ||
-            st.guards[in.aux] == npos ||
+        if (in.aux >= st.guards.size() || st.guards[in.aux] == npos ||
             st.guards[in.aux] == st.pos)
           goto fail;
 
@@ -2157,19 +2382,8 @@ rx_run(const rx_program<C, Tr> &p, const basic_string<C> &s, size_t start,
           goto fail;
 
         auto r =
-            rx_run(
-                p.assertions[in.aux],
-                s,
-                st.pos,
-                false,
-                mf,
-                tr,
-                capcount,
-                target_begin,
-                prev_available,
-                prev_char,
-                &st.caps,
-                false);
+            rx_run(p.assertions[in.aux], s, st.pos, false, mf, tr, capcount,
+                   target_begin, prev_available, prev_char, &st.caps, false);
 
         if (in.op == O::look_pos) {
           if (!r.ok)
@@ -2185,38 +2399,23 @@ rx_run(const rx_program<C, Tr> &p, const basic_string<C> &s, size_t start,
       }
 
       case O::accept:
-        if (require_end &&
-            st.pos != s.size())
+        if (require_end && st.pos != s.size())
           goto fail;
 
-        if (match_has(
-                mf,
-                regex_constants::match_not_null) &&
-            st.pos == start)
+        if (match_has(mf, regex_constants::match_not_null) && st.pos == start)
           goto fail;
 
-        if (capture_zero &&
-            !st.caps.empty()) {
+        if (capture_zero && !st.caps.empty()) {
           st.caps[0].first = start;
           st.caps[0].second = st.pos;
           st.caps[0].matched = true;
         }
 
-        // ECMAScript commits to the first successful ordered path.
         if (!rx_posix<C, Tr>(p.flags))
-          return {
-              true,
-              st.pos,
-              move(st.caps)};
+          return {true, st.pos, move(st.caps)};
 
-        // POSIX: keep searching all paths at this leftmost starting
-        // position and retain the longest complete match.
-        if (!best.ok ||
-            st.pos > best.end)
-          best = {
-              true,
-              st.pos,
-              move(st.caps)};
+        if (!best.ok || st.pos > best.end)
+          best = {true, st.pos, move(st.caps)};
 
         goto fail;
       }
