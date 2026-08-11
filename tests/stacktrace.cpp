@@ -14,6 +14,18 @@ static_assert(tested::is_same_v<tested::stacktrace::value_type,
                                 tested::stacktrace_entry>);
 static_assert(noexcept(tested::stacktrace::current()));
 
+class stacktrace_output_buffer : public tested::streambuf {
+public:
+  tested::string text;
+protected:
+  int_type overflow(int_type value) override {
+    if (traits_type::eq_int_type(value, traits_type::eof()))
+      return traits_type::not_eof(value);
+    text.push_back(traits_type::to_char_type(value));
+    return value;
+  }
+};
+
 bool ftl_test() {
   tested::stacktrace empty;
   if (!empty.empty() || empty.begin() != empty.end() || !tested::to_string(empty).empty())
@@ -26,6 +38,14 @@ bool ftl_test() {
     return false;
 
   const auto skipped = tested::stacktrace::current(1, 3);
+  stacktrace_output_buffer buffer;
+  tested::ostream stream(&buffer);
+  stream << trace;
+  if (buffer.text != tested::to_string(trace) ||
+      tested::format("{}", trace) != tested::to_string(trace))
+    return false;
+  if (!trace.empty() && tested::format("{:>32}", trace[0]).size() < 32)
+    return false;
   return skipped.size() <= 3 && (trace == trace) &&
          tested::hash<tested::stacktrace>{}(trace) ==
              tested::hash<tested::stacktrace>{}(trace);

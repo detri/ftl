@@ -49,13 +49,14 @@ function(add_ftl_test header)
         # collide with the hosted standard library must not link GoogleTest.
         #
         # locale and its facets are especially sensitive because the hosted
-        # C++ runtime itself exports std::locale / std::ctype symbols.
+        # C++ runtime itself exports std::locale / std::ctype and stream
+        # symbols, including those reached through range stream adaptors.
         #
         set(ftl_standalone_replace FALSE)
 
         if (mode STREQUAL replace AND
                 header MATCHES
-                "^(string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|locale(_.*)?|codecvt|format|chrono|print)$")
+                "^(string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|locale(_.*)?|codecvt|format|chrono|print|iosfwd|streambuf|ios|istream|istream_view|ostream|complex|random|thread|stacktrace)$")
             set(ftl_standalone_replace TRUE)
         endif ()
 
@@ -506,6 +507,7 @@ foreach (header IN ITEMS
         streambuf
         ios
         istream
+        ostream
         istream_view
         execution
         algorithm_ranges_result
@@ -567,6 +569,7 @@ foreach (header IN ITEMS
         locale_codecvt_byname
         locale_moneypunct
         locale_messages
+        locale_io
         codecvt
         format
         print

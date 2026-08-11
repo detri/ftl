@@ -3,12 +3,19 @@
 #ifndef FTL_THREAD_HEADER
 #define FTL_THREAD_HEADER
 
+#if !defined(__cpp_lib_formatters) || __cpp_lib_formatters < 202302L
+#undef __cpp_lib_formatters
+#define __cpp_lib_formatters 202302L
+#endif
+
 #ifdef FTL_REPLACE_STL
 #include <chrono>
 #include <compare>
 #include <detail/thread.hpp>
 #include <exception>
 #include <functional>
+#include <format>
+#include <ostream>
 #include <stop_token>
 #include <system_error>
 #include <tuple>
@@ -22,6 +29,8 @@
 #include <ftl/detail/thread.hpp>
 #include <ftl/exception>
 #include <ftl/functional>
+#include <ftl/format>
+#include <ftl/ostream>
 #include <ftl/stop_token>
 #include <ftl/system_error>
 #include <ftl/tuple>
@@ -395,6 +404,38 @@ void sleep_until(const chrono::time_point<Clock, Duration> &time) {
 template <> struct hash<thread::id> {
   size_t operator()(thread::id value) const noexcept {
     return hash<uintptr_t>{}(detail::thread_id_access::value(value));
+  }
+};
+
+template <class Character, class Traits>
+basic_ostream<Character, Traits> &
+operator<<(basic_ostream<Character, Traits> &output, thread::id value) {
+  return output << detail::thread_id_access::value(value);
+}
+
+template <class Character> struct formatter<thread::id, Character> {
+  detail::standard_format_spec<Character> specification{};
+
+  constexpr auto parse(basic_format_parse_context<Character> &context) {
+    auto result = detail::parse_standard_format_spec(context, specification);
+    if (specification.presentation != '\0' || specification.sign_specified ||
+        specification.alternate || specification.zero_padding ||
+        specification.has_precision || specification.localized)
+      detail::throw_format_error("invalid thread id format specification");
+    return result;
+  }
+
+  template <class FormatContext>
+  auto format(thread::id value, FormatContext &context) const {
+    char buffer[numeric_limits<uintptr_t>::digits10 + 3];
+    auto converted = to_chars(buffer, buffer + sizeof(buffer),
+                              detail::thread_id_access::value(value));
+    basic_string<Character> text;
+    for (const char *position = buffer; position != converted.ptr; ++position)
+      text.push_back(static_cast<Character>(*position));
+    return detail::format_padded_text(
+        basic_string_view<Character>(text.data(), text.size()), context,
+        specification, detail::format_alignment::right);
   }
 };
 

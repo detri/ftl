@@ -17,6 +17,22 @@ static_assert(
 
 static_assert(
     tested::is_same_v<tested::streambuf, tested::basic_streambuf<char>>);
+static_assert(tested::is_same_v<tested::ostream,
+                                tested::basic_ostream<char>>);
+static_assert(tested::is_same_v<tested::iostream,
+                                tested::basic_iostream<char>>);
+static_assert(tested::is_same_v<tested::wstringbuf,
+                                tested::basic_stringbuf<wchar_t>>);
+static_assert(tested::is_same_v<tested::spanstream,
+                                tested::basic_spanstream<char>>);
+static_assert(tested::is_same_v<tested::fstream,
+                                tested::basic_fstream<char>>);
+static_assert(tested::is_same_v<tested::osyncstream,
+                                tested::basic_osyncstream<char>>);
+static_assert(tested::is_same_v<tested::streampos,
+    tested::fpos<tested::char_traits<char>::state_type>>);
+static_assert(tested::is_same_v<tested::u8streampos,
+    tested::fpos<tested::char_traits<char8_t>::state_type>>);
 
 static_assert(tested::is_same_v<tested::char_traits<char>::char_type, char>);
 

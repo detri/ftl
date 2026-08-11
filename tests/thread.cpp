@@ -20,6 +20,18 @@ struct wide_atomic_value {
   tested::uint32_t third;
 };
 
+class thread_output_buffer : public tested::streambuf {
+public:
+  tested::string text;
+protected:
+  int_type overflow(int_type value) override {
+    if (traits_type::eq_int_type(value, traits_type::eof()))
+      return traits_type::not_eof(value);
+    text.push_back(traits_type::to_char_type(value));
+    return value;
+  }
+};
+
 static_assert(
     sizeof(wide_atomic_value) == 12);
 
@@ -1225,6 +1237,16 @@ bool non_lock_free_atomic_ref_wait_works() {
       tested::memory_order_acquire);
 }
 
+bool thread_id_stream_and_format_work() {
+  const tested::thread::id id = tested::this_thread::get_id();
+  thread_output_buffer buffer;
+  tested::ostream stream(&buffer);
+  stream << id;
+  const tested::string formatted = tested::format("{}", id);
+  return !buffer.text.empty() && buffer.text == formatted &&
+         tested::format("{:>20}", id).size() >= 20;
+}
+
 bool ftl_test() {
   return basic_thread_works() && arguments_work() &&
          move_only_argument_works() && thread_ids_work() &&
@@ -1250,5 +1272,6 @@ bool ftl_test() {
          stop_callback_can_destroy_itself() &&
          stop_callback_registration_request_race() &&
          atomic_shared_ptr_wait_notify_works() &&
-         non_lock_free_atomic_wait_works() && non_lock_free_atomic_ref_wait_works();
+         non_lock_free_atomic_wait_works() && non_lock_free_atomic_ref_wait_works() &&
+         thread_id_stream_and_format_work();
 }

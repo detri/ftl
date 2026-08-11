@@ -1,0 +1,328 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_OSTREAM_HEADER
+#define FTL_OSTREAM_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <concepts>
+#include <exception>
+#include <ios>
+#include <streambuf>
+#include <type_traits>
+#else
+#include <ftl/concepts>
+#include <ftl/exception>
+#include <ftl/ios>
+#include <ftl/streambuf>
+#include <ftl/type_traits>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+template <class Character, class Traits>
+class basic_ostream : virtual public basic_ios<Character, Traits> {
+public:
+  using char_type = Character;
+  using traits_type = Traits;
+  using int_type = typename traits_type::int_type;
+  using pos_type = typename traits_type::pos_type;
+  using off_type = typename traits_type::off_type;
+
+  explicit basic_ostream(basic_streambuf<char_type, traits_type> *buffer) {
+    this->init(buffer);
+  }
+  virtual ~basic_ostream() = default;
+
+  class sentry {
+  public:
+    explicit sentry(basic_ostream &stream) : stream_(stream) {
+      if (stream_.good()) {
+        if (stream_.tie()) stream_.tie()->flush();
+        ok_ = stream_.good();
+      }
+    }
+    ~sentry() {
+      if ((stream_.flags() & ios_base::unitbuf) != 0 &&
+          uncaught_exceptions() == 0 && stream_.rdbuf() &&
+          stream_.rdbuf()->pubsync() == -1) {
+#if FTL_HAS_EXCEPTIONS
+        try { stream_.setstate(ios_base::badbit); } catch (...) {}
+#else
+        stream_.setstate(ios_base::badbit);
+#endif
+      }
+    }
+    explicit operator bool() const { return ok_; }
+    sentry(const sentry &) = delete;
+    sentry &operator=(const sentry &) = delete;
+  private:
+    basic_ostream &stream_;
+    bool ok_ = false;
+  };
+
+  basic_ostream &operator<<(basic_ostream &(*function)(basic_ostream &)) {
+    return function(*this);
+  }
+  basic_ostream &operator<<(basic_ios<char_type, traits_type> &(*function)(basic_ios<char_type, traits_type> &)) {
+    function(*this); return *this;
+  }
+  basic_ostream &operator<<(ios_base &(*function)(ios_base &)) {
+    function(*this); return *this;
+  }
+
+  basic_ostream &operator<<(bool value) {
+    return put_number(value);
+  }
+  basic_ostream &operator<<(short value) { return put_number(static_cast<long>(value)); }
+  basic_ostream &operator<<(unsigned short value) { return put_number(static_cast<unsigned long>(value)); }
+  basic_ostream &operator<<(int value) { return put_number(static_cast<long>(value)); }
+  basic_ostream &operator<<(unsigned int value) { return put_number(static_cast<unsigned long>(value)); }
+  basic_ostream &operator<<(long value) { return put_number(value); }
+  basic_ostream &operator<<(unsigned long value) { return put_number(value); }
+  basic_ostream &operator<<(long long value) { return put_number(value); }
+  basic_ostream &operator<<(unsigned long long value) { return put_number(value); }
+  basic_ostream &operator<<(float value) { return put_number(static_cast<double>(value)); }
+  basic_ostream &operator<<(double value) { return put_number(value); }
+  basic_ostream &operator<<(long double value) { return put_number(value); }
+  basic_ostream &operator<<(const void *value) { return put_number(value); }
+  basic_ostream &operator<<(const volatile void *value) {
+    return *this << const_cast<const void *>(value);
+  }
+  basic_ostream &operator<<(nullptr_t) { return *this << static_cast<const void *>(nullptr); }
+  basic_ostream &operator<<(basic_streambuf<char_type, traits_type> *source) {
+    sentry guard(*this);
+    if (!guard) return *this;
+    if (!source) { this->setstate(ios_base::badbit); return *this; }
+    bool inserted = false;
+#if FTL_HAS_EXCEPTIONS
+    try {
+      for (;;) {
+        int_type value = source->sgetc();
+        if (traits_type::eq_int_type(value, traits_type::eof())) break;
+        if (traits_type::eq_int_type(this->rdbuf()->sputc(traits_type::to_char_type(value)),
+                                     traits_type::eof())) break;
+        source->snextc(); inserted = true;
+      }
+    } catch (...) {
+      exception_ptr caught = current_exception();
+      bool rethrow = (this->exceptions() & ios_base::failbit) != 0;
+      this->__setstate_nothrow(ios_base::failbit);
+      if (rethrow) rethrow_exception(caught);
+    }
+#else
+    for (;;) {
+      int_type value = source->sgetc();
+      if (traits_type::eq_int_type(value, traits_type::eof())) break;
+      if (traits_type::eq_int_type(this->rdbuf()->sputc(traits_type::to_char_type(value)),
+                                   traits_type::eof())) break;
+      source->snextc(); inserted = true;
+    }
+#endif
+    if (!inserted) this->setstate(ios_base::failbit);
+    return *this;
+  }
+
+  basic_ostream &put(char_type character) {
+    sentry guard(*this);
+    if (guard && (!this->rdbuf() || traits_type::eq_int_type(
+        this->rdbuf()->sputc(character), traits_type::eof())))
+      this->setstate(ios_base::badbit);
+    return *this;
+  }
+  basic_ostream &write(const char_type *source, streamsize count) {
+    sentry guard(*this);
+    if (guard && (!this->rdbuf() || this->rdbuf()->sputn(source, count) != count))
+      this->setstate(ios_base::badbit);
+    return *this;
+  }
+  basic_ostream &flush() {
+    if (this->rdbuf()) {
+      sentry guard(*this);
+      if (guard && this->rdbuf()->pubsync() == -1) this->setstate(ios_base::badbit);
+    }
+    return *this;
+  }
+  pos_type tellp() {
+    if (this->fail() || !this->rdbuf()) return pos_type(off_type(-1));
+    return this->rdbuf()->pubseekoff(0, ios_base::cur, ios_base::out);
+  }
+  basic_ostream &seekp(pos_type position) {
+    if (!this->fail() && (!this->rdbuf() ||
+        this->rdbuf()->pubseekpos(position, ios_base::out) == pos_type(off_type(-1))))
+      this->setstate(ios_base::failbit);
+    return *this;
+  }
+  basic_ostream &seekp(off_type offset, ios_base::seekdir direction) {
+    if (!this->fail() && (!this->rdbuf() ||
+        this->rdbuf()->pubseekoff(offset, direction, ios_base::out) == pos_type(off_type(-1))))
+      this->setstate(ios_base::failbit);
+    return *this;
+  }
+  basic_ostream &__insert(const char_type *source, streamsize count) {
+    return put_padded(source, count, false);
+  }
+
+  basic_ostream(const basic_ostream &) = delete;
+  basic_ostream &operator=(const basic_ostream &) = delete;
+
+protected:
+  basic_ostream(basic_ostream &&other) : basic_ios<char_type, traits_type>() {
+    this->move(other);
+  }
+  basic_ostream &operator=(basic_ostream &&other) { swap(other); return *this; }
+  void swap(basic_ostream &other) { basic_ios<char_type, traits_type>::swap(other); }
+
+private:
+  template <class Value> basic_ostream &put_number(Value value) {
+    sentry guard(*this);
+    if (!guard) return *this;
+    using facet_type = num_put<char_type, ostreambuf_iterator<char_type, traits_type>>;
+    ostreambuf_iterator<char_type, traits_type> output(*this);
+#if FTL_HAS_EXCEPTIONS
+    try {
+      output = use_facet<facet_type>(this->getloc()).put(
+          output, *this, this->fill(), value);
+      if (output.failed()) this->setstate(ios_base::badbit);
+    } catch (...) {
+      exception_ptr caught = current_exception();
+      bool rethrow = (this->exceptions() & ios_base::badbit) != 0;
+      this->__setstate_nothrow(ios_base::badbit);
+      if (rethrow) rethrow_exception(caught);
+    }
+#else
+    output = use_facet<facet_type>(this->getloc()).put(
+        output, *this, this->fill(), value);
+    if (output.failed()) this->setstate(ios_base::badbit);
+#endif
+    return *this;
+  }
+
+  basic_ostream &put_padded(const char_type *source, streamsize count, bool numeric) {
+    sentry guard(*this);
+    if (!guard) return *this;
+    streamsize padding = this->width() > count ? this->width() - count : 0;
+    this->width(0);
+    auto emit_fill = [&](streamsize amount) {
+      while (amount-- > 0 && !traits_type::eq_int_type(
+          this->rdbuf()->sputc(this->fill()), traits_type::eof())) {}
+      return amount < 0;
+    };
+    bool left_adjust = (this->flags() & ios_base::adjustfield) == ios_base::left;
+    bool internal_adjust = numeric &&
+        (this->flags() & ios_base::adjustfield) == ios_base::internal;
+    streamsize prefix = 0;
+    if (internal_adjust && count && (source[0] == this->widen('+') || source[0] == this->widen('-')))
+      prefix = 1;
+    else if (internal_adjust && count > 1 && source[0] == this->widen('0') &&
+             (source[1] == this->widen('x') || source[1] == this->widen('X')))
+      prefix = 2;
+    bool okay = true;
+    if (!left_adjust && !internal_adjust) okay = emit_fill(padding);
+    if (okay && prefix) okay = this->rdbuf()->sputn(source, prefix) == prefix;
+    if (okay && internal_adjust) okay = emit_fill(padding);
+    if (okay) okay = this->rdbuf()->sputn(source + prefix, count - prefix) == count - prefix;
+    if (okay && left_adjust) okay = emit_fill(padding);
+    if (!okay) this->setstate(ios_base::badbit);
+    return *this;
+  }
+};
+
+template <class C, class T>
+basic_ostream<C, T> &operator<<(basic_ostream<C, T> &stream, C value) {
+  return stream.__insert(&value, 1);
+}
+template <class C, class T>
+basic_ostream<C, T> &operator<<(basic_ostream<C, T> &stream, char value) {
+  C widened = stream.widen(value); return stream.__insert(&widened, 1);
+}
+template <class T>
+basic_ostream<char, T> &operator<<(basic_ostream<char, T> &stream, char value) {
+  return stream.__insert(&value, 1);
+}
+template <class T>
+basic_ostream<char, T> &operator<<(basic_ostream<char, T> &stream, signed char value) {
+  return stream << static_cast<char>(value);
+}
+template <class T>
+basic_ostream<char, T> &operator<<(basic_ostream<char, T> &stream, unsigned char value) {
+  return stream << static_cast<char>(value);
+}
+
+template <class C, class T>
+basic_ostream<C, T> &operator<<(basic_ostream<C, T> &stream, const C *value) {
+  if (!value) { stream.setstate(ios_base::badbit); return stream; }
+  return stream.__insert(value, static_cast<streamsize>(T::length(value)));
+}
+template <class C, class T>
+  requires(!is_same_v<C, char>)
+basic_ostream<C, T> &operator<<(basic_ostream<C, T> &stream, const char *value) {
+  if (!value) { stream.setstate(ios_base::badbit); return stream; }
+  size_t count = char_traits<char>::length(value);
+  basic_string<C, T> widened;
+  widened.reserve(count);
+  for (size_t index = 0; index < count; ++index) widened.push_back(stream.widen(value[index]));
+  return stream.__insert(widened.data(), static_cast<streamsize>(widened.size()));
+}
+template <class T>
+basic_ostream<char, T> &operator<<(basic_ostream<char, T> &stream, const signed char *value) {
+  return stream << reinterpret_cast<const char *>(value);
+}
+template <class T>
+basic_ostream<char, T> &operator<<(basic_ostream<char, T> &stream, const unsigned char *value) {
+  return stream << reinterpret_cast<const char *>(value);
+}
+
+#define FTL_DELETE_NARROW_OUTPUT(Character) \
+  template <class T> basic_ostream<char, T> &operator<<(basic_ostream<char, T> &, Character) = delete; \
+  template <class T> basic_ostream<char, T> &operator<<(basic_ostream<char, T> &, const Character *) = delete;
+FTL_DELETE_NARROW_OUTPUT(wchar_t)
+FTL_DELETE_NARROW_OUTPUT(char8_t)
+FTL_DELETE_NARROW_OUTPUT(char16_t)
+FTL_DELETE_NARROW_OUTPUT(char32_t)
+#undef FTL_DELETE_NARROW_OUTPUT
+template <class T> basic_ostream<wchar_t, T> &operator<<(basic_ostream<wchar_t, T> &, char8_t) = delete;
+template <class T> basic_ostream<wchar_t, T> &operator<<(basic_ostream<wchar_t, T> &, char16_t) = delete;
+template <class T> basic_ostream<wchar_t, T> &operator<<(basic_ostream<wchar_t, T> &, char32_t) = delete;
+template <class T> basic_ostream<wchar_t, T> &operator<<(basic_ostream<wchar_t, T> &, const char8_t *) = delete;
+template <class T> basic_ostream<wchar_t, T> &operator<<(basic_ostream<wchar_t, T> &, const char16_t *) = delete;
+template <class T> basic_ostream<wchar_t, T> &operator<<(basic_ostream<wchar_t, T> &, const char32_t *) = delete;
+
+template <class C, class T>
+basic_ostream<C, T> &endl(basic_ostream<C, T> &stream) {
+  stream.put(stream.widen('\n'));
+  return stream.flush();
+}
+template <class C, class T>
+basic_ostream<C, T> &ends(basic_ostream<C, T> &stream) { return stream.put(C()); }
+template <class C, class T>
+basic_ostream<C, T> &flush(basic_ostream<C, T> &stream) { return stream.flush(); }
+template <class C, class T>
+basic_ostream<C, T> &emit_on_flush(basic_ostream<C, T> &stream) { return stream; }
+template <class C, class T>
+basic_ostream<C, T> &noemit_on_flush(basic_ostream<C, T> &stream) { return stream; }
+template <class C, class T>
+basic_ostream<C, T> &flush_emit(basic_ostream<C, T> &stream) { return stream.flush(); }
+
+template <class C, class T, class A>
+basic_ostream<C, T> &operator<<(basic_ostream<C, T> &stream,
+                                const basic_string<C, T, A> &value) {
+  return stream.__insert(value.data(), static_cast<streamsize>(value.size()));
+}
+template <class C, class T>
+basic_ostream<C, T> &operator<<(basic_ostream<C, T> &stream,
+                                basic_string_view<C, T> value) {
+  return stream.__insert(value.data(), static_cast<streamsize>(value.size()));
+}
+
+template <class Stream, class Value>
+  requires(!is_lvalue_reference_v<Stream> &&
+           derived_from<remove_reference_t<Stream>, ios_base> &&
+           requires(Stream &stream, const Value &value) { stream << value; })
+Stream &&operator<<(Stream &&stream, const Value &value) {
+  stream << value;
+  return static_cast<Stream &&>(stream);
+}
+
+FTL_END_NAMESPACE
+
+#endif // FTL_OSTREAM_HEADER

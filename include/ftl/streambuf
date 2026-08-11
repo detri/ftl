@@ -4,9 +4,9 @@
 #define FTL_STREAMBUF_HEADER
 
 #ifdef FTL_REPLACE_STL
-#include <iosfwd>
+#include <ios>
 #else
-#include <ftl/iosfwd>
+#include <ftl/ios>
 #endif
 
 FTL_BEGIN_NAMESPACE
@@ -21,136 +21,179 @@ public:
 
   virtual ~basic_streambuf() = default;
 
-  [[nodiscard]]
+  locale pubimbue(const locale &value) {
+    locale previous = locale_;
+    imbue(value);
+    locale_ = value;
+    return previous;
+  }
+  locale getloc() const { return locale_; }
+
+  basic_streambuf *pubsetbuf(char_type *buffer, streamsize count) {
+    return setbuf(buffer, count);
+  }
+  pos_type pubseekoff(off_type offset, ios_base::seekdir direction,
+                      ios_base::openmode mode = ios_base::in | ios_base::out) {
+    return seekoff(offset, direction, mode);
+  }
+  pos_type pubseekpos(pos_type position,
+                      ios_base::openmode mode = ios_base::in | ios_base::out) {
+    return seekpos(position, mode);
+  }
+  int pubsync() { return sync(); }
+
   streamsize in_avail() {
-    if (get_position_available())
-      return static_cast<streamsize>(egptr_ - gptr_);
-
-    return showmanyc();
+    return get_available() ? static_cast<streamsize>(egptr_ - gptr_) : showmanyc();
   }
-
   int_type snextc() {
-    const int_type consumed = sbumpc();
-
-    if (traits_type::eq_int_type(consumed, traits_type::eof())) {
-      return traits_type::eof();
-    }
-
-    return sgetc();
+    return traits_type::eq_int_type(sbumpc(), traits_type::eof())
+               ? traits_type::eof() : sgetc();
   }
-
   int_type sbumpc() {
-    if (!get_position_available())
-      return uflow();
-
-    const int_type result = traits_type::to_int_type(*gptr_);
-
-    ++gptr_;
-
-    return result;
+    if (!get_available()) return uflow();
+    return traits_type::to_int_type(*gptr_++);
   }
-
   int_type sgetc() {
-    if (!get_position_available())
-      return underflow();
-
-    return traits_type::to_int_type(*gptr_);
+    return get_available() ? traits_type::to_int_type(*gptr_) : underflow();
   }
-
   streamsize sgetn(char_type *destination, streamsize count) {
     return xsgetn(destination, count);
+  }
+  int_type sputbackc(char_type character) {
+    if (gptr_ && eback_ && gptr_ != eback_ && traits_type::eq(gptr_[-1], character))
+      return traits_type::to_int_type(*--gptr_);
+    return pbackfail(traits_type::to_int_type(character));
+  }
+  int_type sungetc() {
+    if (gptr_ && eback_ && gptr_ != eback_)
+      return traits_type::to_int_type(*--gptr_);
+    return pbackfail();
+  }
+  int_type sputc(char_type character) {
+    if (put_available()) {
+      *pptr_++ = character;
+      return traits_type::to_int_type(character);
+    }
+    return overflow(traits_type::to_int_type(character));
+  }
+  streamsize sputn(const char_type *source, streamsize count) {
+    return xsputn(source, count);
   }
 
 protected:
   basic_streambuf() = default;
-
-  basic_streambuf(const basic_streambuf &) = default;
-
-  basic_streambuf &operator=(const basic_streambuf &) = default;
-
-  void swap(basic_streambuf &other) noexcept {
-    char_type *temporary = eback_;
-    eback_ = other.eback_;
-    other.eback_ = temporary;
-
-    temporary = gptr_;
-    gptr_ = other.gptr_;
-    other.gptr_ = temporary;
-
-    temporary = egptr_;
-    egptr_ = other.egptr_;
-    other.egptr_ = temporary;
+  basic_streambuf(const basic_streambuf &other)
+      : locale_(other.locale_), eback_(other.eback_), gptr_(other.gptr_),
+        egptr_(other.egptr_), pbase_(other.pbase_), pptr_(other.pptr_),
+        epptr_(other.epptr_) {}
+  basic_streambuf &operator=(const basic_streambuf &other) {
+    eback_ = other.eback_; gptr_ = other.gptr_;
+    egptr_ = other.egptr_; pbase_ = other.pbase_; pptr_ = other.pptr_;
+    epptr_ = other.epptr_; return *this;
+  }
+  void swap(basic_streambuf &other) {
+    swap_value(eback_, other.eback_); swap_value(gptr_, other.gptr_);
+    swap_value(egptr_, other.egptr_);
+    swap_value(pbase_, other.pbase_); swap_value(pptr_, other.pptr_);
+    swap_value(epptr_, other.epptr_);
   }
 
-  [[nodiscard]]
-  char_type *eback() const noexcept {
-    return eback_;
+  char_type *eback() const { return eback_; }
+  char_type *gptr() const { return gptr_; }
+  char_type *egptr() const { return egptr_; }
+  void gbump(int count) { gptr_ += count; }
+  void setg(char_type *begin, char_type *next, char_type *end) {
+    eback_ = begin; gptr_ = next; egptr_ = end;
+  }
+  char_type *pbase() const { return pbase_; }
+  char_type *pptr() const { return pptr_; }
+  char_type *epptr() const { return epptr_; }
+  void pbump(int count) { pptr_ += count; }
+  void setp(char_type *begin, char_type *end) {
+    pbase_ = begin; pptr_ = begin; epptr_ = end;
   }
 
-  [[nodiscard]]
-  char_type *gptr() const noexcept {
-    return gptr_;
+  virtual void imbue(const locale &) {}
+  virtual basic_streambuf *setbuf(char_type *, streamsize) { return this; }
+  virtual pos_type seekoff(off_type, ios_base::seekdir,
+                           ios_base::openmode = ios_base::in | ios_base::out) {
+    return pos_type(off_type(-1));
   }
-
-  [[nodiscard]]
-  char_type *egptr() const noexcept {
-    return egptr_;
+  virtual pos_type seekpos(pos_type,
+                           ios_base::openmode = ios_base::in | ios_base::out) {
+    return pos_type(off_type(-1));
   }
-
-  void gbump(int offset) { gptr_ += offset; }
-
-  void setg(char_type *beginning, char_type *current, char_type *end) noexcept {
-    eback_ = beginning;
-    gptr_ = current;
-    egptr_ = end;
-  }
-
+  virtual int sync() { return 0; }
   virtual streamsize showmanyc() { return 0; }
-
   virtual streamsize xsgetn(char_type *destination, streamsize count) {
-    streamsize extracted = 0;
-
-    while (extracted < count) {
-      const int_type value = sbumpc();
-
-      if (traits_type::eq_int_type(value, traits_type::eof())) {
-        break;
-      }
-
-      destination[extracted] = traits_type::to_char_type(value);
-
-      ++extracted;
+    streamsize done = 0;
+    while (done < count) {
+      int_type value = sbumpc();
+      if (traits_type::eq_int_type(value, traits_type::eof())) break;
+      destination[done++] = traits_type::to_char_type(value);
     }
-
-    return extracted;
+    return done;
   }
-
   virtual int_type underflow() { return traits_type::eof(); }
-
   virtual int_type uflow() {
-    const int_type value = underflow();
-
-    if (traits_type::eq_int_type(value, traits_type::eof())) {
-      return traits_type::eof();
-    }
-
-    const int_type result = traits_type::to_int_type(*gptr_);
-
-    ++gptr_;
-
-    return result;
+    int_type value = underflow();
+    if (!traits_type::eq_int_type(value, traits_type::eof()) && get_available()) ++gptr_;
+    return value;
+  }
+  virtual int_type pbackfail(int_type = traits_type::eof()) {
+    return traits_type::eof();
+  }
+  virtual streamsize xsputn(const char_type *source, streamsize count) {
+    streamsize done = 0;
+    while (done < count &&
+           !traits_type::eq_int_type(sputc(source[done]), traits_type::eof()))
+      ++done;
+    return done;
+  }
+  virtual int_type overflow(int_type = traits_type::eof()) {
+    return traits_type::eof();
   }
 
 private:
-  [[nodiscard]]
-  bool get_position_available() const noexcept {
-    return gptr_ != nullptr && gptr_ != egptr_;
+  template <class Value> static void swap_value(Value &left, Value &right) {
+    Value temporary = static_cast<Value &&>(left);
+    left = static_cast<Value &&>(right);
+    right = static_cast<Value &&>(temporary);
   }
+  bool get_available() const { return gptr_ && gptr_ < egptr_; }
+  bool put_available() const { return pptr_ && pptr_ < epptr_; }
 
+  locale locale_{};
   char_type *eback_ = nullptr;
   char_type *gptr_ = nullptr;
   char_type *egptr_ = nullptr;
+  char_type *pbase_ = nullptr;
+  char_type *pptr_ = nullptr;
+  char_type *epptr_ = nullptr;
 };
+
+namespace detail {
+template <class C, class Traits>
+typename Traits::int_type streambuf_sgetc(basic_streambuf<C, Traits> *buffer) {
+  return buffer->sgetc();
+}
+
+template <class C, class Traits>
+typename Traits::int_type streambuf_snextc(basic_streambuf<C, Traits> *buffer) {
+  return buffer->snextc();
+}
+
+template <class C, class Traits>
+typename Traits::int_type streambuf_sbumpc(basic_streambuf<C, Traits> *buffer) {
+  return buffer->sbumpc();
+}
+
+template <class C, class Traits>
+typename Traits::int_type streambuf_sputc(basic_streambuf<C, Traits> *buffer,
+                                          C value) {
+  return buffer->sputc(value);
+}
+} // namespace detail
 
 FTL_END_NAMESPACE
 

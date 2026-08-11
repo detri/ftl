@@ -10,6 +10,6 @@ const union ftl_olm_nan_storage ftl_olm_nan_value = {
 #ifdef _MSC_VER
 /* Required by MSVC objects that perform floating-point operations. */
 extern "C" {
-int _fltused = 0x9875;
+__declspec(selectany) int _fltused = 0x9875;
 }
 #endif

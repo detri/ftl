@@ -7,11 +7,13 @@
 #include <ftl/expected>
 #include <ftl/latch>
 #include <ftl/numbers>
+#include <ftl/ios>
 #include <ftl/optional>
 #include <ftl/ranges>
 #include <ftl/semaphore>
 #include <ftl/source_location>
 #include <ftl/stdfloat>
+#include <ftl/stacktrace>
 #include <ftl/stop_token>
 #include <ftl/thread>
 #include <ftl/utility>
@@ -149,6 +151,11 @@
 
 #if __cpp_lib_jthread < 201911L
 #error Stage 6.2 stop_token/thread feature macros are incomplete
+#endif
+
+#if __cpp_lib_ios_noreplace < 202207L || \
+    __cpp_lib_stacktrace < 202011L || __cpp_lib_formatters < 202302L
+#error Stage 7.3 stream-owned feature macros are incomplete
 #endif
 
 #if __cpp_lib_semaphore < 201907L || \

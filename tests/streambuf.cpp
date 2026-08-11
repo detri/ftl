@@ -62,6 +62,23 @@ private:
   char current_ = '\0';
 };
 
+class writable_streambuf : public tested_streambuf {
+public:
+  writable_streambuf(char *first, char *last) { setp(first, last); }
+  char *beginning() const noexcept { return pbase(); }
+  char *current() const noexcept { return pptr(); }
+  char *ending() const noexcept { return epptr(); }
+  void rewind(int count) { pbump(-count); }
+protected:
+  pos_type seekoff(off_type offset, tested::ios_base::seekdir direction,
+                   tested::ios_base::openmode) override {
+    if (direction != tested::ios_base::beg)
+      return pos_type(off_type(-1));
+    return pos_type(offset);
+  }
+  int sync() override { return 0; }
+};
+
 static_assert(
     tested::is_same_v<tested::streambuf, tested::basic_streambuf<char>>);
 
@@ -172,7 +189,31 @@ bool bulk_virtual_read_works() {
          output[2] == 'c' && output[3] == 'd';
 }
 
+bool put_area_and_positioning_work() {
+  char storage[6]{};
+  writable_streambuf buffer(storage, storage + 6);
+  if (buffer.sputc('a') != test_char_traits::to_int_type('a') ||
+      buffer.sputn("bc", 2) != 2 || buffer.current() != storage + 3)
+    return false;
+  buffer.rewind(1);
+  if (buffer.sputc('d') != test_char_traits::to_int_type('d') ||
+      storage[0] != 'a' || storage[1] != 'b' || storage[2] != 'd')
+    return false;
+  return buffer.pubseekoff(4, tested::ios_base::beg,
+                           tested::ios_base::out) == tested::streampos(4) &&
+         buffer.pubsync() == 0;
+}
+
+bool locale_state_works() {
+  char storage[1]{};
+  writable_streambuf buffer(storage, storage + 1);
+  tested::locale previous = buffer.pubimbue(tested::locale::classic());
+  return previous == tested::locale() &&
+         buffer.getloc() == tested::locale::classic();
+}
+
 bool ftl_test() {
   return fixed_get_area_works() && protected_area_access_works() &&
-         virtual_underflow_works() && bulk_virtual_read_works();
+         virtual_underflow_works() && bulk_virtual_read_works() &&
+         put_area_and_positioning_work() && locale_state_works();
 }

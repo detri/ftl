@@ -3,13 +3,25 @@
 #ifndef FTL_STACKTRACE_HEADER
 #define FTL_STACKTRACE_HEADER
 
+#if !defined(__cpp_lib_stacktrace) || __cpp_lib_stacktrace < 202011L
+#undef __cpp_lib_stacktrace
+#define __cpp_lib_stacktrace 202011L
+#endif
+
+#if !defined(__cpp_lib_formatters) || __cpp_lib_formatters < 202302L
+#undef __cpp_lib_formatters
+#define __cpp_lib_formatters 202302L
+#endif
+
 #ifdef FTL_REPLACE_STL
 #include <compare>
 #include <cstdint>
 #include <functional>
+#include <format>
 #include <iterator>
 #include <memory>
 #include <memory_resource>
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -17,9 +29,11 @@
 #include <ftl/compare>
 #include <ftl/cstdint>
 #include <ftl/functional>
+#include <ftl/format>
 #include <ftl/iterator>
 #include <ftl/memory>
 #include <ftl/memory_resource>
+#include <ftl/ostream>
 #include <ftl/stdexcept>
 #include <ftl/string>
 #include <ftl/vector>
@@ -235,6 +249,66 @@ using stacktrace = basic_stacktrace<allocator<stacktrace_entry>>;
 namespace pmr {
 using stacktrace = basic_stacktrace<polymorphic_allocator<stacktrace_entry>>;
 }
+
+inline ostream &operator<<(ostream &output, const stacktrace_entry &entry) {
+  return output << to_string(entry);
+}
+
+template <class Allocator>
+ostream &operator<<(ostream &output,
+                    const basic_stacktrace<Allocator> &trace) {
+  return output << to_string(trace);
+}
+
+namespace detail {
+template <class Character> struct stacktrace_formatter_base {
+  standard_format_spec<Character> specification{};
+  constexpr auto parse(basic_format_parse_context<Character> &context) {
+    auto result = parse_standard_format_spec(context, specification);
+    if (specification.presentation != '\0' || specification.sign_specified ||
+        specification.alternate || specification.zero_padding ||
+        specification.has_precision || specification.localized)
+      throw_format_error("invalid stacktrace format specification");
+    return result;
+  }
+  template <class FormatContext>
+  auto format_text(const string &narrow, FormatContext &context) const {
+    basic_string<Character> text;
+    for (char value : narrow) text.push_back(static_cast<Character>(value));
+    return format_padded_text(
+        basic_string_view<Character>(text.data(), text.size()), context,
+        specification, format_alignment::left);
+  }
+};
+} // namespace detail
+
+template <>
+struct formatter<stacktrace_entry> : detail::stacktrace_formatter_base<char> {
+  template <class FormatContext>
+  auto format(const stacktrace_entry &entry, FormatContext &context) const {
+    return this->format_text(to_string(entry), context);
+  }
+};
+
+template <class Allocator>
+struct formatter<basic_stacktrace<Allocator>> {
+  constexpr auto parse(format_parse_context &context) {
+    auto iterator = context.begin();
+    if (iterator != context.end() && *iterator != '}')
+      detail::throw_format_error("invalid stacktrace format specification");
+    return iterator;
+  }
+
+  template <class FormatContext>
+  auto format(const basic_stacktrace<Allocator> &trace,
+              FormatContext &context) const {
+    const string text = to_string(trace);
+    auto output = context.out();
+    for (char value : text)
+      *output++ = value;
+    return output;
+  }
+};
 
 template <> struct hash<stacktrace_entry> {
   size_t operator()(stacktrace_entry value) const noexcept {

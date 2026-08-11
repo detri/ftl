@@ -10,7 +10,7 @@
 #include <cstddef>
 #include <functional>
 #include <initializer_list>
-#include <istream>
+#include <iosfwd>
 #include <iterator>
 #include <memory>
 #include <span>
@@ -24,7 +24,7 @@
 #include <ftl/cstddef>
 #include <ftl/functional>
 #include <ftl/initializer_list>
-#include <ftl/istream>
+#include <ftl/iosfwd>
 #include <ftl/iterator>
 #include <ftl/memory>
 #include <ftl/span>

@@ -5,8 +5,16 @@
 
 #ifdef FTL_REPLACE_STL
 #include <ios>
+#include <limits>
+#include <ostream>
+#include <streambuf>
+#include <type_traits>
 #else
 #include <ftl/ios>
+#include <ftl/limits>
+#include <ftl/ostream>
+#include <ftl/streambuf>
+#include <ftl/type_traits>
 #endif
 
 FTL_BEGIN_NAMESPACE
@@ -20,88 +28,445 @@ public:
   using pos_type = typename traits_type::pos_type;
   using off_type = typename traits_type::off_type;
 
-  explicit basic_istream(basic_streambuf<char_type, traits_type> *buffer)
-      : basic_ios<char_type, traits_type>(buffer) {
+  explicit basic_istream(basic_streambuf<char_type, traits_type> *buffer) {
     this->init(buffer);
   }
-
   virtual ~basic_istream() = default;
 
-  [[nodiscard]]
-  streamsize gcount() const {
-    return extracted_;
-  }
+  class sentry {
+  public:
+    explicit sentry(basic_istream &stream, bool noskipws = false) {
+      if (!stream.good()) {
+        stream.setstate(ios_base::failbit);
+        return;
+      }
+      if (stream.tie()) stream.tie()->flush();
+      if (!noskipws && (stream.flags() & ios_base::skipws) != 0) {
+        const auto &classification = use_facet<ctype<char_type>>(stream.getloc());
+        for (;;) {
+          int_type value = stream.rdbuf()->sgetc();
+          if (traits_type::eq_int_type(value, traits_type::eof())) {
+            stream.setstate(ios_base::eofbit | ios_base::failbit);
+            return;
+          }
+          if (!classification.is(ctype_base::space, traits_type::to_char_type(value))) break;
+          stream.rdbuf()->snextc();
+        }
+      }
+      ok_ = stream.good();
+    }
+    ~sentry() = default;
+    explicit operator bool() const { return ok_; }
+    sentry(const sentry &) = delete;
+    sentry &operator=(const sentry &) = delete;
+  private:
+    bool ok_ = false;
+  };
 
-  int_type get() {
+  basic_istream &operator>>(basic_istream &(*function)(basic_istream &)) {
+    return function(*this);
+  }
+  basic_istream &operator>>(basic_ios<char_type, traits_type> &(*function)(basic_ios<char_type, traits_type> &)) {
+    function(*this); return *this;
+  }
+  basic_istream &operator>>(ios_base &(*function)(ios_base &)) {
+    function(*this); return *this;
+  }
+  basic_istream &operator>>(bool &value) {
+    return get_number(value);
+  }
+  basic_istream &operator>>(short &value) { return get_bounded(value); }
+  basic_istream &operator>>(unsigned short &value) { return get_number(value); }
+  basic_istream &operator>>(int &value) { return get_bounded(value); }
+  basic_istream &operator>>(unsigned int &value) { return get_number(value); }
+  basic_istream &operator>>(long &value) { return get_number(value); }
+  basic_istream &operator>>(unsigned long &value) { return get_number(value); }
+  basic_istream &operator>>(long long &value) { return get_number(value); }
+  basic_istream &operator>>(unsigned long long &value) { return get_number(value); }
+  basic_istream &operator>>(float &value) { return get_number(value); }
+  basic_istream &operator>>(double &value) { return get_number(value); }
+  basic_istream &operator>>(long double &value) { return get_number(value); }
+  basic_istream &operator>>(void *&value) { return get_number(value); }
+  basic_istream &operator>>(basic_streambuf<char_type, traits_type> *destination) {
     extracted_ = 0;
-
-    if (!this->good())
-      return traits_type::eof();
-
-    auto *buffer = this->rdbuf();
-
-    if (buffer == nullptr) {
-      this->setstate(ios_base::badbit | ios_base::failbit);
-
-      return traits_type::eof();
+    sentry guard(*this, true);
+    if (!destination) { this->setstate(ios_base::failbit); return *this; }
+    if (guard) {
+      for (;;) {
+        int_type value = this->rdbuf()->sgetc();
+        if (traits_type::eq_int_type(value, traits_type::eof())) {
+          this->setstate(ios_base::eofbit); break;
+        }
+        if (traits_type::eq_int_type(destination->sputc(traits_type::to_char_type(value)),
+                                     traits_type::eof())) break;
+        this->rdbuf()->snextc(); ++extracted_;
+      }
     }
-
-    const int_type value = buffer->sbumpc();
-
-    if (traits_type::eq_int_type(value, traits_type::eof())) {
-      this->setstate(ios_base::eofbit | ios_base::failbit);
-
-      return traits_type::eof();
-    }
-
-    extracted_ = 1;
-
-    return value;
-  }
-
-  basic_istream &get(char_type &character) {
-    const int_type value = get();
-
-    if (!traits_type::eq_int_type(value, traits_type::eof())) {
-      character = traits_type::to_char_type(value);
-    }
-
+    if (extracted_ == 0) this->setstate(ios_base::failbit);
     return *this;
   }
 
-  basic_istream &read(char_type *destination, streamsize count) {
-    extracted_ = 0;
-
-    if (!this->good())
-      return *this;
-
-    if (count <= 0)
-      return *this;
-
-    auto *buffer = this->rdbuf();
-
-    if (buffer == nullptr) {
-      this->setstate(ios_base::badbit | ios_base::failbit);
-
-      return *this;
-    }
-
-    extracted_ = buffer->sgetn(destination, count);
-
-    if (extracted_ != count) {
+  streamsize gcount() const { return extracted_; }
+  int_type get() {
+    extracted_ = 0; sentry guard(*this, true);
+    if (!guard) return traits_type::eof();
+    int_type value = this->rdbuf()->sbumpc();
+    if (traits_type::eq_int_type(value, traits_type::eof()))
       this->setstate(ios_base::eofbit | ios_base::failbit);
+    else extracted_ = 1;
+    return value;
+  }
+  basic_istream &get(char_type &character) {
+    int_type value = get();
+    if (!traits_type::eq_int_type(value, traits_type::eof())) character = traits_type::to_char_type(value);
+    return *this;
+  }
+  basic_istream &get(char_type *destination, streamsize count) {
+    return get(destination, count, this->widen('\n'));
+  }
+  basic_istream &get(char_type *destination, streamsize count, char_type delimiter) {
+    extracted_ = 0;
+    if (count > 0) destination[0] = char_type();
+    sentry guard(*this, true);
+    if (guard && count > 0) {
+      while (extracted_ + 1 < count) {
+        int_type value = this->rdbuf()->sgetc();
+        if (traits_type::eq_int_type(value, traits_type::eof())) {
+          this->setstate(ios_base::eofbit); break;
+        }
+        char_type character = traits_type::to_char_type(value);
+        if (traits_type::eq(character, delimiter)) break;
+        destination[extracted_++] = character; this->rdbuf()->snextc();
+      }
+      destination[extracted_] = char_type();
     }
-
+    if (extracted_ == 0) this->setstate(ios_base::failbit);
+    return *this;
+  }
+  basic_istream &get(basic_streambuf<char_type, traits_type> &destination) {
+    return get(destination, this->widen('\n'));
+  }
+  basic_istream &get(basic_streambuf<char_type, traits_type> &destination,
+                     char_type delimiter) {
+    extracted_ = 0; sentry guard(*this, true);
+    if (guard) {
+      for (;;) {
+        int_type value = this->rdbuf()->sgetc();
+        if (traits_type::eq_int_type(value, traits_type::eof())) {
+          this->setstate(ios_base::eofbit); break;
+        }
+        char_type character = traits_type::to_char_type(value);
+        if (traits_type::eq(character, delimiter) ||
+            traits_type::eq_int_type(destination.sputc(character), traits_type::eof())) break;
+        this->rdbuf()->snextc(); ++extracted_;
+      }
+    }
+    if (extracted_ == 0) this->setstate(ios_base::failbit);
+    return *this;
+  }
+  basic_istream &getline(char_type *destination, streamsize count) {
+    return getline(destination, count, this->widen('\n'));
+  }
+  basic_istream &getline(char_type *destination, streamsize count, char_type delimiter) {
+    extracted_ = 0; if (count > 0) destination[0] = char_type();
+    sentry guard(*this, true);
+    bool found = false;
+    if (guard && count > 0) {
+      for (;;) {
+        int_type value = this->rdbuf()->sgetc();
+        if (traits_type::eq_int_type(value, traits_type::eof())) {
+          this->setstate(ios_base::eofbit); break;
+        }
+        char_type character = traits_type::to_char_type(value);
+        if (traits_type::eq(character, delimiter)) {
+          this->rdbuf()->snextc(); ++extracted_; found = true; break;
+        }
+        if (extracted_ + 1 >= count) {
+          this->setstate(ios_base::failbit); break;
+        }
+        destination[extracted_++] = character;
+        this->rdbuf()->snextc();
+      }
+      destination[found ? extracted_ - 1 : extracted_] = char_type();
+    }
+    if (extracted_ == 0) this->setstate(ios_base::failbit);
+    return *this;
+  }
+  basic_istream &ignore(streamsize count = 1, int_type delimiter = traits_type::eof()) {
+    extracted_ = 0; sentry guard(*this, true);
+    while (guard && extracted_ < count) {
+      int_type value = this->rdbuf()->sbumpc();
+      if (traits_type::eq_int_type(value, traits_type::eof())) {
+        this->setstate(ios_base::eofbit); break;
+      }
+      ++extracted_;
+      if (traits_type::eq_int_type(value, delimiter)) break;
+    }
+    return *this;
+  }
+  int_type peek() {
+    extracted_ = 0; sentry guard(*this, true);
+    if (!guard) return traits_type::eof();
+    int_type value = this->rdbuf()->sgetc();
+    if (traits_type::eq_int_type(value, traits_type::eof())) this->setstate(ios_base::eofbit);
+    return value;
+  }
+  basic_istream &read(char_type *destination, streamsize count) {
+    extracted_ = 0; sentry guard(*this, true);
+    if (guard && count > 0) extracted_ = this->rdbuf()->sgetn(destination, count);
+    if (extracted_ != count) this->setstate(ios_base::eofbit | ios_base::failbit);
+    return *this;
+  }
+  streamsize readsome(char_type *destination, streamsize count) {
+    extracted_ = 0; sentry guard(*this, true);
+    if (!guard) return 0;
+    streamsize available = this->rdbuf()->in_avail();
+    if (available < 0) this->setstate(ios_base::eofbit);
+    else if (available > 0) extracted_ = this->rdbuf()->sgetn(destination, available < count ? available : count);
+    return extracted_;
+  }
+  basic_istream &putback(char_type character) {
+    extracted_ = 0; this->clear(this->rdstate() & ~ios_base::eofbit); sentry guard(*this, true);
+    if (!guard || traits_type::eq_int_type(this->rdbuf()->sputbackc(character), traits_type::eof()))
+      this->setstate(ios_base::badbit);
+    return *this;
+  }
+  basic_istream &unget() {
+    extracted_ = 0; this->clear(this->rdstate() & ~ios_base::eofbit); sentry guard(*this, true);
+    if (!guard || traits_type::eq_int_type(this->rdbuf()->sungetc(), traits_type::eof()))
+      this->setstate(ios_base::badbit);
+    return *this;
+  }
+  int sync() {
+    sentry guard(*this, true);
+    if (!guard || !this->rdbuf() || this->rdbuf()->pubsync() == -1) {
+      this->setstate(ios_base::badbit); return -1;
+    }
+    return 0;
+  }
+  pos_type tellg() {
+    sentry guard(*this, true);
+    return guard && this->rdbuf()
+        ? this->rdbuf()->pubseekoff(0, ios_base::cur, ios_base::in)
+        : pos_type(off_type(-1));
+  }
+  basic_istream &seekg(pos_type position) {
+    this->clear(this->rdstate() & ~ios_base::eofbit);
+    sentry guard(*this, true);
+    if (!guard || !this->rdbuf() ||
+        this->rdbuf()->pubseekpos(position, ios_base::in) == pos_type(off_type(-1)))
+      this->setstate(ios_base::failbit);
+    return *this;
+  }
+  basic_istream &seekg(off_type offset, ios_base::seekdir direction) {
+    this->clear(this->rdstate() & ~ios_base::eofbit);
+    sentry guard(*this, true);
+    if (!guard || !this->rdbuf() || this->rdbuf()->pubseekoff(
+        offset, direction, ios_base::in) == pos_type(off_type(-1)))
+      this->setstate(ios_base::failbit);
     return *this;
   }
 
   basic_istream(const basic_istream &) = delete;
-
   basic_istream &operator=(const basic_istream &) = delete;
 
+protected:
+  basic_istream(basic_istream &&other) : basic_ios<char_type, traits_type>() {
+    this->move(other); extracted_ = other.extracted_; other.extracted_ = 0;
+  }
+  basic_istream &operator=(basic_istream &&other) { swap(other); return *this; }
+  void swap(basic_istream &other) {
+    basic_ios<char_type, traits_type>::swap(other);
+    streamsize value = extracted_; extracted_ = other.extracted_; other.extracted_ = value;
+  }
+
 private:
+  template <class Value> basic_istream &get_number(Value &value) {
+    ios_base::iostate error = ios_base::goodbit;
+    sentry guard(*this);
+    if (guard) {
+      using facet_type = num_get<char_type, istreambuf_iterator<char_type, traits_type>>;
+#if FTL_HAS_EXCEPTIONS
+      try {
+        use_facet<facet_type>(this->getloc()).get(
+            istreambuf_iterator<char_type, traits_type>(*this),
+            istreambuf_iterator<char_type, traits_type>(), *this, error, value);
+      } catch (...) {
+        exception_ptr caught = current_exception();
+        bool rethrow = (this->exceptions() & ios_base::badbit) != 0;
+        this->__setstate_nothrow(ios_base::badbit);
+        if (rethrow) rethrow_exception(caught);
+      }
+#else
+      use_facet<facet_type>(this->getloc()).get(
+          istreambuf_iterator<char_type, traits_type>(*this),
+          istreambuf_iterator<char_type, traits_type>(), *this, error, value);
+#endif
+    }
+    if (error) this->setstate(error);
+    return *this;
+  }
+  template <class Value> basic_istream &get_bounded(Value &value) {
+    long parsed = 0; get_number(parsed);
+    if (parsed < static_cast<long>(numeric_limits<Value>::min())) {
+      value = numeric_limits<Value>::min(); this->setstate(ios_base::failbit);
+    } else if (parsed > static_cast<long>(numeric_limits<Value>::max())) {
+      value = numeric_limits<Value>::max(); this->setstate(ios_base::failbit);
+    } else value = static_cast<Value>(parsed);
+    return *this;
+  }
   streamsize extracted_ = 0;
 };
+
+template <class Character, class Traits>
+basic_istream<Character, Traits> &operator>>(basic_istream<Character, Traits> &stream,
+                                             Character &character) {
+  typename basic_istream<Character, Traits>::sentry guard(stream);
+  if (guard) {
+    auto value = stream.rdbuf()->sbumpc();
+    if (!Traits::eq_int_type(value, Traits::eof())) character = Traits::to_char_type(value);
+    else stream.setstate(ios_base::eofbit | ios_base::failbit);
+  }
+  return stream;
+}
+template <class Traits>
+basic_istream<char, Traits> &operator>>(basic_istream<char, Traits> &stream, signed char &value) {
+  return stream >> reinterpret_cast<char &>(value);
+}
+template <class Traits>
+basic_istream<char, Traits> &operator>>(basic_istream<char, Traits> &stream, unsigned char &value) {
+  return stream >> reinterpret_cast<char &>(value);
+}
+template <class Character, class Traits, size_t Size>
+basic_istream<Character, Traits> &operator>>(basic_istream<Character, Traits> &stream,
+                                             Character (&destination)[Size]) {
+  typename basic_istream<Character, Traits>::sentry guard(stream);
+  size_t limit = stream.width() > 0 && static_cast<size_t>(stream.width()) < Size
+      ? static_cast<size_t>(stream.width()) : Size;
+  size_t count = 0;
+  if (guard) {
+    const auto &classification = use_facet<ctype<Character>>(stream.getloc());
+    while (count + 1 < limit) {
+      auto value = stream.rdbuf()->sgetc();
+      if (Traits::eq_int_type(value, Traits::eof())) { stream.setstate(ios_base::eofbit); break; }
+      Character character = Traits::to_char_type(value);
+      if (classification.is(ctype_base::space, character)) break;
+      destination[count++] = character; stream.rdbuf()->snextc();
+    }
+  }
+  destination[count] = Character(); stream.width(0);
+  if (count == 0) stream.setstate(ios_base::failbit);
+  return stream;
+}
+template <class Traits, size_t Size>
+basic_istream<char, Traits> &operator>>(basic_istream<char, Traits> &stream,
+                                       signed char (&destination)[Size]) {
+  return stream >> reinterpret_cast<char (&)[Size]>(destination);
+}
+template <class Traits, size_t Size>
+basic_istream<char, Traits> &operator>>(basic_istream<char, Traits> &stream,
+                                       unsigned char (&destination)[Size]) {
+  return stream >> reinterpret_cast<char (&)[Size]>(destination);
+}
+
+template <class Character, class Traits>
+class basic_iostream : public basic_istream<Character, Traits>,
+                       public basic_ostream<Character, Traits> {
+public:
+  using char_type = Character;
+  using traits_type = Traits;
+  using int_type = typename traits_type::int_type;
+  using pos_type = typename traits_type::pos_type;
+  using off_type = typename traits_type::off_type;
+  explicit basic_iostream(basic_streambuf<Character, Traits> *buffer)
+      : basic_istream<Character, Traits>(buffer), basic_ostream<Character, Traits>(buffer) {}
+  virtual ~basic_iostream() = default;
+  basic_iostream(const basic_iostream &) = delete;
+  basic_iostream &operator=(const basic_iostream &) = delete;
+protected:
+  basic_iostream(basic_iostream &&other)
+      : basic_istream<Character, Traits>(static_cast<basic_istream<Character, Traits> &&>(other)),
+        basic_ostream<Character, Traits>(static_cast<basic_ostream<Character, Traits> &&>(other)) {}
+  basic_iostream &operator=(basic_iostream &&other) { swap(other); return *this; }
+  void swap(basic_iostream &other) {
+    basic_istream<Character, Traits>::swap(other);
+  }
+};
+
+template <class Character, class Traits>
+basic_istream<Character, Traits> &ws(basic_istream<Character, Traits> &stream) {
+  typename basic_istream<Character, Traits>::sentry guard(stream, true);
+  if (guard) {
+    const auto &classification = use_facet<ctype<Character>>(stream.getloc());
+    for (;;) {
+      auto value = stream.rdbuf()->sgetc();
+      if (Traits::eq_int_type(value, Traits::eof())) {
+        stream.setstate(ios_base::eofbit); break;
+      }
+      if (!classification.is(ctype_base::space, Traits::to_char_type(value))) break;
+      stream.rdbuf()->snextc();
+    }
+  }
+  return stream;
+}
+
+template <class C, class T, class A>
+basic_istream<C, T> &operator>>(basic_istream<C, T> &stream,
+                                basic_string<C, T, A> &value) {
+  typename basic_istream<C, T>::sentry guard(stream);
+  value.erase();
+  auto maximum = value.max_size();
+  if (stream.width() > 0 && static_cast<decltype(maximum)>(stream.width()) < maximum)
+    maximum = static_cast<decltype(maximum)>(stream.width());
+  if (guard) {
+    const auto &classification = use_facet<ctype<C>>(stream.getloc());
+    while (value.size() < maximum) {
+      auto next = stream.rdbuf()->sgetc();
+      if (T::eq_int_type(next, T::eof())) { stream.setstate(ios_base::eofbit); break; }
+      C character = T::to_char_type(next);
+      if (classification.is(ctype_base::space, character)) break;
+      value.push_back(character); stream.rdbuf()->snextc();
+    }
+  }
+  stream.width(0);
+  if (value.empty()) stream.setstate(ios_base::failbit);
+  return stream;
+}
+
+template <class C, class T, class A>
+basic_istream<C, T> &getline(basic_istream<C, T> &stream,
+                             basic_string<C, T, A> &value, C delimiter) {
+  typename basic_istream<C, T>::sentry guard(stream, true);
+  value.erase(); bool extracted = false, found = false;
+  if (guard) {
+    while (value.size() < value.max_size()) {
+      auto next = stream.rdbuf()->sgetc();
+      if (T::eq_int_type(next, T::eof())) { stream.setstate(ios_base::eofbit); break; }
+      C character = T::to_char_type(next); stream.rdbuf()->snextc(); extracted = true;
+      if (T::eq(character, delimiter)) { found = true; break; }
+      value.push_back(character);
+    }
+  }
+  if (!extracted && !found) stream.setstate(ios_base::failbit);
+  else if (!found && value.size() == value.max_size()) stream.setstate(ios_base::failbit);
+  return stream;
+}
+template <class C, class T, class A>
+basic_istream<C, T> &getline(basic_istream<C, T> &stream,
+                             basic_string<C, T, A> &value) {
+  return getline(stream, value, stream.widen('\n'));
+}
+
+template <class Stream, class Value>
+  requires(!is_lvalue_reference_v<Stream> &&
+           derived_from<remove_reference_t<Stream>, ios_base> &&
+           requires(Stream &stream, Value &&value) {
+             stream >> static_cast<Value &&>(value);
+           })
+Stream &&operator>>(Stream &&stream, Value &&value) {
+  stream >> static_cast<Value &&>(value);
+  return static_cast<Stream &&>(stream);
+}
 
 FTL_END_NAMESPACE
 
