@@ -60,6 +60,14 @@ public:
       : mode_(which), storage_(value.data(), value.size(), allocator) {
     initialize(storage_.data(), storage_.size());
   }
+  template <class OtherAllocator>
+  explicit basic_stringbuf(
+      const basic_string<Character, Traits, OtherAllocator> &value,
+      ios_base::openmode which = ios_base::in | ios_base::out)
+    requires(!is_same_v<OtherAllocator, Allocator>)
+      : mode_(which), storage_(value.data(), value.size()) {
+    initialize(storage_.data(), storage_.size());
+  }
 
   basic_stringbuf(const basic_stringbuf &) = delete;
   basic_stringbuf &operator=(const basic_stringbuf &) = delete;
@@ -73,13 +81,18 @@ public:
     restore(other);
   }
   basic_stringbuf(basic_stringbuf &&other, const Allocator &allocator)
-      : mode_(other.mode_),
-        storage_(static_cast<basic_string<Character, Traits, Allocator> &&>(
-                     other.storage_),
-                 allocator),
+      : basic_streambuf<Character, Traits>(other), mode_(other.mode_),
+        storage_(allocator),
         high_(other.high_) {
-    size_t get = other.current_get(), put = other.current_put();
+    size_t get = current_get(), put = current_put();
+    storage_ = basic_string<Character, Traits, Allocator>(
+        static_cast<basic_string<Character, Traits, Allocator> &&>(
+            other.storage_),
+        allocator);
     reset(get, put);
+    other.setg(nullptr, nullptr, nullptr);
+    other.setp(nullptr, nullptr);
+    other.high_ = 0;
   }
   basic_stringbuf &operator=(basic_stringbuf &&other) {
     if (this != &other) {
@@ -129,7 +142,12 @@ public:
   basic_string<Character, Traits, Allocator> str() && {
     sync_high();
     storage_.resize(high_);
-    return static_cast<basic_string<Character, Traits, Allocator> &&>(storage_);
+    auto allocator = storage_.get_allocator();
+    basic_string<Character, Traits, Allocator> result(
+        static_cast<basic_string<Character, Traits, Allocator> &&>(storage_));
+    storage_ = basic_string<Character, Traits, Allocator>(allocator);
+    initialize(nullptr, 0);
+    return result;
   }
   basic_string_view<Character, Traits> view() const noexcept {
     auto *self = const_cast<basic_stringbuf *>(this);
@@ -141,7 +159,9 @@ public:
     initialize(storage_.data(), storage_.size());
   }
   template <class OtherAllocator>
-  void str(const basic_string<Character, Traits, OtherAllocator> &value) {
+  void str(const basic_string<Character, Traits, OtherAllocator> &value)
+    requires(!is_same_v<OtherAllocator, Allocator>)
+  {
     storage_.assign(value.data(), value.size());
     initialize(storage_.data(), storage_.size());
   }
@@ -319,6 +339,7 @@ public:
   template <class SA>
   explicit basic_istringstream(const basic_string<C, T, SA> &s,
                                ios_base::openmode which = ios_base::in)
+    requires(!is_same_v<SA, A>)
       : basic_istream<C, T>(&sb_), sb_(s, which | ios_base::in, A{}) {}
   basic_istringstream(const basic_istringstream &) = delete;
   basic_istringstream(basic_istringstream &&r)
@@ -351,7 +372,12 @@ public:
   }
   basic_string_view<C, T> view() const noexcept { return sb_.view(); }
   void str(const basic_string<C, T, A> &s) { sb_.str(s); }
-  template <class SA> void str(const basic_string<C, T, SA> &s) { sb_.str(s); }
+  template <class SA>
+  void str(const basic_string<C, T, SA> &s)
+    requires(!is_same_v<SA, A>)
+  {
+    sb_.str(s);
+  }
   void str(basic_string<C, T, A> &&s) {
     sb_.str(static_cast<basic_string<C, T, A> &&>(s));
   }
@@ -391,6 +417,7 @@ public:
   template <class SA>
   explicit basic_ostringstream(const basic_string<C, T, SA> &s,
                                ios_base::openmode w = ios_base::out)
+    requires(!is_same_v<SA, A>)
       : basic_ostream<C, T>(&sb_), sb_(s, w | ios_base::out, A{}) {}
   basic_ostringstream(const basic_ostringstream &) = delete;
   basic_ostringstream(basic_ostringstream &&r)
@@ -423,7 +450,12 @@ public:
   }
   basic_string_view<C, T> view() const noexcept { return sb_.view(); }
   void str(const basic_string<C, T, A> &s) { sb_.str(s); }
-  template <class SA> void str(const basic_string<C, T, SA> &s) { sb_.str(s); }
+  template <class SA>
+  void str(const basic_string<C, T, SA> &s)
+    requires(!is_same_v<SA, A>)
+  {
+    sb_.str(s);
+  }
   void str(basic_string<C, T, A> &&s) {
     sb_.str(static_cast<basic_string<C, T, A> &&>(s));
   }
@@ -468,6 +500,7 @@ public:
   explicit basic_stringstream(const basic_string<C, T, SA> &s,
                               ios_base::openmode w = ios_base::out |
                                                      ios_base::in)
+    requires(!is_same_v<SA, A>)
       : basic_iostream<C, T>(&sb_),
         sb_(s, w | ios_base::out | ios_base::in, A{}) {}
   basic_stringstream(const basic_stringstream &) = delete;
@@ -501,7 +534,12 @@ public:
   }
   basic_string_view<C, T> view() const noexcept { return sb_.view(); }
   void str(const basic_string<C, T, A> &s) { sb_.str(s); }
-  template <class SA> void str(const basic_string<C, T, SA> &s) { sb_.str(s); }
+  template <class SA>
+  void str(const basic_string<C, T, SA> &s)
+    requires(!is_same_v<SA, A>)
+  {
+    sb_.str(s);
+  }
   void str(basic_string<C, T, A> &&s) {
     sb_.str(static_cast<basic_string<C, T, A> &&>(s));
   }

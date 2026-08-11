@@ -76,8 +76,11 @@ public:
   basic_filebuf(basic_filebuf &&other)
       : basic_streambuf<Character, Traits>(
             static_cast<basic_filebuf &&>(other)),
-        file_(other.file_), mode_(other.mode_) {
+        file_(other.file_), mode_(other.mode_), state_(other.state_),
+        last_output_(other.last_output_) {
     other.file_ = nullptr;
+    other.state_ = {};
+    other.last_output_ = false;
     this->setg(nullptr, nullptr, nullptr);
     this->setp(nullptr, nullptr);
   }
@@ -87,7 +90,11 @@ public:
       basic_streambuf<Character, Traits>::operator=(other);
       file_ = other.file_;
       mode_ = other.mode_;
+      state_ = other.state_;
+      last_output_ = other.last_output_;
       other.file_ = nullptr;
+      other.state_ = {};
+      other.last_output_ = false;
       this->setg(nullptr, nullptr, nullptr);
       this->setp(nullptr, nullptr);
     }
@@ -101,6 +108,12 @@ public:
     auto m = mode_;
     mode_ = other.mode_;
     other.mode_ = m;
+    auto state = state_;
+    state_ = other.state_;
+    other.state_ = state;
+    auto output = last_output_;
+    last_output_ = other.last_output_;
+    other.last_output_ = output;
     this->setg(nullptr, nullptr, nullptr);
     other.setg(nullptr, nullptr, nullptr);
   }
@@ -141,6 +154,9 @@ public:
     if (!file_)
       return nullptr;
     bool okay = true;
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
     if (last_output_ && !is_same_v<Character, char>) {
       char bytes[64];
       char *next = bytes;
@@ -165,6 +181,18 @@ public:
     state_ = {};
     last_output_ = false;
     return okay ? this : nullptr;
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      FILE *old = file_;
+      file_ = nullptr;
+      this->setg(nullptr, nullptr, nullptr);
+      this->setp(nullptr, nullptr);
+      state_ = {};
+      last_output_ = false;
+      ::ftl_cstdio_runtime::fclose(old);
+      throw;
+    }
+#endif
   }
 
 protected:

@@ -131,19 +131,18 @@ using ::ftl_stdio_runtime::fflush;
 using ::ftl_stdio_runtime::fwrite;
 } // namespace ftl_cstdio_runtime
 
-#if defined(_WIN32)
-#define stdin (::ftl_stdio_runtime::input_stream())
-#define stdout (::ftl_stdio_runtime::output_stream())
-#define stderr (::ftl_stdio_runtime::error_stream())
-#elif defined(__APPLE__)
-#define stdin (::ftl_stdio_runtime::input_stream())
-#define stdout (::ftl_stdio_runtime::output_stream())
-#define stderr (::ftl_stdio_runtime::error_stream())
-#else
-#define stdin (::ftl_stdio_runtime::input_stream())
-#define stdout (::ftl_stdio_runtime::output_stream())
-#define stderr (::ftl_stdio_runtime::error_stream())
+#ifdef stdin
+#undef stdin
 #endif
+#ifdef stdout
+#undef stdout
+#endif
+#ifdef stderr
+#undef stderr
+#endif
+#define stdin (::ftl_stdio_runtime::input_stream())
+#define stdout (::ftl_stdio_runtime::output_stream())
+#define stderr (::ftl_stdio_runtime::error_stream())
 
 namespace FTL_CSTDIO_NAMESPACE {
 using FILE = ::FILE;
