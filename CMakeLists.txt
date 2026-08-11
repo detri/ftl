@@ -13,7 +13,7 @@ target_include_directories(ftl INTERFACE include)
 target_compile_features(ftl INTERFACE cxx_std_23)
 target_link_libraries(ftl INTERFACE ftl_math_runtime)
 
-add_library(ftl_io_runtime STATIC runtime/native_io.cpp runtime/stdio.cpp
+add_library(ftl_io_runtime STATIC runtime/native_io.cpp runtime/native_filesystem.cpp runtime/stdio.cpp
                                   runtime/stdio_format.cpp)
 target_include_directories(ftl_io_runtime PRIVATE include)
 target_compile_features(ftl_io_runtime PRIVATE cxx_std_23)

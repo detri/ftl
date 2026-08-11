@@ -184,6 +184,15 @@ dependency order, not hundreds of individual overloads.
 | `<streambuf>`          | Stage 7.3         |
 | `<istream>`            | Stage 7.3         |
 | `<ostream>`            | Stage 7.3         |
+| `<cstdio>`             | Stage 7.5         |
+| `<fstream>`            | Stage 7.5         |
+| `<iomanip>`            | Stage 7.5         |
+| `<iostream>`           | Stage 7.5         |
+| `<sstream>`            | Stage 7.5         |
+| `<spanstream>`         | Stage 7.5         |
+| `<strstream>`          | Stage 7.5         |
+| `<syncstream>`         | Stage 7.5         |
+| `<filesystem>`         | Stage 7.6         |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -213,7 +222,7 @@ remain required when C++23 still specifies them; they are not silently dropped.
 | Area                     | Absent headers                                                                                                                                                     |
 |--------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Text/encoding            | `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                                            |
-| I/O/formatting/files     | `<cstdio>`, `<fstream>`, `<iomanip>`, `<iostream>`, `<sstream>`, `<spanstream>`, `<strstream>`, `<syncstream>`, `<filesystem>`                                    |
+| I/O/formatting/files     | —                                                                                                                                                                  |
 
 Freestanding C compatibility also requires deciding and documenting how the
 corresponding `.h` spellings are supplied. That is part of the relevant
@@ -704,7 +713,9 @@ Take these closures in order:
 4. Return to `<chrono>` for stream insertion and `from_stream`.
 5. `<iostream>` + `<fstream>` + `<sstream>` + `<spanstream>` +
    `<syncstream>` + `<iomanip>` + `<cstdio>` + deprecated `<strstream>`.
-6. `<filesystem>`.
+6. **Complete:** `<filesystem>`, backed by native Win32/POSIX operations. Paths
+   use UTF-8 and `/` as their single public syntax on every platform; the
+   Windows runtime alone converts them to UTF-16 and `\\` at the OS boundary.
 7. `<regex>`.
 
 Stage 7 deliberately separates the dependency-independent locale core from
