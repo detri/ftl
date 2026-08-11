@@ -1,9 +1,13 @@
 #ifdef FTL_REPLACE_STL
 #include <complex>
+#include <istream>
+#include <ostream>
 #include <type_traits>
 namespace tested = std;
 #else
 #include <ftl/complex>
+#include <ftl/istream>
+#include <ftl/ostream>
 #include <ftl/type_traits>
 namespace tested = ftl;
 #endif

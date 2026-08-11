@@ -167,6 +167,9 @@ class basic_iostream;
 
 template <class T> class allocator;
 
+template <class Character, class Traits, class Allocator>
+class basic_string;
+
 template <class Character, class Traits = char_traits<Character>,
           class Allocator = allocator<Character>>
 class basic_stringbuf;

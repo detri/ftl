@@ -5,16 +5,14 @@
 
 #ifdef FTL_REPLACE_STL
 #include <cmath>
-#include <istream>
-#include <ostream>
+#include <iosfwd>
 #include <type_traits>
 #include <detail/complex_runtime>
 #define FTL_COMPLEX_BEGIN namespace std {
 #define FTL_COMPLEX_END }
 #else
 #include <ftl/cmath>
-#include <ftl/istream>
-#include <ftl/ostream>
+#include <ftl/iosfwd>
 #include <ftl/type_traits>
 #include <ftl/detail/complex_runtime>
 #define FTL_COMPLEX_BEGIN namespace ftl {
@@ -382,13 +380,13 @@ basic_istream<Character, Traits> &operator>>(basic_istream<Character, Traits> &i
     return input;
   }
   if (character != input.widen(',')) {
-    input.setstate(ios_base::failbit);
+    input.setstate(input.failbit);
     return input;
   }
   if (input >> imaginary >> character && character == input.widen(')'))
     value = complex<Value>(real, imaginary);
   else
-    input.setstate(ios_base::failbit);
+    input.setstate(input.failbit);
   return input;
 }
 
@@ -397,7 +395,7 @@ basic_ostream<Character, Traits> &operator<<(basic_ostream<Character, Traits> &o
                                              const complex<Value> &value) {
   class buffer_type : public basic_streambuf<Character, Traits> {
   public:
-    basic_string<Character, Traits> value;
+    basic_string<Character, Traits, allocator<Character>> value;
   protected:
     typename Traits::int_type overflow(typename Traits::int_type character) override {
       if (Traits::eq_int_type(character, Traits::eof())) return Traits::not_eof(character);
@@ -416,7 +414,8 @@ basic_ostream<Character, Traits> &operator<<(basic_ostream<Character, Traits> &o
   return output << buffer.value;
 }
 
-namespace literals::complex_literals {
+inline namespace literals {
+inline namespace complex_literals {
 constexpr complex<double> operator""i(long double value) {
   return {0.0, static_cast<double>(value)};
 }
@@ -435,10 +434,8 @@ constexpr complex<long double> operator""il(long double value) {
 constexpr complex<long double> operator""il(unsigned long long value) {
   return {0.0L, static_cast<long double>(value)};
 }
-} // namespace literals::complex_literals
-
-namespace complex_literals = literals::complex_literals;
-namespace literals { using namespace complex_literals; }
+} // namespace complex_literals
+} // namespace literals
 
 FTL_COMPLEX_END
 
