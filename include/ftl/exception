@@ -64,7 +64,6 @@ extern "C" {
 void* __cxa_current_primary_exception() noexcept;
 void __cxa_increment_exception_refcount(void*) noexcept;
 void __cxa_decrement_exception_refcount(void*) noexcept;
-[[noreturn]] void __cxa_rethrow_primary_exception(void*);
 unsigned int __cxa_uncaught_exceptions() noexcept;
 }
 #endif
@@ -242,7 +241,6 @@ private:
 #if defined(__APPLE__)
     explicit exception_ptr(void* value) noexcept : object(value) {}
     friend exception_ptr current_exception() noexcept;
-    friend void rethrow_exception(exception_ptr);
 #endif
     void* object{};
 };
@@ -311,12 +309,7 @@ inline void swap(exception_ptr& left, exception_ptr& right) noexcept {
 }
 #endif
 
-#if defined(FTL_REPLACE_STL) && defined(__APPLE__) && !defined(_MSC_VER)
-[[noreturn]] inline void rethrow_exception(exception_ptr value) {
-    if (value.object) ::__cxa_rethrow_primary_exception(value.object);
-    terminate();
-}
-#elif !defined(FTL_REPLACE_STL) || defined(_MSC_VER)
+#if !defined(FTL_REPLACE_STL) || defined(_MSC_VER)
 [[noreturn]] inline void rethrow_exception(exception_ptr value) {
 #if defined(_MSC_VER)
     __ExceptionPtrRethrow(&value);

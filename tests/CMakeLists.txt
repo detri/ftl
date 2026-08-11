@@ -87,10 +87,10 @@ function(add_ftl_test header)
 
             if (APPLE)
                 #
-                # Keep the Itanium C++ ABI runtime for exceptions/RTTI
-                # without linking libc++ itself.
+                # Apple's public exception_ptr rethrow entry point lives in
+                # libc++, while object ownership and RTTI live in libc++abi.
                 #
-                target_link_libraries(${target} PRIVATE c++abi)
+                target_link_libraries(${target} PRIVATE c++ c++abi)
             else ()
                 # GCC-family ABI runtime without libstdc++.
                 target_link_libraries(${target} PRIVATE supc++)
