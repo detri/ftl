@@ -5,6 +5,11 @@ project(ftl VERSION ${FTL_VERSION} LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
+# tzdb tool
+if(PROJECT_IS_TOP_LEVEL)
+    add_subdirectory(tools/buildtzdb)
+endif()
+
 # FTL
 
 add_library(ftl INTERFACE)
