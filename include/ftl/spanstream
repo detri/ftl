@@ -31,7 +31,7 @@ public:
 
   basic_spanbuf() : basic_spanbuf(ios_base::in | ios_base::out) {}
   explicit basic_spanbuf(ios_base::openmode which) : mode_(which) { reset({}); }
-  explicit basic_spanbuf(span<Character> value,
+  explicit basic_spanbuf(FTL_SPANSTREAM_NAMESPACE::span<Character> value,
                          ios_base::openmode which = ios_base::in |
                                                     ios_base::out)
       : mode_(which) {
