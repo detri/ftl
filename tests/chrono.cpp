@@ -1,13 +1,24 @@
 #ifdef FTL_REPLACE_STL
 #include <chrono>
+#include <format>
 namespace tested = std;
 #else
 #include <ftl/chrono>
+#include <ftl/format>
 namespace tested = ftl;
 #endif
 
 using namespace tested::chrono;
 using namespace tested::chrono::literals;
+
+static_assert(tested::formattable<seconds, char>);
+
+static_assert(tested::formattable<milliseconds, char>);
+
+static_assert(tested::formattable<seconds, wchar_t>);
+
+static_assert(tested::formattable<hh_mm_ss<milliseconds>, char>);
+
 static_assert(duration_cast<seconds>(1500ms).count() == 1);
 static_assert(is_clock_v<system_clock> && is_clock_v<steady_clock>);
 static_assert(!is_clock_v<int>);
@@ -48,7 +59,213 @@ static_assert(clock_cast<tai_clock>(sys_seconds{seconds{0}})
 static_assert(clock_cast<system_clock>(gps_seconds{seconds{0}})
                   .time_since_epoch() == seconds{315964800});
 
+bool equal_text(const char *first, const char *second) {
+  tested::size_t index = 0;
+
+  for (;;) {
+    if (first[index] != second[index])
+      return false;
+
+    if (first[index] == '\0')
+      return true;
+
+    ++index;
+  }
+}
+
+bool equal_text(const wchar_t *first, const wchar_t *second) {
+  tested::size_t index = 0;
+
+  for (;;) {
+    if (first[index] != second[index])
+      return false;
+
+    if (first[index] == L'\0')
+      return true;
+
+    ++index;
+  }
+}
+
+bool chrono_duration_formatting_works() {
+  const auto default_seconds = tested::format("{}", seconds{42});
+
+  if (!equal_text(default_seconds.c_str(), "42s")) {
+    return false;
+  }
+
+  const auto default_millis = tested::format("{}", milliseconds{1500});
+
+  if (!equal_text(default_millis.c_str(), "1500ms")) {
+    return false;
+  }
+
+  const auto count = tested::format("{:%Q}", milliseconds{1500});
+
+  if (!equal_text(count.c_str(), "1500")) {
+    return false;
+  }
+
+  const auto suffix = tested::format("{:%q}", milliseconds{1500});
+
+  if (!equal_text(suffix.c_str(), "ms")) {
+    return false;
+  }
+
+  const auto time = tested::format("{:%T}", 3h + 2min + 1s);
+
+  if (!equal_text(time.c_str(), "03:02:01")) {
+    return false;
+  }
+
+  const auto fields =
+      tested::format("{:%H hours %M minutes %S seconds}", 3h + 2min + 1s);
+
+  if (!equal_text(fields.c_str(), "03 hours 02 minutes 01 seconds")) {
+    return false;
+  }
+
+  const auto fractional = tested::format("{:%T}", 1h + 2min + 3004ms);
+
+  if (!equal_text(fractional.c_str(), "01:02:03.004")) {
+    return false;
+  }
+
+  const auto negative = tested::format("{:%T}", -10000s);
+
+  if (!equal_text(negative.c_str(), "-02:46:40")) {
+    return false;
+  }
+
+  /*
+   * The sign appears immediately before
+   * replacement of the first conversion
+   * specifier, not necessarily at the
+   * beginning of the chrono-spec.
+   */
+  const auto negative_literal =
+      tested::format("{:%M minutes, %H hours, %S seconds}", -10000s);
+
+  if (!equal_text(negative_literal.c_str(),
+                  "-46 minutes, 02 hours, 40 seconds")) {
+    return false;
+  }
+
+  const auto padded = tested::format("{:=>8}", milliseconds{42});
+
+  if (!equal_text(padded.c_str(), "====42ms")) {
+    return false;
+  }
+
+  const auto wide = tested::format(L"{:%T}", 1h + 2min + 3s);
+
+  if (!equal_text(wide.c_str(), L"01:02:03")) {
+    return false;
+  }
+
+  using custom_duration = duration<int, tested::ratio<2, 3>>;
+
+  const auto custom_suffix = tested::format("{}", custom_duration{5});
+
+  if (!equal_text(custom_suffix.c_str(), "5[2/3]s")) {
+    return false;
+  }
+
+  return true;
+}
+
+bool chrono_hms_formatting_works() {
+  const hh_mm_ss value{4083007ms};
+
+  const auto default_value = tested::format("{}", value);
+
+  if (!equal_text(default_value.c_str(), "01:08:03.007")) {
+    return false;
+  }
+
+  const auto explicit_value = tested::format("{:%H:%M:%S}", value);
+
+  if (!equal_text(explicit_value.c_str(), "01:08:03.007")) {
+    return false;
+  }
+
+  const hh_mm_ss negative{-4083007ms};
+
+  const auto negative_value = tested::format("{:%T}", negative);
+
+  if (!equal_text(negative_value.c_str(), "-01:08:03.007")) {
+    return false;
+  }
+
+  return true;
+}
+
+bool chrono_format_errors_work() {
+  seconds value{42};
+
+  auto store = tested::make_format_args(value);
+
+  try {
+    /*
+     * A duration has no calendar year.
+     */
+    (void)tested::vformat("{:%Y}", tested::format_args(store));
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  try {
+    /*
+     * Precision is not valid for an
+     * integral duration representation.
+     */
+    (void)tested::vformat("{:.2%Q}", tested::format_args(store));
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  hh_mm_ss hms{1s};
+
+  auto hms_store = tested::make_format_args(hms);
+
+  try {
+    /*
+     * %q is duration-only.
+     */
+    (void)tested::vformat("{:%q}", tested::format_args(hms_store));
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  return true;
+}
+
 bool ftl_test() {
-  return system_clock::now().time_since_epoch() > seconds{0} &&
-         steady_clock::now().time_since_epoch() > nanoseconds{0};
+  if (!(system_clock::now().time_since_epoch() > seconds{0})) {
+    return false;
+  }
+
+  if (!(steady_clock::now().time_since_epoch() > nanoseconds{0})) {
+    return false;
+  }
+
+  if (!chrono_duration_formatting_works())
+    return false;
+
+  if (!chrono_hms_formatting_works())
+    return false;
+
+  if (!chrono_format_errors_work())
+    return false;
+
+  return true;
 }

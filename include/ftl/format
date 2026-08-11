@@ -6,6 +6,7 @@
 #ifdef FTL_REPLACE_STL
 #include <array>
 #include <charconv>
+#include <chrono>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -25,6 +26,7 @@
 #else
 #include <ftl/array>
 #include <ftl/charconv>
+#include <ftl/chrono>
 #include <ftl/concepts>
 #include <ftl/cstddef>
 #include <ftl/cstdint>
@@ -2149,7 +2151,7 @@ public:
 
     template <class T>
     explicit handle(T &value) noexcept
-        : ptr_(addressof(value)), format_(&format_value<T>) {}
+        : ptr_(FTL_FORMAT_NS::addressof(value)), format_(&format_value<T>) {}
 
     friend class basic_format_arg;
 
@@ -2430,7 +2432,8 @@ public:
   template <class T> using formatter_type = formatter<T, charT>;
 
   buffered_format_context(ParentContext &parent, basic_string<charT> &output)
-      : parent_(addressof(parent)), output_(back_inserter(output)) {}
+      : parent_(FTL_FORMAT_NS::addressof(parent)),
+        output_(back_inserter(output)) {}
 
   decltype(auto) arg(size_t id) const noexcept { return parent_->arg(id); }
 
@@ -3520,6 +3523,822 @@ size_t formatted_size(const locale &loc, wformat_string<Args...> fmt,
 
   return vformat(loc, fmt.get(), wformat_args(store)).size();
 }
+
+namespace detail {
+
+template <class charT> struct chrono_format_spec {
+  standard_format_spec<charT> outer{};
+  basic_string_view<charT> chrono_specs{};
+};
+
+template <class charT>
+[[nodiscard]]
+constexpr bool chrono_conversion_type(charT value) noexcept {
+  switch (static_cast<char>(value)) {
+  case 'a':
+  case 'A':
+  case 'b':
+  case 'B':
+  case 'c':
+  case 'C':
+  case 'd':
+  case 'D':
+  case 'e':
+  case 'F':
+  case 'g':
+  case 'G':
+  case 'h':
+  case 'H':
+  case 'I':
+  case 'j':
+  case 'm':
+  case 'M':
+  case 'n':
+  case 'p':
+  case 'q':
+  case 'Q':
+  case 'r':
+  case 'R':
+  case 'S':
+  case 't':
+  case 'T':
+  case 'u':
+  case 'U':
+  case 'V':
+  case 'w':
+  case 'W':
+  case 'x':
+  case 'X':
+  case 'y':
+  case 'Y':
+  case 'z':
+  case 'Z':
+  case '%':
+    return true;
+
+  default:
+    return false;
+  }
+}
+
+template <class charT>
+constexpr typename basic_format_parse_context<charT>::iterator
+chrono_parse_format_spec(basic_format_parse_context<charT> &context,
+                         chrono_format_spec<charT> &spec,
+                         bool allow_precision) {
+  auto current = context.begin();
+
+  const auto end = context.end();
+
+  current = format_parse_fill_and_align(current, end, spec.outer);
+
+  if (current != end && format_is_digit(*current)) {
+    size_t width = 0;
+
+    while (current != end && format_is_digit(*current)) {
+      const size_t digit =
+          static_cast<size_t>(*current - format_widen<charT>('0'));
+
+      if (width > (numeric_limits<size_t>::max() - digit) / size_t{10}) {
+        throw_format_error("chrono format width is too large");
+      }
+
+      width = width * size_t{10} + digit;
+
+      ++current;
+    }
+
+    if (width == 0) {
+      throw_format_error("chrono format width must be positive");
+    }
+
+    spec.outer.width = width;
+  } else if (current != end && *current == format_widen<charT>('{')) {
+    ++current;
+
+    spec.outer.dynamic_width = true;
+
+    spec.outer.width_arg_id = parse_dynamic_format_argument(
+        current, end, context, "invalid dynamic chrono format width",
+        "unterminated dynamic chrono format width");
+  }
+
+  if (current != end && *current == format_widen<charT>('.')) {
+    if (!allow_precision) {
+      throw_format_error("precision is not valid for this chrono type");
+    }
+
+    ++current;
+
+    spec.outer.has_precision = true;
+
+    if (current != end && format_is_digit(*current)) {
+      size_t precision = 0;
+
+      while (current != end && format_is_digit(*current)) {
+        const size_t digit =
+            static_cast<size_t>(*current - format_widen<charT>('0'));
+
+        if (precision > (numeric_limits<size_t>::max() - digit) / size_t{10}) {
+          throw_format_error("chrono format precision is too large");
+        }
+
+        precision = precision * size_t{10} + digit;
+
+        ++current;
+      }
+
+      spec.outer.precision = precision;
+    } else if (current != end && *current == format_widen<charT>('{')) {
+      ++current;
+
+      spec.outer.dynamic_precision = true;
+
+      spec.outer.precision_arg_id = parse_dynamic_format_argument(
+          current, end, context, "invalid dynamic chrono format precision",
+          "unterminated dynamic chrono format precision");
+    } else {
+      throw_format_error("invalid chrono format precision");
+    }
+  }
+
+  if (current != end && *current == format_widen<charT>('L')) {
+    spec.outer.localized = true;
+    ++current;
+  }
+
+  const auto chrono_begin = current;
+
+  if (current != end && *current != format_widen<charT>('}')) {
+    /*
+     * chrono-specs starts with a
+     * conversion-spec, not a literal.
+     */
+    if (*current != format_widen<charT>('%')) {
+      throw_format_error(
+          "chrono format specification must begin with a conversion specifier");
+    }
+
+    while (current != end && *current != format_widen<charT>('}')) {
+      if (*current == format_widen<charT>('{')) {
+        throw_format_error("invalid brace in chrono format specification");
+      }
+
+      if (*current != format_widen<charT>('%')) {
+        ++current;
+        continue;
+      }
+
+      ++current;
+
+      if (current == end || *current == format_widen<charT>('}')) {
+        throw_format_error("incomplete chrono conversion specifier");
+      }
+
+      if (*current == format_widen<charT>('E') ||
+          *current == format_widen<charT>('O')) {
+        ++current;
+
+        if (current == end || *current == format_widen<charT>('}')) {
+          throw_format_error("incomplete modified chrono conversion specifier");
+        }
+      }
+
+      if (!chrono_conversion_type(*current)) {
+        throw_format_error("invalid chrono conversion specifier");
+      }
+
+      ++current;
+    }
+  }
+
+  spec.chrono_specs = basic_string_view<charT>(
+      chrono_begin, static_cast<size_t>(current - chrono_begin));
+
+  return current;
+}
+
+template <class charT, class Integer>
+void chrono_append_integer(basic_string<charT> &output, Integer value,
+                           size_t minimum_digits = 0,
+                           charT padding = format_widen<charT>('0')) {
+  char buffer[numeric_limits<make_unsigned_t<Integer>>::digits10 + 4];
+
+  const auto converted = to_chars(buffer, buffer + sizeof(buffer), value);
+
+  if (converted.ec != errc{}) {
+    throw_format_error("chrono integer conversion failed");
+  }
+
+  const char *digits = buffer;
+
+  size_t count = static_cast<size_t>(converted.ptr - buffer);
+
+  bool negative = false;
+
+  if (count != 0 && *digits == '-') {
+    negative = true;
+    ++digits;
+    --count;
+  }
+
+  if (negative) {
+    output.push_back(format_widen<charT>('-'));
+  }
+
+  while (count < minimum_digits) {
+    output.push_back(padding);
+
+    --minimum_digits;
+  }
+
+  for (size_t index = 0; index < count; ++index) {
+    output.push_back(format_widen<charT>(digits[index]));
+  }
+}
+
+template <class charT>
+void chrono_append_ascii(basic_string<charT> &output, const char *value) {
+  while (*value != '\0') {
+    output.push_back(format_widen<charT>(*value++));
+  }
+}
+
+template <class charT, class Ratio>
+void chrono_append_duration_suffix(basic_string<charT> &output) {
+  using period = typename Ratio::type;
+
+  if constexpr (is_same_v<period, atto>) {
+    chrono_append_ascii(output, "as");
+  } else if constexpr (is_same_v<period, femto>) {
+    chrono_append_ascii(output, "fs");
+  } else if constexpr (is_same_v<period, pico>) {
+    chrono_append_ascii(output, "ps");
+  } else if constexpr (is_same_v<period, nano>) {
+    chrono_append_ascii(output, "ns");
+  } else if constexpr (is_same_v<period, micro>) {
+    /*
+     * "us" is explicitly one of the
+     * implementation-defined choices.
+     */
+    chrono_append_ascii(output, "us");
+  } else if constexpr (is_same_v<period, milli>) {
+    chrono_append_ascii(output, "ms");
+  } else if constexpr (is_same_v<period, centi>) {
+    chrono_append_ascii(output, "cs");
+  } else if constexpr (is_same_v<period, deci>) {
+    chrono_append_ascii(output, "ds");
+  } else if constexpr (is_same_v<period, ratio<1>>) {
+    chrono_append_ascii(output, "s");
+  } else if constexpr (is_same_v<period, deca>) {
+    chrono_append_ascii(output, "das");
+  } else if constexpr (is_same_v<period, hecto>) {
+    chrono_append_ascii(output, "hs");
+  } else if constexpr (is_same_v<period, kilo>) {
+    chrono_append_ascii(output, "ks");
+  } else if constexpr (is_same_v<period, mega>) {
+    chrono_append_ascii(output, "Ms");
+  } else if constexpr (is_same_v<period, giga>) {
+    chrono_append_ascii(output, "Gs");
+  } else if constexpr (is_same_v<period, tera>) {
+    chrono_append_ascii(output, "Ts");
+  } else if constexpr (is_same_v<period, peta>) {
+    chrono_append_ascii(output, "Ps");
+  } else if constexpr (is_same_v<period, exa>) {
+    chrono_append_ascii(output, "Es");
+  } else if constexpr (is_same_v<period, ratio<60>>) {
+    chrono_append_ascii(output, "min");
+  } else if constexpr (is_same_v<period, ratio<3600>>) {
+    chrono_append_ascii(output, "h");
+  } else if constexpr (is_same_v<period, ratio<86400>>) {
+    chrono_append_ascii(output, "d");
+  } else {
+    output.push_back(format_widen<charT>('['));
+
+    chrono_append_integer(output, period::num);
+
+    if constexpr (period::den != 1) {
+      output.push_back(format_widen<charT>('/'));
+
+      chrono_append_integer(output, period::den);
+    }
+
+    output.push_back(format_widen<charT>(']'));
+
+    output.push_back(format_widen<charT>('s'));
+  }
+}
+
+template <class charT, class FormatContext, class Integer>
+void chrono_append_formatted_integer(basic_string<charT> &output,
+                                     FormatContext &context, Integer value,
+                                     bool localized) {
+  standard_format_spec<charT> number_spec{};
+
+  number_spec.localized = localized;
+
+  buffered_format_context<FormatContext, charT> buffered(context, output);
+
+  auto next =
+      format_integer_value<Integer, charT>(value, buffered, number_spec);
+
+  buffered.advance_to(move(next));
+}
+
+template <class charT, class FormatContext, class Float>
+void chrono_append_formatted_float(
+    basic_string<charT> &output, FormatContext &context, Float value,
+    const chrono_format_spec<charT> &chrono_spec) {
+  standard_format_spec<charT> number_spec{};
+
+  number_spec.localized = chrono_spec.outer.localized;
+
+  number_spec.presentation = 'g';
+
+  if (chrono_spec.outer.has_precision) {
+    number_spec.has_precision = true;
+
+    number_spec.dynamic_precision = chrono_spec.outer.dynamic_precision;
+
+    number_spec.precision = chrono_spec.outer.precision;
+
+    number_spec.precision_arg_id = chrono_spec.outer.precision_arg_id;
+  }
+
+  buffered_format_context<FormatContext, charT> buffered(context, output);
+
+  size_t conversion_precision = 0;
+
+  string converted = format_convert_floating<Float>(
+      value, buffered, number_spec, conversion_precision);
+
+  const bool special = format_floating_is_special(
+      basic_string_view<char>(converted.data(), converted.size()));
+
+  basic_string<charT> rendered;
+
+  if (number_spec.localized) {
+    rendered = format_localized_floating_text<charT>(
+        buffered, basic_string_view<char>(converted.data(), converted.size()));
+  } else {
+    rendered.reserve(converted.size());
+
+    for (char character : converted) {
+      rendered.push_back(format_widen<charT>(character));
+    }
+  }
+
+  auto next = format_floating_text(
+      basic_string_view<charT>(rendered.data(), rendered.size()), special,
+      buffered, number_spec);
+
+  buffered.advance_to(move(next));
+}
+
+template <class charT, class FormatContext, class Rep>
+void chrono_append_count(basic_string<charT> &output, FormatContext &context,
+                         Rep value, const chrono_format_spec<charT> &spec) {
+  if constexpr (is_floating_point_v<Rep>) {
+    chrono_append_formatted_float(output, context, value, spec);
+  } else {
+    chrono_append_formatted_integer(output, context, value,
+                                    spec.outer.localized);
+  }
+}
+
+template <class Rep>
+[[nodiscard]]
+constexpr bool chrono_negative_count(Rep value) {
+  if constexpr (numeric_limits<Rep>::is_signed) {
+    return value < Rep{0};
+  } else {
+    return false;
+  }
+}
+
+template <class Rep>
+[[nodiscard]]
+constexpr auto chrono_magnitude_count(Rep value) {
+  if constexpr (is_integral_v<Rep> && is_signed_v<Rep>) {
+    using unsigned_type = make_unsigned_t<Rep>;
+
+    const unsigned_type converted = static_cast<unsigned_type>(value);
+
+    return value < 0 ? unsigned_type{0} - converted : converted;
+  } else {
+    return value < Rep{0} ? -value : value;
+  }
+}
+
+template <class Duration> struct chrono_split_duration {
+private:
+  using duration_type = Duration;
+
+  using period = typename duration_type::period;
+
+  using split_duration = conditional_t<(period::num <= period::den),
+                                       duration_type, chrono::seconds>;
+
+  using hms_type = chrono::hh_mm_ss<split_duration>;
+
+  hms_type value_;
+
+public:
+  explicit constexpr chrono_split_duration(duration_type value)
+      : value_([&] {
+          if constexpr (period::num <= period::den) {
+            return split_duration(value);
+          } else {
+            return chrono::duration_cast<split_duration>(value);
+          }
+        }()) {}
+
+  [[nodiscard]]
+  constexpr long long hours() const {
+    return static_cast<long long>(value_.hours().count());
+  }
+
+  [[nodiscard]]
+  constexpr long long minutes() const {
+    return static_cast<long long>(value_.minutes().count());
+  }
+
+  [[nodiscard]]
+  constexpr long long seconds() const {
+    return static_cast<long long>(value_.seconds().count());
+  }
+
+  [[nodiscard]]
+  constexpr auto subseconds() const {
+    return value_.subseconds();
+  }
+
+  inline static constexpr unsigned fractional_width =
+      hms_type::fractional_width;
+};
+
+template <class charT, class FormatContext, class Split>
+void chrono_append_seconds(basic_string<charT> &output, FormatContext &context,
+                           const Split &split, bool localized) {
+  chrono_append_integer(output, split.seconds(), 2);
+
+  if constexpr (Split::fractional_width != 0) {
+    output.push_back(
+        localized ? use_facet<numpunct<charT>>(context.locale()).decimal_point()
+                  : format_widen<charT>('.'));
+
+    const auto subseconds = split.subseconds().count();
+
+    chrono_append_integer(output, subseconds, Split::fractional_width);
+  }
+}
+
+template <class charT, class FormatContext, class Split>
+void chrono_append_time_of_day(basic_string<charT> &output,
+                               FormatContext &context, const Split &split,
+                               bool localized, char conversion) {
+  const long long hour24 = split.hours() % 24;
+
+  switch (conversion) {
+  case 'H':
+    chrono_append_integer(output, hour24, 2);
+    break;
+
+  case 'I': {
+    long long hour12 = hour24 % 12;
+
+    if (hour12 == 0)
+      hour12 = 12;
+
+    chrono_append_integer(output, hour12, 2);
+
+    break;
+  }
+
+  case 'M':
+    chrono_append_integer(output, split.minutes(), 2);
+    break;
+
+  case 'S':
+    chrono_append_seconds(output, context, split, localized);
+    break;
+
+  case 'p':
+    /*
+     * This is the C-locale spelling.
+     * Locale-name integration is the
+     * next chrono slice.
+     */
+    chrono_append_ascii(output, hour24 < 12 ? "AM" : "PM");
+    break;
+
+  case 'R':
+    chrono_append_integer(output, hour24, 2);
+
+    output.push_back(format_widen<charT>(':'));
+
+    chrono_append_integer(output, split.minutes(), 2);
+    break;
+
+  case 'T':
+    chrono_append_integer(output, hour24, 2);
+
+    output.push_back(format_widen<charT>(':'));
+
+    chrono_append_integer(output, split.minutes(), 2);
+
+    output.push_back(format_widen<charT>(':'));
+
+    chrono_append_seconds(output, context, split, localized);
+    break;
+
+  case 'r': {
+    long long hour12 = hour24 % 12;
+
+    if (hour12 == 0)
+      hour12 = 12;
+
+    chrono_append_integer(output, hour12, 2);
+
+    output.push_back(format_widen<charT>(':'));
+
+    chrono_append_integer(output, split.minutes(), 2);
+
+    output.push_back(format_widen<charT>(':'));
+
+    chrono_append_seconds(output, context, split, localized);
+
+    output.push_back(format_widen<charT>(' '));
+
+    chrono_append_ascii(output, hour24 < 12 ? "AM" : "PM");
+
+    break;
+  }
+
+  default:
+    throw_format_error(
+        "chrono conversion does not refer to time-of-day information");
+  }
+}
+
+template <class charT, class Handler>
+void chrono_expand_specs(basic_string<charT> &output,
+                         basic_string_view<charT> specs, bool negative,
+                         Handler &&handler) {
+  bool first_conversion = true;
+
+  size_t index = 0;
+
+  while (index < specs.size()) {
+    if (specs[index] != format_widen<charT>('%')) {
+      output.push_back(specs[index++]);
+
+      continue;
+    }
+
+    ++index;
+
+    char modifier = '\0';
+
+    if (index < specs.size() && (specs[index] == format_widen<charT>('E') ||
+                                 specs[index] == format_widen<charT>('O'))) {
+      modifier = static_cast<char>(specs[index]);
+
+      ++index;
+    }
+
+    if (index >= specs.size()) {
+      throw_format_error("incomplete chrono conversion specifier");
+    }
+
+    const char conversion = static_cast<char>(specs[index++]);
+
+    if (negative && first_conversion) {
+      output.push_back(format_widen<charT>('-'));
+    }
+
+    first_conversion = false;
+
+    if (conversion == '%') {
+      output.push_back(format_widen<charT>('%'));
+
+      continue;
+    }
+
+    if (conversion == 'n') {
+      output.push_back(format_widen<charT>('\n'));
+
+      continue;
+    }
+
+    if (conversion == 't') {
+      output.push_back(format_widen<charT>('\t'));
+
+      continue;
+    }
+
+    handler(output, modifier, conversion);
+  }
+}
+
+template <class Rep, class Period, class charT>
+class chrono_duration_formatter {
+public:
+  constexpr chrono_duration_formatter() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    return chrono_parse_format_spec(context, spec_, is_floating_point_v<Rep>);
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator
+  format(const chrono::duration<Rep, Period> &value,
+         FormatContext &context) const {
+    using duration_type = chrono::duration<Rep, Period>;
+
+    const bool negative = chrono_negative_count(value.count());
+
+    const auto magnitude = chrono_magnitude_count(value.count());
+
+    basic_string<charT> content;
+
+    if (spec_.chrono_specs.empty()) {
+      if (negative) {
+        content.push_back(format_widen<charT>('-'));
+      }
+
+      chrono_append_count(content, context, magnitude, spec_);
+
+      chrono_append_duration_suffix<charT, Period>(content);
+    } else {
+      /*
+       * Components are computed from the
+       * absolute duration. The sign is emitted
+       * immediately before the replacement of
+       * the first conversion specifier.
+       */
+      duration_type positive = negative ? duration_type(-value.count()) : value;
+
+      chrono_split_duration<duration_type> split(positive);
+
+      chrono_expand_specs(
+          content, spec_.chrono_specs, negative,
+          [&](basic_string<charT> &destination, char modifier,
+              char conversion) {
+            /*
+             * In the classic locale E/O
+             * alternatives have the same
+             * representation. Locale-specific
+             * alternatives are added in the
+             * calendar/localization slice.
+             */
+            (void)modifier;
+
+            switch (conversion) {
+            case 'H':
+            case 'I':
+            case 'M':
+            case 'S':
+            case 'p':
+            case 'R':
+            case 'T':
+            case 'r':
+              chrono_append_time_of_day(destination, context, split,
+                                        spec_.outer.localized, conversion);
+
+              return;
+
+            case 'j':
+              chrono_append_integer(destination, split.hours() / 24);
+
+              return;
+
+            case 'Q':
+              chrono_append_count(destination, context, magnitude, spec_);
+
+              return;
+
+            case 'q':
+              chrono_append_duration_suffix<charT, Period>(destination);
+
+              return;
+
+            default:
+              throw_format_error("chrono conversion requires information not "
+                                 "present in duration");
+            }
+          });
+    }
+
+    return format_padded_text(
+        basic_string_view<charT>(content.data(), content.size()), context,
+        spec_.outer, format_alignment::left);
+  }
+
+private:
+  chrono_format_spec<charT> spec_{};
+};
+
+template <class Duration> struct chrono_hms_view {
+  const chrono::hh_mm_ss<Duration> *value;
+
+  [[nodiscard]]
+  constexpr long long hours() const {
+    return static_cast<long long>(value->hours().count());
+  }
+
+  [[nodiscard]]
+  constexpr long long minutes() const {
+    return static_cast<long long>(value->minutes().count());
+  }
+
+  [[nodiscard]]
+  constexpr long long seconds() const {
+    return static_cast<long long>(value->seconds().count());
+  }
+
+  [[nodiscard]]
+  constexpr auto subseconds() const {
+    return value->subseconds();
+  }
+
+  inline static constexpr unsigned fractional_width =
+      chrono::hh_mm_ss<Duration>::fractional_width;
+};
+
+template <class Duration, class charT> class chrono_hms_formatter {
+public:
+  constexpr chrono_hms_formatter() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    return chrono_parse_format_spec(context, spec_, false);
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator
+  format(const chrono::hh_mm_ss<Duration> &value,
+         FormatContext &context) const {
+    basic_string<charT> content;
+
+    const bool negative = value.is_negative();
+
+    const auto render = [&](basic_string<charT> &destination, char,
+                            char conversion) {
+      const chrono_hms_view<Duration> split{FTL_FORMAT_NS::addressof(value)};
+
+      switch (conversion) {
+      case 'H':
+      case 'I':
+      case 'M':
+      case 'S':
+      case 'p':
+      case 'R':
+      case 'T':
+      case 'r':
+        chrono_append_time_of_day(destination, context, split,
+                                  spec_.outer.localized, conversion);
+
+        return;
+
+      default:
+        throw_format_error(
+            "chrono conversion requires information not present in hh_mm_ss");
+      }
+    };
+
+    if (spec_.chrono_specs.empty()) {
+      if (negative) {
+        content.push_back(format_widen<charT>('-'));
+      }
+
+      const chrono_hms_view<Duration> split{addressof(value)};
+
+      chrono_append_time_of_day(content, context, split, spec_.outer.localized,
+                                'T');
+    } else {
+      chrono_expand_specs(content, spec_.chrono_specs, negative, render);
+    }
+
+    return format_padded_text(
+        basic_string_view<charT>(content.data(), content.size()), context,
+        spec_.outer, format_alignment::left);
+  }
+
+private:
+  chrono_format_spec<charT> spec_{};
+};
+
+} // namespace detail
+
+template <class Rep, class Period, class charT>
+struct formatter<chrono::duration<Rep, Period>, charT>
+    : detail::chrono_duration_formatter<Rep, Period, charT> {};
+
+template <class Rep, class Period, class charT>
+struct formatter<chrono::hh_mm_ss<chrono::duration<Rep, Period>>, charT>
+    : detail::chrono_hms_formatter<chrono::duration<Rep, Period>, charT> {};
 
 FTL_END_NAMESPACE
 
