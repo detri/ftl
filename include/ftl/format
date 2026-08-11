@@ -293,6 +293,9 @@ format_parse_fill_and_align(
   if (current == end)
     return current;
 
+  if (*current == format_widen<charT>('}'))
+    return current;
+
   const auto decoded = ::ftl_unicode_format::decode<charT>(current, end);
 
   if (decoded.valid) {

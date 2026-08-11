@@ -811,4 +811,10 @@
 #define __cpp_lib_incomplete_container_elements 201505L
 #endif
 
+#if !defined(__cpp_lib_print) || \
+    __cpp_lib_print < 202207L
+#undef __cpp_lib_print
+#define __cpp_lib_print 202207L
+#endif
+
 #endif

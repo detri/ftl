@@ -55,7 +55,7 @@ function(add_ftl_test header)
 
         if (mode STREQUAL replace AND
                 header MATCHES
-                "^(string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|locale(_.*)?|codecvt|format|chrono)$")
+                "^(string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|locale(_.*)?|codecvt|format|chrono|print)$")
             set(ftl_standalone_replace TRUE)
         endif ()
 
@@ -569,6 +569,7 @@ foreach (header IN ITEMS
         locale_messages
         codecvt
         format
+        print
 )
     add_ftl_test(${header})
 endforeach ()
