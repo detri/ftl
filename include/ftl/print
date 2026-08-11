@@ -5,6 +5,7 @@
 
 #ifdef FTL_REPLACE_STL
 #include <__c_file_types.hpp>
+#include <detail/stdio_runtime.hpp>
 #include <cerrno>
 #include <format>
 #include <string>
@@ -12,6 +13,7 @@
 #include <utility>
 #else
 #include <ftl/__c_file_types.hpp>
+#include <ftl/detail/stdio_runtime.hpp>
 #include <ftl/cerrno>
 #include <ftl/format>
 #include <ftl/string>
@@ -36,16 +38,12 @@ extern "C" void __cdecl __fastfail(unsigned int);
 namespace ftl_print_runtime {
 
 using size_type = decltype(sizeof(0));
+using ::ftl_stdio_runtime::fflush;
+using ::ftl_stdio_runtime::fwrite;
 
 extern "C" {
 
-size_type fwrite(const void *, size_type, size_type, FILE *);
-
-int fflush(FILE *);
-
 #if defined(_WIN32)
-
-FILE *__cdecl __acrt_iob_func(unsigned);
 
 int __cdecl _fileno(FILE *);
 int __cdecl _isatty(int);
@@ -63,28 +61,12 @@ __declspec(dllimport) int __stdcall GetConsoleMode(void *, unsigned long *);
 __declspec(dllimport) int __stdcall
 WriteConsoleW(void *, const void *, unsigned long, unsigned long *, void *);
 
-#elif defined(__APPLE__)
-
-extern FILE *__stdoutp;
-
-#else
-
-extern FILE *stdout;
-
 #endif
 
 } // extern "C"
 
 [[nodiscard]]
-inline FILE *stdout_stream() noexcept {
-#if defined(_WIN32)
-  return __acrt_iob_func(1);
-#elif defined(__APPLE__)
-  return __stdoutp;
-#else
-  return stdout;
-#endif
-}
+inline FILE *stdout_stream() noexcept { return ::ftl_stdio_runtime::output_stream(); }
 
 #if defined(_WIN32)
 

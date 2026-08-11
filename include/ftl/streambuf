@@ -87,7 +87,7 @@ protected:
         egptr_(other.egptr_), pbase_(other.pbase_), pptr_(other.pptr_),
         epptr_(other.epptr_) {}
   basic_streambuf &operator=(const basic_streambuf &other) {
-    eback_ = other.eback_; gptr_ = other.gptr_;
+    locale_ = other.locale_; eback_ = other.eback_; gptr_ = other.gptr_;
     egptr_ = other.egptr_; pbase_ = other.pbase_; pptr_ = other.pptr_;
     epptr_ = other.epptr_; return *this;
   }

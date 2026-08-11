@@ -1,0 +1,527 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_SSTREAM_HEADER
+#define FTL_SSTREAM_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <istream>
+#include <string>
+#include <string_view>
+#else
+#include <ftl/istream>
+#include <ftl/string>
+#include <ftl/string_view>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+template <class Character, class Traits, class Allocator>
+class basic_stringbuf : public basic_streambuf<Character, Traits> {
+public:
+  using char_type = Character;
+  using traits_type = Traits;
+  using int_type = typename Traits::int_type;
+  using pos_type = typename Traits::pos_type;
+  using off_type = typename Traits::off_type;
+  using allocator_type = Allocator;
+
+  basic_stringbuf() : basic_stringbuf(ios_base::in | ios_base::out) {}
+  explicit basic_stringbuf(ios_base::openmode which)
+      : mode_(which), storage_(Allocator{}) {
+    initialize({}, 0);
+  }
+  explicit basic_stringbuf(const Allocator &allocator)
+      : basic_stringbuf(ios_base::in | ios_base::out, allocator) {}
+  explicit basic_stringbuf(
+      const basic_string<Character, Traits, Allocator> &value,
+      ios_base::openmode which = ios_base::in | ios_base::out)
+      : mode_(which), storage_(value) {
+    initialize(storage_.data(), storage_.size());
+  }
+  basic_stringbuf(ios_base::openmode which, const Allocator &allocator)
+      : mode_(which), storage_(allocator) {
+    initialize({}, 0);
+  }
+  explicit basic_stringbuf(basic_string<Character, Traits, Allocator> &&value,
+                           ios_base::openmode which = ios_base::in |
+                                                      ios_base::out)
+      : mode_(which),
+        storage_(
+            static_cast<basic_string<Character, Traits, Allocator> &&>(value)) {
+    initialize(storage_.data(), storage_.size());
+  }
+  template <class OtherAllocator>
+  basic_stringbuf(const basic_string<Character, Traits, OtherAllocator> &value,
+                  const Allocator &allocator)
+      : basic_stringbuf(value, ios_base::in | ios_base::out, allocator) {}
+  template <class OtherAllocator>
+  basic_stringbuf(const basic_string<Character, Traits, OtherAllocator> &value,
+                  ios_base::openmode which, const Allocator &allocator)
+      : mode_(which), storage_(value.data(), value.size(), allocator) {
+    initialize(storage_.data(), storage_.size());
+  }
+
+  basic_stringbuf(const basic_stringbuf &) = delete;
+  basic_stringbuf &operator=(const basic_stringbuf &) = delete;
+  basic_stringbuf(basic_stringbuf &&other)
+      : basic_streambuf<Character, Traits>(
+            static_cast<basic_stringbuf &&>(other)),
+        mode_(other.mode_),
+        storage_(static_cast<basic_string<Character, Traits, Allocator> &&>(
+            other.storage_)),
+        high_(other.high_) {
+    restore(other);
+  }
+  basic_stringbuf(basic_stringbuf &&other, const Allocator &allocator)
+      : mode_(other.mode_),
+        storage_(static_cast<basic_string<Character, Traits, Allocator> &&>(
+                     other.storage_),
+                 allocator),
+        high_(other.high_) {
+    size_t get = other.current_get(), put = other.current_put();
+    reset(get, put);
+  }
+  basic_stringbuf &operator=(basic_stringbuf &&other) {
+    if (this != &other) {
+      sync_high();
+      basic_streambuf<Character, Traits>::operator=(other);
+      mode_ = other.mode_;
+      storage_ = static_cast<basic_string<Character, Traits, Allocator> &&>(
+          other.storage_);
+      high_ = other.high_;
+      restore(other);
+    }
+    return *this;
+  }
+  void swap(basic_stringbuf &other) noexcept(
+      allocator_traits<Allocator>::propagate_on_container_swap::value ||
+      allocator_traits<Allocator>::is_always_equal::value) {
+    sync_high();
+    other.sync_high();
+    basic_streambuf<Character, Traits>::swap(other);
+    auto mode = mode_;
+    mode_ = other.mode_;
+    other.mode_ = mode;
+    storage_.swap(other.storage_);
+    auto high = high_;
+    high_ = other.high_;
+    other.high_ = high;
+    reset(current_get(), current_put());
+    other.reset(other.current_get(), other.current_put());
+  }
+
+  allocator_type get_allocator() const noexcept {
+    return storage_.get_allocator();
+  }
+  basic_string<Character, Traits, Allocator> str() const & {
+    auto *self = const_cast<basic_stringbuf *>(this);
+    self->sync_high();
+    return basic_string<Character, Traits, Allocator>(storage_.data(), high_,
+                                                      storage_.get_allocator());
+  }
+  template <class OtherAllocator>
+  basic_string<Character, Traits, OtherAllocator>
+  str(const OtherAllocator &allocator) const {
+    auto *self = const_cast<basic_stringbuf *>(this);
+    self->sync_high();
+    return {storage_.data(), high_, allocator};
+  }
+  basic_string<Character, Traits, Allocator> str() && {
+    sync_high();
+    storage_.resize(high_);
+    return static_cast<basic_string<Character, Traits, Allocator> &&>(storage_);
+  }
+  basic_string_view<Character, Traits> view() const noexcept {
+    auto *self = const_cast<basic_stringbuf *>(this);
+    self->sync_high();
+    return {storage_.data(), high_};
+  }
+  void str(const basic_string<Character, Traits, Allocator> &value) {
+    storage_ = value;
+    initialize(storage_.data(), storage_.size());
+  }
+  template <class OtherAllocator>
+  void str(const basic_string<Character, Traits, OtherAllocator> &value) {
+    storage_.assign(value.data(), value.size());
+    initialize(storage_.data(), storage_.size());
+  }
+  void str(basic_string<Character, Traits, Allocator> &&value) {
+    storage_ =
+        static_cast<basic_string<Character, Traits, Allocator> &&>(value);
+    initialize(storage_.data(), storage_.size());
+  }
+
+protected:
+  basic_streambuf<Character, Traits> *setbuf(Character *data,
+                                             streamsize count) override {
+    storage_.assign(data, static_cast<size_t>(count));
+    initialize(storage_.data(), storage_.size());
+    return this;
+  }
+  int_type underflow() override {
+    sync_high();
+    return this->gptr() && this->gptr() < this->egptr()
+               ? Traits::to_int_type(*this->gptr())
+               : Traits::eof();
+  }
+  int_type pbackfail(int_type value = Traits::eof()) override {
+    if (!(mode_ & ios_base::in) || !this->gptr() ||
+        this->gptr() == this->eback())
+      return Traits::eof();
+    Character *previous = this->gptr() - 1;
+    if (!Traits::eq_int_type(value, Traits::eof())) {
+      if (!(mode_ & ios_base::out) &&
+          !Traits::eq(*previous, Traits::to_char_type(value)))
+        return Traits::eof();
+      *previous = Traits::to_char_type(value);
+    }
+    this->gbump(-1);
+    return Traits::not_eof(value);
+  }
+  int_type overflow(int_type value = Traits::eof()) override {
+    if (!(mode_ & ios_base::out))
+      return Traits::eof();
+    if (Traits::eq_int_type(value, Traits::eof()))
+      return Traits::not_eof(value);
+    size_t get = current_get(), put = current_put();
+    sync_high();
+    if (put == storage_.size())
+      grow(put + 1);
+    storage_[put++] = Traits::to_char_type(value);
+    if (put > high_)
+      high_ = put;
+    reset(get, put);
+    return value;
+  }
+  pos_type seekoff(off_type offset, ios_base::seekdir direction,
+                   ios_base::openmode which = ios_base::in |
+                                              ios_base::out) override {
+    sync_high();
+    if ((which & ios_base::in) && !(mode_ & ios_base::in))
+      return pos_type(off_type(-1));
+    if ((which & ios_base::out) && !(mode_ & ios_base::out))
+      return pos_type(off_type(-1));
+    if (direction == ios_base::cur && (which & ios_base::in) &&
+        (which & ios_base::out))
+      return pos_type(off_type(-1));
+    off_type base =
+        direction == ios_base::beg ? 0
+        : direction == ios_base::end
+            ? static_cast<off_type>(high_)
+            : static_cast<off_type>((which & ios_base::in) ? current_get()
+                                                           : current_put());
+    off_type next = base + offset;
+    if (next < 0 || static_cast<size_t>(next) > high_)
+      return pos_type(off_type(-1));
+    size_t get = current_get(), put = current_put();
+    if (which & ios_base::in)
+      get = static_cast<size_t>(next);
+    if (which & ios_base::out)
+      put = static_cast<size_t>(next);
+    reset(get, put);
+    return pos_type(next);
+  }
+  pos_type seekpos(pos_type position,
+                   ios_base::openmode which = ios_base::in |
+                                              ios_base::out) override {
+    return seekoff(static_cast<off_type>(position), ios_base::beg, which);
+  }
+
+private:
+  size_t current_get() const {
+    return this->gptr() ? static_cast<size_t>(this->gptr() - this->eback()) : 0;
+  }
+  size_t current_put() const {
+    return this->pptr() ? static_cast<size_t>(this->pptr() - this->pbase()) : 0;
+  }
+  void sync_high() {
+    if ((mode_ & ios_base::out) && current_put() > high_)
+      high_ = current_put();
+    if (mode_ & ios_base::in)
+      this->setg(storage_.data(), storage_.data() + current_get(),
+                 storage_.data() + high_);
+  }
+  void grow(size_t minimum) {
+    size_t next = storage_.size() ? storage_.size() * 2 : 32;
+    if (next < minimum)
+      next = minimum;
+    storage_.resize(next);
+  }
+  void initialize(Character *, size_t size) {
+    high_ = size;
+    if ((mode_ & ios_base::out) && storage_.size() == 0)
+      storage_.resize(32);
+    size_t put = (mode_ & (ios_base::ate | ios_base::app)) ? high_ : 0;
+    reset(0, put);
+  }
+  void reset(size_t get, size_t put) {
+    Character *data = storage_.data();
+    if (mode_ & ios_base::app)
+      put = high_;
+    if (mode_ & ios_base::in)
+      this->setg(data, data + (get > high_ ? high_ : get), data + high_);
+    else
+      this->setg(nullptr, nullptr, nullptr);
+    if (mode_ & ios_base::out) {
+      this->setp(data, data + storage_.size());
+      this->pbump(static_cast<int>(put));
+    } else
+      this->setp(nullptr, nullptr);
+  }
+  void restore(basic_stringbuf &other) {
+    size_t get = other.current_get(), put = other.current_put();
+    reset(get, put);
+    other.setg(nullptr, nullptr, nullptr);
+    other.setp(nullptr, nullptr);
+    other.high_ = 0;
+  }
+
+  ios_base::openmode mode_;
+  basic_string<Character, Traits, Allocator> storage_;
+  size_t high_{};
+};
+
+template <class C, class T, class A>
+void swap(
+    basic_stringbuf<C, T, A> &left,
+    basic_stringbuf<C, T, A> &right) noexcept(noexcept(left.swap(right))) {
+  left.swap(right);
+}
+
+template <class C, class T, class A>
+class basic_istringstream : public basic_istream<C, T> {
+public:
+  using char_type = C;
+  using int_type = typename T::int_type;
+  using pos_type = typename T::pos_type;
+  using off_type = typename T::off_type;
+  using traits_type = T;
+  using allocator_type = A;
+  basic_istringstream() : basic_istringstream(ios_base::in) {}
+  explicit basic_istringstream(ios_base::openmode which)
+      : basic_istream<C, T>(&sb_), sb_(which | ios_base::in) {}
+  explicit basic_istringstream(const basic_string<C, T, A> &s,
+                               ios_base::openmode which = ios_base::in)
+      : basic_istream<C, T>(&sb_), sb_(s, which | ios_base::in) {}
+  basic_istringstream(ios_base::openmode which, const A &a)
+      : basic_istream<C, T>(&sb_), sb_(which | ios_base::in, a) {}
+  explicit basic_istringstream(basic_string<C, T, A> &&s,
+                               ios_base::openmode which = ios_base::in)
+      : basic_istream<C, T>(&sb_),
+        sb_(static_cast<basic_string<C, T, A> &&>(s), which | ios_base::in) {}
+  template <class SA>
+  basic_istringstream(const basic_string<C, T, SA> &s, const A &a)
+      : basic_istringstream(s, ios_base::in, a) {}
+  template <class SA>
+  basic_istringstream(const basic_string<C, T, SA> &s, ios_base::openmode which,
+                      const A &a)
+      : basic_istream<C, T>(&sb_), sb_(s, which | ios_base::in, a) {}
+  template <class SA>
+  explicit basic_istringstream(const basic_string<C, T, SA> &s,
+                               ios_base::openmode which = ios_base::in)
+      : basic_istream<C, T>(&sb_), sb_(s, which | ios_base::in, A{}) {}
+  basic_istringstream(const basic_istringstream &) = delete;
+  basic_istringstream(basic_istringstream &&r)
+      : basic_istream<C, T>(static_cast<basic_istream<C, T> &&>(r)),
+        sb_(static_cast<basic_stringbuf<C, T, A> &&>(r.sb_)) {
+    this->set_rdbuf(&sb_);
+  }
+  basic_istringstream &operator=(const basic_istringstream &) = delete;
+  basic_istringstream &operator=(basic_istringstream &&r) {
+    basic_istream<C, T>::operator=(static_cast<basic_istream<C, T> &&>(r));
+    sb_ = static_cast<basic_stringbuf<C, T, A> &&>(r.sb_);
+    this->set_rdbuf(&sb_);
+    return *this;
+  }
+  void swap(basic_istringstream &r) {
+    basic_istream<C, T>::swap(r);
+    sb_.swap(r.sb_);
+    this->set_rdbuf(&sb_);
+    r.set_rdbuf(&r.sb_);
+  }
+  basic_stringbuf<C, T, A> *rdbuf() const {
+    return const_cast<basic_stringbuf<C, T, A> *>(&sb_);
+  }
+  basic_string<C, T, A> str() const & { return sb_.str(); }
+  template <class SA> basic_string<C, T, SA> str(const SA &a) const {
+    return sb_.str(a);
+  }
+  basic_string<C, T, A> str() && {
+    return static_cast<basic_stringbuf<C, T, A> &&>(sb_).str();
+  }
+  basic_string_view<C, T> view() const noexcept { return sb_.view(); }
+  void str(const basic_string<C, T, A> &s) { sb_.str(s); }
+  template <class SA> void str(const basic_string<C, T, SA> &s) { sb_.str(s); }
+  void str(basic_string<C, T, A> &&s) {
+    sb_.str(static_cast<basic_string<C, T, A> &&>(s));
+  }
+
+private:
+  basic_stringbuf<C, T, A> sb_;
+};
+
+template <class C, class T, class A>
+class basic_ostringstream : public basic_ostream<C, T> {
+public:
+  using char_type = C;
+  using int_type = typename T::int_type;
+  using pos_type = typename T::pos_type;
+  using off_type = typename T::off_type;
+  using traits_type = T;
+  using allocator_type = A;
+  basic_ostringstream() : basic_ostringstream(ios_base::out) {}
+  explicit basic_ostringstream(ios_base::openmode w)
+      : basic_ostream<C, T>(&sb_), sb_(w | ios_base::out) {}
+  explicit basic_ostringstream(const basic_string<C, T, A> &s,
+                               ios_base::openmode w = ios_base::out)
+      : basic_ostream<C, T>(&sb_), sb_(s, w | ios_base::out) {}
+  basic_ostringstream(ios_base::openmode w, const A &a)
+      : basic_ostream<C, T>(&sb_), sb_(w | ios_base::out, a) {}
+  explicit basic_ostringstream(basic_string<C, T, A> &&s,
+                               ios_base::openmode w = ios_base::out)
+      : basic_ostream<C, T>(&sb_),
+        sb_(static_cast<basic_string<C, T, A> &&>(s), w | ios_base::out) {}
+  template <class SA>
+  basic_ostringstream(const basic_string<C, T, SA> &s, const A &a)
+      : basic_ostringstream(s, ios_base::out, a) {}
+  template <class SA>
+  basic_ostringstream(const basic_string<C, T, SA> &s, ios_base::openmode w,
+                      const A &a)
+      : basic_ostream<C, T>(&sb_), sb_(s, w | ios_base::out, a) {}
+  template <class SA>
+  explicit basic_ostringstream(const basic_string<C, T, SA> &s,
+                               ios_base::openmode w = ios_base::out)
+      : basic_ostream<C, T>(&sb_), sb_(s, w | ios_base::out, A{}) {}
+  basic_ostringstream(const basic_ostringstream &) = delete;
+  basic_ostringstream(basic_ostringstream &&r)
+      : basic_ostream<C, T>(static_cast<basic_ostream<C, T> &&>(r)),
+        sb_(static_cast<basic_stringbuf<C, T, A> &&>(r.sb_)) {
+    this->set_rdbuf(&sb_);
+  }
+  basic_ostringstream &operator=(const basic_ostringstream &) = delete;
+  basic_ostringstream &operator=(basic_ostringstream &&r) {
+    basic_ostream<C, T>::operator=(static_cast<basic_ostream<C, T> &&>(r));
+    sb_ = static_cast<basic_stringbuf<C, T, A> &&>(r.sb_);
+    this->set_rdbuf(&sb_);
+    return *this;
+  }
+  void swap(basic_ostringstream &r) {
+    basic_ostream<C, T>::swap(r);
+    sb_.swap(r.sb_);
+    this->set_rdbuf(&sb_);
+    r.set_rdbuf(&r.sb_);
+  }
+  basic_stringbuf<C, T, A> *rdbuf() const {
+    return const_cast<basic_stringbuf<C, T, A> *>(&sb_);
+  }
+  basic_string<C, T, A> str() const & { return sb_.str(); }
+  template <class SA> basic_string<C, T, SA> str(const SA &a) const {
+    return sb_.str(a);
+  }
+  basic_string<C, T, A> str() && {
+    return static_cast<basic_stringbuf<C, T, A> &&>(sb_).str();
+  }
+  basic_string_view<C, T> view() const noexcept { return sb_.view(); }
+  void str(const basic_string<C, T, A> &s) { sb_.str(s); }
+  template <class SA> void str(const basic_string<C, T, SA> &s) { sb_.str(s); }
+  void str(basic_string<C, T, A> &&s) {
+    sb_.str(static_cast<basic_string<C, T, A> &&>(s));
+  }
+
+private:
+  basic_stringbuf<C, T, A> sb_;
+};
+
+template <class C, class T, class A>
+class basic_stringstream : public basic_iostream<C, T> {
+public:
+  using char_type = C;
+  using int_type = typename T::int_type;
+  using pos_type = typename T::pos_type;
+  using off_type = typename T::off_type;
+  using traits_type = T;
+  using allocator_type = A;
+  basic_stringstream() : basic_stringstream(ios_base::out | ios_base::in) {}
+  explicit basic_stringstream(ios_base::openmode w)
+      : basic_iostream<C, T>(&sb_), sb_(w | ios_base::out | ios_base::in) {}
+  explicit basic_stringstream(const basic_string<C, T, A> &s,
+                              ios_base::openmode w = ios_base::out |
+                                                     ios_base::in)
+      : basic_iostream<C, T>(&sb_), sb_(s, w | ios_base::out | ios_base::in) {}
+  basic_stringstream(ios_base::openmode w, const A &a)
+      : basic_iostream<C, T>(&sb_), sb_(w | ios_base::out | ios_base::in, a) {}
+  explicit basic_stringstream(basic_string<C, T, A> &&s,
+                              ios_base::openmode w = ios_base::out |
+                                                     ios_base::in)
+      : basic_iostream<C, T>(&sb_),
+        sb_(static_cast<basic_string<C, T, A> &&>(s),
+            w | ios_base::out | ios_base::in) {}
+  template <class SA>
+  basic_stringstream(const basic_string<C, T, SA> &s, const A &a)
+      : basic_stringstream(s, ios_base::out | ios_base::in, a) {}
+  template <class SA>
+  basic_stringstream(const basic_string<C, T, SA> &s, ios_base::openmode w,
+                     const A &a)
+      : basic_iostream<C, T>(&sb_),
+        sb_(s, w | ios_base::out | ios_base::in, a) {}
+  template <class SA>
+  explicit basic_stringstream(const basic_string<C, T, SA> &s,
+                              ios_base::openmode w = ios_base::out |
+                                                     ios_base::in)
+      : basic_iostream<C, T>(&sb_),
+        sb_(s, w | ios_base::out | ios_base::in, A{}) {}
+  basic_stringstream(const basic_stringstream &) = delete;
+  basic_stringstream(basic_stringstream &&r)
+      : basic_iostream<C, T>(static_cast<basic_iostream<C, T> &&>(r)),
+        sb_(static_cast<basic_stringbuf<C, T, A> &&>(r.sb_)) {
+    this->set_rdbuf(&sb_);
+  }
+  basic_stringstream &operator=(const basic_stringstream &) = delete;
+  basic_stringstream &operator=(basic_stringstream &&r) {
+    basic_iostream<C, T>::operator=(static_cast<basic_iostream<C, T> &&>(r));
+    sb_ = static_cast<basic_stringbuf<C, T, A> &&>(r.sb_);
+    this->set_rdbuf(&sb_);
+    return *this;
+  }
+  void swap(basic_stringstream &r) {
+    basic_iostream<C, T>::swap(r);
+    sb_.swap(r.sb_);
+    this->set_rdbuf(&sb_);
+    r.set_rdbuf(&r.sb_);
+  }
+  basic_stringbuf<C, T, A> *rdbuf() const {
+    return const_cast<basic_stringbuf<C, T, A> *>(&sb_);
+  }
+  basic_string<C, T, A> str() const & { return sb_.str(); }
+  template <class SA> basic_string<C, T, SA> str(const SA &a) const {
+    return sb_.str(a);
+  }
+  basic_string<C, T, A> str() && {
+    return static_cast<basic_stringbuf<C, T, A> &&>(sb_).str();
+  }
+  basic_string_view<C, T> view() const noexcept { return sb_.view(); }
+  void str(const basic_string<C, T, A> &s) { sb_.str(s); }
+  template <class SA> void str(const basic_string<C, T, SA> &s) { sb_.str(s); }
+  void str(basic_string<C, T, A> &&s) {
+    sb_.str(static_cast<basic_string<C, T, A> &&>(s));
+  }
+
+private:
+  basic_stringbuf<C, T, A> sb_;
+};
+
+template <class C, class T, class A>
+void swap(basic_istringstream<C, T, A> &l, basic_istringstream<C, T, A> &r) {
+  l.swap(r);
+}
+template <class C, class T, class A>
+void swap(basic_ostringstream<C, T, A> &l, basic_ostringstream<C, T, A> &r) {
+  l.swap(r);
+}
+template <class C, class T, class A>
+void swap(basic_stringstream<C, T, A> &l, basic_stringstream<C, T, A> &r) {
+  l.swap(r);
+}
+
+FTL_END_NAMESPACE
+#endif

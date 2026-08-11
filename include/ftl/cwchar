@@ -7,6 +7,7 @@
 #include <__c_file_types.hpp>
 #include <__c_time_types.hpp>
 #include <__c_wide_types.hpp>
+#include <detail/stdio_runtime.hpp>
 #include <cerrno>
 #include <cstdarg>
 #include <cstdint>
@@ -17,6 +18,7 @@
 #include <ftl/__c_file_types.hpp>
 #include <ftl/__c_time_types.hpp>
 #include <ftl/__c_wide_types.hpp>
+#include <ftl/detail/stdio_runtime.hpp>
 #include <ftl/cerrno>
 #include <ftl/cstdarg>
 #include <ftl/cstdint>
@@ -55,8 +57,6 @@ namespace ftl_cwchar_runtime {
 extern "C" {
 
 #if defined(_WIN32)
-
-FILE *__cdecl __acrt_iob_func(unsigned index);
 
 int __cdecl __stdio_common_vfwprintf(
     unsigned long long options,
@@ -256,7 +256,7 @@ inline int runtime_vwprintf(
 #if defined(_WIN32)
   return ::ftl_cwchar_runtime::__stdio_common_vfwprintf(
       0,
-      ::ftl_cwchar_runtime::__acrt_iob_func(1),
+      ::ftl_stdio_runtime::output_stream(),
       format,
       nullptr,
       arguments);
@@ -273,7 +273,7 @@ inline int runtime_vwscanf(
 #if defined(_WIN32)
   return ::ftl_cwchar_runtime::__stdio_common_vfwscanf(
       0,
-      ::ftl_cwchar_runtime::__acrt_iob_func(0),
+      ::ftl_stdio_runtime::input_stream(),
       format,
       nullptr,
       arguments);

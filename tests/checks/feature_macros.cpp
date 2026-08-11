@@ -158,6 +158,10 @@
 #error Stage 7.3 stream-owned feature macros are incomplete
 #endif
 
+#if __cpp_lib_spanstream < 202106L || __cpp_lib_syncbuf < 201803L
+#error Stage 7.5 stream feature macros are incomplete
+#endif
+
 #if __cpp_lib_semaphore < 201907L || \
     __cpp_lib_latch < 201907L || \
     __cpp_lib_barrier < 202302L

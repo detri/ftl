@@ -140,8 +140,8 @@ public:
 
   class Init {
   public:
-    Init() = default;
-    ~Init() = default;
+    Init();
+    ~Init();
   };
 
   fmtflags flags() const { return flags_; }

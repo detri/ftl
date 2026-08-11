@@ -1,0 +1,534 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_FSTREAM_HEADER
+#define FTL_FSTREAM_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <cstdio>
+#include <istream>
+#include <string>
+#include <type_traits>
+#include <vector>
+#else
+#include <ftl/cstdio>
+#include <ftl/istream>
+#include <ftl/string>
+#include <ftl/type_traits>
+#include <ftl/vector>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+namespace filesystem {
+class path;
+}
+
+namespace detail {
+inline const char *file_open_mode(ios_base::openmode mode, char (&text)[5]) {
+  bool in = mode & ios_base::in, out = mode & ios_base::out,
+       app = mode & ios_base::app, trunc = mode & ios_base::trunc,
+       binary = mode & ios_base::binary, exclusive = mode & ios_base::noreplace;
+  if (app)
+    out = true;
+  if (trunc && !out)
+    return nullptr;
+  if (!in && !out)
+    return nullptr;
+  size_t n = 0;
+  if (in && out) {
+    if (app) {
+      text[n++] = 'a';
+      text[n++] = '+';
+    } else if (trunc) {
+      text[n++] = 'w';
+      text[n++] = '+';
+    } else {
+      text[n++] = 'r';
+      text[n++] = '+';
+    }
+  } else if (out) {
+    text[n++] = app ? 'a' : 'w';
+  } else
+    text[n++] = 'r';
+  if (binary)
+    text[n++] = 'b';
+  if (exclusive) {
+    if (!out || (!trunc && !app))
+      return nullptr;
+    text[n++] = 'x';
+  }
+  text[n] = 0;
+  return text;
+}
+} // namespace detail
+
+template <class Character, class Traits>
+class basic_filebuf : public basic_streambuf<Character, Traits> {
+public:
+  using char_type = Character;
+  using traits_type = Traits;
+  using int_type = typename Traits::int_type;
+  using pos_type = typename Traits::pos_type;
+  using off_type = typename Traits::off_type;
+  basic_filebuf() = default;
+  basic_filebuf(const basic_filebuf &) = delete;
+  basic_filebuf &operator=(const basic_filebuf &) = delete;
+  basic_filebuf(basic_filebuf &&other)
+      : basic_streambuf<Character, Traits>(
+            static_cast<basic_filebuf &&>(other)),
+        file_(other.file_), mode_(other.mode_) {
+    other.file_ = nullptr;
+    this->setg(nullptr, nullptr, nullptr);
+    this->setp(nullptr, nullptr);
+  }
+  basic_filebuf &operator=(basic_filebuf &&other) {
+    if (this != &other) {
+      close();
+      basic_streambuf<Character, Traits>::operator=(other);
+      file_ = other.file_;
+      mode_ = other.mode_;
+      other.file_ = nullptr;
+      this->setg(nullptr, nullptr, nullptr);
+      this->setp(nullptr, nullptr);
+    }
+    return *this;
+  }
+  void swap(basic_filebuf &other) {
+    basic_streambuf<Character, Traits>::swap(other);
+    auto f = file_;
+    file_ = other.file_;
+    other.file_ = f;
+    auto m = mode_;
+    mode_ = other.mode_;
+    other.mode_ = m;
+    this->setg(nullptr, nullptr, nullptr);
+    other.setg(nullptr, nullptr, nullptr);
+  }
+  virtual ~basic_filebuf() {
+#if FTL_HAS_EXCEPTIONS
+    try {
+      close();
+    } catch (...) {
+    }
+#else
+    close();
+#endif
+  }
+  bool is_open() const { return file_ != nullptr; }
+  basic_filebuf *open(const char *name, ios_base::openmode mode) {
+    if (file_)
+      return nullptr;
+    char text[5];
+    const char *selected = detail::file_open_mode(mode, text);
+    if (!selected)
+      return nullptr;
+    file_ = ::ftl_cstdio_runtime::fopen(name, selected);
+    if (!file_)
+      return nullptr;
+    mode_ = mode;
+    if (mode & ios_base::ate &&
+        ::ftl_cstdio_runtime::fseek(file_, 0, SEEK_END) != 0) {
+      close();
+      return nullptr;
+    }
+    return this;
+  }
+  basic_filebuf *open(const basic_string<char> &name, ios_base::openmode mode) {
+    return open(name.c_str(), mode);
+  }
+  basic_filebuf *open(const filesystem::path &name, ios_base::openmode mode);
+  basic_filebuf *close() {
+    if (!file_)
+      return nullptr;
+    bool okay = true;
+    if (last_output_ && !is_same_v<Character, char>) {
+      char bytes[64];
+      char *next = bytes;
+      const auto &conversion =
+          use_facet<codecvt<Character, char, typename Traits::state_type>>(
+              this->getloc());
+      auto result = conversion.unshift(state_, bytes, bytes + 64, next);
+      if (result == codecvt_base::error ||
+          ::ftl_cstdio_runtime::fwrite(
+              bytes, 1, static_cast<size_t>(next - bytes), file_) !=
+              static_cast<size_t>(next - bytes))
+        okay = false;
+    }
+    if (sync() != 0)
+      okay = false;
+    FILE *old = file_;
+    file_ = nullptr;
+    this->setg(nullptr, nullptr, nullptr);
+    this->setp(nullptr, nullptr);
+    if (::ftl_cstdio_runtime::fclose(old) != 0)
+      okay = false;
+    state_ = {};
+    last_output_ = false;
+    return okay ? this : nullptr;
+  }
+
+protected:
+  streamsize showmanyc() override { return 0; }
+  int_type uflow() override {
+    return basic_streambuf<Character, Traits>::uflow();
+  }
+  int_type underflow() override {
+    if (!file_ || !(mode_ & ios_base::in))
+      return Traits::eof();
+    if constexpr (is_same_v<Character, char>) {
+      int value = ::ftl_cstdio_runtime::fgetc(file_);
+      if (value == EOF)
+        return Traits::eof();
+      cache_ = static_cast<Character>(value);
+    } else {
+      char bytes[64];
+      size_t count = 0;
+      auto initial = state_;
+      const auto &conversion =
+          use_facet<codecvt<Character, char, typename Traits::state_type>>(
+              this->getloc());
+      for (;;) {
+        int value = ::ftl_cstdio_runtime::fgetc(file_);
+        if (value == EOF)
+          return Traits::eof();
+        if (count == 64)
+          return Traits::eof();
+        bytes[count++] = static_cast<char>(value);
+        auto trial = initial;
+        const char *from_next = bytes;
+        Character *to_next = &cache_;
+        auto result = conversion.in(trial, bytes, bytes + count, from_next,
+                                    &cache_, &cache_ + 1, to_next);
+        if (result == codecvt_base::error)
+          return Traits::eof();
+        if (result == codecvt_base::ok && to_next == &cache_ + 1) {
+          state_ = trial;
+          break;
+        }
+      }
+    }
+    this->setg(&cache_, &cache_, &cache_ + 1);
+    return Traits::to_int_type(cache_);
+  }
+  int_type pbackfail(int_type value = Traits::eof()) override {
+    if (!file_ || !(mode_ & ios_base::in))
+      return Traits::eof();
+    Character character;
+    if (Traits::eq_int_type(value, Traits::eof())) {
+      if (!this->gptr() || this->gptr() == this->eback())
+        return Traits::eof();
+      character = this->gptr()[-1];
+    } else
+      character = Traits::to_char_type(value);
+    int okay;
+    if constexpr (is_same_v<Character, char>)
+      okay = ::ftl_cstdio_runtime::ungetc(static_cast<unsigned char>(character),
+                                          file_) != EOF;
+    else
+      okay = ::ftl_cwchar_runtime::ungetwc(
+                 static_cast<ftl_cwchar_native_wint_t>(character), file_) !=
+             static_cast<ftl_cwchar_native_wint_t>(-1);
+    if (!okay)
+      return Traits::eof();
+    this->setg(nullptr, nullptr, nullptr);
+    return Traits::not_eof(value);
+  }
+  int_type overflow(int_type value = Traits::eof()) override {
+    if (!file_ || !(mode_ & ios_base::out))
+      return Traits::eof();
+    if (Traits::eq_int_type(value, Traits::eof()))
+      return sync() == 0 ? Traits::not_eof(value) : Traits::eof();
+    bool okay;
+    if constexpr (is_same_v<Character, char>)
+      okay = ::ftl_cstdio_runtime::fputc(
+                 static_cast<unsigned char>(Traits::to_char_type(value)),
+                 file_) != EOF;
+    else {
+      Character input = Traits::to_char_type(value);
+      const Character *from_next = &input;
+      char bytes[64];
+      char *to_next = bytes;
+      const auto &conversion =
+          use_facet<codecvt<Character, char, typename Traits::state_type>>(
+              this->getloc());
+      auto result = conversion.out(state_, &input, &input + 1, from_next, bytes,
+                                   bytes + 64, to_next);
+      okay = result != codecvt_base::error && from_next == &input + 1 &&
+             ::ftl_cstdio_runtime::fwrite(
+                 bytes, 1, static_cast<size_t>(to_next - bytes), file_) ==
+                 static_cast<size_t>(to_next - bytes);
+    }
+    last_output_ = okay;
+    return okay ? value : Traits::eof();
+  }
+  streamsize xsputn(const Character *source, streamsize count) override {
+    if (!file_ || !(mode_ & ios_base::out) || count <= 0)
+      return 0;
+    if constexpr (is_same_v<Character, char>)
+      return static_cast<streamsize>(::ftl_cstdio_runtime::fwrite(
+          source, 1, static_cast<size_t>(count), file_));
+    else {
+      streamsize done = 0;
+      while (done < count &&
+             !Traits::eq_int_type(overflow(Traits::to_int_type(source[done])),
+                                  Traits::eof()))
+        ++done;
+      return done;
+    }
+  }
+  int sync() override {
+    return file_ ? ::ftl_cstdio_runtime::fflush(file_) : 0;
+  }
+  basic_streambuf<Character, Traits> *setbuf(Character *buffer,
+                                             streamsize count) override {
+    if (file_ && is_same_v<Character, char>)
+      ::ftl_cstdio_runtime::setvbuf(file_, reinterpret_cast<char *>(buffer),
+                                    _IOFBF, static_cast<size_t>(count));
+    return this;
+  }
+  void imbue(const locale &) override { state_ = {}; }
+  pos_type seekoff(off_type offset, ios_base::seekdir direction,
+                   ios_base::openmode = ios_base::in | ios_base::out) override {
+    if (!file_)
+      return pos_type(off_type(-1));
+    this->setg(nullptr, nullptr, nullptr);
+    int origin = direction == ios_base::beg   ? SEEK_SET
+                 : direction == ios_base::cur ? SEEK_CUR
+                                              : SEEK_END;
+    if (::ftl_cstdio_runtime::fseek(file_, static_cast<long>(offset), origin) !=
+        0)
+      return pos_type(off_type(-1));
+    return pos_type(static_cast<off_type>(::ftl_cstdio_runtime::ftell(file_)));
+  }
+  pos_type seekpos(pos_type position,
+                   ios_base::openmode which = ios_base::in |
+                                              ios_base::out) override {
+    return seekoff(static_cast<off_type>(position), ios_base::beg, which);
+  }
+
+private:
+  FILE *file_{};
+  ios_base::openmode mode_{};
+  Character cache_{};
+  typename Traits::state_type state_{};
+  bool last_output_{};
+};
+template <class C, class T>
+void swap(basic_filebuf<C, T> &l, basic_filebuf<C, T> &r) {
+  l.swap(r);
+}
+
+template <class C, class T> class basic_ifstream : public basic_istream<C, T> {
+public:
+  using char_type = C;
+  using int_type = typename T::int_type;
+  using pos_type = typename T::pos_type;
+  using off_type = typename T::off_type;
+  using traits_type = T;
+  basic_ifstream() : basic_istream<C, T>(&sb_) {}
+  explicit basic_ifstream(const char *s, ios_base::openmode m = ios_base::in)
+      : basic_ifstream() {
+    open(s, m);
+  }
+  explicit basic_ifstream(const basic_string<char> &s,
+                          ios_base::openmode m = ios_base::in)
+      : basic_ifstream() {
+    open(s, m);
+  }
+  template <class Path>
+  explicit basic_ifstream(const Path &p, ios_base::openmode m = ios_base::in)
+    requires is_same_v<Path, filesystem::path>
+      : basic_ifstream() {
+    open(p, m);
+  }
+  basic_ifstream(const basic_ifstream &) = delete;
+  basic_ifstream(basic_ifstream &&r)
+      : basic_istream<C, T>(static_cast<basic_istream<C, T> &&>(r)),
+        sb_(static_cast<basic_filebuf<C, T> &&>(r.sb_)) {
+    this->set_rdbuf(&sb_);
+  }
+  basic_ifstream &operator=(const basic_ifstream &) = delete;
+  basic_ifstream &operator=(basic_ifstream &&r) {
+    basic_istream<C, T>::operator=(static_cast<basic_istream<C, T> &&>(r));
+    sb_ = static_cast<basic_filebuf<C, T> &&>(r.sb_);
+    this->set_rdbuf(&sb_);
+    return *this;
+  }
+  void swap(basic_ifstream &r) {
+    basic_istream<C, T>::swap(r);
+    sb_.swap(r.sb_);
+    this->set_rdbuf(&sb_);
+    r.set_rdbuf(&r.sb_);
+  }
+  basic_filebuf<C, T> *rdbuf() const {
+    return const_cast<basic_filebuf<C, T> *>(&sb_);
+  }
+  bool is_open() const { return sb_.is_open(); }
+  void open(const char *s, ios_base::openmode m = ios_base::in) {
+    if (!sb_.open(s, m | ios_base::in))
+      this->setstate(ios_base::failbit);
+    else
+      this->clear();
+  }
+  void open(const basic_string<char> &s, ios_base::openmode m = ios_base::in) {
+    open(s.c_str(), m);
+  }
+  void open(const filesystem::path &p,
+            ios_base::openmode m = ios_base::in);
+  void close() {
+    if (!sb_.close())
+      this->setstate(ios_base::failbit);
+  }
+
+private:
+  basic_filebuf<C, T> sb_;
+};
+template <class C, class T> class basic_ofstream : public basic_ostream<C, T> {
+public:
+  using char_type = C;
+  using int_type = typename T::int_type;
+  using pos_type = typename T::pos_type;
+  using off_type = typename T::off_type;
+  using traits_type = T;
+  basic_ofstream() : basic_ostream<C, T>(&sb_) {}
+  explicit basic_ofstream(const char *s, ios_base::openmode m = ios_base::out)
+      : basic_ofstream() {
+    open(s, m);
+  }
+  explicit basic_ofstream(const basic_string<char> &s,
+                          ios_base::openmode m = ios_base::out)
+      : basic_ofstream() {
+    open(s, m);
+  }
+  template <class Path>
+  explicit basic_ofstream(const Path &p, ios_base::openmode m = ios_base::out)
+    requires is_same_v<Path, filesystem::path>
+      : basic_ofstream() {
+    open(p, m);
+  }
+  basic_ofstream(const basic_ofstream &) = delete;
+  basic_ofstream(basic_ofstream &&r)
+      : basic_ostream<C, T>(static_cast<basic_ostream<C, T> &&>(r)),
+        sb_(static_cast<basic_filebuf<C, T> &&>(r.sb_)) {
+    this->set_rdbuf(&sb_);
+  }
+  basic_ofstream &operator=(const basic_ofstream &) = delete;
+  basic_ofstream &operator=(basic_ofstream &&r) {
+    basic_ostream<C, T>::operator=(static_cast<basic_ostream<C, T> &&>(r));
+    sb_ = static_cast<basic_filebuf<C, T> &&>(r.sb_);
+    this->set_rdbuf(&sb_);
+    return *this;
+  }
+  void swap(basic_ofstream &r) {
+    basic_ostream<C, T>::swap(r);
+    sb_.swap(r.sb_);
+    this->set_rdbuf(&sb_);
+    r.set_rdbuf(&r.sb_);
+  }
+  basic_filebuf<C, T> *rdbuf() const {
+    return const_cast<basic_filebuf<C, T> *>(&sb_);
+  }
+  bool is_open() const { return sb_.is_open(); }
+  void open(const char *s, ios_base::openmode m = ios_base::out) {
+    if (!sb_.open(s, m | ios_base::out))
+      this->setstate(ios_base::failbit);
+    else
+      this->clear();
+  }
+  void open(const basic_string<char> &s, ios_base::openmode m = ios_base::out) {
+    open(s.c_str(), m);
+  }
+  void open(const filesystem::path &p,
+            ios_base::openmode m = ios_base::out);
+  void close() {
+    if (!sb_.close())
+      this->setstate(ios_base::failbit);
+  }
+
+private:
+  basic_filebuf<C, T> sb_;
+};
+template <class C, class T> class basic_fstream : public basic_iostream<C, T> {
+public:
+  using char_type = C;
+  using int_type = typename T::int_type;
+  using pos_type = typename T::pos_type;
+  using off_type = typename T::off_type;
+  using traits_type = T;
+  basic_fstream() : basic_iostream<C, T>(&sb_) {}
+  explicit basic_fstream(const char *s,
+                         ios_base::openmode m = ios_base::in | ios_base::out)
+      : basic_fstream() {
+    open(s, m);
+  }
+  explicit basic_fstream(const basic_string<char> &s,
+                         ios_base::openmode m = ios_base::in | ios_base::out)
+      : basic_fstream() {
+    open(s, m);
+  }
+  template <class Path>
+  explicit basic_fstream(const Path &p,
+                         ios_base::openmode m = ios_base::in | ios_base::out)
+    requires is_same_v<Path, filesystem::path>
+      : basic_fstream() {
+    open(p, m);
+  }
+  basic_fstream(const basic_fstream &) = delete;
+  basic_fstream(basic_fstream &&r)
+      : basic_iostream<C, T>(static_cast<basic_iostream<C, T> &&>(r)),
+        sb_(static_cast<basic_filebuf<C, T> &&>(r.sb_)) {
+    this->set_rdbuf(&sb_);
+  }
+  basic_fstream &operator=(const basic_fstream &) = delete;
+  basic_fstream &operator=(basic_fstream &&r) {
+    basic_iostream<C, T>::operator=(static_cast<basic_iostream<C, T> &&>(r));
+    sb_ = static_cast<basic_filebuf<C, T> &&>(r.sb_);
+    this->set_rdbuf(&sb_);
+    return *this;
+  }
+  void swap(basic_fstream &r) {
+    basic_iostream<C, T>::swap(r);
+    sb_.swap(r.sb_);
+    this->set_rdbuf(&sb_);
+    r.set_rdbuf(&r.sb_);
+  }
+  basic_filebuf<C, T> *rdbuf() const {
+    return const_cast<basic_filebuf<C, T> *>(&sb_);
+  }
+  bool is_open() const { return sb_.is_open(); }
+  void open(const char *s,
+            ios_base::openmode m = ios_base::in | ios_base::out) {
+    if (!sb_.open(s, m))
+      this->setstate(ios_base::failbit);
+    else
+      this->clear();
+  }
+  void open(const basic_string<char> &s,
+            ios_base::openmode m = ios_base::in | ios_base::out) {
+    open(s.c_str(), m);
+  }
+  void open(const filesystem::path &p,
+            ios_base::openmode m = ios_base::in | ios_base::out);
+  void close() {
+    if (!sb_.close())
+      this->setstate(ios_base::failbit);
+  }
+
+private:
+  basic_filebuf<C, T> sb_;
+};
+template <class C, class T>
+void swap(basic_ifstream<C, T> &l, basic_ifstream<C, T> &r) {
+  l.swap(r);
+}
+template <class C, class T>
+void swap(basic_ofstream<C, T> &l, basic_ofstream<C, T> &r) {
+  l.swap(r);
+}
+template <class C, class T>
+void swap(basic_fstream<C, T> &l, basic_fstream<C, T> &r) {
+  l.swap(r);
+}
+
+FTL_END_NAMESPACE
+#endif

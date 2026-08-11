@@ -832,4 +832,14 @@
 #define __cpp_lib_print 202207L
 #endif
 
+#if !defined(__cpp_lib_spanstream) || __cpp_lib_spanstream < 202106L
+#undef __cpp_lib_spanstream
+#define __cpp_lib_spanstream 202106L
+#endif
+
+#if !defined(__cpp_lib_syncbuf) || __cpp_lib_syncbuf < 201803L
+#undef __cpp_lib_syncbuf
+#define __cpp_lib_syncbuf 201803L
+#endif
+
 #endif
