@@ -663,10 +663,10 @@ namespace detail {
 
 [[noreturn]]
 inline void locale_named_ctype_failure() {
-#if defined(FTL_NO_EXCEPTIONS)
-  terminate();
-#else
+#if FTL_HAS_EXCEPTIONS
   throw runtime_error("ctype_byname");
+#else
+  terminate();
 #endif
 }
 
@@ -1051,10 +1051,10 @@ namespace detail {
 
 [[noreturn]]
 inline void locale_named_collate_failure() {
-#if defined(FTL_NO_EXCEPTIONS)
-  terminate();
-#else
+#if FTL_HAS_EXCEPTIONS
   throw runtime_error("collate_byname");
+#else
+  terminate();
 #endif
 }
 
@@ -5280,19 +5280,19 @@ inline const locale::id *locale_facet_key() {
 
 [[noreturn]]
 inline void locale_missing_facet() {
-#if defined(FTL_NO_EXCEPTIONS)
-  terminate();
-#else
+#if FTL_HAS_EXCEPTIONS
   throw bad_cast{};
+#else
+  terminate();
 #endif
 }
 
 [[noreturn]]
 inline void locale_combine_missing_facet() {
-#if defined(FTL_NO_EXCEPTIONS)
-  terminate();
-#else
+#if FTL_HAS_EXCEPTIONS
   throw runtime_error("locale::combine");
+#else
+  terminate();
 #endif
 }
 
