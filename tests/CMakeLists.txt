@@ -157,6 +157,7 @@ function(add_ftl_freestanding_link_check name source)
                 PRIVATE
                 -nostdinc++
                 -fno-stack-protector
+                -fno-rtti
         )
 
         if (APPLE)

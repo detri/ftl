@@ -11,6 +11,12 @@ using ftl_runtime_size_t = decltype(sizeof(0));
 
 extern "C" {
 
+#if !defined(_MSC_VER)
+[[noreturn]] void __cxa_pure_virtual() {
+  __builtin_trap();
+}
+#endif
+
 FTL_RUNTIME_NO_BUILTIN
 void* memcpy(
     void* destination,
