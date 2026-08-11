@@ -1,0 +1,416 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_DETAIL_UNICODE_FORMAT_HEADER
+#define FTL_DETAIL_UNICODE_FORMAT_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <array>
+#include <cstddef>
+#include <type_traits>
+#define FTL_UNICODE_FORMAT_NS std
+#else
+#include <ftl/array>
+#include <ftl/cstddef>
+#include <ftl/type_traits>
+#define FTL_UNICODE_FORMAT_NS ftl
+#endif
+
+namespace ftl_unicode_format {
+
+using size_type = decltype(sizeof(0));
+
+struct decode_result {
+  unsigned long scalar = 0;
+  size_type units = 0;
+  bool valid = false;
+};
+
+template <class Character>
+[[nodiscard]]
+constexpr unsigned long code_unit_value(Character value) noexcept {
+  using unsigned_type = FTL_UNICODE_FORMAT_NS::make_unsigned_t<Character>;
+
+  return static_cast<unsigned long>(static_cast<unsigned_type>(value));
+}
+
+[[nodiscard]]
+constexpr bool is_continuation_byte(unsigned long value) noexcept {
+  return value >= 0x80u && value <= 0xbfu;
+}
+
+template <class charT, class Iterator>
+[[nodiscard]]
+constexpr decode_result decode(Iterator first, Iterator last) noexcept {
+  if (first == last)
+    return {};
+
+  if constexpr (FTL_UNICODE_FORMAT_NS::is_same_v<charT, char>) {
+    auto current = first;
+
+    const unsigned long first_byte = code_unit_value(*current++);
+
+    if (first_byte <= 0x7fu)
+      return {first_byte, 1, true};
+
+    unsigned length = 0;
+
+    if (first_byte >= 0xc2u && first_byte <= 0xdfu) {
+      length = 2;
+    } else if (first_byte >= 0xe0u && first_byte <= 0xefu) {
+      length = 3;
+    } else if (first_byte >= 0xf0u && first_byte <= 0xf4u) {
+      length = 4;
+    } else {
+      return {0, 1, false};
+    }
+
+    unsigned long bytes[4]{first_byte, 0, 0, 0};
+
+    for (unsigned index = 1; index < length; ++index) {
+      if (current == last)
+        return {0, 1, false};
+
+      bytes[index] = code_unit_value(*current++);
+
+      if (!is_continuation_byte(bytes[index])) {
+        return {0, 1, false};
+      }
+    }
+
+    if (length == 3) {
+      if (first_byte == 0xe0u && bytes[1] < 0xa0u) {
+        return {0, 1, false};
+      }
+
+      if (first_byte == 0xedu && bytes[1] > 0x9fu) {
+        return {0, 1, false};
+      }
+    }
+
+    if (length == 4) {
+      if (first_byte == 0xf0u && bytes[1] < 0x90u) {
+        return {0, 1, false};
+      }
+
+      if (first_byte == 0xf4u && bytes[1] > 0x8fu) {
+        return {0, 1, false};
+      }
+    }
+
+    unsigned long scalar = 0;
+
+    if (length == 2) {
+      scalar = ((bytes[0] & 0x1fu) << 6) | (bytes[1] & 0x3fu);
+    } else if (length == 3) {
+      scalar = ((bytes[0] & 0x0fu) << 12) | ((bytes[1] & 0x3fu) << 6) |
+               (bytes[2] & 0x3fu);
+    } else {
+      scalar = ((bytes[0] & 0x07u) << 18) | ((bytes[1] & 0x3fu) << 12) |
+               ((bytes[2] & 0x3fu) << 6) | (bytes[3] & 0x3fu);
+    }
+
+    return {scalar, static_cast<size_type>(length), true};
+  } else if constexpr (sizeof(charT) == 2) {
+    const unsigned long first_unit = code_unit_value(*first);
+
+    if (first_unit >= 0xd800u && first_unit <= 0xdbffu) {
+      auto current = first;
+      ++current;
+
+      if (current == last)
+        return {0, 1, false};
+
+      const unsigned long second_unit = code_unit_value(*current);
+
+      if (second_unit < 0xdc00u || second_unit > 0xdfffu) {
+        return {0, 1, false};
+      }
+
+      const unsigned long scalar =
+          0x10000u + ((first_unit - 0xd800u) << 10) + (second_unit - 0xdc00u);
+
+      return {scalar, 2, true};
+    }
+
+    if (first_unit >= 0xdc00u && first_unit <= 0xdfffu) {
+      return {0, 1, false};
+    }
+
+    return {first_unit, 1, true};
+  } else {
+    const unsigned long scalar = code_unit_value(*first);
+
+    if (scalar > 0x10ffffu || (scalar >= 0xd800u && scalar <= 0xdfffu)) {
+      return {0, 1, false};
+    }
+
+    return {scalar, 1, true};
+  }
+}
+
+struct codepoint_range {
+  unsigned long first = 0;
+  unsigned long last = 0;
+};
+
+[[nodiscard]]
+consteval unsigned hex_digit(char value) {
+  if (value >= '0' && value <= '9') {
+    return static_cast<unsigned>(value - '0');
+  }
+
+  if (value >= 'a' && value <= 'f') {
+    return static_cast<unsigned>(value - 'a' + 10);
+  }
+
+  return static_cast<unsigned>(value - 'A' + 10);
+}
+
+[[nodiscard]]
+consteval unsigned encoded_byte(const char *&current) {
+  const unsigned high = hex_digit(*current++);
+
+  const unsigned low = hex_digit(*current++);
+
+  return (high << 4) | low;
+}
+
+[[nodiscard]]
+consteval unsigned long encoded_integer(const char *&current) {
+  unsigned long result = 0;
+  unsigned shift = 0;
+
+  for (;;) {
+    const unsigned byte = encoded_byte(current);
+
+    result |= static_cast<unsigned long>(byte & 0x7fu) << shift;
+
+    if ((byte & 0x80u) == 0)
+      return result;
+
+    shift += 7;
+  }
+}
+
+template <size_type RangeCount, size_type EncodedSize>
+[[nodiscard]]
+consteval auto decode_ranges(const char (&encoded)[EncodedSize]) {
+  FTL_UNICODE_FORMAT_NS::array<codepoint_range, RangeCount> result{};
+
+  const char *current = encoded;
+
+  unsigned long previous = 0;
+
+  for (size_type index = 0; index < RangeCount; ++index) {
+    const unsigned long delta = encoded_integer(current);
+
+    const unsigned long span = encoded_integer(current);
+
+    const unsigned long first = previous + delta;
+
+    const unsigned long last = first + span;
+
+    result[index] = {first, last};
+
+    previous = last + 1;
+  }
+
+  return result;
+}
+
+template <size_type N>
+[[nodiscard]]
+constexpr bool
+range_contains(const FTL_UNICODE_FORMAT_NS::array<codepoint_range, N> &ranges,
+               unsigned long scalar) noexcept {
+  size_type first = 0;
+  size_type last = N;
+
+  while (first != last) {
+    const size_type middle = first + (last - first) / 2;
+
+    if (scalar < ranges[middle].first) {
+      last = middle;
+    } else if (scalar > ranges[middle].last) {
+      first = middle + 1;
+    } else {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/*
+ * Unicode 16.0.0 generated property data.
+ *
+ * Each table stores sorted [first,last] ranges as:
+ *
+ *   ULEB128(delta-from-previous-end)
+ *   ULEB128(range-span)
+ *
+ * with each encoded byte represented by two
+ * hexadecimal source characters.
+ */
+
+/*
+ * General_Category in groups:
+ *
+ *   Separator (Z)
+ *   Other     (C)
+ *
+ * Includes unassigned code points.
+ */
+inline constexpr char other_or_separator_data[] =
+    "00205e210c00ca050106030700010014008d030026013201030037071b0306101600c00100"
+    "30013b01650d3b0131010f"
+    "001c0101000b041f074b00a101000801020116000700010204010901020104070103020005"
+    "0119010300060302011600"
+    "07000200020002010100050302010302010604000106110903000900030016000700020005"
+    "010a0003000301010e0401"
+    "0c060700030008010201160007000200050109010201030603030200050112090200060203"
+    "0004020200010002020202"
+    "03020c030502030004010105010d15040d0003001700100109000300040602000301010104"
+    "010a061600030017000a00"
+    "05010900030004060205020004010a00030b0d00030033000300060310011a000300120218"
+    "0009000101070201030600"
+    "010008050a01030b3a031d240200010005001800010017010500010007000a01041f480024"
+    "03270024000f000d24c601"
+    "0001040101f90200040107000100040129000401210004010700010004010f003900040143"
+    "0120021a05560106018005"
+    "001c02590616081808140b0d000300020b5e010a050a050e000b0559062b0446091f000c03"
+    "0c0301022a01050a2c031a"
+    "050b023e0141001d010b050a050e011f304d00a601073c020f023e042b010b072b04960401"
+    "0601260106010800010001"
+    "0001001f0135000f000e01060013010300091018072f1002011b000d02210e210e8c01039a"
+    "05150b14940e012000dd02"
+    "042d00010401013806020d1808070007000700070007000700070007007e211a00590bd601"
+    "1910003f00560167042b00"
+    "5e0056083000ede401023708dc0213b80107ce01010200010008143b020a05380746070c05"
+    "740a1e024e000b03210037"
+    "080e010a0167171c09060106010608070007003c037e010a05a4570b1703318342ee02016a"
+    "25070b05041a0005000100"
+    "020002007d0fbd03013606011f2a053300130004030500870103be01020601060106010302"
+    "0700070c02010c001a0013"
+    "0002000f010e217b0403032d0258000d02012e2e81011d02310e1c0324081e042b041e0025"
+    "030e299e01010a05240324"
+    "032807340a0c000f00070002000b000f0007000202340bb702081609081706002a00094406"
+    "0101002c00020201011700"
+    "4807092f1300020421021b04013f3803140132000204080003001d0103030a060906401f27"
+    "030c0836021d011b041a06"
+    "040b074f4936330c33062e070a0526021d0702cf011f002a000301020f03362c072a151a25"
+    "1c1317084e0324083e0005"
+    "0c19060a053500120727086000140a12002f3d0700010004000f000b053b040a0504000801"
+    "020116000700020005000a"
+    "01020103010105010407010702050a0a000101010026000a000101010004000a000207021c"
+    "5c00051d48070aa5013601"
+    "2621450a0a050d123a050a05141b1b010f0317b8013c63530b08010101080002001e000201"
+    "0c080a4508012e010b1a48"
+    "07530c49060ab501220d0a0509002d000e091d02200116000e48070002002c020100020009"
+    "070a050600020025000200"
+    "06060ab5021906110029021d54010e320c9b07656f00050ac401cb14630cb0080f16099b1f"
+    "04c704b8353ac50db90406"
+    "1f000a0351000a051e01060946090a000700150413af033ac5015b644b033906113f050a02"
+    "0df82f07d609280ae64504"
+    "0007000200a3020e011c0301010d04078c0383126b040d0209060a0104df1efa0105b4034b"
+    "2e011708743bf601092701"
+    "4a0770144679140b140b57081986015500470002010101020104000c000100070041000401"
+    "080007001c000400050001"
+    "020700d40201a40201be050e05000fcf081f0506d401070011010700020005043e20016f2d"
+    "020e010a0302bf021f103a"
+    "0401cf032ad5012b0301df030700040002000f00c5010110284c030a03029006444b3dc101"
+    "04001b000200010101000a"
+    "00040001000105010301000100010003000200010101000100010001000100020001010400"
+    "07000400040001000a0011"
+    "04030005001133028d022c03640b0f010f000f002509ae01371d0c2c030906020d069901d8"
+    "070311020d0277035f050c"
+    "03010e0c0338070a0528071e010c03023dd4020b0e010d020a0438060f010b050906930100"
+    "668508e0cd021fba2005de"
+    "0101822d0db13a0eee04a1139e04e10bcb2604e020cfba2bf0018ffc0b";
+
+/*
+ * Grapheme_Extend=Yes.
+ */
+inline constexpr char grapheme_extend_data[] =
+    "80066f93020687022c0100010101010100480a30141000650602050201010323001e1a5b0a"
+    "3a08090018030108010201"
+    "042b023b082a17011f370001000407040003060a011d003a0001000203080009000a011a00"
+    "0201390004010401020203"
+    "001e0103000b0139000404010104001401160501003a0001010103080007020a011e003b00"
+    "01000c0009002800030037"
+    "0001020502010307010b011d003a00020101000302010307010b011c013901010002030800"
+    "09000a011d004800040002"
+    "0201000800510002060c07620002080b0649011b0001000100370d01040101050a01230900"
+    "6603010501010201190104"
+    "0210030d00020106000f00bf0502b207031c021d011e01400101060800020a09002d020100"
+    "7501220076020401090006"
+    "02db010102003a00010601000100020706090200301e31033009040226080c012003020538"
+    "0001010300010438070201"
+    "980102010c0106040006000301c6013f8c0400c30120fe17028d0100601faa04056901d4eb"
+    "0103010920015001900200"
+    "03000400190105009701011a110d002607190a01002c023000020302010200240043050201"
+    "02010c0008002f00330001"
+    "020201050101002a010800ee010002000400b09e0100e1050f100fee0201dd0400e2010095"
+    "0104860d02010105032802"
+    "0400a50101bd04034104bd02014f03460a31037b00360e290002010a023103020107003d02"
+    "240401073e000c01340801"
+    "00080302005f020203060002009d0100030715013901010001000c0009000e060304430002"
+    "0501000200010204020100"
+    "0e015507020201001700510002050100020001010101eb01000203060101011b0155070200"
+    "01016a0001000207650001"
+    "00020301048302080101f501000a030400900103020104002009280502030800090502022e"
+    "0c01019603060105010052"
+    "150206010101017a050300010101060100480103000100db02010b01340405021700e52900"
+    "060ec8590b0302c013043b"
+    "069808003f0351000b01ab990101e1242d02169e04040305080702061e03940102bb0f3604"
+    "3108000e001604010ed00a"
+    "0601100206010101046400a00106f702003d03fc0303fe0101e005066d06d5ad305f8001ef"
+    "01";
+
+/*
+ * Field-width 2 set:
+ *
+ * East_Asian_Width W/F plus the explicit extra
+ * ranges named by the C++ formatting wording.
+ */
+inline constexpr char wide_data[] =
+    "80225fba23010d01be01030300020089040115011a07100b2b000a0503000d000801110105"
+    "0108000500150007010100"
+    "04000200070004011c0023000100040201003d0218000e00db060133000400aa061901580c"
+    "d5011a4e02550266052a01"
+    "5d0155092f012708bce401033699091c8305a357dc42ff0390060916220112010395015f7f"
+    "06f9df01040b010ef72f08"
+    "d5092909e745030106010101a2020f001d0202000e03088b0384405609168d3900ca0100be"
+    "0100020965020d2b040807"
+    "010e059a01cf06304506000302020204030b010708e3010b04008f02ff01700c0309053707"
+    "0e020a0608870afdff0302"
+    "fdff03";
+
+inline constexpr auto other_or_separator_ranges =
+    decode_ranges<737>(other_or_separator_data);
+
+inline constexpr auto grapheme_extend_ranges =
+    decode_ranges<375>(grapheme_extend_data);
+
+inline constexpr auto wide_ranges = decode_ranges<103>(wide_data);
+
+[[nodiscard]]
+constexpr bool is_other_or_separator(unsigned long scalar) noexcept {
+  return range_contains(other_or_separator_ranges, scalar);
+}
+
+[[nodiscard]]
+constexpr bool is_grapheme_extend(unsigned long scalar) noexcept {
+  return range_contains(grapheme_extend_ranges, scalar);
+}
+
+[[nodiscard]]
+constexpr size_type field_width(unsigned long scalar) noexcept {
+  return range_contains(wide_ranges, scalar) ? size_type{2} : size_type{1};
+}
+
+} // namespace ftl_unicode_format
+
+#undef FTL_UNICODE_FORMAT_NS
+
+#endif // FTL_DETAIL_UNICODE_FORMAT_HEADER

@@ -151,6 +151,39 @@ struct debug_string_kind_range {
   const char *end() const noexcept { return values + 2; }
 };
 
+/*
+ * Deliberately exposes a different element type
+ * through const iteration.
+ *
+ * Non-const: char
+ * const:     int
+ *
+ * N4950 requires the generic range formatter to
+ * prefer the const range when it is formattable,
+ * so "{}" must format the integer range.
+ */
+struct const_switch_range {
+  char mutable_values[2]{'A', 'B'};
+
+  int const_values[2]{1, 2};
+
+  char *begin() noexcept { return mutable_values; }
+
+  char *end() noexcept { return mutable_values + 2; }
+
+  const int *begin() const noexcept { return const_values; }
+
+  const int *end() const noexcept { return const_values + 2; }
+};
+
+struct mutable_only_range {
+  int values[2]{7, 8};
+
+  int *begin() noexcept { return values; }
+
+  int *end() noexcept { return values + 2; }
+};
+
 #ifdef FTL_REPLACE_STL
 
 namespace std {
@@ -201,6 +234,44 @@ static_assert(tested::formattable<map_range, char>);
 static_assert(tested::formattable<tested::pair<int, int>, char>);
 
 static_assert(tested::formattable<tested::tuple<int, int, int>, char>);
+
+static_assert(tested::format_kind<const_switch_range> ==
+              tested::range_format::sequence);
+
+static_assert(tested::formattable<const_switch_range, char>);
+
+static_assert(tested::formattable<mutable_only_range, char>);
+
+using tested_range_formatter = tested::range_formatter<int, char>;
+
+static_assert(noexcept(tested::declval<tested_range_formatter &>()
+                           .set_separator(tested::string_view{})));
+
+static_assert(noexcept(tested::declval<tested_range_formatter &>().set_brackets(
+    tested::string_view{}, tested::string_view{})));
+
+static_assert(
+    noexcept(tested::declval<tested_range_formatter &>().underlying()));
+
+static_assert(
+    noexcept(tested::declval<const tested_range_formatter &>().underlying()));
+
+using tested_pair_formatter = tested::formatter<tested::pair<int, int>, char>;
+
+static_assert(noexcept(tested::declval<tested_pair_formatter &>().set_separator(
+    tested::string_view{})));
+
+static_assert(noexcept(tested::declval<tested_pair_formatter &>().set_brackets(
+    tested::string_view{}, tested::string_view{})));
+
+using tested_sequence_formatter = tested::formatter<sequence_range, char>;
+
+static_assert(noexcept(tested::declval<tested_sequence_formatter &>()
+                           .set_separator(tested::string_view{})));
+
+static_assert(noexcept(tested::declval<tested_sequence_formatter &>()
+                           .set_brackets(tested::string_view{},
+                                         tested::string_view{})));
 
 static_assert(!tested::is_copy_constructible_v<tested::format_parse_context>);
 
@@ -940,6 +1011,27 @@ bool range_formatting_works() {
     return false;
   }
 
+  const_switch_range const_switch;
+
+  const auto const_selected = tested::format("{}", const_switch);
+
+  /*
+   * If the formatter incorrectly uses the
+   * non-const range reference type this would
+   * instead become ['A', 'B'].
+   */
+  if (!equal_text(const_selected.c_str(), "[1, 2]")) {
+    return false;
+  }
+
+  mutable_only_range mutable_only;
+
+  const auto mutable_selected = tested::format("{}", mutable_only);
+
+  if (!equal_text(mutable_selected.c_str(), "[7, 8]")) {
+    return false;
+  }
+
   return true;
 }
 
@@ -1014,6 +1106,206 @@ bool range_tuple_runtime_errors_work() {
   return true;
 }
 
+bool unicode_formatting_works() {
+  /*
+   * U+1F921 CLOWN FACE, UTF-8:
+   *
+   *   f0 9f a4 a1
+   *
+   * Its C++ field width is 2.
+   */
+  const char clown[] = "\xf0\x9f\xa4\xa1";
+
+  const char three_clowns[] = "\xf0\x9f\xa4\xa1"
+                              "\xf0\x9f\xa4\xa1"
+                              "\xf0\x9f\xa4\xa1";
+
+  const auto wide_argument = tested::format("{:*^6}", three_clowns);
+
+  if (!equal_text(wide_argument.c_str(), three_clowns)) {
+    return false;
+  }
+
+  /*
+   * A multibyte Unicode scalar is one fill
+   * character, not four independent bytes.
+   */
+  const auto unicode_fill = tested::format("{:\xf0\x9f\xa4\xa1^6}", "x");
+
+  const char expected_fill[] = "\xf0\x9f\xa4\xa1"
+                               "\xf0\x9f\xa4\xa1"
+                               "x"
+                               "\xf0\x9f\xa4\xa1"
+                               "\xf0\x9f\xa4\xa1"
+                               "\xf0\x9f\xa4\xa1";
+
+  if (!equal_text(unicode_fill.c_str(), expected_fill)) {
+    return false;
+  }
+
+  /*
+   * "A🤡B" has field widths:
+   *
+   *   A  = 1
+   *   🤡 = 2
+   *   B  = 1
+   *
+   * Precision 3 therefore retains A🤡.
+   */
+  const char mixed_width[] = "A"
+                             "\xf0\x9f\xa4\xa1"
+                             "B";
+
+  const auto precision_three = tested::format("{:.3}", mixed_width);
+
+  const char expected_three[] = "A"
+                                "\xf0\x9f\xa4\xa1";
+
+  if (!equal_text(precision_three.c_str(), expected_three)) {
+    return false;
+  }
+
+  const auto precision_two = tested::format("{:.2}", mixed_width);
+
+  if (!equal_text(precision_two.c_str(), "A")) {
+    return false;
+  }
+
+  /*
+   * e + U+0301 COMBINING ACUTE ACCENT is
+   * retained as one width-1 cluster for our
+   * Grapheme_Extend handling.
+   */
+  const char composed_cluster[] = "e"
+                                  "\xcc\x81";
+
+  const auto combining_precision = tested::format("{:.1}", composed_cluster);
+
+  if (!equal_text(combining_precision.c_str(), composed_cluster)) {
+    return false;
+  }
+
+  /*
+   * N4950 debug example family:
+   * control characters become Unicode escapes
+   * unless one of the dedicated short escapes.
+   */
+  const char debug_controls_value[] = {'\0', ' ',    '\n', ' ',    '\t',
+                                       ' ',  '\x02', ' ',  '\x1b', '\0'};
+
+  tested::string debug_controls_input(debug_controls_value, 9);
+
+  const auto debug_controls = tested::format("{:?}", debug_controls_input);
+
+  if (!equal_text(debug_controls.c_str(),
+                  "\"\\u{0} \\n \\t \\u{2} \\u{1b}\"")) {
+    return false;
+  }
+
+  /*
+   * Ill-formed UTF-8:
+   *
+   * c3 is an incomplete lead byte because the
+   * next unit is '(' rather than a continuation.
+   */
+  const char invalid_utf8_value[] = {static_cast<char>(0xc3), '('};
+
+  tested::string invalid_utf8(invalid_utf8_value, 2);
+
+  const auto escaped_invalid = tested::format("{:?}", invalid_utf8);
+
+  if (!equal_text(escaped_invalid.c_str(), "\"\\x{c3}(\"")) {
+    return false;
+  }
+
+  /*
+   * A standalone Grapheme_Extend character is
+   * escaped.
+   */
+  const char standalone_combining[] = "\xcc\x81";
+
+  const auto escaped_combining = tested::format("{:?}", standalone_combining);
+
+  if (!equal_text(escaped_combining.c_str(), "\"\\u{301}\"")) {
+    return false;
+  }
+
+  /*
+   * But after an untranslated base character,
+   * Grapheme_Extend characters remain untranslated.
+   */
+  const char base_and_combining[] = "e"
+                                    "\xcc\x81"
+                                    "\xcc\xa3";
+
+  const auto preserved_combining = tested::format("{:?}", base_and_combining);
+
+  const char expected_combining[] = "\"e"
+                                    "\xcc\x81"
+                                    "\xcc\xa3"
+                                    "\"";
+
+  if (!equal_text(preserved_combining.c_str(), expected_combining)) {
+    return false;
+  }
+
+  /*
+   * U+00A0 NO-BREAK SPACE is General_Category Zs.
+   */
+  const auto escaped_separator = tested::format("{:?}", "\xc2\xa0");
+
+  if (!equal_text(escaped_separator.c_str(), "\"\\u{a0}\"")) {
+    return false;
+  }
+
+  /*
+   * U+200D ZERO WIDTH JOINER is General_Category Cf.
+   */
+  const auto escaped_format_character = tested::format("{:?}", "\xe2\x80\x8d");
+
+  if (!equal_text(escaped_format_character.c_str(), "\"\\u{200d}\"")) {
+    return false;
+  }
+
+  /*
+   * U+E000 private-use character is General_Category Co.
+   */
+  const auto escaped_private_use = tested::format("{:?}", "\xee\x80\x80");
+
+  if (!equal_text(escaped_private_use.c_str(), "\"\\u{e000}\"")) {
+    return false;
+  }
+
+  /*
+   * U+0378 is unassigned and therefore General_Category Cn.
+   */
+  const auto escaped_unassigned = tested::format("{:?}", "\xcd\xb8");
+
+  if (!equal_text(escaped_unassigned.c_str(), "\"\\u{378}\"")) {
+    return false;
+  }
+
+  /*
+   * Wide strings exercise UTF-16 on Windows and
+   * UTF-32 on the usual Unix ABI.
+   */
+  const auto wide_cjk = tested::format(L"{:*^3}", L"\u4e00");
+
+  if (!equal_text(wide_cjk.c_str(), L"\u4e00*")) {
+    return false;
+  }
+
+  const auto wide_combining = tested::format(L"{:?}", L"\u0301");
+
+  if (!equal_text(wide_combining.c_str(), L"\"\\u{301}\"")) {
+    return false;
+  }
+
+  (void)clown;
+
+  return true;
+}
+
 bool ftl_test() {
   if (!parse_context_works())
     return false;
@@ -1067,6 +1359,9 @@ bool ftl_test() {
     return false;
 
   if (!range_tuple_runtime_errors_work())
+    return false;
+
+  if (!unicode_formatting_works())
     return false;
 
   return true;
