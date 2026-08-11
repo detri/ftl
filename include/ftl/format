@@ -1,0 +1,5522 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_FORMAT_HEADER
+#define FTL_FORMAT_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <array>
+#include <charconv>
+#include <chrono>
+#include <concepts>
+#include <cstddef>
+#include <cstdint>
+#include <detail/unicode_format>
+#include <iterator>
+#include <limits>
+#include <locale>
+#include <memory>
+#include <ranges>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+#include <variant>
+#else
+#include <ftl/array>
+#include <ftl/charconv>
+#include <ftl/chrono>
+#include <ftl/concepts>
+#include <ftl/cstddef>
+#include <ftl/cstdint>
+#include <ftl/detail/unicode_format>
+#include <ftl/iterator>
+#include <ftl/limits>
+#include <ftl/locale>
+#include <ftl/memory>
+#include <ftl/ranges>
+#include <ftl/stdexcept>
+#include <ftl/string>
+#include <ftl/string_view>
+#include <ftl/tuple>
+#include <ftl/type_traits>
+#include <ftl/utility>
+#include <ftl/variant>
+#endif
+
+#ifdef FTL_REPLACE_STL
+#define FTL_FORMAT_NS std
+#else
+#define FTL_FORMAT_NS ftl
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+class format_error : public runtime_error {
+public:
+  explicit format_error(const string &what_arg)
+      : runtime_error(what_arg.c_str()) {}
+
+  explicit format_error(const char *what_arg) : runtime_error(what_arg) {}
+};
+
+namespace detail {
+
+[[noreturn]]
+inline void throw_format_error(const char *message) {
+#if FTL_HAS_EXCEPTIONS
+  throw format_error(message);
+#else
+  terminate();
+#endif
+}
+
+} // namespace detail
+
+template <class charT> class basic_format_parse_context {
+public:
+  using char_type = charT;
+  using const_iterator = typename basic_string_view<charT>::const_iterator;
+  using iterator = const_iterator;
+
+  constexpr explicit basic_format_parse_context(basic_string_view<charT> fmt,
+                                                size_t num_args = 0) noexcept
+      : begin_(fmt.begin()), end_(fmt.end()), indexing_(indexing::unknown),
+        next_arg_id_(0), num_args_(num_args) {}
+
+  basic_format_parse_context(const basic_format_parse_context &) = delete;
+
+  basic_format_parse_context &
+  operator=(const basic_format_parse_context &) = delete;
+
+  [[nodiscard]]
+  constexpr const_iterator begin() const noexcept {
+    return begin_;
+  }
+
+  [[nodiscard]]
+  constexpr const_iterator end() const noexcept {
+    return end_;
+  }
+
+  constexpr void advance_to(const_iterator it) { begin_ = it; }
+
+  constexpr size_t next_arg_id() {
+    if (indexing_ == indexing::manual) {
+      detail::throw_format_error(
+          "cannot mix automatic and manual argument indexing");
+    }
+
+    if (indexing_ == indexing::unknown)
+      indexing_ = indexing::automatic;
+
+    const size_t result = next_arg_id_++;
+
+    if (is_constant_evaluated() && result >= num_args_) {
+      detail::throw_format_error("format argument index out of range");
+    }
+
+    return result;
+  }
+
+  constexpr void check_arg_id(size_t id) {
+    if (indexing_ == indexing::automatic) {
+      detail::throw_format_error(
+          "cannot mix automatic and manual argument indexing");
+    }
+
+    if (indexing_ == indexing::unknown)
+      indexing_ = indexing::manual;
+
+    if (is_constant_evaluated() && id >= num_args_) {
+      detail::throw_format_error("format argument index out of range");
+    }
+  }
+
+private:
+  enum class indexing { unknown, manual, automatic };
+
+  iterator begin_;
+  iterator end_;
+  indexing indexing_;
+  size_t next_arg_id_;
+  size_t num_args_;
+};
+
+using format_parse_context = basic_format_parse_context<char>;
+
+using wformat_parse_context = basic_format_parse_context<wchar_t>;
+
+template <class Out, class charT> class basic_format_context;
+
+template <class Context> class basic_format_arg;
+
+template <class Context> class basic_format_args;
+
+template <class Visitor, class Context>
+decltype(auto) visit_format_arg(Visitor &&visitor,
+                                basic_format_arg<Context> argument);
+
+template <class T, class charT = char> struct formatter {
+  formatter() = delete;
+  formatter(const formatter &) = delete;
+  formatter(formatter &&) = delete;
+
+  formatter &operator=(const formatter &) = delete;
+
+  formatter &operator=(formatter &&) = delete;
+};
+
+enum class range_format { disabled, map, set, sequence, string, debug_string };
+
+namespace detail {
+
+enum class format_alignment { none, left, right, center };
+
+enum class format_sign { minus, plus, space };
+
+template <class charT>
+inline constexpr bool format_character_type_v =
+    is_same_v<charT, char> || is_same_v<charT, wchar_t>;
+
+template <class T>
+inline constexpr bool is_numeric_format_integer_v =
+    is_integral_v<T> && is_same_v<T, remove_cv_t<T>> && !is_same_v<T, bool> &&
+    !is_same_v<T, char> && !is_same_v<T, wchar_t> && !is_same_v<T, char8_t> &&
+    !is_same_v<T, char16_t> && !is_same_v<T, char32_t>;
+
+template <class charT>
+[[nodiscard]]
+constexpr charT format_widen(char value) noexcept {
+  return static_cast<charT>(value);
+}
+
+template <class charT>
+[[nodiscard]]
+constexpr bool format_is_digit(charT value) noexcept {
+  return value >= format_widen<charT>('0') && value <= format_widen<charT>('9');
+}
+
+template <class charT>
+[[nodiscard]]
+constexpr bool format_is_align(charT value) noexcept {
+  return value == format_widen<charT>('<') ||
+         value == format_widen<charT>('>') || value == format_widen<charT>('^');
+}
+
+template <class Output, class charT>
+constexpr void format_put(Output &out, charT value) {
+  *out = value;
+  ++out;
+}
+
+template <class Output, class charT>
+constexpr void format_fill(Output &out, charT value, size_t count) {
+  while (count != 0) {
+    format_put(out, value);
+    --count;
+  }
+}
+
+template <class Output, class charT>
+constexpr void format_fill(Output &out, basic_string_view<charT> value,
+                           size_t count) {
+  while (count != 0) {
+    for (charT character : value)
+      format_put(out, character);
+
+    --count;
+  }
+}
+
+template <class charT>
+[[nodiscard]]
+constexpr format_alignment
+format_alignment_from_character(charT value) noexcept {
+  if (value == format_widen<charT>('<'))
+    return format_alignment::left;
+
+  if (value == format_widen<charT>('>'))
+    return format_alignment::right;
+
+  return format_alignment::center;
+}
+
+template <class charT> struct standard_format_spec {
+  charT fill[4]{format_widen<charT>(' '), charT{}, charT{}, charT{}};
+
+  size_t fill_size = 1;
+
+  format_alignment alignment = format_alignment::none;
+
+  format_sign sign = format_sign::minus;
+
+  bool alignment_specified = false;
+  bool sign_specified = false;
+  bool alternate = false;
+  bool zero_padding = false;
+
+  bool dynamic_width = false;
+  size_t width = 0;
+  size_t width_arg_id = 0;
+
+  bool has_precision = false;
+  bool dynamic_precision = false;
+  size_t precision = 0;
+  size_t precision_arg_id = 0;
+
+  bool localized = false;
+
+  char presentation = '\0';
+
+  [[nodiscard]]
+  constexpr basic_string_view<charT> fill_view() const noexcept {
+    return basic_string_view<charT>(fill, fill_size);
+  }
+};
+
+template <class Iterator>
+constexpr void format_advance_units(Iterator &iterator, size_t count) {
+  while (count != 0) {
+    ++iterator;
+    --count;
+  }
+}
+
+template <class charT>
+constexpr typename basic_format_parse_context<charT>::iterator
+format_parse_fill_and_align(
+    typename basic_format_parse_context<charT>::iterator current,
+    typename basic_format_parse_context<charT>::iterator end,
+    standard_format_spec<charT> &spec, bool reject_colon = false) {
+  if (current == end)
+    return current;
+
+  if (*current == format_widen<charT>('}'))
+    return current;
+
+  const auto decoded = ::ftl_unicode_format::decode<charT>(current, end);
+
+  if (decoded.valid) {
+    auto after = current;
+
+    format_advance_units(after, decoded.units);
+
+    if (after != end && format_is_align(*after)) {
+      if (decoded.scalar == static_cast<unsigned long>('{') ||
+          decoded.scalar == static_cast<unsigned long>('}') ||
+          (reject_colon && decoded.scalar == static_cast<unsigned long>(':'))) {
+        throw_format_error("invalid format fill character");
+      }
+
+      spec.fill_size = decoded.units;
+
+      auto source = current;
+
+      for (size_t index = 0; index < decoded.units; ++index) {
+        spec.fill[index] = *source++;
+
+        if (index + 1 == sizeof(spec.fill) / sizeof(spec.fill[0])) {
+          break;
+        }
+      }
+
+      spec.alignment = format_alignment_from_character(*after);
+
+      spec.alignment_specified = true;
+
+      current = after;
+      ++current;
+
+      return current;
+    }
+  }
+
+  if (format_is_align(*current)) {
+    spec.alignment = format_alignment_from_character(*current);
+
+    spec.alignment_specified = true;
+
+    ++current;
+  }
+
+  return current;
+}
+
+template <class charT>
+[[nodiscard]]
+size_t format_estimated_width(basic_string_view<charT> value) {
+  auto current = value.begin();
+  const auto end = value.end();
+
+  size_t width = 0;
+
+  bool have_cluster = false;
+
+  while (current != end) {
+    const auto decoded = ::ftl_unicode_format::decode<charT>(current, end);
+
+    if (!decoded.valid) {
+      ++width;
+      ++current;
+      have_cluster = false;
+      continue;
+    }
+
+    const bool extends_cluster =
+        have_cluster &&
+        ::ftl_unicode_format::is_grapheme_extend(decoded.scalar);
+
+    if (!extends_cluster) {
+      width += ::ftl_unicode_format::field_width(decoded.scalar);
+    }
+
+    have_cluster = true;
+
+    format_advance_units(current, decoded.units);
+  }
+
+  return width;
+}
+
+template <class charT>
+[[nodiscard]]
+size_t format_prefix_for_width(basic_string_view<charT> value,
+                               size_t maximum_width) {
+  auto current = value.begin();
+  const auto end = value.end();
+
+  size_t used_units = 0;
+  size_t width = 0;
+
+  bool have_cluster = false;
+
+  while (current != end) {
+    const auto decoded = ::ftl_unicode_format::decode<charT>(current, end);
+
+    if (!decoded.valid) {
+      if (width == maximum_width)
+        break;
+
+      ++width;
+      ++used_units;
+      ++current;
+
+      have_cluster = false;
+
+      continue;
+    }
+
+    const bool extends_cluster =
+        have_cluster &&
+        ::ftl_unicode_format::is_grapheme_extend(decoded.scalar);
+
+    const size_t additional_width =
+        extends_cluster ? size_t{0}
+                        : ::ftl_unicode_format::field_width(decoded.scalar);
+
+    if (additional_width > maximum_width - width) {
+      break;
+    }
+
+    width += additional_width;
+    used_units += decoded.units;
+
+    have_cluster = true;
+
+    format_advance_units(current, decoded.units);
+  }
+
+  return used_units;
+}
+
+template <class charT>
+constexpr size_t parse_dynamic_format_argument(
+    typename basic_format_parse_context<charT>::iterator &current,
+    typename basic_format_parse_context<charT>::iterator end,
+    basic_format_parse_context<charT> &context, const char *invalid_message,
+    const char *unterminated_message) {
+  if (current == end)
+    throw_format_error(unterminated_message);
+
+  if (*current == format_widen<charT>('}')) {
+    const size_t id = context.next_arg_id();
+    ++current;
+    return id;
+  }
+
+  if (!format_is_digit(*current))
+    throw_format_error(invalid_message);
+
+  size_t id = 0;
+
+  while (current != end && format_is_digit(*current)) {
+    const size_t digit =
+        static_cast<size_t>(*current - format_widen<charT>('0'));
+
+    if (id > (numeric_limits<size_t>::max() - digit) / size_t{10}) {
+      throw_format_error("format argument index is too large");
+    }
+
+    id = id * size_t{10} + digit;
+    ++current;
+  }
+
+  if (current == end || *current != format_widen<charT>('}')) {
+    throw_format_error(unterminated_message);
+  }
+
+  context.check_arg_id(id);
+  ++current;
+
+  return id;
+}
+
+template <class charT>
+constexpr typename basic_format_parse_context<charT>::iterator
+parse_standard_format_spec(basic_format_parse_context<charT> &context,
+                           standard_format_spec<charT> &spec) {
+  auto current = context.begin();
+  const auto end = context.end();
+
+  current = format_parse_fill_and_align(current, end, spec);
+
+  if (current != end) {
+    if (*current == format_widen<charT>('+')) {
+      spec.sign = format_sign::plus;
+      spec.sign_specified = true;
+      ++current;
+    } else if (*current == format_widen<charT>('-')) {
+      spec.sign = format_sign::minus;
+      spec.sign_specified = true;
+      ++current;
+    } else if (*current == format_widen<charT>(' ')) {
+      spec.sign = format_sign::space;
+      spec.sign_specified = true;
+      ++current;
+    }
+  }
+
+  if (current != end && *current == format_widen<charT>('#')) {
+    spec.alternate = true;
+    ++current;
+  }
+
+  if (current != end && *current == format_widen<charT>('0')) {
+    spec.zero_padding = true;
+    ++current;
+  }
+
+  if (current != end && format_is_digit(*current)) {
+    size_t width = 0;
+
+    while (current != end && format_is_digit(*current)) {
+      const size_t digit =
+          static_cast<size_t>(*current - format_widen<charT>('0'));
+
+      if (width > (numeric_limits<size_t>::max() - digit) / size_t{10}) {
+        throw_format_error("format width is too large");
+      }
+
+      width = width * size_t{10} + digit;
+
+      ++current;
+    }
+
+    if (width == 0) {
+      throw_format_error("format width must be positive");
+    }
+
+    spec.width = width;
+  } else if (current != end && *current == format_widen<charT>('{')) {
+    ++current;
+
+    spec.dynamic_width = true;
+
+    spec.width_arg_id = parse_dynamic_format_argument(
+        current, end, context, "invalid dynamic format width",
+        "unterminated dynamic format width");
+  }
+
+  if (current != end && *current == format_widen<charT>('.')) {
+    ++current;
+
+    spec.has_precision = true;
+
+    if (current != end && format_is_digit(*current)) {
+      size_t precision = 0;
+
+      while (current != end && format_is_digit(*current)) {
+        const size_t digit =
+            static_cast<size_t>(*current - format_widen<charT>('0'));
+
+        if (precision > (numeric_limits<size_t>::max() - digit) / size_t{10}) {
+          throw_format_error("format precision is too large");
+        }
+
+        precision = precision * size_t{10} + digit;
+
+        ++current;
+      }
+
+      spec.precision = precision;
+    } else if (current != end && *current == format_widen<charT>('{')) {
+      ++current;
+
+      spec.dynamic_precision = true;
+
+      spec.precision_arg_id = parse_dynamic_format_argument(
+          current, end, context, "invalid dynamic format precision",
+          "unterminated dynamic format precision");
+    } else {
+      throw_format_error("invalid format precision");
+    }
+  }
+
+  if (current != end && *current == format_widen<charT>('L')) {
+    spec.localized = true;
+    ++current;
+  }
+
+  if (current != end && *current != format_widen<charT>('}')) {
+    spec.presentation = static_cast<char>(*current);
+
+    ++current;
+  }
+
+  if (current != end && *current != format_widen<charT>('}')) {
+    throw_format_error("invalid format specification");
+  }
+
+  return current;
+}
+
+template <class FormatContext>
+size_t format_dynamic_size(FormatContext &context, size_t argument_id,
+                           const char *negative_message,
+                           const char *type_message,
+                           const char *large_message) {
+  return visit_format_arg(
+      [&](auto value) -> size_t {
+        using value_type = remove_cvref_t<decltype(value)>;
+
+        if constexpr (is_same_v<value_type, int> ||
+                      is_same_v<value_type, long long>) {
+          if (value < 0)
+            throw_format_error(negative_message);
+
+          if constexpr (sizeof(value_type) > sizeof(size_t)) {
+            using unsigned_type = make_unsigned_t<value_type>;
+
+            if (static_cast<unsigned_type>(value) >
+                static_cast<unsigned_type>(numeric_limits<size_t>::max())) {
+              throw_format_error(large_message);
+            }
+          }
+
+          return static_cast<size_t>(value);
+        } else if constexpr (is_same_v<value_type, unsigned int> ||
+                             is_same_v<value_type, unsigned long long>) {
+          if constexpr (sizeof(value_type) > sizeof(size_t)) {
+            if (value >
+                static_cast<value_type>(numeric_limits<size_t>::max())) {
+              throw_format_error(large_message);
+            }
+          }
+
+          return static_cast<size_t>(value);
+        } else {
+          throw_format_error(type_message);
+        }
+      },
+      context.arg(argument_id));
+}
+
+template <class FormatContext, class charT>
+size_t format_resolve_width(FormatContext &context,
+                            const standard_format_spec<charT> &spec) {
+  if (!spec.dynamic_width)
+    return spec.width;
+
+  return format_dynamic_size(context, spec.width_arg_id,
+                             "format width argument is negative",
+                             "format width argument is not an integer",
+                             "format width argument is too large");
+}
+
+template <class FormatContext, class charT>
+size_t format_resolve_precision(FormatContext &context,
+                                const standard_format_spec<charT> &spec) {
+  if (!spec.dynamic_precision)
+    return spec.precision;
+
+  return format_dynamic_size(context, spec.precision_arg_id,
+                             "format precision argument is negative",
+                             "format precision argument is not an integer",
+                             "format precision argument is too large");
+}
+
+template <class charT, class FormatContext>
+typename FormatContext::iterator
+format_padded_text(basic_string_view<charT> text, FormatContext &context,
+                   const standard_format_spec<charT> &spec,
+                   format_alignment default_alignment) {
+  const size_t width = format_resolve_width(context, spec);
+
+  const size_t content_width = format_estimated_width(text);
+
+  const size_t padding =
+      width > content_width ? width - content_width : size_t{0};
+
+  const format_alignment alignment = spec.alignment == format_alignment::none
+                                         ? default_alignment
+                                         : spec.alignment;
+
+  size_t leading = 0;
+  size_t trailing = 0;
+
+  switch (alignment) {
+  case format_alignment::left:
+    trailing = padding;
+    break;
+
+  case format_alignment::right:
+    leading = padding;
+    break;
+
+  case format_alignment::center:
+    leading = padding / 2;
+    trailing = padding - leading;
+    break;
+
+  case format_alignment::none:
+    break;
+  }
+
+  auto output = context.out();
+
+  format_fill(output, spec.fill_view(), leading);
+
+  for (charT value : text)
+    format_put(output, value);
+
+  format_fill(output, spec.fill_view(), trailing);
+
+  return output;
+}
+
+template <class charT>
+void format_append_braced_escape(basic_string<charT> &output, char escape_kind,
+                                 unsigned long value) {
+  output.push_back(format_widen<charT>('\\'));
+
+  output.push_back(format_widen<charT>(escape_kind));
+
+  output.push_back(format_widen<charT>('{'));
+
+  char reversed[numeric_limits<unsigned long>::digits / 4 + 1];
+
+  size_t count = 0;
+
+  do {
+    const unsigned digit = static_cast<unsigned>(value & 0xfu);
+
+    reversed[count++] = digit < 10 ? static_cast<char>('0' + digit)
+                                   : static_cast<char>('a' + digit - 10);
+
+    value >>= 4u;
+  } while (value != 0);
+
+  while (count != 0) {
+    output.push_back(format_widen<charT>(reversed[--count]));
+  }
+
+  output.push_back(format_widen<charT>('}'));
+}
+
+template <class charT>
+void format_append_unicode_escape(basic_string<charT> &output,
+                                  unsigned long scalar) {
+  format_append_braced_escape(output, 'u', scalar);
+}
+
+template <class charT>
+void format_append_code_unit_escape(basic_string<charT> &output, charT unit) {
+  format_append_braced_escape(output, 'x',
+                              ::ftl_unicode_format::code_unit_value(unit));
+}
+
+template <class charT>
+basic_string<charT> format_escape_impl(basic_string_view<charT> value,
+                                       bool character_mode) {
+  basic_string<charT> output;
+
+  const charT quote = format_widen<charT>(character_mode ? '\'' : '"');
+
+  output.push_back(quote);
+
+  auto current = value.begin();
+  const auto end = value.end();
+
+  /*
+   * True exactly when the immediately preceding
+   * source character was copied to E without
+   * translation to an escape sequence.
+   */
+  bool previous_untranslated = false;
+
+  while (current != end) {
+    const auto decoded = ::ftl_unicode_format::decode<charT>(current, end);
+
+    if (!decoded.valid) {
+      format_append_code_unit_escape(output, *current);
+
+      ++current;
+
+      previous_untranslated = false;
+
+      continue;
+    }
+
+    const unsigned long scalar = decoded.scalar;
+
+    bool translated = true;
+
+    if (scalar == 0x09u) {
+      output.push_back(format_widen<charT>('\\'));
+      output.push_back(format_widen<charT>('t'));
+    } else if (scalar == 0x0au) {
+      output.push_back(format_widen<charT>('\\'));
+      output.push_back(format_widen<charT>('n'));
+    } else if (scalar == 0x0du) {
+      output.push_back(format_widen<charT>('\\'));
+      output.push_back(format_widen<charT>('r'));
+    } else if (scalar == 0x5cu) {
+      output.push_back(format_widen<charT>('\\'));
+      output.push_back(format_widen<charT>('\\'));
+    } else if (!character_mode && scalar == 0x22u) {
+      output.push_back(format_widen<charT>('\\'));
+      output.push_back(format_widen<charT>('"'));
+    } else if (character_mode && scalar == 0x27u) {
+      output.push_back(format_widen<charT>('\\'));
+      output.push_back(format_widen<charT>('\''));
+    } else if (scalar != 0x20u &&
+               (::ftl_unicode_format::is_other_or_separator(scalar) ||
+                (::ftl_unicode_format::is_grapheme_extend(scalar) &&
+                 !previous_untranslated))) {
+      format_append_unicode_escape(output, scalar);
+    } else {
+      translated = false;
+
+      auto source = current;
+
+      for (size_t index = 0; index < decoded.units; ++index) {
+        output.push_back(*source++);
+      }
+    }
+
+    previous_untranslated = !translated;
+
+    format_advance_units(current, decoded.units);
+  }
+
+  output.push_back(quote);
+
+  return output;
+}
+
+template <class charT>
+basic_string<charT> format_escape_string(basic_string_view<charT> value) {
+  return format_escape_impl(value, false);
+}
+
+template <class charT>
+basic_string<charT> format_escape_character(charT value) {
+  return format_escape_impl(basic_string_view<charT>(&value, 1), true);
+}
+
+template <class charT>
+basic_string<charT> format_ascii_string(const char *value) {
+  basic_string<charT> result;
+
+  while (*value != '\0') {
+    result.push_back(format_widen<charT>(*value++));
+  }
+
+  return result;
+}
+
+template <class charT, class FormatContext>
+basic_string<charT> format_localized_integer_digits(FormatContext &context,
+                                                    const char *digits,
+                                                    size_t digit_count) {
+  auto current_locale = context.locale();
+
+  const auto &punctuation = use_facet<numpunct<charT>>(current_locale);
+
+  const string grouping = punctuation.grouping();
+
+  basic_string<charT> result;
+
+  if (grouping.empty()) {
+    result.reserve(digit_count);
+
+    for (size_t index = 0; index < digit_count; ++index) {
+      result.push_back(format_widen<charT>(digits[index]));
+    }
+
+    return result;
+  }
+
+  const charT separator = punctuation.thousands_sep();
+
+  basic_string<charT> reversed;
+
+  reversed.reserve(digit_count * 2);
+
+  size_t remaining = digit_count;
+
+  size_t grouping_index = 0;
+
+  while (remaining != 0) {
+    const char raw_group = grouping[grouping_index];
+
+    if (raw_group <= 0 || raw_group == numeric_limits<char>::max()) {
+      while (remaining != 0) {
+        reversed.push_back(format_widen<charT>(digits[--remaining]));
+      }
+
+      break;
+    }
+
+    const size_t group_size = static_cast<unsigned char>(raw_group);
+
+    const size_t take = group_size < remaining ? group_size : remaining;
+
+    for (size_t index = 0; index < take; ++index) {
+      reversed.push_back(format_widen<charT>(digits[--remaining]));
+    }
+
+    if (remaining == 0)
+      break;
+
+    reversed.push_back(separator);
+
+    if (grouping_index + 1 < grouping.size()) {
+      ++grouping_index;
+    }
+  }
+
+  result.reserve(reversed.size());
+
+  for (size_t index = reversed.size(); index != 0; --index) {
+    result.push_back(reversed[index - 1]);
+  }
+
+  return result;
+}
+
+template <class Integer, class charT>
+constexpr bool format_integer_fits_character(Integer value) noexcept {
+  if constexpr (is_signed_v<Integer>) {
+    const long long converted = static_cast<long long>(value);
+
+    if constexpr (is_signed_v<charT>) {
+      return converted >=
+                 static_cast<long long>(numeric_limits<charT>::min()) &&
+             converted <= static_cast<long long>(numeric_limits<charT>::max());
+    } else {
+      if (converted < 0)
+        return false;
+
+      return static_cast<unsigned long long>(converted) <=
+             static_cast<unsigned long long>(numeric_limits<charT>::max());
+    }
+  } else {
+    const unsigned long long converted = static_cast<unsigned long long>(value);
+
+    return converted <=
+           static_cast<unsigned long long>(numeric_limits<charT>::max());
+  }
+}
+
+template <class Integer, class charT, class FormatContext>
+typename FormatContext::iterator
+format_integer_value(Integer value, FormatContext &context,
+                     const standard_format_spec<charT> &spec) {
+  if (spec.presentation == 'c') {
+    if (!format_integer_fits_character<Integer, charT>(value)) {
+      throw_format_error(
+          "integer value is not representable as format character");
+    }
+
+    const charT character = static_cast<charT>(value);
+
+    return format_padded_text(basic_string_view<charT>(&character, 1), context,
+                              spec, format_alignment::right);
+  }
+
+  int base = 10;
+
+  switch (spec.presentation) {
+  case 'b':
+  case 'B':
+    base = 2;
+    break;
+
+  case 'o':
+    base = 8;
+    break;
+
+  case 'x':
+  case 'X':
+    base = 16;
+    break;
+
+  default:
+    base = 10;
+    break;
+  }
+
+  using unsigned_type = make_unsigned_t<Integer>;
+
+  char buffer[numeric_limits<unsigned_type>::digits + 2];
+
+  const to_chars_result converted =
+      to_chars(buffer, buffer + sizeof(buffer), value, base);
+
+  if (converted.ec != errc{}) {
+    throw_format_error("integer formatting conversion failed");
+  }
+
+  char *digits = buffer;
+
+  size_t digits_size = static_cast<size_t>(converted.ptr - buffer);
+
+  char sign_character = '\0';
+
+  if (digits_size != 0 && *digits == '-') {
+    sign_character = '-';
+
+    ++digits;
+    --digits_size;
+  } else if (spec.sign == format_sign::plus) {
+    sign_character = '+';
+  } else if (spec.sign == format_sign::space) {
+    sign_character = ' ';
+  }
+
+  if (spec.presentation == 'X') {
+    for (size_t index = 0; index < digits_size; ++index) {
+      if (digits[index] >= 'a' && digits[index] <= 'f') {
+        digits[index] = static_cast<char>('A' + digits[index] - 'a');
+      }
+    }
+  }
+
+  basic_string<charT> localized_digits;
+
+  if (spec.localized) {
+    localized_digits =
+        format_localized_integer_digits<charT>(context, digits, digits_size);
+  }
+
+  const size_t rendered_digits_size =
+      spec.localized ? format_estimated_width(basic_string_view<charT>(
+                           localized_digits.data(), localized_digits.size()))
+                     : digits_size;
+
+  char prefix[2]{};
+  size_t prefix_size = 0;
+
+  if (spec.alternate) {
+    switch (spec.presentation) {
+    case 'b':
+      prefix[0] = '0';
+      prefix[1] = 'b';
+      prefix_size = 2;
+      break;
+
+    case 'B':
+      prefix[0] = '0';
+      prefix[1] = 'B';
+      prefix_size = 2;
+      break;
+
+    case 'o':
+      if (value != Integer{}) {
+        prefix[0] = '0';
+        prefix_size = 1;
+      }
+      break;
+
+    case 'x':
+      prefix[0] = '0';
+      prefix[1] = 'x';
+      prefix_size = 2;
+      break;
+
+    case 'X':
+      prefix[0] = '0';
+      prefix[1] = 'X';
+      prefix_size = 2;
+      break;
+
+    default:
+      break;
+    }
+  }
+
+  const size_t sign_size = sign_character == '\0' ? size_t{0} : size_t{1};
+
+  const size_t content_size = sign_size + prefix_size + rendered_digits_size;
+
+  const size_t width = format_resolve_width(context, spec);
+
+  const size_t padding =
+      width > content_size ? width - content_size : size_t{0};
+
+  auto output = context.out();
+
+  auto write_digits = [&]() {
+    if (spec.localized) {
+      for (charT character : localized_digits) {
+        format_put(output, character);
+      }
+    } else {
+      for (size_t index = 0; index < digits_size; ++index) {
+        format_put(output, format_widen<charT>(digits[index]));
+      }
+    }
+  };
+
+  if (spec.zero_padding && spec.alignment == format_alignment::none &&
+      padding != 0) {
+    if (sign_character != '\0') {
+      format_put(output, format_widen<charT>(sign_character));
+    }
+
+    for (size_t index = 0; index < prefix_size; ++index) {
+      format_put(output, format_widen<charT>(prefix[index]));
+    }
+
+    format_fill(output, format_widen<charT>('0'), padding);
+
+    write_digits();
+
+    return output;
+  }
+
+  const format_alignment effective_alignment =
+      spec.alignment == format_alignment::none ? format_alignment::right
+                                               : spec.alignment;
+
+  size_t leading = 0;
+  size_t trailing = 0;
+
+  switch (effective_alignment) {
+  case format_alignment::left:
+    trailing = padding;
+    break;
+
+  case format_alignment::right:
+    leading = padding;
+    break;
+
+  case format_alignment::center:
+    leading = padding / 2;
+    trailing = padding - leading;
+    break;
+
+  case format_alignment::none:
+    break;
+  }
+
+  format_fill(output, spec.fill_view(), leading);
+
+  if (sign_character != '\0') {
+    format_put(output, format_widen<charT>(sign_character));
+  }
+
+  for (size_t index = 0; index < prefix_size; ++index) {
+    format_put(output, format_widen<charT>(prefix[index]));
+  }
+
+  write_digits();
+
+  format_fill(output, spec.fill_view(), trailing);
+
+  return output;
+}
+
+[[nodiscard]]
+inline bool format_floating_is_special(basic_string_view<char> text) noexcept {
+  size_t index = 0;
+
+  if (index < text.size() &&
+      (text[index] == '-' || text[index] == '+' || text[index] == ' ')) {
+    ++index;
+  }
+
+  if (index == text.size())
+    return false;
+
+  const char first = text[index];
+
+  return first == 'i' || first == 'I' || first == 'n' || first == 'N';
+}
+
+[[nodiscard]]
+inline size_t
+format_floating_exponent_position(basic_string_view<char> text) noexcept {
+  for (size_t index = 0; index < text.size(); ++index) {
+    switch (text[index]) {
+    case 'e':
+    case 'E':
+    case 'p':
+    case 'P':
+      return index;
+
+    default:
+      break;
+    }
+  }
+
+  return text.size();
+}
+
+[[nodiscard]]
+inline size_t format_floating_point_position(basic_string_view<char> text,
+                                             size_t exponent) noexcept {
+  for (size_t index = 0; index < exponent; ++index) {
+    if (text[index] == '.')
+      return index;
+  }
+
+  return exponent;
+}
+
+inline void format_append_ascii_range(string &output,
+                                      basic_string_view<char> input,
+                                      size_t first, size_t last) {
+  for (size_t index = first; index < last; ++index) {
+    output.push_back(input[index]);
+  }
+}
+
+inline size_t format_floating_significant_digits(basic_string_view<char> text,
+                                                 size_t exponent) noexcept {
+  size_t index = 0;
+
+  if (index < exponent &&
+      (text[index] == '-' || text[index] == '+' || text[index] == ' ')) {
+    ++index;
+  }
+
+  bool seen_nonzero = false;
+  size_t count = 0;
+
+  for (; index < exponent; ++index) {
+    const char character = text[index];
+
+    if (character == '.')
+      continue;
+
+    if (character < '0' || character > '9')
+      continue;
+
+    if (!seen_nonzero) {
+      if (character == '0')
+        continue;
+
+      seen_nonzero = true;
+      count = 1;
+      continue;
+    }
+
+    ++count;
+  }
+
+  return seen_nonzero ? count : size_t{1};
+}
+
+inline void format_apply_floating_alternate(string &text, char presentation,
+                                            size_t precision) {
+  if (format_floating_is_special(
+          basic_string_view<char>(text.data(), text.size()))) {
+    return;
+  }
+
+  const basic_string_view<char> view(text.data(), text.size());
+
+  const size_t exponent = format_floating_exponent_position(view);
+
+  const size_t point = format_floating_point_position(view, exponent);
+
+  size_t trailing_zeroes = 0;
+
+  if (presentation == 'g' || presentation == 'G') {
+    const size_t significant_target = precision == 0 ? size_t{1} : precision;
+
+    const size_t present = format_floating_significant_digits(view, exponent);
+
+    if (significant_target > present) {
+      trailing_zeroes = significant_target - present;
+    }
+  }
+
+  const bool need_point = point == exponent;
+
+  if (!need_point && trailing_zeroes == 0) {
+    return;
+  }
+
+  string replacement;
+
+  replacement.reserve(text.size() + trailing_zeroes +
+                      static_cast<size_t>(need_point));
+
+  format_append_ascii_range(replacement, view, 0, exponent);
+
+  if (need_point)
+    replacement.push_back('.');
+
+  for (size_t index = 0; index < trailing_zeroes; ++index) {
+    replacement.push_back('0');
+  }
+
+  format_append_ascii_range(replacement, view, exponent, view.size());
+
+  text = move(replacement);
+}
+
+inline void format_uppercase_floating(string &text) noexcept {
+  for (size_t index = 0; index < text.size(); ++index) {
+    char &character = text[index];
+
+    if (character >= 'a' && character <= 'z') {
+      character = static_cast<char>(character - 'a' + 'A');
+    }
+  }
+}
+
+inline void format_apply_positive_sign(string &text, format_sign sign) {
+  if (text.empty() || text[0] == '-')
+    return;
+
+  char sign_character = '\0';
+
+  if (sign == format_sign::plus)
+    sign_character = '+';
+  else if (sign == format_sign::space)
+    sign_character = ' ';
+
+  if (sign_character == '\0')
+    return;
+
+  string replacement;
+
+  replacement.reserve(text.size() + 1);
+
+  replacement.push_back(sign_character);
+
+  for (char character : text)
+    replacement.push_back(character);
+
+  text = move(replacement);
+}
+
+template <class Float>
+[[nodiscard]]
+size_t format_floating_buffer_capacity(size_t precision) {
+  constexpr int exponent10 = numeric_limits<Float>::max_exponent10;
+
+  constexpr int digits10 = numeric_limits<Float>::max_digits10;
+
+  const size_t exponent =
+      exponent10 > 0 ? static_cast<size_t>(exponent10) : size_t{0};
+
+  const size_t digits =
+      digits10 > 0 ? static_cast<size_t>(digits10) : size_t{0};
+
+  constexpr size_t overhead = 256;
+
+  if (precision >
+      numeric_limits<size_t>::max() - exponent - digits - overhead) {
+    throw_format_error("floating format precision is too large");
+  }
+
+  return precision + exponent + digits + overhead;
+}
+
+template <class Float, class FormatContext, class charT>
+string format_convert_floating(Float value, FormatContext &context,
+                               const standard_format_spec<charT> &spec,
+                               size_t &conversion_precision) {
+  bool use_precision = false;
+
+  chars_format conversion_format = chars_format::general;
+
+  conversion_precision = 0;
+
+  switch (spec.presentation) {
+  case 'a':
+  case 'A':
+    conversion_format = chars_format::hex;
+
+    if (spec.has_precision) {
+      use_precision = true;
+
+      conversion_precision = format_resolve_precision(context, spec);
+    }
+
+    break;
+
+  case 'e':
+  case 'E':
+    conversion_format = chars_format::scientific;
+
+    use_precision = true;
+
+    conversion_precision = spec.has_precision
+                               ? format_resolve_precision(context, spec)
+                               : size_t{6};
+
+    break;
+
+  case 'f':
+  case 'F':
+    conversion_format = chars_format::fixed;
+
+    use_precision = true;
+
+    conversion_precision = spec.has_precision
+                               ? format_resolve_precision(context, spec)
+                               : size_t{6};
+
+    break;
+
+  case 'g':
+  case 'G':
+    conversion_format = chars_format::general;
+
+    use_precision = true;
+
+    conversion_precision = spec.has_precision
+                               ? format_resolve_precision(context, spec)
+                               : size_t{6};
+
+    break;
+
+  case '\0':
+    if (spec.has_precision) {
+      conversion_format = chars_format::general;
+
+      use_precision = true;
+
+      conversion_precision = format_resolve_precision(context, spec);
+    }
+
+    break;
+
+  default:
+    throw_format_error("invalid floating format presentation type");
+  }
+
+  if (use_precision &&
+      conversion_precision > static_cast<size_t>(numeric_limits<int>::max())) {
+    throw_format_error("floating format precision is too large");
+  }
+
+  const size_t capacity = format_floating_buffer_capacity<Float>(
+      use_precision ? conversion_precision : size_t{0});
+
+  string buffer(capacity, '\0');
+
+  to_chars_result converted{};
+
+  if (spec.presentation == '\0' && !use_precision) {
+    converted = to_chars(buffer.data(), buffer.data() + buffer.size(), value);
+  } else if (!use_precision) {
+    converted = to_chars(buffer.data(), buffer.data() + buffer.size(), value,
+                         conversion_format);
+  } else {
+    converted =
+        to_chars(buffer.data(), buffer.data() + buffer.size(), value,
+                 conversion_format, static_cast<int>(conversion_precision));
+  }
+
+  if (converted.ec != errc{}) {
+    throw_format_error("floating formatting conversion failed");
+  }
+
+  buffer.resize(static_cast<size_t>(converted.ptr - buffer.data()));
+
+  return buffer;
+}
+
+template <class charT, class FormatContext>
+basic_string<charT>
+format_localized_floating_text(FormatContext &context,
+                               basic_string_view<char> text) {
+  basic_string<charT> result;
+
+  if (format_floating_is_special(text)) {
+    result.reserve(text.size());
+
+    for (char character : text) {
+      result.push_back(format_widen<charT>(character));
+    }
+
+    return result;
+  }
+
+  auto current_locale = context.locale();
+
+  const auto &punctuation = use_facet<numpunct<charT>>(current_locale);
+
+  size_t first_digit = 0;
+
+  if (first_digit < text.size() &&
+      (text[first_digit] == '-' || text[first_digit] == '+' ||
+       text[first_digit] == ' ')) {
+    result.push_back(format_widen<charT>(text[first_digit]));
+
+    ++first_digit;
+  }
+
+  const size_t exponent = format_floating_exponent_position(text);
+
+  const size_t point = format_floating_point_position(text, exponent);
+
+  const size_t integer_end = point < exponent ? point : exponent;
+
+  if (integer_end > first_digit) {
+    const auto grouped = format_localized_integer_digits<charT>(
+        context, text.data() + first_digit, integer_end - first_digit);
+
+    for (charT character : grouped) {
+      result.push_back(character);
+    }
+  }
+
+  if (point < exponent) {
+    result.push_back(punctuation.decimal_point());
+
+    for (size_t index = point + 1; index < exponent; ++index) {
+      result.push_back(format_widen<charT>(text[index]));
+    }
+  }
+
+  for (size_t index = exponent; index < text.size(); ++index) {
+    result.push_back(format_widen<charT>(text[index]));
+  }
+
+  return result;
+}
+
+template <class charT, class FormatContext>
+typename FormatContext::iterator
+format_floating_text(basic_string_view<charT> text, bool special,
+                     FormatContext &context,
+                     const standard_format_spec<charT> &spec) {
+  const size_t width = format_resolve_width(context, spec);
+
+  const size_t content_width = format_estimated_width(text);
+
+  const size_t padding =
+      width > content_width ? width - content_width : size_t{0};
+
+  if (spec.zero_padding && spec.alignment == format_alignment::none &&
+      !special && padding != 0) {
+    auto output = context.out();
+
+    size_t first = 0;
+
+    if (!text.empty() && (text[0] == format_widen<charT>('-') ||
+                          text[0] == format_widen<charT>('+') ||
+                          text[0] == format_widen<charT>(' '))) {
+      format_put(output, text[0]);
+
+      first = 1;
+    }
+
+    format_fill(output, format_widen<charT>('0'), padding);
+
+    for (size_t index = first; index < text.size(); ++index) {
+      format_put(output, text[index]);
+    }
+
+    return output;
+  }
+
+  return format_padded_text(text, context, spec, format_alignment::right);
+}
+
+template <class Float, class charT> class floating_formatter {
+public:
+  constexpr floating_formatter() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    const auto result = parse_standard_format_spec(context, spec_);
+
+    switch (spec_.presentation) {
+    case '\0':
+    case 'a':
+    case 'A':
+    case 'e':
+    case 'E':
+    case 'f':
+    case 'F':
+    case 'g':
+    case 'G':
+      break;
+
+    default:
+      throw_format_error("invalid floating format presentation type");
+    }
+
+    return result;
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator format(Float value,
+                                          FormatContext &context) const {
+    size_t conversion_precision = 0;
+
+    string converted = format_convert_floating<Float>(value, context, spec_,
+                                                      conversion_precision);
+
+    const bool special = format_floating_is_special(
+        basic_string_view<char>(converted.data(), converted.size()));
+
+    if (spec_.alternate) {
+      size_t alternate_precision = conversion_precision;
+
+      if ((spec_.presentation == 'g' || spec_.presentation == 'G') &&
+          !spec_.has_precision) {
+        alternate_precision = 6;
+      }
+
+      format_apply_floating_alternate(converted, spec_.presentation,
+                                      alternate_precision);
+    }
+
+    switch (spec_.presentation) {
+    case 'A':
+    case 'E':
+    case 'F':
+    case 'G':
+      format_uppercase_floating(converted);
+      break;
+
+    default:
+      break;
+    }
+
+    format_apply_positive_sign(converted, spec_.sign);
+
+    basic_string<charT> rendered;
+
+    if (spec_.localized) {
+      rendered = format_localized_floating_text<charT>(
+          context, basic_string_view<char>(converted.data(), converted.size()));
+    } else {
+      rendered.reserve(converted.size());
+
+      for (char character : converted) {
+        rendered.push_back(format_widen<charT>(character));
+      }
+    }
+
+    return format_floating_text(
+        basic_string_view<charT>(rendered.data(), rendered.size()), special,
+        context, spec_);
+  }
+
+private:
+  standard_format_spec<charT> spec_{};
+};
+
+template <class T, class charT> class numeric_integer_formatter {
+public:
+  constexpr numeric_integer_formatter() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    const auto result = parse_standard_format_spec(context, spec_);
+
+    if (spec_.has_precision) {
+      throw_format_error("precision is not valid for integer formatting");
+    }
+
+    switch (spec_.presentation) {
+    case '\0':
+    case 'b':
+    case 'B':
+    case 'c':
+    case 'd':
+    case 'o':
+    case 'x':
+    case 'X':
+      break;
+
+    default:
+      throw_format_error("invalid integer format presentation type");
+    }
+
+    if (spec_.presentation == 'c' && (spec_.sign_specified || spec_.alternate ||
+                                      spec_.zero_padding || spec_.localized)) {
+      throw_format_error("invalid option for character integer presentation");
+    }
+
+    return result;
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator format(T value,
+                                          FormatContext &context) const {
+    return format_integer_value<T, charT>(value, context, spec_);
+  }
+
+private:
+  standard_format_spec<charT> spec_{};
+};
+
+template <class Character, class charT> class character_formatter {
+public:
+  constexpr character_formatter() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    const auto result = parse_standard_format_spec(context, spec_);
+
+    if (spec_.has_precision) {
+      throw_format_error("precision is not valid for character formatting");
+    }
+
+    switch (spec_.presentation) {
+    case '\0':
+    case 'c':
+    case '?':
+    case 'b':
+    case 'B':
+    case 'd':
+    case 'o':
+    case 'x':
+    case 'X':
+      break;
+
+    default:
+      throw_format_error("invalid character format presentation type");
+    }
+
+    if (!numeric_presentation() && (spec_.sign_specified || spec_.alternate ||
+                                    spec_.zero_padding || spec_.localized)) {
+      throw_format_error("invalid option for textual character presentation");
+    }
+
+    return result;
+  }
+
+  constexpr void set_debug_format() { spec_.presentation = '?'; }
+
+  template <class FormatContext>
+  typename FormatContext::iterator format(Character value,
+                                          FormatContext &context) const {
+    if (numeric_presentation()) {
+      using unsigned_character = make_unsigned_t<Character>;
+
+      return format_integer_value<unsigned_character, charT>(
+          static_cast<unsigned_character>(value), context, spec_);
+    }
+
+    const charT widened = static_cast<charT>(value);
+
+    if (spec_.presentation == '?') {
+      const auto escaped = format_escape_character(widened);
+
+      return format_padded_text(
+          basic_string_view<charT>(escaped.data(), escaped.size()), context,
+          spec_, format_alignment::left);
+    }
+
+    return format_padded_text(basic_string_view<charT>(&widened, 1), context,
+                              spec_, format_alignment::left);
+  }
+
+private:
+  [[nodiscard]]
+  constexpr bool numeric_presentation() const noexcept {
+    switch (spec_.presentation) {
+    case 'b':
+    case 'B':
+    case 'd':
+    case 'o':
+    case 'x':
+    case 'X':
+      return true;
+
+    default:
+      return false;
+    }
+  }
+
+  standard_format_spec<charT> spec_{};
+};
+
+template <class charT> class boolean_formatter {
+public:
+  constexpr boolean_formatter() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    const auto result = parse_standard_format_spec(context, spec_);
+
+    if (spec_.has_precision) {
+      throw_format_error("precision is not valid for bool formatting");
+    }
+
+    switch (spec_.presentation) {
+    case '\0':
+    case 's':
+    case 'b':
+    case 'B':
+    case 'd':
+    case 'o':
+    case 'x':
+    case 'X':
+      break;
+
+    default:
+      throw_format_error("invalid bool format presentation type");
+    }
+
+    if (!numeric_presentation() &&
+        (spec_.sign_specified || spec_.alternate || spec_.zero_padding)) {
+      throw_format_error("invalid option for textual bool presentation");
+    }
+
+    return result;
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator format(bool value,
+                                          FormatContext &context) const {
+    if (numeric_presentation()) {
+      return format_integer_value<unsigned char, charT>(
+          static_cast<unsigned char>(value), context, spec_);
+    }
+
+    basic_string<charT> text;
+
+    if (spec_.localized) {
+      auto current_locale = context.locale();
+
+      const auto &punctuation = use_facet<numpunct<charT>>(current_locale);
+
+      text = value ? punctuation.truename() : punctuation.falsename();
+    } else {
+      text = value ? format_ascii_string<charT>("true")
+                   : format_ascii_string<charT>("false");
+    }
+
+    return format_padded_text(
+        basic_string_view<charT>(text.data(), text.size()), context, spec_,
+        format_alignment::left);
+  }
+
+private:
+  [[nodiscard]]
+  constexpr bool numeric_presentation() const noexcept {
+    switch (spec_.presentation) {
+    case 'b':
+    case 'B':
+    case 'd':
+    case 'o':
+    case 'x':
+    case 'X':
+      return true;
+
+    default:
+      return false;
+    }
+  }
+
+  standard_format_spec<charT> spec_{};
+};
+
+template <class charT> class string_formatter_base {
+public:
+  constexpr string_formatter_base() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    const auto result = parse_standard_format_spec(context, spec_);
+
+    switch (spec_.presentation) {
+    case '\0':
+    case 's':
+    case '?':
+      break;
+
+    default:
+      throw_format_error("invalid string format presentation type");
+    }
+
+    if (spec_.sign_specified || spec_.alternate || spec_.zero_padding ||
+        spec_.localized) {
+      throw_format_error("invalid option for string formatting");
+    }
+
+    return result;
+  }
+
+  constexpr void set_debug_format() { spec_.presentation = '?'; }
+
+protected:
+  template <class FormatContext>
+  typename FormatContext::iterator format_view(basic_string_view<charT> value,
+                                               FormatContext &context) const {
+    size_t count = value.size();
+
+    if (spec_.has_precision) {
+      const size_t precision = format_resolve_precision(context, spec_);
+
+      count = format_prefix_for_width(value, precision);
+    }
+
+    const basic_string_view<charT> selected(value.data(), count);
+
+    if (spec_.presentation == '?') {
+      const auto escaped = format_escape_string(selected);
+
+      return format_padded_text(
+          basic_string_view<charT>(escaped.data(), escaped.size()), context,
+          spec_, format_alignment::left);
+    }
+
+    return format_padded_text(selected, context, spec_, format_alignment::left);
+  }
+
+private:
+  standard_format_spec<charT> spec_{};
+};
+
+template <class charT> class pointer_formatter_base {
+public:
+  constexpr pointer_formatter_base() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    const auto result = parse_standard_format_spec(context, spec_);
+
+    if (spec_.presentation != '\0' && spec_.presentation != 'p') {
+      throw_format_error("invalid pointer format presentation type");
+    }
+
+    if (spec_.sign_specified || spec_.alternate || spec_.zero_padding ||
+        spec_.has_precision || spec_.localized) {
+      throw_format_error("invalid option for pointer formatting");
+    }
+
+    return result;
+  }
+
+protected:
+  template <class FormatContext>
+  typename FormatContext::iterator
+  format_pointer(const void *value, FormatContext &context) const {
+    const uintptr_t address = reinterpret_cast<uintptr_t>(value);
+
+    char digits[numeric_limits<uintptr_t>::digits / 4 + 1];
+
+    const to_chars_result converted =
+        to_chars(digits, digits + sizeof(digits), address, 16);
+
+    if (converted.ec != errc{}) {
+      throw_format_error("pointer formatting conversion failed");
+    }
+
+    basic_string<charT> text;
+
+    text.reserve(static_cast<size_t>(converted.ptr - digits) + 2);
+
+    text.push_back(format_widen<charT>('0'));
+
+    text.push_back(format_widen<charT>('x'));
+
+    for (char *current = digits; current != converted.ptr; ++current) {
+      text.push_back(format_widen<charT>(*current));
+    }
+
+    return format_padded_text(
+        basic_string_view<charT>(text.data(), text.size()), context, spec_,
+        format_alignment::right);
+  }
+
+private:
+  standard_format_spec<charT> spec_{};
+};
+
+template <class T, class Context,
+          class Formatter =
+              typename Context::template formatter_type<remove_const_t<T>>>
+concept formattable_with =
+    semiregular<Formatter> &&
+    requires(
+        Formatter &formatter_value, const Formatter &const_formatter, T &&value,
+        Context format_context,
+        basic_format_parse_context<typename Context::char_type> parse_context) {
+      {
+        formatter_value.parse(parse_context)
+      } -> same_as<typename decltype(parse_context)::iterator>;
+
+      {
+        const_formatter.format(value, format_context)
+      } -> same_as<typename Context::iterator>;
+    };
+
+template <class T> struct format_string_like {
+  static constexpr bool value = false;
+
+  using char_type = void;
+};
+
+template <class Character, class Traits>
+struct format_string_like<basic_string_view<Character, Traits>> {
+  static constexpr bool value = true;
+
+  using char_type = Character;
+};
+
+template <class Character, class Traits, class Allocator>
+struct format_string_like<basic_string<Character, Traits, Allocator>> {
+  static constexpr bool value = true;
+
+  using char_type = Character;
+};
+
+template <class Context, class... Args> class format_arg_store;
+
+} // namespace detail
+
+template <class T, class charT>
+  requires detail::is_numeric_format_integer_v<T> &&
+           detail::format_character_type_v<charT>
+struct formatter<T, charT> : detail::numeric_integer_formatter<T, charT> {};
+
+template <class T, class charT>
+  requires is_floating_point_v<T> && is_same_v<T, remove_cv_t<T>> &&
+           detail::format_character_type_v<charT>
+struct formatter<T, charT> : detail::floating_formatter<T, charT> {};
+
+template <class Character, class charT>
+  requires(detail::format_character_type_v<charT> &&
+           ((is_same_v<Character, charT>) ||
+            (is_same_v<Character, char> && is_same_v<charT, wchar_t>)))
+struct formatter<Character, charT>
+    : detail::character_formatter<Character, charT> {};
+
+template <class charT>
+  requires detail::format_character_type_v<charT>
+struct formatter<bool, charT> : detail::boolean_formatter<charT> {};
+
+template <class charT>
+  requires detail::format_character_type_v<charT>
+struct formatter<charT *, charT> : detail::string_formatter_base<charT> {
+  template <class FormatContext>
+  typename FormatContext::iterator format(charT *value,
+                                          FormatContext &context) const {
+    return this->format_view(
+        basic_string_view<charT>(value, char_traits<charT>::length(value)),
+        context);
+  }
+};
+
+template <class charT>
+  requires detail::format_character_type_v<charT>
+struct formatter<const charT *, charT> : detail::string_formatter_base<charT> {
+  template <class FormatContext>
+  typename FormatContext::iterator format(const charT *value,
+                                          FormatContext &context) const {
+    return this->format_view(
+        basic_string_view<charT>(value, char_traits<charT>::length(value)),
+        context);
+  }
+};
+
+template <size_t N, class charT>
+  requires detail::format_character_type_v<charT>
+struct formatter<charT[N], charT> : detail::string_formatter_base<charT> {
+  template <class FormatContext>
+  typename FormatContext::iterator format(const charT (&value)[N],
+                                          FormatContext &context) const {
+    return this->format_view(
+        basic_string_view<charT>(value, char_traits<charT>::length(value)),
+        context);
+  }
+};
+
+template <class charT, class Traits, class Allocator>
+  requires detail::format_character_type_v<charT>
+struct formatter<basic_string<charT, Traits, Allocator>, charT>
+    : detail::string_formatter_base<charT> {
+  template <class FormatContext>
+  typename FormatContext::iterator
+  format(const basic_string<charT, Traits, Allocator> &value,
+         FormatContext &context) const {
+    return this->format_view(
+        basic_string_view<charT>(value.data(), value.size()), context);
+  }
+};
+
+template <class charT, class Traits>
+  requires detail::format_character_type_v<charT>
+struct formatter<basic_string_view<charT, Traits>, charT>
+    : detail::string_formatter_base<charT> {
+  template <class FormatContext>
+  typename FormatContext::iterator
+  format(basic_string_view<charT, Traits> value, FormatContext &context) const {
+    return this->format_view(
+        basic_string_view<charT>(value.data(), value.size()), context);
+  }
+};
+
+template <class charT>
+  requires detail::format_character_type_v<charT>
+struct formatter<void *, charT> : detail::pointer_formatter_base<charT> {
+  template <class FormatContext>
+  typename FormatContext::iterator format(void *value,
+                                          FormatContext &context) const {
+    return this->format_pointer(value, context);
+  }
+};
+
+template <class charT>
+  requires detail::format_character_type_v<charT>
+struct formatter<const void *, charT> : detail::pointer_formatter_base<charT> {
+  template <class FormatContext>
+  typename FormatContext::iterator format(const void *value,
+                                          FormatContext &context) const {
+    return this->format_pointer(value, context);
+  }
+};
+
+template <class charT>
+  requires detail::format_character_type_v<charT>
+struct formatter<nullptr_t, charT> : detail::pointer_formatter_base<charT> {
+  template <class FormatContext>
+  typename FormatContext::iterator format(nullptr_t,
+                                          FormatContext &context) const {
+    return this->format_pointer(nullptr, context);
+  }
+};
+
+template <class Context> class basic_format_arg {
+private:
+  using char_type = typename Context::char_type;
+
+public:
+  class handle {
+  private:
+    const void *ptr_ = nullptr;
+
+    void (*format_)(basic_format_parse_context<char_type> &, Context &,
+                    const void *) = nullptr;
+
+    template <class T>
+    static void
+    format_value(basic_format_parse_context<char_type> &parse_context,
+                 Context &format_context, const void *pointer) {
+      using unqualified_type = remove_const_t<T>;
+
+      typename Context::template formatter_type<unqualified_type>
+          formatter_value;
+
+      parse_context.advance_to(formatter_value.parse(parse_context));
+
+      if constexpr (detail::formattable_with<const unqualified_type, Context>) {
+        const auto *typed = static_cast<const unqualified_type *>(pointer);
+
+        format_context.advance_to(
+            formatter_value.format(*typed, format_context));
+      } else {
+        auto *typed = const_cast<unqualified_type *>(
+            static_cast<const unqualified_type *>(pointer));
+
+        format_context.advance_to(
+            formatter_value.format(*typed, format_context));
+      }
+    }
+
+    template <class T>
+    explicit handle(T &value) noexcept
+        : ptr_(FTL_FORMAT_NS::addressof(value)), format_(&format_value<T>) {}
+
+    friend class basic_format_arg;
+
+  public:
+    void format(basic_format_parse_context<char_type> &parse_context,
+                Context &format_context) const {
+      format_(parse_context, format_context, ptr_);
+    }
+  };
+
+private:
+  using value_type =
+      variant<monostate, bool, char_type, int, unsigned int, long long int,
+              unsigned long long int, float, double, long double,
+              const char_type *, basic_string_view<char_type>, const void *,
+              handle>;
+
+  value_type value_{};
+
+  template <class T>
+  [[nodiscard]]
+  static value_type make_value(T &value) noexcept {
+    using argument_type = remove_const_t<T>;
+
+    if constexpr (is_same_v<argument_type, bool> ||
+                  is_same_v<argument_type, char_type>) {
+      return value_type(value);
+    } else if constexpr (is_same_v<argument_type, char> &&
+                         is_same_v<char_type, wchar_t>) {
+      return value_type(static_cast<wchar_t>(value));
+    } else if constexpr (is_integral_v<argument_type> &&
+                         is_signed_v<argument_type> &&
+                         sizeof(argument_type) <= sizeof(int)) {
+      return value_type(static_cast<int>(value));
+    } else if constexpr (is_integral_v<argument_type> &&
+                         is_unsigned_v<argument_type> &&
+                         sizeof(argument_type) <= sizeof(unsigned int)) {
+      return value_type(static_cast<unsigned int>(value));
+    } else if constexpr (is_integral_v<argument_type> &&
+                         is_signed_v<argument_type> &&
+                         sizeof(argument_type) <= sizeof(long long int)) {
+      return value_type(static_cast<long long int>(value));
+    } else if constexpr (is_integral_v<argument_type> &&
+                         is_unsigned_v<argument_type> &&
+                         sizeof(argument_type) <=
+                             sizeof(unsigned long long int)) {
+      return value_type(static_cast<unsigned long long int>(value));
+    } else if constexpr (is_same_v<argument_type, float> ||
+                         is_same_v<argument_type, double> ||
+                         is_same_v<argument_type, long double>) {
+      return value_type(value);
+    } else if constexpr (detail::format_string_like<argument_type>::value &&
+                         is_same_v<typename detail::format_string_like<
+                                       argument_type>::char_type,
+                                   char_type>) {
+      return value_type(
+          basic_string_view<char_type>(value.data(), value.size()));
+    } else if constexpr (is_same_v<decay_t<argument_type>, char_type *> ||
+                         is_same_v<decay_t<argument_type>, const char_type *>) {
+      return value_type(static_cast<const char_type *>(value));
+    } else if constexpr (is_null_pointer_v<argument_type>) {
+      return value_type(static_cast<const void *>(nullptr));
+    } else if constexpr (is_pointer_v<argument_type> &&
+                         is_void_v<remove_pointer_t<argument_type>>) {
+      return value_type(static_cast<const void *>(value));
+    } else {
+      return value_type(handle(value));
+    }
+  }
+
+  template <class T>
+    requires detail::formattable_with<T, Context>
+  explicit basic_format_arg(T &value) noexcept : value_(make_value(value)) {}
+
+  template <class, class...> friend class detail::format_arg_store;
+
+  template <class Visitor, class OtherContext>
+  friend decltype(auto) visit_format_arg(Visitor &&,
+                                         basic_format_arg<OtherContext>);
+
+public:
+  basic_format_arg() noexcept = default;
+
+  explicit operator bool() const noexcept {
+    return !holds_alternative<monostate>(value_);
+  }
+};
+
+template <class Visitor, class Context>
+decltype(auto) visit_format_arg(Visitor &&visitor,
+                                basic_format_arg<Context> argument) {
+  return visit(forward<Visitor>(visitor), argument.value_);
+}
+
+namespace detail {
+
+template <class Context, class... Args> class format_arg_store {
+public:
+  explicit format_arg_store(Args &&...arguments) noexcept
+      : arguments_{basic_format_arg<Context>(arguments)...} {}
+
+  [[nodiscard]]
+  const basic_format_arg<Context> *data() const noexcept {
+    return arguments_.data();
+  }
+
+private:
+  array<basic_format_arg<Context>, sizeof...(Args)> arguments_;
+};
+
+} // namespace detail
+
+template <class Context> class basic_format_args {
+public:
+  basic_format_args() noexcept = default;
+
+  template <class... Args>
+  basic_format_args(
+      const detail::format_arg_store<Context, Args...> &store) noexcept
+      : size_(sizeof...(Args)), data_(store.data()) {}
+
+  [[nodiscard]]
+  basic_format_arg<Context> get(size_t index) const noexcept {
+    return index < size_ ? data_[index] : basic_format_arg<Context>();
+  }
+
+private:
+  size_t size_ = 0;
+
+  const basic_format_arg<Context> *data_ = nullptr;
+};
+
+template <class Context, class... Args>
+basic_format_args(detail::format_arg_store<Context, Args...>)
+    -> basic_format_args<Context>;
+
+template <class Out, class charT> class basic_format_context {
+public:
+  using iterator = Out;
+  using char_type = charT;
+
+  template <class T> using formatter_type = formatter<T, charT>;
+
+  basic_format_context(Out output,
+                       basic_format_args<basic_format_context> arguments,
+                       const FTL_FORMAT_NS::locale *loc = nullptr)
+      : arguments_(arguments), output_(move(output)), locale_(loc) {}
+
+  [[nodiscard]]
+  basic_format_arg<basic_format_context> arg(size_t id) const noexcept {
+    return arguments_.get(id);
+  }
+
+  FTL_FORMAT_NS::locale locale() {
+    return locale_ != nullptr ? *locale_ : FTL_FORMAT_NS::locale();
+  }
+
+  iterator out() { return move(output_); }
+
+  void advance_to(iterator iterator_value) { output_ = move(iterator_value); }
+
+private:
+  basic_format_args<basic_format_context> arguments_;
+
+  Out output_;
+
+  const FTL_FORMAT_NS::locale *locale_ = nullptr;
+};
+
+using format_context = basic_format_context<back_insert_iterator<string>, char>;
+
+using wformat_context =
+    basic_format_context<back_insert_iterator<wstring>, wchar_t>;
+
+using format_args = basic_format_args<format_context>;
+
+using wformat_args = basic_format_args<wformat_context>;
+
+template <class T, class charT>
+concept formattable = detail::formattable_with<
+    remove_reference_t<T>,
+    basic_format_context<back_insert_iterator<basic_string<charT>>, charT>>;
+
+namespace detail {
+
+template <class R, class charT>
+concept format_const_formattable_range =
+    ranges::input_range<const R> &&
+    formattable<ranges::range_reference_t<const R>, charT>;
+
+template <class R, class charT>
+using format_maybe_const_t =
+    conditional_t<format_const_formattable_range<R, charT>, const R, R>;
+
+template <class> inline constexpr bool format_dependent_false_v = false;
+
+template <class T> struct format_pair_or_two_tuple : false_type {};
+
+template <class First, class Second>
+struct format_pair_or_two_tuple<pair<First, Second>> : true_type {};
+
+template <class... Types>
+struct format_pair_or_two_tuple<tuple<Types...>>
+    : bool_constant<sizeof...(Types) == 2> {};
+
+template <class T>
+inline constexpr bool format_pair_or_two_tuple_v =
+    format_pair_or_two_tuple<remove_cvref_t<T>>::value;
+
+template <class charT, size_t NarrowSize, size_t WideSize>
+[[nodiscard]]
+constexpr basic_string_view<charT>
+format_static_view(const char (&narrow)[NarrowSize],
+                   const wchar_t (&wide)[WideSize]) noexcept {
+  if constexpr (is_same_v<charT, char>) {
+    return basic_string_view<charT>(narrow, NarrowSize - 1);
+  } else {
+    return basic_string_view<charT>(wide, WideSize - 1);
+  }
+}
+
+template <class charT>
+void format_append_view(basic_string<charT> &output,
+                        basic_string_view<charT> value) {
+  for (charT character : value)
+    output.push_back(character);
+}
+
+template <class charT>
+constexpr typename basic_format_parse_context<charT>::iterator
+format_parse_container_outer_spec(basic_format_parse_context<charT> &context,
+                                  standard_format_spec<charT> &spec) {
+  auto current = context.begin();
+  const auto end = context.end();
+
+  current = format_parse_fill_and_align(current, end, spec, true);
+
+  if (current != end && format_is_digit(*current)) {
+    size_t width = 0;
+
+    while (current != end && format_is_digit(*current)) {
+      const size_t digit =
+          static_cast<size_t>(*current - format_widen<charT>('0'));
+
+      if (width > (numeric_limits<size_t>::max() - digit) / size_t{10}) {
+        throw_format_error("format width is too large");
+      }
+
+      width = width * size_t{10} + digit;
+
+      ++current;
+    }
+
+    if (width == 0) {
+      throw_format_error("format width must be positive");
+    }
+
+    spec.width = width;
+  } else if (current != end && *current == format_widen<charT>('{')) {
+    ++current;
+
+    spec.dynamic_width = true;
+
+    spec.width_arg_id = parse_dynamic_format_argument(
+        current, end, context, "invalid dynamic format width",
+        "unterminated dynamic format width");
+  }
+
+  return current;
+}
+
+template <class ParentContext, class charT> class buffered_format_context {
+public:
+  using iterator = back_insert_iterator<basic_string<charT>>;
+
+  using char_type = charT;
+
+  template <class T> using formatter_type = formatter<T, charT>;
+
+  buffered_format_context(ParentContext &parent, basic_string<charT> &output)
+      : parent_(FTL_FORMAT_NS::addressof(parent)),
+        output_(back_inserter(output)) {}
+
+  decltype(auto) arg(size_t id) const noexcept { return parent_->arg(id); }
+
+  FTL_FORMAT_NS::locale locale() { return parent_->locale(); }
+
+  iterator out() { return move(output_); }
+
+  void advance_to(iterator next) { output_ = move(next); }
+
+private:
+  ParentContext *parent_;
+  iterator output_;
+};
+
+template <class TupleType, class charT, class... Types>
+class tuple_formatter_base {
+private:
+  static constexpr bool all_const_formattable =
+      (formattable<const Types, charT> && ...);
+
+public:
+  constexpr tuple_formatter_base() noexcept = default;
+
+  constexpr void set_separator(basic_string_view<charT> separator) noexcept {
+    separator_ = separator;
+  }
+
+  constexpr void set_brackets(basic_string_view<charT> opening,
+                              basic_string_view<charT> closing) noexcept {
+    opening_bracket_ = opening;
+    closing_bracket_ = closing;
+  }
+
+  template <class ParseContext>
+  constexpr typename ParseContext::iterator parse(ParseContext &context) {
+    auto current = format_parse_container_outer_spec(context, outer_);
+
+    const auto end = context.end();
+
+    if (current != end && *current != format_widen<charT>('}')) {
+      if (*current == format_widen<charT>('m')) {
+        if constexpr (sizeof...(Types) != 2) {
+          throw_format_error(
+              "tuple m presentation requires exactly two elements");
+        } else {
+          separator_ = format_static_view<charT>(": ", L": ");
+
+          opening_bracket_ = {};
+          closing_bracket_ = {};
+        }
+
+        ++current;
+      } else if (*current == format_widen<charT>('n')) {
+        opening_bracket_ = {};
+        closing_bracket_ = {};
+
+        ++current;
+      } else {
+        throw_format_error("invalid tuple format presentation type");
+      }
+    }
+
+    if (current != end && *current != format_widen<charT>('}')) {
+      throw_format_error("invalid tuple format specification");
+    }
+
+    auto parse_one = [&](auto &underlying) constexpr {
+      context.advance_to(current);
+
+      const auto parsed = underlying.parse(context);
+
+      if (parsed != current) {
+        throw_format_error("tuple element formatter did not accept an empty "
+                           "format specification");
+      }
+
+      if constexpr (requires { underlying.set_debug_format(); }) {
+        underlying.set_debug_format();
+      }
+    };
+
+    apply([&](auto &...underlying) constexpr { (parse_one(underlying), ...); },
+          underlying_);
+
+    context.advance_to(current);
+
+    return current;
+  }
+
+  template <class FormatContext>
+    requires all_const_formattable
+  typename FormatContext::iterator format(const TupleType &value,
+                                          FormatContext &context) const {
+    return format_impl(value, context, index_sequence_for<Types...>{});
+  }
+
+  template <class FormatContext>
+    requires(!all_const_formattable)
+  typename FormatContext::iterator format(TupleType &value,
+                                          FormatContext &context) const {
+    return format_impl(value, context, index_sequence_for<Types...>{});
+  }
+
+private:
+  template <class Value, class FormatContext, size_t... Index>
+  typename FormatContext::iterator format_impl(Value &value,
+                                               FormatContext &context,
+                                               index_sequence<Index...>) const {
+    basic_string<charT> content;
+
+    format_append_view(content, opening_bracket_);
+
+    buffered_format_context<FormatContext, charT> buffered(context, content);
+
+    (
+        [&] {
+          if constexpr (Index != 0) {
+            format_append_view(content, separator_);
+          }
+
+          auto next =
+              get<Index>(underlying_).format(get<Index>(value), buffered);
+
+          buffered.advance_to(move(next));
+        }(),
+        ...);
+
+    format_append_view(content, closing_bracket_);
+
+    return format_padded_text(
+        basic_string_view<charT>(content.data(), content.size()), context,
+        outer_, format_alignment::left);
+  }
+
+  tuple<formatter<remove_cvref_t<Types>, charT>...> underlying_{};
+
+  basic_string_view<charT> separator_ = format_static_view<charT>(", ", L", ");
+
+  basic_string_view<charT> opening_bracket_ =
+      format_static_view<charT>("(", L"(");
+
+  basic_string_view<charT> closing_bracket_ =
+      format_static_view<charT>(")", L")");
+
+  standard_format_spec<charT> outer_{};
+};
+
+} // namespace detail
+
+template <class R>
+inline constexpr range_format format_kind = [] {
+  static_assert(detail::format_dependent_false_v<R>,
+                "the primary format_kind template may not be instantiated");
+
+  return range_format::disabled;
+}();
+
+template <ranges::input_range R>
+  requires same_as<R, remove_cvref_t<R>>
+inline constexpr range_format format_kind<R> = [] {
+  using reference_type = remove_cvref_t<ranges::range_reference_t<R>>;
+
+  if constexpr (same_as<reference_type, R>) {
+    return range_format::disabled;
+  } else if constexpr (requires { typename R::key_type; }) {
+    if constexpr (requires { typename R::mapped_type; } &&
+                  detail::format_pair_or_two_tuple_v<reference_type>) {
+      return range_format::map;
+    } else {
+      return range_format::set;
+    }
+  } else {
+    return range_format::sequence;
+  }
+}();
+
+template <class First, class Second, class charT>
+  requires formattable<First, charT> && formattable<Second, charT>
+struct formatter<pair<First, Second>, charT>
+    : detail::tuple_formatter_base<pair<First, Second>, charT, First, Second> {
+};
+
+template <class charT, class... Types>
+  requires(formattable<Types, charT> && ...)
+struct formatter<tuple<Types...>, charT>
+    : detail::tuple_formatter_base<tuple<Types...>, charT, Types...> {};
+
+template <class T, class charT = char>
+  requires same_as<remove_cvref_t<T>, T> && formattable<T, charT>
+class range_formatter {
+public:
+  constexpr range_formatter() noexcept = default;
+
+  constexpr void set_separator(basic_string_view<charT> separator) noexcept {
+    separator_ = separator;
+  }
+
+  constexpr void set_brackets(basic_string_view<charT> opening,
+                              basic_string_view<charT> closing) noexcept {
+    opening_bracket_ = opening;
+    closing_bracket_ = closing;
+  }
+
+  constexpr formatter<T, charT> &underlying() noexcept { return underlying_; }
+
+  constexpr const formatter<T, charT> &underlying() const noexcept {
+    return underlying_;
+  }
+
+  template <class ParseContext>
+  constexpr typename ParseContext::iterator parse(ParseContext &context) {
+    auto current = detail::format_parse_container_outer_spec(context, outer_);
+
+    const auto end = context.end();
+
+    bool no_brackets = false;
+
+    if (current != end && *current == detail::format_widen<charT>('n')) {
+      no_brackets = true;
+
+      opening_bracket_ = {};
+      closing_bracket_ = {};
+
+      ++current;
+    }
+
+    if (current != end && *current != detail::format_widen<charT>('}') &&
+        *current != detail::format_widen<charT>(':')) {
+      if (*current == detail::format_widen<charT>('m')) {
+        if constexpr (!detail::format_pair_or_two_tuple_v<T>) {
+          detail::throw_format_error("range m presentation requires pair or "
+                                     "two-element tuple elements");
+        } else {
+          /*
+           * range-type m specifies all three
+           * range presentation delimiters.
+           * In particular it resets a separator
+           * previously supplied through
+           * set_separator().
+           */
+          separator_ = detail::format_static_view<charT>(", ", L", ");
+
+          if (!no_brackets) {
+            opening_bracket_ = detail::format_static_view<charT>("{", L"{");
+
+            closing_bracket_ = detail::format_static_view<charT>("}", L"}");
+          }
+
+          underlying_.set_brackets({}, {});
+
+          underlying_.set_separator(
+              detail::format_static_view<charT>(": ", L": "));
+        }
+
+        ++current;
+      } else if (*current == detail::format_widen<charT>('s')) {
+        if constexpr (!same_as<T, charT>) {
+          detail::throw_format_error(
+              "range s presentation requires character elements");
+        } else {
+          if (no_brackets) {
+            detail::throw_format_error(
+                "range s presentation cannot be combined with n");
+          }
+
+          string_mode_ = true;
+        }
+
+        ++current;
+      } else if (*current == detail::format_widen<charT>('?')) {
+        auto next = current;
+        ++next;
+
+        if (next == end || *next != detail::format_widen<charT>('s')) {
+          detail::throw_format_error("invalid range format presentation type");
+        }
+
+        if constexpr (!same_as<T, charT>) {
+          detail::throw_format_error(
+              "range ?s presentation requires character elements");
+        } else {
+          if (no_brackets) {
+            detail::throw_format_error(
+                "range ?s presentation cannot be combined with n");
+          }
+
+          string_mode_ = true;
+          debug_string_mode_ = true;
+        }
+
+        current = next;
+        ++current;
+      } else {
+        detail::throw_format_error("invalid range format presentation type");
+      }
+    }
+
+    if (current != end && *current == detail::format_widen<charT>(':')) {
+      if (string_mode_) {
+        detail::throw_format_error("string range presentation cannot have an "
+                                   "underlying format specification");
+      }
+
+      ++current;
+
+      context.advance_to(current);
+
+      return underlying_.parse(context);
+    }
+
+    if (current != end && *current != detail::format_widen<charT>('}')) {
+      detail::throw_format_error("invalid range format specification");
+    }
+
+    context.advance_to(current);
+
+    const auto parsed = underlying_.parse(context);
+
+    if constexpr (requires { underlying_.set_debug_format(); }) {
+      underlying_.set_debug_format();
+    }
+
+    return parsed;
+  }
+
+  template <ranges::input_range R, class FormatContext>
+    requires formattable<ranges::range_reference_t<R>, charT> &&
+             same_as<remove_cvref_t<ranges::range_reference_t<R>>, T>
+  typename FormatContext::iterator format(R &&range,
+                                          FormatContext &context) const {
+    if (string_mode_) {
+      if constexpr (same_as<T, charT>) {
+        basic_string<charT> text;
+
+        for (auto &&character : range) {
+          text.push_back(static_cast<charT>(character));
+        }
+
+        if (debug_string_mode_) {
+          const auto escaped = detail::format_escape_string(
+              basic_string_view<charT>(text.data(), text.size()));
+
+          return detail::format_padded_text(
+              basic_string_view<charT>(escaped.data(), escaped.size()), context,
+              outer_, detail::format_alignment::left);
+        }
+
+        return detail::format_padded_text(
+            basic_string_view<charT>(text.data(), text.size()), context, outer_,
+            detail::format_alignment::left);
+      }
+    }
+
+    basic_string<charT> content;
+
+    detail::format_append_view(content, opening_bracket_);
+
+    detail::buffered_format_context<FormatContext, charT> buffered(context,
+                                                                   content);
+
+    bool first = true;
+
+    for (auto &&element : range) {
+      if (!first) {
+        detail::format_append_view(content, separator_);
+      }
+
+      first = false;
+
+      auto next = underlying_.format(element, buffered);
+
+      buffered.advance_to(move(next));
+    }
+
+    detail::format_append_view(content, closing_bracket_);
+
+    return detail::format_padded_text(
+        basic_string_view<charT>(content.data(), content.size()), context,
+        outer_, detail::format_alignment::left);
+  }
+
+private:
+  formatter<T, charT> underlying_{};
+
+  basic_string_view<charT> separator_ =
+      detail::format_static_view<charT>(", ", L", ");
+
+  basic_string_view<charT> opening_bracket_ =
+      detail::format_static_view<charT>("[", L"[");
+
+  basic_string_view<charT> closing_bracket_ =
+      detail::format_static_view<charT>("]", L"]");
+
+  detail::standard_format_spec<charT> outer_{};
+
+  bool string_mode_ = false;
+  bool debug_string_mode_ = false;
+};
+
+namespace detail {
+
+template <range_format Kind, ranges::input_range R, class charT>
+struct range_default_formatter;
+
+/*
+ * N4950 [format.range.fmtdef]:
+ *
+ * Prefer const iteration whenever the const range
+ * itself is an input_range and its reference type is
+ * formattable. This is observable for ranges whose
+ * const and non-const iterator reference types differ.
+ */
+template <ranges::input_range R, class charT>
+struct range_default_formatter<range_format::sequence, R, charT> {
+private:
+  using maybe_const_range = format_maybe_const_t<R, charT>;
+
+  using element_type =
+      remove_cvref_t<ranges::range_reference_t<maybe_const_range>>;
+
+  range_formatter<element_type, charT> underlying_{};
+
+public:
+  constexpr void set_separator(basic_string_view<charT> separator) noexcept {
+    underlying_.set_separator(separator);
+  }
+
+  constexpr void set_brackets(basic_string_view<charT> opening,
+                              basic_string_view<charT> closing) noexcept {
+    underlying_.set_brackets(opening, closing);
+  }
+
+  template <class ParseContext>
+  constexpr typename ParseContext::iterator parse(ParseContext &context) {
+    return underlying_.parse(context);
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator format(maybe_const_range &range,
+                                          FormatContext &context) const {
+    return underlying_.format(range, context);
+  }
+};
+
+template <ranges::input_range R, class charT>
+struct range_default_formatter<range_format::set, R, charT> {
+private:
+  using maybe_const_set = format_maybe_const_t<R, charT>;
+
+  using element_type =
+      remove_cvref_t<ranges::range_reference_t<maybe_const_set>>;
+
+  range_formatter<element_type, charT> underlying_{};
+
+public:
+  constexpr range_default_formatter() {
+    underlying_.set_brackets(format_static_view<charT>("{", L"{"),
+                             format_static_view<charT>("}", L"}"));
+  }
+
+  template <class ParseContext>
+  constexpr typename ParseContext::iterator parse(ParseContext &context) {
+    return underlying_.parse(context);
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator format(maybe_const_set &range,
+                                          FormatContext &context) const {
+    return underlying_.format(range, context);
+  }
+};
+
+template <ranges::input_range R, class charT>
+struct range_default_formatter<range_format::map, R, charT> {
+private:
+  using maybe_const_map = format_maybe_const_t<R, charT>;
+
+  using element_type =
+      remove_cvref_t<ranges::range_reference_t<maybe_const_map>>;
+
+  static_assert(
+      format_pair_or_two_tuple_v<element_type>,
+      "map range formatting requires pair or two-element tuple elements");
+
+  range_formatter<element_type, charT> underlying_{};
+
+public:
+  constexpr range_default_formatter() {
+    underlying_.set_brackets(format_static_view<charT>("{", L"{"),
+                             format_static_view<charT>("}", L"}"));
+
+    underlying_.underlying().set_brackets({}, {});
+
+    underlying_.underlying().set_separator(
+        format_static_view<charT>(": ", L": "));
+  }
+
+  template <class ParseContext>
+  constexpr typename ParseContext::iterator parse(ParseContext &context) {
+    return underlying_.parse(context);
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator format(maybe_const_map &range,
+                                          FormatContext &context) const {
+    return underlying_.format(range, context);
+  }
+};
+
+template <range_format Kind, ranges::input_range R, class charT>
+  requires(Kind == range_format::string || Kind == range_format::debug_string)
+struct range_default_formatter<Kind, R, charT> {
+private:
+  using maybe_const_range =
+      conditional_t<ranges::input_range<const R>, const R, R>;
+
+  formatter<basic_string<charT>, charT> underlying_{};
+
+public:
+  template <class ParseContext>
+  constexpr typename ParseContext::iterator parse(ParseContext &context) {
+    const auto result = underlying_.parse(context);
+
+    if constexpr (Kind == range_format::debug_string) {
+      underlying_.set_debug_format();
+    }
+
+    return result;
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator format(maybe_const_range &range,
+                                          FormatContext &context) const {
+    basic_string<charT> text;
+
+    for (auto &&character : range) {
+      text.push_back(static_cast<charT>(character));
+    }
+
+    return underlying_.format(text, context);
+  }
+};
+
+} // namespace detail
+
+template <ranges::input_range R, class charT>
+  requires(format_kind<R> != range_format::disabled) &&
+          formattable<ranges::range_reference_t<R>, charT>
+struct formatter<R, charT>
+    : detail::range_default_formatter<format_kind<R>, R, charT> {};
+
+namespace detail {
+
+template <class charT>
+constexpr size_t format_parse_replacement_arg_id(
+    typename basic_format_parse_context<charT>::iterator &current,
+    typename basic_format_parse_context<charT>::iterator end,
+    basic_format_parse_context<charT> &context) {
+  if (current == end) {
+    throw_format_error("unterminated replacement field");
+  }
+
+  if (*current == format_widen<charT>('}') ||
+      *current == format_widen<charT>(':')) {
+    return context.next_arg_id();
+  }
+
+  if (!format_is_digit(*current)) {
+    throw_format_error("invalid replacement field argument id");
+  }
+
+  size_t id = 0;
+
+  if (*current == format_widen<charT>('0')) {
+    ++current;
+
+    if (current != end && format_is_digit(*current)) {
+      throw_format_error("format argument id has a leading zero");
+    }
+
+    context.check_arg_id(0);
+
+    return 0;
+  }
+
+  while (current != end && format_is_digit(*current)) {
+    const size_t digit =
+        static_cast<size_t>(*current - format_widen<charT>('0'));
+
+    if (id > (numeric_limits<size_t>::max() - digit) / size_t{10}) {
+      throw_format_error("format argument index is too large");
+    }
+
+    id = id * size_t{10} + digit;
+
+    ++current;
+  }
+
+  context.check_arg_id(id);
+
+  return id;
+}
+
+template <class charT>
+consteval void format_validate_argument(size_t,
+                                        basic_format_parse_context<charT> &) {
+  throw_format_error("format argument index out of range");
+}
+
+template <class charT, class First, class... Rest>
+consteval void
+format_validate_argument(size_t id,
+                         basic_format_parse_context<charT> &context) {
+  if (id == 0) {
+    using value_type = remove_cvref_t<First>;
+
+    formatter<value_type, charT> formatter_value;
+
+    context.advance_to(formatter_value.parse(context));
+
+    return;
+  }
+
+  if constexpr (sizeof...(Rest) != 0) {
+    format_validate_argument<charT, Rest...>(id - 1, context);
+  } else {
+    throw_format_error("format argument index out of range");
+  }
+}
+
+template <class charT, class... Args>
+consteval void format_validate_string(basic_string_view<charT> value) {
+  basic_format_parse_context<charT> parse_context(value, sizeof...(Args));
+
+  auto current = value.begin();
+  const auto end = value.end();
+
+  while (current != end) {
+    if (*current == format_widen<charT>('{')) {
+      auto next = current;
+      ++next;
+
+      if (next != end && *next == format_widen<charT>('{')) {
+        current = next;
+        ++current;
+        continue;
+      }
+
+      current = next;
+
+      const size_t id =
+          format_parse_replacement_arg_id(current, end, parse_context);
+
+      if (current == end) {
+        throw_format_error("unterminated replacement field");
+      }
+
+      if (*current == format_widen<charT>(':')) {
+        ++current;
+      } else if (*current != format_widen<charT>('}')) {
+        throw_format_error("invalid replacement field");
+      }
+
+      parse_context.advance_to(current);
+
+      format_validate_argument<charT, Args...>(id, parse_context);
+
+      current = parse_context.begin();
+
+      if (current == end || *current != format_widen<charT>('}')) {
+        throw_format_error("unterminated format specification");
+      }
+
+      ++current;
+
+      parse_context.advance_to(current);
+
+      continue;
+    }
+
+    if (*current == format_widen<charT>('}')) {
+      auto next = current;
+      ++next;
+
+      if (next == end || *next != format_widen<charT>('}')) {
+        throw_format_error("unmatched closing brace");
+      }
+
+      current = next;
+      ++current;
+      continue;
+    }
+
+    ++current;
+  }
+}
+
+} // namespace detail
+
+template <class charT, class... Args> struct basic_format_string {
+private:
+  basic_string_view<charT> str_;
+
+public:
+  template <class T>
+    requires convertible_to<const T &, basic_string_view<charT>>
+  consteval basic_format_string(const T &value) : str_(value) {
+    detail::format_validate_string<charT, Args...>(str_);
+  }
+
+  [[nodiscard]]
+  constexpr basic_string_view<charT> get() const noexcept {
+    return str_;
+  }
+};
+
+template <class... Args>
+using format_string = basic_format_string<char, type_identity_t<Args>...>;
+
+template <class... Args>
+using wformat_string = basic_format_string<wchar_t, type_identity_t<Args>...>;
+
+template <class Context = format_context, class... Args>
+detail::format_arg_store<Context, Args...>
+make_format_args(Args &&...arguments) {
+  return detail::format_arg_store<Context, Args...>(
+      forward<Args>(arguments)...);
+}
+
+template <class... Args>
+detail::format_arg_store<wformat_context, Args...>
+make_wformat_args(Args &&...arguments) {
+  return detail::format_arg_store<wformat_context, Args...>(
+      forward<Args>(arguments)...);
+}
+
+template <class Out> struct format_to_n_result {
+  Out out;
+  iter_difference_t<Out> size;
+};
+
+namespace detail {
+
+template <class Context>
+void format_runtime_argument(
+    basic_format_arg<Context> argument,
+    basic_format_parse_context<typename Context::char_type> &parse_context,
+    Context &format_context) {
+  if (!argument) {
+    throw_format_error("format argument index out of range");
+  }
+
+  using charT = typename Context::char_type;
+
+  using handle_type = typename basic_format_arg<Context>::handle;
+
+  visit_format_arg(
+      [&](auto value) {
+        using value_type = remove_cvref_t<decltype(value)>;
+
+        if constexpr (is_same_v<value_type, monostate>) {
+          throw_format_error("format argument index out of range");
+        } else if constexpr (is_same_v<value_type, handle_type>) {
+          value.format(parse_context, format_context);
+        } else {
+          formatter<value_type, charT> formatter_value;
+
+          parse_context.advance_to(formatter_value.parse(parse_context));
+
+          format_context.advance_to(
+              formatter_value.format(value, format_context));
+        }
+      },
+      argument);
+}
+
+template <class charT>
+using runtime_format_context =
+    basic_format_context<back_insert_iterator<basic_string<charT>>, charT>;
+
+template <class charT>
+basic_string<charT>
+format_runtime(basic_string_view<charT> fmt,
+               basic_format_args<runtime_format_context<charT>> arguments,
+               const FTL_FORMAT_NS::locale *loc) {
+  using context_type = runtime_format_context<charT>;
+
+  basic_string<charT> output;
+
+  context_type format_context_value(back_inserter(output), arguments, loc);
+
+  basic_format_parse_context<charT> parse_context(fmt);
+
+  auto current = fmt.begin();
+  const auto end = fmt.end();
+
+  while (current != end) {
+    if (*current == format_widen<charT>('{')) {
+      auto next = current;
+      ++next;
+
+      if (next != end && *next == format_widen<charT>('{')) {
+        output.push_back(format_widen<charT>('{'));
+
+        current = next;
+        ++current;
+        continue;
+      }
+
+      current = next;
+
+      const size_t id =
+          format_parse_replacement_arg_id(current, end, parse_context);
+
+      if (current == end) {
+        throw_format_error("unterminated replacement field");
+      }
+
+      if (*current == format_widen<charT>(':')) {
+        ++current;
+      } else if (*current != format_widen<charT>('}')) {
+        throw_format_error("invalid replacement field");
+      }
+
+      parse_context.advance_to(current);
+
+      format_runtime_argument(format_context_value.arg(id), parse_context,
+                              format_context_value);
+
+      current = parse_context.begin();
+
+      if (current == end || *current != format_widen<charT>('}')) {
+        throw_format_error("unterminated format specification");
+      }
+
+      ++current;
+
+      parse_context.advance_to(current);
+
+      continue;
+    }
+
+    if (*current == format_widen<charT>('}')) {
+      auto next = current;
+      ++next;
+
+      if (next == end || *next != format_widen<charT>('}')) {
+        throw_format_error("unmatched closing brace");
+      }
+
+      output.push_back(format_widen<charT>('}'));
+
+      current = next;
+      ++current;
+      continue;
+    }
+
+    output.push_back(*current);
+    ++current;
+  }
+
+  return output;
+}
+
+template <class Out, class charT>
+Out format_copy_to(Out out, basic_string_view<charT> value) {
+  for (charT character : value) {
+    *out = character;
+    ++out;
+  }
+
+  return out;
+}
+
+template <class Out, class charT>
+format_to_n_result<Out> format_copy_to_n(Out out, iter_difference_t<Out> n,
+                                         basic_string_view<charT> value) {
+  size_t count = 0;
+
+  if (n > 0) {
+    const size_t requested = static_cast<size_t>(n);
+
+    count = requested < value.size() ? requested : value.size();
+  }
+
+  for (size_t index = 0; index < count; ++index) {
+    *out = value[index];
+    ++out;
+  }
+
+  return {move(out), static_cast<iter_difference_t<Out>>(value.size())};
+}
+
+} // namespace detail
+
+inline string vformat(string_view fmt, format_args args) {
+  return detail::format_runtime<char>(fmt, args, nullptr);
+}
+
+inline wstring vformat(wstring_view fmt, wformat_args args) {
+  return detail::format_runtime<wchar_t>(fmt, args, nullptr);
+}
+
+inline string vformat(const locale &loc, string_view fmt, format_args args) {
+  return detail::format_runtime<char>(fmt, args, &loc);
+}
+
+inline wstring vformat(const locale &loc, wstring_view fmt, wformat_args args) {
+  return detail::format_runtime<wchar_t>(fmt, args, &loc);
+}
+
+template <class... Args>
+string format(format_string<Args...> fmt, Args &&...arguments) {
+  auto store = make_format_args(arguments...);
+
+  return vformat(fmt.get(), format_args(store));
+}
+
+template <class... Args>
+wstring format(wformat_string<Args...> fmt, Args &&...arguments) {
+  auto store = make_wformat_args(arguments...);
+
+  return vformat(fmt.get(), wformat_args(store));
+}
+
+template <class... Args>
+string format(const locale &loc, format_string<Args...> fmt,
+              Args &&...arguments) {
+  auto store = make_format_args(arguments...);
+
+  return vformat(loc, fmt.get(), format_args(store));
+}
+
+template <class... Args>
+wstring format(const locale &loc, wformat_string<Args...> fmt,
+               Args &&...arguments) {
+  auto store = make_wformat_args(arguments...);
+
+  return vformat(loc, fmt.get(), wformat_args(store));
+}
+
+template <class Out>
+  requires output_iterator<Out, const char &>
+Out vformat_to(Out out, string_view fmt, format_args args) {
+  const string rendered = vformat(fmt, args);
+
+  return detail::format_copy_to(move(out),
+                                string_view(rendered.data(), rendered.size()));
+}
+
+template <class Out>
+  requires output_iterator<Out, const wchar_t &>
+Out vformat_to(Out out, wstring_view fmt, wformat_args args) {
+  const wstring rendered = vformat(fmt, args);
+
+  return detail::format_copy_to(move(out),
+                                wstring_view(rendered.data(), rendered.size()));
+}
+
+template <class Out>
+  requires output_iterator<Out, const char &>
+Out vformat_to(Out out, const locale &loc, string_view fmt, format_args args) {
+  const string rendered = vformat(loc, fmt, args);
+
+  return detail::format_copy_to(move(out),
+                                string_view(rendered.data(), rendered.size()));
+}
+
+template <class Out>
+  requires output_iterator<Out, const wchar_t &>
+Out vformat_to(Out out, const locale &loc, wstring_view fmt,
+               wformat_args args) {
+  const wstring rendered = vformat(loc, fmt, args);
+
+  return detail::format_copy_to(move(out),
+                                wstring_view(rendered.data(), rendered.size()));
+}
+
+template <class Out, class... Args>
+Out format_to(Out out, format_string<Args...> fmt, Args &&...arguments) {
+  auto store = make_format_args(arguments...);
+
+  return vformat_to(move(out), fmt.get(), format_args(store));
+}
+
+template <class Out, class... Args>
+Out format_to(Out out, wformat_string<Args...> fmt, Args &&...arguments) {
+  auto store = make_wformat_args(arguments...);
+
+  return vformat_to(move(out), fmt.get(), wformat_args(store));
+}
+
+template <class Out, class... Args>
+Out format_to(Out out, const locale &loc, format_string<Args...> fmt,
+              Args &&...arguments) {
+  auto store = make_format_args(arguments...);
+
+  return vformat_to(move(out), loc, fmt.get(), format_args(store));
+}
+
+template <class Out, class... Args>
+Out format_to(Out out, const locale &loc, wformat_string<Args...> fmt,
+              Args &&...arguments) {
+  auto store = make_wformat_args(arguments...);
+
+  return vformat_to(move(out), loc, fmt.get(), wformat_args(store));
+}
+
+template <class Out, class... Args>
+  requires output_iterator<Out, const char &>
+format_to_n_result<Out> format_to_n(Out out, iter_difference_t<Out> n,
+                                    format_string<Args...> fmt,
+                                    Args &&...arguments) {
+  auto store = make_format_args(arguments...);
+
+  const string rendered = vformat(fmt.get(), format_args(store));
+
+  return detail::format_copy_to_n(
+      move(out), n, string_view(rendered.data(), rendered.size()));
+}
+
+template <class Out, class... Args>
+  requires output_iterator<Out, const wchar_t &>
+format_to_n_result<Out> format_to_n(Out out, iter_difference_t<Out> n,
+                                    wformat_string<Args...> fmt,
+                                    Args &&...arguments) {
+  auto store = make_wformat_args(arguments...);
+
+  const wstring rendered = vformat(fmt.get(), wformat_args(store));
+
+  return detail::format_copy_to_n(
+      move(out), n, wstring_view(rendered.data(), rendered.size()));
+}
+
+template <class Out, class... Args>
+  requires output_iterator<Out, const char &>
+format_to_n_result<Out>
+format_to_n(Out out, iter_difference_t<Out> n, const locale &loc,
+            format_string<Args...> fmt, Args &&...arguments) {
+  auto store = make_format_args(arguments...);
+
+  const string rendered = vformat(loc, fmt.get(), format_args(store));
+
+  return detail::format_copy_to_n(
+      move(out), n, string_view(rendered.data(), rendered.size()));
+}
+
+template <class Out, class... Args>
+  requires output_iterator<Out, const wchar_t &>
+format_to_n_result<Out>
+format_to_n(Out out, iter_difference_t<Out> n, const locale &loc,
+            wformat_string<Args...> fmt, Args &&...arguments) {
+  auto store = make_wformat_args(arguments...);
+
+  const wstring rendered = vformat(loc, fmt.get(), wformat_args(store));
+
+  return detail::format_copy_to_n(
+      move(out), n, wstring_view(rendered.data(), rendered.size()));
+}
+
+template <class... Args>
+size_t formatted_size(format_string<Args...> fmt, Args &&...arguments) {
+  auto store = make_format_args(arguments...);
+
+  return vformat(fmt.get(), format_args(store)).size();
+}
+
+template <class... Args>
+size_t formatted_size(wformat_string<Args...> fmt, Args &&...arguments) {
+  auto store = make_wformat_args(arguments...);
+
+  return vformat(fmt.get(), wformat_args(store)).size();
+}
+
+template <class... Args>
+size_t formatted_size(const locale &loc, format_string<Args...> fmt,
+                      Args &&...arguments) {
+  auto store = make_format_args(arguments...);
+
+  return vformat(loc, fmt.get(), format_args(store)).size();
+}
+
+template <class... Args>
+size_t formatted_size(const locale &loc, wformat_string<Args...> fmt,
+                      Args &&...arguments) {
+  auto store = make_wformat_args(arguments...);
+
+  return vformat(loc, fmt.get(), wformat_args(store)).size();
+}
+
+namespace detail {
+
+template <class charT> struct chrono_format_spec {
+  standard_format_spec<charT> outer{};
+  basic_string_view<charT> chrono_specs{};
+};
+
+template <class charT>
+[[nodiscard]]
+constexpr bool chrono_conversion_type(charT value) noexcept {
+  switch (static_cast<char>(value)) {
+  case 'a':
+  case 'A':
+  case 'b':
+  case 'B':
+  case 'c':
+  case 'C':
+  case 'd':
+  case 'D':
+  case 'e':
+  case 'F':
+  case 'g':
+  case 'G':
+  case 'h':
+  case 'H':
+  case 'I':
+  case 'j':
+  case 'm':
+  case 'M':
+  case 'n':
+  case 'p':
+  case 'q':
+  case 'Q':
+  case 'r':
+  case 'R':
+  case 'S':
+  case 't':
+  case 'T':
+  case 'u':
+  case 'U':
+  case 'V':
+  case 'w':
+  case 'W':
+  case 'x':
+  case 'X':
+  case 'y':
+  case 'Y':
+  case 'z':
+  case 'Z':
+  case '%':
+    return true;
+
+  default:
+    return false;
+  }
+}
+
+template <class charT>
+constexpr typename basic_format_parse_context<charT>::iterator
+chrono_parse_format_spec(basic_format_parse_context<charT> &context,
+                         chrono_format_spec<charT> &spec,
+                         bool allow_precision) {
+  auto current = context.begin();
+
+  const auto end = context.end();
+
+  current = format_parse_fill_and_align(current, end, spec.outer);
+
+  if (current != end && format_is_digit(*current)) {
+    size_t width = 0;
+
+    while (current != end && format_is_digit(*current)) {
+      const size_t digit =
+          static_cast<size_t>(*current - format_widen<charT>('0'));
+
+      if (width > (numeric_limits<size_t>::max() - digit) / size_t{10}) {
+        throw_format_error("chrono format width is too large");
+      }
+
+      width = width * size_t{10} + digit;
+
+      ++current;
+    }
+
+    if (width == 0) {
+      throw_format_error("chrono format width must be positive");
+    }
+
+    spec.outer.width = width;
+  } else if (current != end && *current == format_widen<charT>('{')) {
+    ++current;
+
+    spec.outer.dynamic_width = true;
+
+    spec.outer.width_arg_id = parse_dynamic_format_argument(
+        current, end, context, "invalid dynamic chrono format width",
+        "unterminated dynamic chrono format width");
+  }
+
+  if (current != end && *current == format_widen<charT>('.')) {
+    if (!allow_precision) {
+      throw_format_error("precision is not valid for this chrono type");
+    }
+
+    ++current;
+
+    spec.outer.has_precision = true;
+
+    if (current != end && format_is_digit(*current)) {
+      size_t precision = 0;
+
+      while (current != end && format_is_digit(*current)) {
+        const size_t digit =
+            static_cast<size_t>(*current - format_widen<charT>('0'));
+
+        if (precision > (numeric_limits<size_t>::max() - digit) / size_t{10}) {
+          throw_format_error("chrono format precision is too large");
+        }
+
+        precision = precision * size_t{10} + digit;
+
+        ++current;
+      }
+
+      spec.outer.precision = precision;
+    } else if (current != end && *current == format_widen<charT>('{')) {
+      ++current;
+
+      spec.outer.dynamic_precision = true;
+
+      spec.outer.precision_arg_id = parse_dynamic_format_argument(
+          current, end, context, "invalid dynamic chrono format precision",
+          "unterminated dynamic chrono format precision");
+    } else {
+      throw_format_error("invalid chrono format precision");
+    }
+  }
+
+  if (current != end && *current == format_widen<charT>('L')) {
+    spec.outer.localized = true;
+    ++current;
+  }
+
+  const auto chrono_begin = current;
+
+  if (current != end && *current != format_widen<charT>('}')) {
+    /*
+     * chrono-specs starts with a
+     * conversion-spec, not a literal.
+     */
+    if (*current != format_widen<charT>('%')) {
+      throw_format_error(
+          "chrono format specification must begin with a conversion specifier");
+    }
+
+    while (current != end && *current != format_widen<charT>('}')) {
+      if (*current == format_widen<charT>('{')) {
+        throw_format_error("invalid brace in chrono format specification");
+      }
+
+      if (*current != format_widen<charT>('%')) {
+        ++current;
+        continue;
+      }
+
+      ++current;
+
+      if (current == end || *current == format_widen<charT>('}')) {
+        throw_format_error("incomplete chrono conversion specifier");
+      }
+
+      if (*current == format_widen<charT>('E') ||
+          *current == format_widen<charT>('O')) {
+        ++current;
+
+        if (current == end || *current == format_widen<charT>('}')) {
+          throw_format_error("incomplete modified chrono conversion specifier");
+        }
+      }
+
+      if (!chrono_conversion_type(*current)) {
+        throw_format_error("invalid chrono conversion specifier");
+      }
+
+      ++current;
+    }
+  }
+
+  spec.chrono_specs = basic_string_view<charT>(
+      chrono_begin, static_cast<size_t>(current - chrono_begin));
+
+  return current;
+}
+
+template <class charT, class Integer>
+void chrono_append_integer(basic_string<charT> &output, Integer value,
+                           size_t minimum_digits = 0,
+                           charT padding = format_widen<charT>('0')) {
+  char buffer[numeric_limits<make_unsigned_t<Integer>>::digits10 + 4];
+
+  const auto converted = to_chars(buffer, buffer + sizeof(buffer), value);
+
+  if (converted.ec != errc{}) {
+    throw_format_error("chrono integer conversion failed");
+  }
+
+  const char *digits = buffer;
+
+  size_t count = static_cast<size_t>(converted.ptr - buffer);
+
+  bool negative = false;
+
+  if (count != 0 && *digits == '-') {
+    negative = true;
+    ++digits;
+    --count;
+  }
+
+  if (negative) {
+    output.push_back(format_widen<charT>('-'));
+  }
+
+  while (count < minimum_digits) {
+    output.push_back(padding);
+
+    --minimum_digits;
+  }
+
+  for (size_t index = 0; index < count; ++index) {
+    output.push_back(format_widen<charT>(digits[index]));
+  }
+}
+
+template <class charT>
+void chrono_append_ascii(basic_string<charT> &output, const char *value) {
+  while (*value != '\0') {
+    output.push_back(format_widen<charT>(*value++));
+  }
+}
+
+template <class charT, class Ratio>
+void chrono_append_duration_suffix(basic_string<charT> &output) {
+  using period = typename Ratio::type;
+
+  if constexpr (is_same_v<period, atto>) {
+    chrono_append_ascii(output, "as");
+  } else if constexpr (is_same_v<period, femto>) {
+    chrono_append_ascii(output, "fs");
+  } else if constexpr (is_same_v<period, pico>) {
+    chrono_append_ascii(output, "ps");
+  } else if constexpr (is_same_v<period, nano>) {
+    chrono_append_ascii(output, "ns");
+  } else if constexpr (is_same_v<period, micro>) {
+    /*
+     * "us" is explicitly one of the
+     * implementation-defined choices.
+     */
+    chrono_append_ascii(output, "us");
+  } else if constexpr (is_same_v<period, milli>) {
+    chrono_append_ascii(output, "ms");
+  } else if constexpr (is_same_v<period, centi>) {
+    chrono_append_ascii(output, "cs");
+  } else if constexpr (is_same_v<period, deci>) {
+    chrono_append_ascii(output, "ds");
+  } else if constexpr (is_same_v<period, ratio<1>>) {
+    chrono_append_ascii(output, "s");
+  } else if constexpr (is_same_v<period, deca>) {
+    chrono_append_ascii(output, "das");
+  } else if constexpr (is_same_v<period, hecto>) {
+    chrono_append_ascii(output, "hs");
+  } else if constexpr (is_same_v<period, kilo>) {
+    chrono_append_ascii(output, "ks");
+  } else if constexpr (is_same_v<period, mega>) {
+    chrono_append_ascii(output, "Ms");
+  } else if constexpr (is_same_v<period, giga>) {
+    chrono_append_ascii(output, "Gs");
+  } else if constexpr (is_same_v<period, tera>) {
+    chrono_append_ascii(output, "Ts");
+  } else if constexpr (is_same_v<period, peta>) {
+    chrono_append_ascii(output, "Ps");
+  } else if constexpr (is_same_v<period, exa>) {
+    chrono_append_ascii(output, "Es");
+  } else if constexpr (is_same_v<period, ratio<60>>) {
+    chrono_append_ascii(output, "min");
+  } else if constexpr (is_same_v<period, ratio<3600>>) {
+    chrono_append_ascii(output, "h");
+  } else if constexpr (is_same_v<period, ratio<86400>>) {
+    chrono_append_ascii(output, "d");
+  } else {
+    output.push_back(format_widen<charT>('['));
+
+    chrono_append_integer(output, period::num);
+
+    if constexpr (period::den != 1) {
+      output.push_back(format_widen<charT>('/'));
+
+      chrono_append_integer(output, period::den);
+    }
+
+    output.push_back(format_widen<charT>(']'));
+
+    output.push_back(format_widen<charT>('s'));
+  }
+}
+
+template <class charT, class FormatContext, class Integer>
+void chrono_append_formatted_integer(basic_string<charT> &output,
+                                     FormatContext &context, Integer value,
+                                     bool localized) {
+  standard_format_spec<charT> number_spec{};
+
+  number_spec.localized = localized;
+
+  buffered_format_context<FormatContext, charT> buffered(context, output);
+
+  auto next =
+      format_integer_value<Integer, charT>(value, buffered, number_spec);
+
+  buffered.advance_to(move(next));
+}
+
+template <class charT, class FormatContext, class Float>
+void chrono_append_formatted_float(
+    basic_string<charT> &output, FormatContext &context, Float value,
+    const chrono_format_spec<charT> &chrono_spec) {
+  standard_format_spec<charT> number_spec{};
+
+  number_spec.localized = chrono_spec.outer.localized;
+
+  number_spec.presentation = 'g';
+
+  if (chrono_spec.outer.has_precision) {
+    number_spec.has_precision = true;
+
+    number_spec.dynamic_precision = chrono_spec.outer.dynamic_precision;
+
+    number_spec.precision = chrono_spec.outer.precision;
+
+    number_spec.precision_arg_id = chrono_spec.outer.precision_arg_id;
+  }
+
+  buffered_format_context<FormatContext, charT> buffered(context, output);
+
+  size_t conversion_precision = 0;
+
+  string converted = format_convert_floating<Float>(
+      value, buffered, number_spec, conversion_precision);
+
+  const bool special = format_floating_is_special(
+      basic_string_view<char>(converted.data(), converted.size()));
+
+  basic_string<charT> rendered;
+
+  if (number_spec.localized) {
+    rendered = format_localized_floating_text<charT>(
+        buffered, basic_string_view<char>(converted.data(), converted.size()));
+  } else {
+    rendered.reserve(converted.size());
+
+    for (char character : converted) {
+      rendered.push_back(format_widen<charT>(character));
+    }
+  }
+
+  auto next = format_floating_text(
+      basic_string_view<charT>(rendered.data(), rendered.size()), special,
+      buffered, number_spec);
+
+  buffered.advance_to(move(next));
+}
+
+template <class charT, class FormatContext, class Rep>
+void chrono_append_count(basic_string<charT> &output, FormatContext &context,
+                         Rep value, const chrono_format_spec<charT> &spec) {
+  if constexpr (is_floating_point_v<Rep>) {
+    chrono_append_formatted_float(output, context, value, spec);
+  } else {
+    chrono_append_formatted_integer(output, context, value,
+                                    spec.outer.localized);
+  }
+}
+
+template <class Rep>
+[[nodiscard]]
+constexpr bool chrono_negative_count(Rep value) {
+  if constexpr (numeric_limits<Rep>::is_signed) {
+    return value < Rep{0};
+  } else {
+    return false;
+  }
+}
+
+template <class Rep>
+[[nodiscard]]
+constexpr auto chrono_magnitude_count(Rep value) {
+  if constexpr (is_integral_v<Rep> && is_signed_v<Rep>) {
+    using unsigned_type = make_unsigned_t<Rep>;
+
+    const unsigned_type converted = static_cast<unsigned_type>(value);
+
+    return value < 0 ? unsigned_type{0} - converted : converted;
+  } else {
+    return value < Rep{0} ? -value : value;
+  }
+}
+
+template <class Duration> struct chrono_split_duration {
+private:
+  using duration_type = Duration;
+
+  using period = typename duration_type::period;
+
+  using split_duration = conditional_t<(period::num <= period::den),
+                                       duration_type, chrono::seconds>;
+
+  using hms_type = chrono::hh_mm_ss<split_duration>;
+
+  hms_type value_;
+
+public:
+  explicit constexpr chrono_split_duration(duration_type value)
+      : value_([&] {
+          if constexpr (period::num <= period::den) {
+            return split_duration(value);
+          } else {
+            return chrono::duration_cast<split_duration>(value);
+          }
+        }()) {}
+
+  [[nodiscard]]
+  constexpr long long hours() const {
+    return static_cast<long long>(value_.hours().count());
+  }
+
+  [[nodiscard]]
+  constexpr long long minutes() const {
+    return static_cast<long long>(value_.minutes().count());
+  }
+
+  [[nodiscard]]
+  constexpr long long seconds() const {
+    return static_cast<long long>(value_.seconds().count());
+  }
+
+  [[nodiscard]]
+  constexpr auto subseconds() const {
+    return value_.subseconds();
+  }
+
+  inline static constexpr unsigned fractional_width =
+      hms_type::fractional_width;
+};
+
+template <class charT, class FormatContext, class Split>
+void chrono_append_seconds(basic_string<charT> &output, FormatContext &context,
+                           const Split &split, bool localized) {
+  chrono_append_integer(output, split.seconds(), 2);
+
+  if constexpr (Split::fractional_width != 0) {
+    output.push_back(
+        localized ? use_facet<numpunct<charT>>(context.locale()).decimal_point()
+                  : format_widen<charT>('.'));
+
+    const auto subseconds = split.subseconds().count();
+
+    chrono_append_integer(output, subseconds, Split::fractional_width);
+  }
+}
+
+template <class charT, class FormatContext, class Split>
+void chrono_append_time_of_day(basic_string<charT> &output,
+                               FormatContext &context, const Split &split,
+                               bool localized, char conversion) {
+  const long long hour24 = split.hours() % 24;
+
+  switch (conversion) {
+  case 'H':
+    chrono_append_integer(output, hour24, 2);
+    break;
+
+  case 'I': {
+    long long hour12 = hour24 % 12;
+
+    if (hour12 == 0)
+      hour12 = 12;
+
+    chrono_append_integer(output, hour12, 2);
+
+    break;
+  }
+
+  case 'M':
+    chrono_append_integer(output, split.minutes(), 2);
+    break;
+
+  case 'S':
+    chrono_append_seconds(output, context, split, localized);
+    break;
+
+  case 'p':
+    /*
+     * This is the C-locale spelling.
+     * Locale-name integration is the
+     * next chrono slice.
+     */
+    chrono_append_ascii(output, hour24 < 12 ? "AM" : "PM");
+    break;
+
+  case 'R':
+    chrono_append_integer(output, hour24, 2);
+
+    output.push_back(format_widen<charT>(':'));
+
+    chrono_append_integer(output, split.minutes(), 2);
+    break;
+
+  case 'T':
+    chrono_append_integer(output, hour24, 2);
+
+    output.push_back(format_widen<charT>(':'));
+
+    chrono_append_integer(output, split.minutes(), 2);
+
+    output.push_back(format_widen<charT>(':'));
+
+    chrono_append_seconds(output, context, split, localized);
+    break;
+
+  case 'r': {
+    long long hour12 = hour24 % 12;
+
+    if (hour12 == 0)
+      hour12 = 12;
+
+    chrono_append_integer(output, hour12, 2);
+
+    output.push_back(format_widen<charT>(':'));
+
+    chrono_append_integer(output, split.minutes(), 2);
+
+    output.push_back(format_widen<charT>(':'));
+
+    chrono_append_seconds(output, context, split, localized);
+
+    output.push_back(format_widen<charT>(' '));
+
+    chrono_append_ascii(output, hour24 < 12 ? "AM" : "PM");
+
+    break;
+  }
+
+  default:
+    throw_format_error(
+        "chrono conversion does not refer to time-of-day information");
+  }
+}
+
+template <class charT, class Handler>
+void chrono_expand_specs(basic_string<charT> &output,
+                         basic_string_view<charT> specs, bool negative,
+                         Handler &&handler) {
+  bool first_conversion = true;
+
+  size_t index = 0;
+
+  while (index < specs.size()) {
+    if (specs[index] != format_widen<charT>('%')) {
+      output.push_back(specs[index++]);
+
+      continue;
+    }
+
+    ++index;
+
+    char modifier = '\0';
+
+    if (index < specs.size() && (specs[index] == format_widen<charT>('E') ||
+                                 specs[index] == format_widen<charT>('O'))) {
+      modifier = static_cast<char>(specs[index]);
+
+      ++index;
+    }
+
+    if (index >= specs.size()) {
+      throw_format_error("incomplete chrono conversion specifier");
+    }
+
+    const char conversion = static_cast<char>(specs[index++]);
+
+    if (negative && first_conversion) {
+      output.push_back(format_widen<charT>('-'));
+    }
+
+    first_conversion = false;
+
+    if (conversion == '%') {
+      output.push_back(format_widen<charT>('%'));
+
+      continue;
+    }
+
+    if (conversion == 'n') {
+      output.push_back(format_widen<charT>('\n'));
+
+      continue;
+    }
+
+    if (conversion == 't') {
+      output.push_back(format_widen<charT>('\t'));
+
+      continue;
+    }
+
+    handler(output, modifier, conversion);
+  }
+}
+
+template <class Rep, class Period, class charT>
+class chrono_duration_formatter {
+public:
+  constexpr chrono_duration_formatter() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    return chrono_parse_format_spec(context, spec_, is_floating_point_v<Rep>);
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator
+  format(const chrono::duration<Rep, Period> &value,
+         FormatContext &context) const {
+    using duration_type = chrono::duration<Rep, Period>;
+
+    const bool negative = chrono_negative_count(value.count());
+
+    const auto magnitude = chrono_magnitude_count(value.count());
+
+    basic_string<charT> content;
+
+    if (spec_.chrono_specs.empty()) {
+      if (negative) {
+        content.push_back(format_widen<charT>('-'));
+      }
+
+      chrono_append_count(content, context, magnitude, spec_);
+
+      chrono_append_duration_suffix<charT, Period>(content);
+    } else {
+      /*
+       * Components are computed from the
+       * absolute duration. The sign is emitted
+       * immediately before the replacement of
+       * the first conversion specifier.
+       */
+      duration_type positive = negative ? duration_type(-value.count()) : value;
+
+      chrono_split_duration<duration_type> split(positive);
+
+      chrono_expand_specs(
+          content, spec_.chrono_specs, negative,
+          [&](basic_string<charT> &destination, char modifier,
+              char conversion) {
+            /*
+             * In the classic locale E/O
+             * alternatives have the same
+             * representation. Locale-specific
+             * alternatives are added in the
+             * calendar/localization slice.
+             */
+            (void)modifier;
+
+            switch (conversion) {
+            case 'H':
+            case 'I':
+            case 'M':
+            case 'S':
+            case 'p':
+            case 'R':
+            case 'T':
+            case 'r':
+              chrono_append_time_of_day(destination, context, split,
+                                        spec_.outer.localized, conversion);
+
+              return;
+
+            case 'j':
+              chrono_append_integer(destination, split.hours() / 24);
+
+              return;
+
+            case 'Q':
+              chrono_append_count(destination, context, magnitude, spec_);
+
+              return;
+
+            case 'q':
+              chrono_append_duration_suffix<charT, Period>(destination);
+
+              return;
+
+            default:
+              throw_format_error("chrono conversion requires information not "
+                                 "present in duration");
+            }
+          });
+    }
+
+    return format_padded_text(
+        basic_string_view<charT>(content.data(), content.size()), context,
+        spec_.outer, format_alignment::left);
+  }
+
+private:
+  chrono_format_spec<charT> spec_{};
+};
+
+template <class Duration> struct chrono_hms_view {
+  const chrono::hh_mm_ss<Duration> *value;
+
+  [[nodiscard]]
+  constexpr long long hours() const {
+    return static_cast<long long>(value->hours().count());
+  }
+
+  [[nodiscard]]
+  constexpr long long minutes() const {
+    return static_cast<long long>(value->minutes().count());
+  }
+
+  [[nodiscard]]
+  constexpr long long seconds() const {
+    return static_cast<long long>(value->seconds().count());
+  }
+
+  [[nodiscard]]
+  constexpr auto subseconds() const {
+    return value->subseconds();
+  }
+
+  inline static constexpr unsigned fractional_width =
+      chrono::hh_mm_ss<Duration>::fractional_width;
+};
+
+template <class Duration, class charT> class chrono_hms_formatter {
+public:
+  constexpr chrono_hms_formatter() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    return chrono_parse_format_spec(context, spec_, false);
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator
+  format(const chrono::hh_mm_ss<Duration> &value,
+         FormatContext &context) const {
+    basic_string<charT> content;
+
+    const bool negative = value.is_negative();
+
+    const auto render = [&](basic_string<charT> &destination, char,
+                            char conversion) {
+      const chrono_hms_view<Duration> split{FTL_FORMAT_NS::addressof(value)};
+
+      switch (conversion) {
+      case 'H':
+      case 'I':
+      case 'M':
+      case 'S':
+      case 'p':
+      case 'R':
+      case 'T':
+      case 'r':
+        chrono_append_time_of_day(destination, context, split,
+                                  spec_.outer.localized, conversion);
+
+        return;
+
+      default:
+        throw_format_error(
+            "chrono conversion requires information not present in hh_mm_ss");
+      }
+    };
+
+    if (spec_.chrono_specs.empty()) {
+      if (negative) {
+        content.push_back(format_widen<charT>('-'));
+      }
+
+      const chrono_hms_view<Duration> split{addressof(value)};
+
+      chrono_append_time_of_day(content, context, split, spec_.outer.localized,
+                                'T');
+    } else {
+      chrono_expand_specs(content, spec_.chrono_specs, negative, render);
+    }
+
+    return format_padded_text(
+        basic_string_view<charT>(content.data(), content.size()), context,
+        spec_.outer, format_alignment::left);
+  }
+
+private:
+  chrono_format_spec<charT> spec_{};
+};
+
+struct chrono_date_fields {
+  bool has_year = false;
+  bool has_month = false;
+  bool has_day = false;
+  bool has_weekday = false;
+
+  int year = 0;
+  unsigned month = 0;
+  unsigned day = 0;
+  unsigned weekday = 0;
+
+  bool complete_date = false;
+};
+
+inline constexpr chrono_date_fields
+chrono_fields_from_ymd(const chrono::year_month_day &value) {
+  chrono_date_fields fields{};
+
+  fields.has_year = true;
+  fields.has_month = true;
+  fields.has_day = true;
+
+  fields.year = static_cast<int>(value.year());
+
+  fields.month = static_cast<unsigned>(value.month());
+
+  fields.day = static_cast<unsigned>(value.day());
+
+  if (value.ok()) {
+    fields.has_weekday = true;
+
+    fields.weekday =
+        chrono::weekday{static_cast<chrono::sys_days>(value)}.c_encoding();
+
+    fields.complete_date = true;
+  }
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields chrono_fields(const chrono::day &value) {
+  chrono_date_fields fields{};
+
+  fields.has_day = true;
+  fields.day = static_cast<unsigned>(value);
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields chrono_fields(const chrono::month &value) {
+  chrono_date_fields fields{};
+
+  fields.has_month = true;
+  fields.month = static_cast<unsigned>(value);
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields chrono_fields(const chrono::year &value) {
+  chrono_date_fields fields{};
+
+  fields.has_year = true;
+  fields.year = static_cast<int>(value);
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::weekday &value) {
+  chrono_date_fields fields{};
+
+  fields.has_weekday = true;
+  fields.weekday = value.c_encoding();
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::weekday_indexed &value) {
+  return chrono_fields(value.weekday());
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::weekday_last &value) {
+  return chrono_fields(value.weekday());
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::month_day &value) {
+  chrono_date_fields fields{};
+
+  fields.has_month = true;
+  fields.has_day = true;
+
+  fields.month = static_cast<unsigned>(value.month());
+
+  fields.day = static_cast<unsigned>(value.day());
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::month_day_last &value) {
+  chrono_date_fields fields{};
+
+  fields.has_month = true;
+
+  fields.month = static_cast<unsigned>(value.month());
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::month_weekday &value) {
+  chrono_date_fields fields{};
+
+  fields.has_month = true;
+  fields.has_weekday = true;
+
+  fields.month = static_cast<unsigned>(value.month());
+
+  fields.weekday = value.weekday_indexed().weekday().c_encoding();
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::month_weekday_last &value) {
+  chrono_date_fields fields{};
+
+  fields.has_month = true;
+  fields.has_weekday = true;
+
+  fields.month = static_cast<unsigned>(value.month());
+
+  fields.weekday = value.weekday_last().weekday().c_encoding();
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::year_month &value) {
+  chrono_date_fields fields{};
+
+  fields.has_year = true;
+  fields.has_month = true;
+
+  fields.year = static_cast<int>(value.year());
+
+  fields.month = static_cast<unsigned>(value.month());
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::year_month_day &value) {
+  return chrono_fields_from_ymd(value);
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::year_month_day_last &value) {
+  return chrono_fields_from_ymd(chrono::year_month_day{value});
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::year_month_weekday &value) {
+  chrono_date_fields fields{};
+
+  fields.has_year = true;
+  fields.has_month = true;
+  fields.has_weekday = true;
+
+  fields.year = static_cast<int>(value.year());
+
+  fields.month = static_cast<unsigned>(value.month());
+
+  fields.weekday = value.weekday().c_encoding();
+
+  if (value.ok()) {
+    return chrono_fields_from_ymd(
+        chrono::year_month_day{static_cast<chrono::sys_days>(value)});
+  }
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::year_month_weekday_last &value) {
+  chrono_date_fields fields{};
+
+  fields.has_year = true;
+  fields.has_month = true;
+  fields.has_weekday = true;
+
+  fields.year = static_cast<int>(value.year());
+
+  fields.month = static_cast<unsigned>(value.month());
+
+  fields.weekday = value.weekday().c_encoding();
+
+  if (value.ok()) {
+    return chrono_fields_from_ymd(
+        chrono::year_month_day{static_cast<chrono::sys_days>(value)});
+  }
+
+  return fields;
+}
+
+template <class charT>
+void chrono_append_year(basic_string<charT> &output, int value) {
+  chrono_append_integer(output, value, 4);
+}
+
+[[nodiscard]]
+constexpr int chrono_floor_div_100(int value) noexcept {
+  int quotient = value / 100;
+
+  if (value < 0 && value % 100 != 0) {
+    --quotient;
+  }
+
+  return quotient;
+}
+
+[[nodiscard]]
+constexpr unsigned chrono_year_remainder(int value) noexcept {
+  const int century = chrono_floor_div_100(value);
+
+  return static_cast<unsigned>(value - century * 100);
+}
+
+inline constexpr const char *chrono_short_month_name(unsigned value) noexcept {
+  constexpr const char *names[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+
+  return value >= 1 && value <= 12 ? names[value - 1] : nullptr;
+}
+
+inline constexpr const char *chrono_long_month_name(unsigned value) noexcept {
+  constexpr const char *names[] = {
+      "January", "February", "March",     "April",   "May",      "June",
+      "July",    "August",   "September", "October", "November", "December"};
+
+  return value >= 1 && value <= 12 ? names[value - 1] : nullptr;
+}
+
+inline constexpr const char *
+chrono_short_weekday_name(unsigned value) noexcept {
+  constexpr const char *names[] = {"Sun", "Mon", "Tue", "Wed",
+                                   "Thu", "Fri", "Sat"};
+
+  return value <= 6 ? names[value] : nullptr;
+}
+
+inline constexpr const char *chrono_long_weekday_name(unsigned value) noexcept {
+  constexpr const char *names[] = {"Sunday",   "Monday", "Tuesday", "Wednesday",
+                                   "Thursday", "Friday", "Saturday"};
+
+  return value <= 6 ? names[value] : nullptr;
+}
+
+[[nodiscard]]
+inline chrono::sys_days
+chrono_fields_sys_days(const chrono_date_fields &fields) {
+  if (!fields.has_year || !fields.has_month || !fields.has_day) {
+    throw_format_error("chrono conversion requires a complete date");
+  }
+
+  chrono::year_month_day value{chrono::year{fields.year},
+                               chrono::month{fields.month},
+                               chrono::day{fields.day}};
+
+  if (!value.ok()) {
+    throw_format_error("chrono conversion requires a valid date");
+  }
+
+  return static_cast<chrono::sys_days>(value);
+}
+
+[[nodiscard]]
+inline unsigned chrono_day_of_year(const chrono_date_fields &fields) {
+  const auto current = chrono_fields_sys_days(fields);
+
+  const auto first =
+      chrono::sys_days{chrono::year{fields.year} / chrono::January / 1};
+
+  return static_cast<unsigned>((current - first).count()) + 1;
+}
+
+[[nodiscard]]
+inline unsigned chrono_week_number_sunday(const chrono_date_fields &fields) {
+  const auto current = chrono_fields_sys_days(fields);
+
+  const auto first =
+      chrono::sys_days{chrono::year{fields.year} / chrono::January / 1};
+
+  const unsigned first_weekday = chrono::weekday{first}.c_encoding();
+
+  const long long offset = static_cast<long long>((7u - first_weekday) % 7u);
+
+  const long long day = (current - first).count();
+
+  if (day < offset)
+    return 0;
+
+  return static_cast<unsigned>(1 + (day - offset) / 7);
+}
+
+[[nodiscard]]
+inline unsigned chrono_week_number_monday(const chrono_date_fields &fields) {
+  const auto current = chrono_fields_sys_days(fields);
+
+  const auto first =
+      chrono::sys_days{chrono::year{fields.year} / chrono::January / 1};
+
+  const unsigned first_weekday = chrono::weekday{first}.iso_encoding() - 1;
+
+  const long long offset = static_cast<long long>((7u - first_weekday) % 7u);
+
+  const long long day = (current - first).count();
+
+  if (day < offset)
+    return 0;
+
+  return static_cast<unsigned>(1 + (day - offset) / 7);
+}
+
+struct chrono_iso_week {
+  int year;
+  unsigned week;
+};
+
+[[nodiscard]]
+inline chrono_iso_week
+chrono_iso_week_fields(const chrono_date_fields &fields) {
+  const auto current = chrono_fields_sys_days(fields);
+
+  const unsigned weekday = chrono::weekday{current}.iso_encoding();
+
+  const auto thursday = current + chrono::days{4 - static_cast<int>(weekday)};
+
+  const int iso_year =
+      static_cast<int>(chrono::year_month_day{thursday}.year());
+
+  const auto january_fourth =
+      chrono::sys_days{chrono::year{iso_year} / chrono::January / 4};
+
+  const unsigned january_fourth_weekday =
+      chrono::weekday{january_fourth}.iso_encoding();
+
+  const auto first_monday =
+      january_fourth -
+      chrono::days{static_cast<int>(january_fourth_weekday) - 1};
+
+  return {iso_year,
+          static_cast<unsigned>(1 + (current - first_monday).count() / 7)};
+}
+
+template <class charT>
+void chrono_append_offset(basic_string<charT> &output, chrono::seconds offset,
+                          bool colon) {
+  long long value = offset.count();
+
+  const bool negative = value < 0;
+
+  unsigned long long magnitude =
+      negative ? 0ULL - static_cast<unsigned long long>(value)
+               : static_cast<unsigned long long>(value);
+
+  output.push_back(format_widen<charT>(negative ? '-' : '+'));
+
+  const unsigned long long hours = magnitude / 3600;
+
+  magnitude %= 3600;
+
+  const unsigned long long minutes = magnitude / 60;
+
+  const unsigned long long seconds = magnitude % 60;
+
+  chrono_append_integer(output, hours, 2);
+
+  if (colon) {
+    output.push_back(format_widen<charT>(':'));
+  }
+
+  chrono_append_integer(output, minutes, 2);
+
+  if (seconds != 0) {
+    if (colon) {
+      output.push_back(format_widen<charT>(':'));
+    }
+
+    chrono_append_integer(output, seconds, 2);
+  }
+}
+
+template <class charT>
+void chrono_require_year(const chrono_date_fields &fields) {
+  if (!fields.has_year) {
+    throw_format_error("chrono conversion requires year information");
+  }
+}
+
+template <class charT>
+void chrono_require_month(const chrono_date_fields &fields) {
+  if (!fields.has_month) {
+    throw_format_error("chrono conversion requires month information");
+  }
+}
+
+template <class charT>
+void chrono_require_day(const chrono_date_fields &fields) {
+  if (!fields.has_day) {
+    throw_format_error("chrono conversion requires day information");
+  }
+}
+
+template <class charT>
+void chrono_require_weekday(const chrono_date_fields &fields) {
+  if (!fields.has_weekday || fields.weekday > 6) {
+    throw_format_error("chrono conversion requires a valid weekday");
+  }
+}
+
+template <class charT>
+void chrono_append_date_conversion(basic_string<charT> &output,
+                                   const chrono_date_fields &fields,
+                                   char modifier, char conversion) {
+  (void)modifier;
+
+  switch (conversion) {
+  case 'a': {
+    chrono_require_weekday<charT>(fields);
+
+    chrono_append_ascii(output, chrono_short_weekday_name(fields.weekday));
+
+    return;
+  }
+
+  case 'A': {
+    chrono_require_weekday<charT>(fields);
+
+    chrono_append_ascii(output, chrono_long_weekday_name(fields.weekday));
+
+    return;
+  }
+
+  case 'b':
+  case 'h': {
+    chrono_require_month<charT>(fields);
+
+    const char *name = chrono_short_month_name(fields.month);
+
+    if (name == nullptr) {
+      throw_format_error("chrono conversion requires a valid month");
+    }
+
+    chrono_append_ascii(output, name);
+
+    return;
+  }
+
+  case 'B': {
+    chrono_require_month<charT>(fields);
+
+    const char *name = chrono_long_month_name(fields.month);
+
+    if (name == nullptr) {
+      throw_format_error("chrono conversion requires a valid month");
+    }
+
+    chrono_append_ascii(output, name);
+
+    return;
+  }
+
+  case 'C':
+    chrono_require_year<charT>(fields);
+
+    chrono_append_integer(output, chrono_floor_div_100(fields.year), 2);
+
+    return;
+
+  case 'd':
+    chrono_require_day<charT>(fields);
+
+    chrono_append_integer(output, fields.day, 2);
+
+    return;
+
+  case 'e':
+    chrono_require_day<charT>(fields);
+
+    chrono_append_integer(output, fields.day, 2, format_widen<charT>(' '));
+
+    return;
+
+  case 'D':
+    chrono_require_year<charT>(fields);
+    chrono_require_month<charT>(fields);
+    chrono_require_day<charT>(fields);
+
+    chrono_append_integer(output, fields.month, 2);
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_integer(output, fields.day, 2);
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_integer(output, chrono_year_remainder(fields.year), 2);
+
+    return;
+
+  case 'F':
+    chrono_require_year<charT>(fields);
+    chrono_require_month<charT>(fields);
+    chrono_require_day<charT>(fields);
+
+    chrono_append_year(output, fields.year);
+
+    output.push_back(format_widen<charT>('-'));
+
+    chrono_append_integer(output, fields.month, 2);
+
+    output.push_back(format_widen<charT>('-'));
+
+    chrono_append_integer(output, fields.day, 2);
+
+    return;
+
+  case 'g': {
+    const auto iso = chrono_iso_week_fields(fields);
+
+    chrono_append_integer(output, chrono_year_remainder(iso.year), 2);
+
+    return;
+  }
+
+  case 'G': {
+    const auto iso = chrono_iso_week_fields(fields);
+
+    chrono_append_year(output, iso.year);
+
+    return;
+  }
+
+  case 'j':
+    chrono_append_integer(output, chrono_day_of_year(fields), 3);
+
+    return;
+
+  case 'm':
+    chrono_require_month<charT>(fields);
+
+    chrono_append_integer(output, fields.month, 2);
+
+    return;
+
+  case 'u':
+    chrono_require_weekday<charT>(fields);
+
+    chrono_append_integer(output, fields.weekday == 0 ? 7u : fields.weekday);
+
+    return;
+
+  case 'U':
+    chrono_append_integer(output, chrono_week_number_sunday(fields), 2);
+
+    return;
+
+  case 'V': {
+    const auto iso = chrono_iso_week_fields(fields);
+
+    chrono_append_integer(output, iso.week, 2);
+
+    return;
+  }
+
+  case 'w':
+    chrono_require_weekday<charT>(fields);
+
+    chrono_append_integer(output, fields.weekday);
+
+    return;
+
+  case 'W':
+    chrono_append_integer(output, chrono_week_number_monday(fields), 2);
+
+    return;
+
+  case 'x':
+    /*
+     * Classic locale representation.
+     * FTL currently has no time_put
+     * facet surface, so L-sensitive
+     * names remain a locale-layer
+     * integration rather than a
+     * chrono-type problem.
+     */
+    chrono_append_date_conversion(output, fields, '\0', 'D');
+
+    return;
+
+  case 'y':
+    chrono_require_year<charT>(fields);
+
+    chrono_append_integer(output, chrono_year_remainder(fields.year), 2);
+
+    return;
+
+  case 'Y':
+    chrono_require_year<charT>(fields);
+
+    chrono_append_year(output, fields.year);
+
+    return;
+
+  default:
+    throw_format_error("chrono conversion requires information not present in "
+                       "this calendar type");
+  }
+}
+
+template <class charT>
+void chrono_append_default_day(basic_string<charT> &output, chrono::day value) {
+  chrono_append_integer(output, static_cast<unsigned>(value), 2);
+
+  if (!value.ok()) {
+    chrono_append_ascii(output, " is not a valid day");
+  }
+}
+
+template <class charT>
+void chrono_append_default_month(basic_string<charT> &output,
+                                 chrono::month value) {
+  const unsigned numeric = static_cast<unsigned>(value);
+
+  if (value.ok()) {
+    chrono_append_ascii(output, chrono_short_month_name(numeric));
+  } else {
+    chrono_append_integer(output, numeric);
+
+    chrono_append_ascii(output, " is not a valid month");
+  }
+}
+
+template <class charT>
+void chrono_append_default_year(basic_string<charT> &output,
+                                chrono::year value) {
+  chrono_append_year(output, static_cast<int>(value));
+
+  if (!value.ok()) {
+    chrono_append_ascii(output, " is not a valid year");
+  }
+}
+
+template <class charT>
+void chrono_append_default_weekday(basic_string<charT> &output,
+                                   chrono::weekday value) {
+  if (value.ok()) {
+    chrono_append_ascii(output, chrono_short_weekday_name(value.c_encoding()));
+  } else {
+    chrono_append_integer(output, value.c_encoding());
+
+    chrono_append_ascii(output, " is not a valid weekday");
+  }
+}
+
+template <class charT>
+void chrono_append_default_weekday_indexed(
+    basic_string<charT> &output, const chrono::weekday_indexed &value) {
+  chrono_append_default_weekday(output, value.weekday());
+
+  output.push_back(format_widen<charT>('['));
+
+  chrono_append_integer(output, value.index());
+
+  if (value.index() < 1 || value.index() > 5) {
+    chrono_append_ascii(output, " is not a valid index");
+  }
+
+  output.push_back(format_widen<charT>(']'));
+}
+
+template <class charT>
+void chrono_append_default_weekday_last(basic_string<charT> &output,
+                                        const chrono::weekday_last &value) {
+  chrono_append_default_weekday(output, value.weekday());
+
+  chrono_append_ascii(output, "[last]");
+}
+
+template <class charT, class T>
+void chrono_append_calendar_default(basic_string<charT> &output,
+                                    const T &value) {
+  if constexpr (is_same_v<T, chrono::day>) {
+    chrono_append_default_day(output, value);
+
+  } else if constexpr (is_same_v<T, chrono::month>) {
+    chrono_append_default_month(output, value);
+
+  } else if constexpr (is_same_v<T, chrono::year>) {
+    chrono_append_default_year(output, value);
+
+  } else if constexpr (is_same_v<T, chrono::weekday>) {
+    chrono_append_default_weekday(output, value);
+
+  } else if constexpr (is_same_v<T, chrono::weekday_indexed>) {
+    chrono_append_default_weekday_indexed(output, value);
+
+  } else if constexpr (is_same_v<T, chrono::weekday_last>) {
+    chrono_append_default_weekday_last(output, value);
+
+  } else if constexpr (is_same_v<T, chrono::month_day>) {
+    chrono_append_default_month(output, value.month());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_day(output, value.day());
+
+  } else if constexpr (is_same_v<T, chrono::month_day_last>) {
+    chrono_append_default_month(output, value.month());
+
+    chrono_append_ascii(output, "/last");
+
+  } else if constexpr (is_same_v<T, chrono::month_weekday>) {
+    chrono_append_default_month(output, value.month());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_weekday_indexed(output, value.weekday_indexed());
+
+  } else if constexpr (is_same_v<T, chrono::month_weekday_last>) {
+    chrono_append_default_month(output, value.month());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_weekday_last(output, value.weekday_last());
+
+  } else if constexpr (is_same_v<T, chrono::year_month>) {
+    chrono_append_default_year(output, value.year());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_month(output, value.month());
+
+  } else if constexpr (is_same_v<T, chrono::year_month_day>) {
+    const auto fields = chrono_fields(value);
+
+    chrono_append_date_conversion(output, fields, '\0', 'F');
+
+    if (!value.ok()) {
+      chrono_append_ascii(output, " is not a valid date");
+    }
+
+  } else if constexpr (is_same_v<T, chrono::year_month_day_last>) {
+    chrono_append_default_year(output, value.year());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_month(output, value.month());
+
+    chrono_append_ascii(output, "/last");
+
+  } else if constexpr (is_same_v<T, chrono::year_month_weekday>) {
+    chrono_append_default_year(output, value.year());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_month(output, value.month());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_weekday_indexed(output, value.weekday_indexed());
+
+  } else if constexpr (is_same_v<T, chrono::year_month_weekday_last>) {
+    chrono_append_default_year(output, value.year());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_month(output, value.month());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_weekday_last(output, value.weekday_last());
+  }
+}
+
+template <class T, class charT> class chrono_calendar_formatter {
+public:
+  constexpr chrono_calendar_formatter() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    return chrono_parse_format_spec(context, spec_, false);
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator format(const T &value,
+                                          FormatContext &context) const {
+    basic_string<charT> content;
+
+    if (spec_.chrono_specs.empty()) {
+      chrono_append_calendar_default(content, value);
+    } else {
+      const auto fields = chrono_fields(value);
+
+      chrono_expand_specs(content, spec_.chrono_specs, false,
+                          [&](basic_string<charT> &destination, char modifier,
+                              char conversion) {
+                            chrono_append_date_conversion(destination, fields,
+                                                          modifier, conversion);
+                          });
+    }
+
+    return format_padded_text(
+        basic_string_view<charT>(content.data(), content.size()), context,
+        spec_.outer, format_alignment::left);
+  }
+
+private:
+  chrono_format_spec<charT> spec_{};
+};
+
+template <class Duration> struct chrono_clock_hms_view {
+  const chrono::hh_mm_ss<Duration> *value;
+
+  bool leap_second = false;
+
+  [[nodiscard]]
+  constexpr long long hours() const {
+    return static_cast<long long>(value->hours().count());
+  }
+
+  [[nodiscard]]
+  constexpr long long minutes() const {
+    return static_cast<long long>(value->minutes().count());
+  }
+
+  [[nodiscard]]
+  constexpr long long seconds() const {
+    return leap_second ? 60 : static_cast<long long>(value->seconds().count());
+  }
+
+  [[nodiscard]]
+  constexpr auto subseconds() const {
+    return value->subseconds();
+  }
+
+  inline static constexpr unsigned fractional_width =
+      chrono::hh_mm_ss<Duration>::fractional_width;
+};
+
+enum class chrono_clock_kind { system, local, utc, tai, gps, file };
+
+template <chrono_clock_kind Kind, class Duration>
+[[nodiscard]]
+constexpr auto chrono_clock_sys_time(
+    const chrono::time_point<
+        conditional_t<
+            Kind == chrono_clock_kind::system, chrono::system_clock,
+            conditional_t<
+                Kind == chrono_clock_kind::local, chrono::local_t,
+                conditional_t<
+                    Kind == chrono_clock_kind::utc, chrono::utc_clock,
+                    conditional_t<Kind == chrono_clock_kind::tai,
+                                  chrono::tai_clock,
+                                  conditional_t<Kind == chrono_clock_kind::gps,
+                                                chrono::gps_clock,
+                                                chrono::file_clock>>>>>,
+        Duration> &value) {
+  using precision = common_type_t<Duration, chrono::seconds>;
+
+  if constexpr (Kind == chrono_clock_kind::system) {
+    return chrono::sys_time<precision>{precision{value.time_since_epoch()}};
+
+  } else if constexpr (Kind == chrono_clock_kind::local) {
+    /*
+     * local_time has the same civil
+     * epoch representation, but no
+     * time-zone information.
+     */
+    return chrono::sys_time<precision>{precision{value.time_since_epoch()}};
+
+  } else if constexpr (Kind == chrono_clock_kind::utc) {
+    const auto converted = chrono::utc_clock::to_sys(value);
+
+    return chrono::sys_time<precision>{precision{converted.time_since_epoch()}};
+
+  } else if constexpr (Kind == chrono_clock_kind::tai) {
+    const auto epoch_difference =
+        chrono::sys_days{chrono::year{1970} / chrono::January / 1} -
+        chrono::sys_days{chrono::year{1958} / chrono::January / 1};
+
+    return chrono::sys_time<precision>{
+        precision{value.time_since_epoch()} -
+        chrono::duration_cast<precision>(epoch_difference)};
+
+  } else if constexpr (Kind == chrono_clock_kind::gps) {
+    const auto epoch_difference =
+        chrono::sys_days{chrono::year{1980} / chrono::January /
+                         chrono::Sunday[1]} -
+        chrono::sys_days{chrono::year{1970} / chrono::January / 1};
+
+    return chrono::sys_time<precision>{
+        precision{value.time_since_epoch()} +
+        chrono::duration_cast<precision>(epoch_difference)};
+
+  } else {
+    const auto converted = chrono::file_clock::to_sys(value);
+
+    return chrono::sys_time<precision>{precision{converted.time_since_epoch()}};
+  }
+}
+
+template <chrono_clock_kind Kind>
+[[nodiscard]]
+constexpr const char *chrono_clock_abbreviation() noexcept {
+  if constexpr (Kind == chrono_clock_kind::system ||
+                Kind == chrono_clock_kind::utc ||
+                Kind == chrono_clock_kind::file) {
+    return "UTC";
+  } else if constexpr (Kind == chrono_clock_kind::tai) {
+    return "TAI";
+  } else if constexpr (Kind == chrono_clock_kind::gps) {
+    return "GPS";
+  } else {
+    return nullptr;
+  }
+}
+
+template <chrono_clock_kind Kind, class Duration, class charT>
+class chrono_time_point_formatter {
+public:
+  constexpr chrono_time_point_formatter() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    return chrono_parse_format_spec(context, spec_, false);
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator
+  format(const chrono::time_point<
+             conditional_t<
+                 Kind == chrono_clock_kind::system, chrono::system_clock,
+                 conditional_t<
+                     Kind == chrono_clock_kind::local, chrono::local_t,
+                     conditional_t<
+                         Kind == chrono_clock_kind::utc, chrono::utc_clock,
+                         conditional_t<
+                             Kind == chrono_clock_kind::tai, chrono::tai_clock,
+                             conditional_t<Kind == chrono_clock_kind::gps,
+                                           chrono::gps_clock,
+                                           chrono::file_clock>>>>>,
+             Duration> &value,
+         FormatContext &context) const {
+    using precision = common_type_t<Duration, chrono::seconds>;
+
+    const auto system_value = chrono_clock_sys_time<Kind>(value);
+
+    const auto day_point = chrono::floor<chrono::days>(system_value);
+
+    const chrono::sys_days calendar_day{day_point.time_since_epoch()};
+
+    const chrono::year_month_day calendar{calendar_day};
+
+    const auto fields = chrono_fields(calendar);
+
+    const precision time_since_midnight = precision{system_value - day_point};
+
+    const chrono::hh_mm_ss<precision> hms{time_since_midnight};
+
+    bool leap_second = false;
+
+    if constexpr (Kind == chrono_clock_kind::utc) {
+      leap_second = chrono::get_leap_second_info(value).is_leap_second;
+    }
+
+    const chrono_clock_hms_view<precision> split{addressof(hms), leap_second};
+
+    basic_string<charT> content;
+
+    basic_string_view<charT> chrono_specs = spec_.chrono_specs;
+
+    basic_string<charT> default_specs;
+
+    if (chrono_specs.empty()) {
+      chrono_append_ascii(default_specs, "%F %T");
+
+      chrono_specs =
+          basic_string_view<charT>(default_specs.data(), default_specs.size());
+    }
+
+    chrono_expand_specs(
+        content, chrono_specs, false,
+        [&](basic_string<charT> &destination, char modifier, char conversion) {
+          switch (conversion) {
+          case 'H':
+          case 'I':
+          case 'M':
+          case 'S':
+          case 'p':
+          case 'R':
+          case 'T':
+          case 'r':
+            chrono_append_time_of_day(destination, context, split,
+                                      spec_.outer.localized, conversion);
+
+            return;
+
+          case 'c':
+            chrono_append_date_conversion(destination, fields, modifier, 'a');
+
+            destination.push_back(format_widen<charT>(' '));
+
+            chrono_append_date_conversion(destination, fields, modifier, 'b');
+
+            destination.push_back(format_widen<charT>(' '));
+
+            chrono_append_date_conversion(destination, fields, modifier, 'e');
+
+            destination.push_back(format_widen<charT>(' '));
+
+            chrono_append_time_of_day(destination, context, split,
+                                      spec_.outer.localized, 'T');
+
+            destination.push_back(format_widen<charT>(' '));
+
+            chrono_append_date_conversion(destination, fields, modifier, 'Y');
+
+            return;
+
+          case 'X':
+            chrono_append_time_of_day(destination, context, split,
+                                      spec_.outer.localized, 'T');
+
+            return;
+
+          case 'z':
+            if constexpr (Kind == chrono_clock_kind::local) {
+              throw_format_error("local_time does not contain a UTC offset");
+            } else {
+              chrono_append_offset(destination, chrono::seconds{0},
+                                   modifier == 'E' || modifier == 'O');
+            }
+
+            return;
+
+          case 'Z': {
+            constexpr const char *abbreviation =
+                chrono_clock_abbreviation<Kind>();
+
+            if constexpr (abbreviation == nullptr) {
+              throw_format_error(
+                  "local_time does not contain a time-zone abbreviation");
+            } else {
+              chrono_append_ascii(destination, abbreviation);
+            }
+
+            return;
+          }
+
+          default:
+            chrono_append_date_conversion(destination, fields, modifier,
+                                          conversion);
+
+            return;
+          }
+        });
+
+    return format_padded_text(
+        basic_string_view<charT>(content.data(), content.size()), context,
+        spec_.outer, format_alignment::left);
+  }
+
+private:
+  chrono_format_spec<charT> spec_{};
+};
+
+} // namespace detail
+
+template <class Rep, class Period, class charT>
+struct formatter<chrono::duration<Rep, Period>, charT>
+    : detail::chrono_duration_formatter<Rep, Period, charT> {};
+
+template <class Rep, class Period, class charT>
+struct formatter<chrono::hh_mm_ss<chrono::duration<Rep, Period>>, charT>
+    : detail::chrono_hms_formatter<chrono::duration<Rep, Period>, charT> {};
+
+template <class charT>
+struct formatter<chrono::day, charT>
+    : detail::chrono_calendar_formatter<chrono::day, charT> {};
+
+template <class charT>
+struct formatter<chrono::month, charT>
+    : detail::chrono_calendar_formatter<chrono::month, charT> {};
+
+template <class charT>
+struct formatter<chrono::year, charT>
+    : detail::chrono_calendar_formatter<chrono::year, charT> {};
+
+template <class charT>
+struct formatter<chrono::weekday, charT>
+    : detail::chrono_calendar_formatter<chrono::weekday, charT> {};
+
+template <class charT>
+struct formatter<chrono::weekday_indexed, charT>
+    : detail::chrono_calendar_formatter<chrono::weekday_indexed, charT> {};
+
+template <class charT>
+struct formatter<chrono::weekday_last, charT>
+    : detail::chrono_calendar_formatter<chrono::weekday_last, charT> {};
+
+template <class charT>
+struct formatter<chrono::month_day, charT>
+    : detail::chrono_calendar_formatter<chrono::month_day, charT> {};
+
+template <class charT>
+struct formatter<chrono::month_day_last, charT>
+    : detail::chrono_calendar_formatter<chrono::month_day_last, charT> {};
+
+template <class charT>
+struct formatter<chrono::month_weekday, charT>
+    : detail::chrono_calendar_formatter<chrono::month_weekday, charT> {};
+
+template <class charT>
+struct formatter<chrono::month_weekday_last, charT>
+    : detail::chrono_calendar_formatter<chrono::month_weekday_last, charT> {};
+
+template <class charT>
+struct formatter<chrono::year_month, charT>
+    : detail::chrono_calendar_formatter<chrono::year_month, charT> {};
+
+template <class charT>
+struct formatter<chrono::year_month_day, charT>
+    : detail::chrono_calendar_formatter<chrono::year_month_day, charT> {};
+
+template <class charT>
+struct formatter<chrono::year_month_day_last, charT>
+    : detail::chrono_calendar_formatter<chrono::year_month_day_last, charT> {};
+
+template <class charT>
+struct formatter<chrono::year_month_weekday, charT>
+    : detail::chrono_calendar_formatter<chrono::year_month_weekday, charT> {};
+
+template <class charT>
+struct formatter<chrono::year_month_weekday_last, charT>
+    : detail::chrono_calendar_formatter<chrono::year_month_weekday_last,
+                                        charT> {};
+
+template <class Duration, class charT>
+struct formatter<chrono::sys_time<Duration>, charT>
+    : detail::chrono_time_point_formatter<detail::chrono_clock_kind::system,
+                                          Duration, charT> {};
+
+template <class Duration, class charT>
+struct formatter<chrono::local_time<Duration>, charT>
+    : detail::chrono_time_point_formatter<detail::chrono_clock_kind::local,
+                                          Duration, charT> {};
+
+template <class Duration, class charT>
+struct formatter<chrono::utc_time<Duration>, charT>
+    : detail::chrono_time_point_formatter<detail::chrono_clock_kind::utc,
+                                          Duration, charT> {};
+
+template <class Duration, class charT>
+struct formatter<chrono::tai_time<Duration>, charT>
+    : detail::chrono_time_point_formatter<detail::chrono_clock_kind::tai,
+                                          Duration, charT> {};
+
+template <class Duration, class charT>
+struct formatter<chrono::gps_time<Duration>, charT>
+    : detail::chrono_time_point_formatter<detail::chrono_clock_kind::gps,
+                                          Duration, charT> {};
+
+template <class Duration, class charT>
+struct formatter<chrono::file_time<Duration>, charT>
+    : detail::chrono_time_point_formatter<detail::chrono_clock_kind::file,
+                                          Duration, charT> {};
+
+FTL_END_NAMESPACE
+
+#undef FTL_FORMAT_NS
+
+#endif // FTL_FORMAT_HEADER

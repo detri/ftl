@@ -174,6 +174,8 @@ dependency order, not hundreds of individual overloads.
 | `<future>`             | Stage 6.5         |
 | `<clocale>`            | Stage 7.1         |
 | `<codecvt>`            | Stage 7.1         |
+| `<format>`             | Stage 7.2         |
+| `<print>`              | Stage 7.2         |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -186,14 +188,14 @@ synopses:
 
 | Header         | Implemented direction                                                                                                                                  | Major remaining groups                                                                                                                  |
 |----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
-| `<thread>`     | complete thread/jthread runtime surface, IDs, hashing, stop-token integration, sleep/yield, and native backends                                        | `thread::id` stream insertion and formatter after Stage 7                                                                               |
-| `<stacktrace>` | native capture, entries, allocator-aware container, comparisons, strings, PMR, and hashes                                                              | stream insertion and formatters after Stage 7; feature-test advertisement                                                               |
+| `<thread>`     | complete thread/jthread runtime surface, IDs, hashing, stop-token integration, sleep/yield, and native backends                                        | `thread::id` formatter; stream insertion after the `<ostream>` closure                                                                   |
+| `<stacktrace>` | native capture, entries, allocator-aware container, comparisons, strings, PMR, and hashes                                                              | formatters and feature-test advertisement; stream insertion after the `<ostream>` closure                                                |
 | `<locale>`     | locale representation and facet ownership; ctype, collate, numpunct, moneypunct, messages, codecvt, byname facets, `time_base`, classic/global support | stream-dependent `num_get/put`, `money_get/put`, `time_get/put` families; named/category constructors and final mandatory-facet closure |
 | `<iosfwd>`     | `char_traits`, fundamental stream types, aliases, and stream-class forward declarations                                                                | complete C++23 forward-declaration and positioning-type inventory                                                                       |
 | `<streambuf>`  | input/get-area stream-buffer machinery needed by seeded input streams                                                                                  | put area, positioning/seeking, locale, synchronization, putback, and complete synopsis                                                  |
 | `<ios>`        | stream state, buffer association, state observers, and boolean conversion                                                                              | full `ios_base`/`basic_ios` formatting, locales, callbacks, ties, exception masks, and synopsis                                         |
 | `<istream>`    | core unformatted character input, bulk reads, stream-state propagation, and user-defined extraction integration                                        | sentry, formatted extraction, remaining unformatted overloads, positioning, synchronization, and complete synopsis                      |
-| `<chrono>`     | durations, time points, calendars, clocks, clock conversion, literals, and `hh_mm_ss`                                                                  | tzdb; formatters, stream insertion, and `from_stream` after Stage 7                                                                     |
+| `<chrono>`     | durations, time points, calendars, clocks, clock conversion, literals, `hh_mm_ss`, and C++23 formatter specializations                                  | tzdb; stream insertion and `from_stream` after the `<ostream>`/`<istream>` closures                                                      |
 
 `include/ftl/detail/rapidhash` is an implementation detail, not a standard
 header or roadmap milestone.
@@ -210,7 +212,7 @@ remain required when C++23 still specifies them; they are not silently dropped.
 | Area                     | Absent headers                                                                                                                                                     |
 |--------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Text/encoding            | `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                                            |
-| I/O/formatting/files     | `<cstdio>`, `<fstream>`, `<iomanip>`, `<iostream>`, `<ostream>`, `<sstream>`, `<spanstream>`, `<strstream>`, `<syncstream>`, `<filesystem>`, `<format>`, `<print>` |
+| I/O/formatting/files     | `<cstdio>`, `<fstream>`, `<iomanip>`, `<iostream>`, `<ostream>`, `<sstream>`, `<spanstream>`, `<strstream>`, `<syncstream>`, `<filesystem>`                      |
 
 Freestanding C compatibility also requires deciding and documenting how the
 corresponding `.h` spellings are supplied. That is part of the relevant
@@ -483,10 +485,10 @@ Future concurrency headers should consume the detail clock boundary directly
 when they need timed waits, without including the full public `<chrono>` header.
 
 `<chrono>` timezone database support is deferred: tzdb is a separate, large
-hosted-data undertaking. After Stage 7 completes `<locale>`, `<format>`, and the
-stream headers, return to `<chrono>` to add its formatters, stream insertion,
-and `from_stream` interfaces. Only then, and after the separate tzdb closure,
-can `<chrono>` move from seeded to complete.
+hosted-data undertaking. Stage 7.2 completes its C++23 formatter
+specializations. After the stream headers are complete, return to `<chrono>`
+for stream insertion and `from_stream`. Only then, and after the separate tzdb
+closure, can `<chrono>` move from seeded to complete.
 
 Stage 5.2 completes the independently usable C++23 `<system_error>` and
 `<stdexcept>` surfaces and the runtime `<stacktrace>` closure. Error codes,
@@ -497,10 +499,10 @@ skip/depth behavior, and provide the specified container, comparison, string,
 PMR, and hash interfaces. Native symbol/source lookup is allowed to report no
 information and currently does so.
 
-The `<stacktrace>` stream insertion and formatter specializations depend on
-Stage 7's `<ostream>` and `<format>` closures. They, and the
-`__cpp_lib_stacktrace` advertisement, remain deferred until those headers are
-complete; the runtime surface does not import vendor C++ library APIs.
+The `<stacktrace>` formatter specializations can proceed now that Stage 7.2 has
+completed `<format>`; stream insertion still depends on the `<ostream>`
+closure. Those interfaces and the `__cpp_lib_stacktrace` advertisement remain
+outstanding; the runtime surface does not import vendor C++ library APIs.
 
 Stage 5.3 starts with the freestanding, header-only C++23 `<numbers>` surface.
 The remaining closure will be taken in dependency order:
@@ -675,10 +677,10 @@ replacement modes. N4950 defines no `<future>` feature-test macro, so the
 completed facility does not introduce one.
 
 **Exit:** all Stage 6 concurrency runtime closures are complete and pass the
-supported compiler/platform matrix in normal and replacement modes. Remaining
-`<thread>` stream insertion and formatter interfaces are intentionally deferred
-to Stage 7 because they depend on the formatting and I/O closures rather than
-on missing concurrency runtime functionality.
+supported compiler/platform matrix in normal and replacement modes. The
+`thread::id` formatter can proceed after the completed Stage 7.2 formatting
+closure; stream insertion remains deferred until `<ostream>` exists. Neither is
+missing concurrency runtime functionality.
 
 ### Stage 7 — Localization, formatting, and I/O
 
@@ -693,13 +695,17 @@ Take these closures in order:
    `<locale>` remains seeded because its stream-dependent facet families and
    named/category constructors cannot be completed until the stream substrate
    exists.
-2. `<format>` + `<print>`.
+2. **Complete:** `<format>` + `<print>`, including the C++23 chrono formatter
+   specializations. Formatter specializations owned by `<thread>` and
+   `<stacktrace>` remain in those seeded closures; their stream insertion
+   operators, along with chrono stream insertion and `from_stream`, await the
+   `<ostream>`/`<istream>` substrate in step 3.
 3. `<iosfwd>` + `<ios>` + `<streambuf>` + `<istream>` + `<ostream>`, followed
    immediately by the final `<locale>` closure: `num_get`/`num_put`,
    `money_get`/`money_put`, `time_get`/`time_put` and their required
    specializations/byname forms, named/category locale construction, and the
    complete mandatory classic/constructed-locale facet table.
-4. Return to `<chrono>` for formatters, stream insertion, and `from_stream`.
+4. Return to `<chrono>` for stream insertion and `from_stream`.
 5. `<iostream>` + `<fstream>` + `<sstream>` + `<spanstream>` +
    `<syncstream>` + `<iomanip>` + `<cstdio>` + deprecated `<strstream>`.
 6. `<filesystem>`.
