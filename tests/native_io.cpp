@@ -24,10 +24,11 @@ bool ftl_test() {
   native_io_size transferred = 0;
   if (!native_write_file(handle, expected, sizeof(expected) - 1, transferred,
                          error) ||
-      transferred != sizeof(expected) - 1)
+      transferred != sizeof(expected) - 1 || !native_flush_file(handle, error))
     return false;
   native_io_offset position = -1;
-  if (!native_seek_file(handle, 0, native_seek_origin::begin, position, error) ||
+  if (!native_seek_file(handle, 0, native_seek_origin::begin, position,
+                        error) ||
       position != 0)
     return false;
   char actual[sizeof(expected)]{};
@@ -42,5 +43,24 @@ bool ftl_test() {
       !native_rename_file(first_path, second_path, error) ||
       !native_remove_file(second_path, error))
     return false;
+#if defined(_WIN32)
+  const wchar_t *wide_first_path =
+#ifdef FTL_REPLACE_STL
+      L"ftl-native-io-replace-wide.tmp";
+#else
+      L"ftl-native-io-normal-wide.tmp";
+#endif
+  const wchar_t *wide_second_path =
+#ifdef FTL_REPLACE_STL
+      L"ftl-native-io-replace-wide-renamed.tmp";
+#else
+      L"ftl-native-io-normal-wide-renamed.tmp";
+#endif
+  if (!native_open_file(wide_first_path, options, handle, error) ||
+      !native_close_file(handle, error) ||
+      !native_rename_file(wide_first_path, wide_second_path, error) ||
+      !native_remove_file(wide_second_path, error))
+    return false;
+#endif
   return true;
 }

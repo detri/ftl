@@ -15,9 +15,9 @@ static_assert(tested::is_same_v<
               decltype(static_cast<print_type>(&tested::printf)), print_type>);
 bool ftl_test() {
   char formatted[64]{};
-  int written = tested::snprintf(formatted, sizeof(formatted),
-                                 "%+06d %#x %.3s %.2f", 42, 0x2a, "stdio",
-                                 1.25);
+  int written =
+      tested::snprintf(formatted, sizeof(formatted), "%+06d %#x %.3s %.2f", 42,
+                       0x2a, "stdio", 1.25);
   const char expected[] = "+00042 0x2a std 1.25";
   if (written != 20)
     return false;
@@ -28,11 +28,20 @@ bool ftl_test() {
   if (tested::snprintf(truncated, sizeof(truncated), "abcdef") != 6 ||
       truncated[3] != 'd' || truncated[4] != '\0')
     return false;
+  if (tested::snprintf(nullptr, 0, "%d", 1234) != 4)
+    return false;
   int count_written = -1;
-  if (tested::snprintf(formatted, sizeof(formatted), "%#.0f %.1a%n", 1.0,
-                       3.0, &count_written) != 12 ||
-      count_written != 12 || formatted[1] != '.' || formatted[3] != '0' ||
-      formatted[4] != 'x' || formatted[7] != '8')
+  int format_result = tested::snprintf(
+      formatted, sizeof(formatted), "%#.0f %.1a%n", 1.0, 3.0, &count_written);
+  if (format_result != 11 || count_written != 11 || formatted[1] != '.' ||
+      formatted[3] != '0' || formatted[4] != 'x' || formatted[7] != '8')
+    return false;
+  if (tested::snprintf(formatted, sizeof(formatted), "%#.6g", 1.25) != 7 ||
+      formatted[0] != '1' || formatted[1] != '.' || formatted[6] != '0')
+    return false;
+  if (tested::snprintf(formatted, sizeof(formatted), "%#.3o %#.0o", 1u, 0u) !=
+          5 ||
+      formatted[0] != '0' || formatted[2] != '1' || formatted[4] != '0')
     return false;
   int decimal = 0;
   unsigned hexadecimal = 0;
@@ -51,6 +60,19 @@ bool ftl_test() {
   floating = 0;
   if (tested::sscanf("0x1.8p+1", "%la", &floating) != 1 || floating != 3.0)
     return false;
+  floating = 0;
+  double hexadecimal_floating = 0;
+  if (tested::sscanf("+1.5 +0x1p+1", "%lf %la", &floating,
+                     &hexadecimal_floating) != 2 ||
+      floating != 1.5 || hexadecimal_floating != 2.0)
+    return false;
+  floating = 0;
+  remainder = 0;
+  if (tested::sscanf("nan(payload)x", "%lf%c", &floating, &remainder) != 2 ||
+      floating == floating || remainder != 'x')
+    return false;
+  if (tested::sscanf("", "x") != EOF || tested::sscanf("", "%%") != EOF)
+    return false;
 
 #ifdef FTL_REPLACE_STL
   const char *path = "ftl-cstdio-replace.tmp";
@@ -62,18 +84,21 @@ bool ftl_test() {
   tested::FILE *text_file = tested::fopen(path, "w+");
   char user_buffer[32];
   if (!text_file ||
-      tested::setvbuf(text_file, user_buffer, _IOFBF, sizeof(user_buffer)) != 0 ||
+      tested::setvbuf(text_file, user_buffer, _IOFBF, sizeof(user_buffer)) !=
+          0 ||
       tested::fputs("a\nb", text_file) < 0 ||
       tested::setvbuf(text_file, nullptr, _IONBF, 0) == 0 ||
       tested::fclose(text_file) != 0)
     return false;
   text_file = tested::fopen(path, "ab+");
-  if (!text_file || tested::fputc('c', text_file) != 'c' ||
-      tested::fclose(text_file) != 0)
+  if (!text_file || tested::fputc('c', text_file) != 'c')
     return false;
-  text_file = tested::fopen(path, "rb");
+  text_file = tested::freopen(path, "rb", text_file);
+  if (!text_file)
+    return false;
   char physical[8]{};
-  tested::size_t physical_size = tested::fread(physical, 1, sizeof(physical), text_file);
+  tested::size_t physical_size =
+      tested::fread(physical, 1, sizeof(physical), text_file);
 #if defined(_WIN32)
   if (physical_size != 5 || physical[0] != 'a' || physical[1] != '\r' ||
       physical[2] != '\n' || physical[3] != 'b' || physical[4] != 'c')
@@ -83,6 +108,12 @@ bool ftl_test() {
       physical[2] != 'b' || physical[3] != 'c')
     return false;
 #endif
+  if (!tested::feof(text_file) || tested::fputc('x', text_file) != EOF ||
+      !tested::ferror(text_file))
+    return false;
+  tested::clearerr(text_file);
+  if (tested::feof(text_file) || tested::ferror(text_file))
+    return false;
   if (tested::fclose(text_file) != 0 || tested::rename(path, renamed) != 0 ||
       tested::remove(renamed) != 0)
     return false;
@@ -91,11 +122,22 @@ bool ftl_test() {
   if (!file)
     return false;
   const char text[] = "stdio";
-  if (tested::fwrite(text, 1, 5, file) != 5)
+  if (tested::fwrite(text, 1, 5, file) != 5 || tested::ftell(file) != 5 ||
+      tested::fflush(nullptr) != 0)
     return false;
-  if (tested::fseek(file, 0, SEEK_SET) != 0)
+  tested::fpos_t end_position{};
+  if (tested::fgetpos(file, &end_position) != 0)
+    return false;
+  tested::rewind(file);
+  char empty[1] = {'x'};
+  if (tested::fgets(empty, 1, file) != empty || empty[0] != '\0' ||
+      tested::ftell(file) != 0 || tested::getc(file) != 's' ||
+      tested::ungetc('s', file) != 's')
     return false;
   char read[6]{};
-  bool okay = tested::fread(read, 1, 5, file) == 5 && read[4] == 'o';
+  bool okay = tested::fgets(read, sizeof(read), file) == read &&
+              read[4] == 'o' && tested::fgetc(file) == EOF &&
+              tested::feof(file) && tested::fsetpos(file, &end_position) == 0 &&
+              tested::ftell(file) == 5;
   return tested::fclose(file) == 0 && okay;
 }

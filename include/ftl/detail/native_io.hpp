@@ -60,6 +60,11 @@ struct native_open_options {
                                     const native_open_options &options,
                                     native_file_handle &result,
                                     native_io_error &error) noexcept;
+[[nodiscard]] bool native_remove_file(const wchar_t *path,
+                                      native_io_error &error) noexcept;
+[[nodiscard]] bool native_rename_file(const wchar_t *old_path,
+                                      const wchar_t *new_path,
+                                      native_io_error &error) noexcept;
 #endif
 
 [[nodiscard]] bool native_read_file(native_file_handle handle, void *buffer,

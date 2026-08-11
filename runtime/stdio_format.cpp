@@ -23,10 +23,9 @@ struct output_sink {
     if (buffer && count + 1 < capacity)
       buffer[count] = value;
     if (file) {
-      size_type written = locked
-                              ? ::ftl_stdio_runtime::write_bytes_locked(
-                                    &value, 1, file)
-                              : ::ftl_stdio_runtime::fwrite(&value, 1, 1, file);
+      size_type written =
+          locked ? ::ftl_stdio_runtime::write_bytes_locked(&value, 1, file)
+                 : ::ftl_stdio_runtime::fwrite(&value, 1, 1, file);
       if (written != 1)
         failed = true;
     }
@@ -95,11 +94,11 @@ const char *parse_conversion(const char *format, conversion &item,
     }
   }
   if (*format == 'h') {
-    item.length = *++format == 'h' ? (++format, length_type::hh)
-                                   : length_type::h;
+    item.length =
+        *++format == 'h' ? (++format, length_type::hh) : length_type::h;
   } else if (*format == 'l') {
-    item.length = *++format == 'l' ? (++format, length_type::ll)
-                                   : length_type::l;
+    item.length =
+        *++format == 'l' ? (++format, length_type::ll) : length_type::l;
   } else if (*format == 'j') {
     item.length = length_type::j;
     ++format;
@@ -120,7 +119,8 @@ const char *parse_conversion(const char *format, conversion &item,
 void padded(output_sink &sink, const conversion &item, const char *prefix,
             size_type prefix_size, const char *text, size_type text_size,
             int leading_zeroes = 0) {
-  size_type total = prefix_size + static_cast<size_type>(leading_zeroes) + text_size;
+  size_type total =
+      prefix_size + static_cast<size_type>(leading_zeroes) + text_size;
   int padding = item.width > static_cast<int>(total)
                     ? item.width - static_cast<int>(total)
                     : 0;
@@ -206,7 +206,9 @@ void integer(output_sink &sink, conversion item, unsigned long long magnitude,
     prefix[prefix_size++] = '+';
   else if (item.space)
     prefix[prefix_size++] = ' ';
-  if (item.alternate && base == 8 && (size == 0 || digits[0] != '0'))
+  if (item.alternate && base == 8 &&
+      (size == 0 ||
+       (digits[0] != '0' && item.precision <= static_cast<int>(size))))
     prefix[prefix_size++] = '0';
   else if (item.alternate && base == 16 && magnitude != 0) {
     prefix[prefix_size++] = '0';
@@ -222,20 +224,19 @@ void floating(output_sink &sink, conversion item, va_list_type &args) {
   long double value = item.length == length_type::big_l
                           ? va_arg(args, long double)
                           : va_arg(args, double);
-  auto format = item.type == 'f' || item.type == 'F'
-                    ? ftl::chars_format::fixed
-                : item.type == 'e' || item.type == 'E'
-                    ? ftl::chars_format::scientific
-                : item.type == 'a' || item.type == 'A'
-                    ? ftl::chars_format::hex
-                    : ftl::chars_format::general;
+  auto format =
+      item.type == 'f' || item.type == 'F'   ? ftl::chars_format::fixed
+      : item.type == 'e' || item.type == 'E' ? ftl::chars_format::scientific
+      : item.type == 'a' || item.type == 'A' ? ftl::chars_format::hex
+                                             : ftl::chars_format::general;
   char text[512];
   if (item.precision < 0) {
-    item.precision = item.type == 'a' || item.type == 'A'
-                         ? (item.length == length_type::big_l
-                                ? (ftl::numeric_limits<long double>::digits - 1 + 3) / 4
-                                : (ftl::numeric_limits<double>::digits - 1 + 3) / 4)
-                         : 6;
+    item.precision =
+        item.type == 'a' || item.type == 'A'
+            ? (item.length == length_type::big_l
+                   ? (ftl::numeric_limits<long double>::digits - 1 + 3) / 4
+                   : (ftl::numeric_limits<double>::digits - 1 + 3) / 4)
+            : 6;
   } else if ((item.type == 'g' || item.type == 'G') && item.precision == 0) {
     item.precision = 1;
   }
@@ -280,6 +281,38 @@ void floating(output_sink &sink, conversion item, va_list_type &args) {
       ++size;
     }
   }
+  if (item.alternate && !special && (item.type == 'g' || item.type == 'G')) {
+    size_type exponent = size;
+    for (size_type index = number_start; index != size; ++index)
+      if (text[index] == 'e' || text[index] == 'E') {
+        exponent = index;
+        break;
+      }
+    int significant = 0;
+    bool nonzero_seen = false;
+    for (size_type index = number_start; index != exponent; ++index) {
+      if (text[index] < '0' || text[index] > '9')
+        continue;
+      if (text[index] != '0')
+        nonzero_seen = true;
+      if (nonzero_seen)
+        ++significant;
+    }
+    if (!nonzero_seen)
+      significant = 1;
+    int trailing_zeroes = item.precision - significant;
+    if (trailing_zeroes > 0) {
+      if (size + static_cast<size_type>(trailing_zeroes) >= sizeof(text)) {
+        sink.failed = true;
+        return;
+      }
+      for (size_type index = size; index != exponent; --index)
+        text[index + trailing_zeroes - 1] = text[index - 1];
+      for (int index = 0; index != trailing_zeroes; ++index)
+        text[exponent + static_cast<size_type>(index)] = '0';
+      size += static_cast<size_type>(trailing_zeroes);
+    }
+  }
   char prefix[3];
   size_type prefix_size = 0;
   if (size && text[0] == '-') {
@@ -321,8 +354,8 @@ int format_to(output_sink &sink, const char *format, va_list_type arguments) {
     } else if (item.type == 'u' || item.type == 'o' || item.type == 'x' ||
                item.type == 'X') {
       unsigned base = item.type == 'o' ? 8 : item.type == 'u' ? 10 : 16;
-      integer(sink, item, unsigned_argument(arguments, item.length), false, base,
-              item.type == 'X');
+      integer(sink, item, unsigned_argument(arguments, item.length), false,
+              base, item.type == 'X');
     } else if (item.type == 'c') {
       auto raw = va_arg(arguments, int);
       if (item.length == length_type::l &&
@@ -337,9 +370,8 @@ int format_to(output_sink &sink, const char *format, va_list_type arguments) {
         const wchar_t *value = va_arg(arguments, const wchar_t *);
         size_type size = 0;
         if (value)
-          while (value[size] &&
-                 (item.precision < 0 ||
-                  size < static_cast<size_type>(item.precision)))
+          while (value[size] && (item.precision < 0 ||
+                                 size < static_cast<size_type>(item.precision)))
             ++size;
         int padding = item.width > static_cast<int>(size)
                           ? item.width - static_cast<int>(size)
@@ -362,9 +394,8 @@ int format_to(output_sink &sink, const char *format, va_list_type arguments) {
         if (!value)
           value = "(null)";
         size_type size = 0;
-        while (value[size] &&
-               (item.precision < 0 ||
-                size < static_cast<size_type>(item.precision)))
+        while (value[size] && (item.precision < 0 ||
+                               size < static_cast<size_type>(item.precision)))
           ++size;
         padded(sink, item, nullptr, 0, value, size);
       }
@@ -375,7 +406,8 @@ int format_to(output_sink &sink, const char *format, va_list_type arguments) {
               false, 16, false);
     } else if (item.type == 'n') {
       if (item.length == length_type::hh)
-        *va_arg(arguments, signed char *) = static_cast<signed char>(sink.count);
+        *va_arg(arguments, signed char *) =
+            static_cast<signed char>(sink.count);
       else if (item.length == length_type::h)
         *va_arg(arguments, short *) = static_cast<short>(sink.count);
       else if (item.length == length_type::l)
@@ -445,10 +477,10 @@ struct input_source {
     if (file)
       (void)(wide_file
                  ? locked ? ::ftl_stdio_runtime::unget_wide_byte_locked(value,
-                                                                         file)
+                                                                        file)
                           : ::ftl_stdio_runtime::unget_wide_byte(value, file)
-                 : locked ? ::ftl_stdio_runtime::unget_byte_locked(value, file)
-                          : ::ftl_cstdio_runtime::ungetc(value, file));
+             : locked ? ::ftl_stdio_runtime::unget_byte_locked(value, file)
+                      : ::ftl_cstdio_runtime::ungetc(value, file));
     else
       --position;
     --consumed;
@@ -502,7 +534,8 @@ void store_unsigned(va_list_type &args, length_type length,
     *va_arg(args, size_type *) = static_cast<size_type>(value);
   else if (length == length_type::t)
     *va_arg(args, ftl::make_unsigned_t<decltype((char *)0 - (char *)0)> *) =
-        static_cast<ftl::make_unsigned_t<decltype((char *)0 - (char *)0)>>(value);
+        static_cast<ftl::make_unsigned_t<decltype((char *)0 - (char *)0)>>(
+            value);
   else
     *va_arg(args, unsigned int *) = static_cast<unsigned int>(value);
 }
@@ -515,6 +548,11 @@ int digit_value(int value) {
   if (value >= 'A' && value <= 'Z')
     return value - 'A' + 10;
   return -1;
+}
+
+bool nan_sequence_character(int value) {
+  return digit(value) || (value >= 'a' && value <= 'z') ||
+         (value >= 'A' && value <= 'Z') || value == '_';
 }
 
 bool scan_integer(input_source &source, conversion item, va_list_type &args,
@@ -532,10 +570,10 @@ bool scan_integer(input_source &source, conversion item, va_list_type &args,
     negative = value == '-';
     value = next();
   }
-  unsigned base = item.type == 'o' ? 8 : item.type == 'x' || item.type == 'X' ||
-                                             item.type == 'p'
-                                         ? 16
-                                         : 10;
+  unsigned base = item.type == 'o' ? 8
+                  : item.type == 'x' || item.type == 'X' || item.type == 'p'
+                      ? 16
+                      : 10;
   if (item.type == 'i' && value == '0') {
     base = 8;
     if (remaining != 0) {
@@ -576,11 +614,10 @@ bool scan_integer(input_source &source, conversion item, va_list_type &args,
                    negative ? -static_cast<long long>(result)
                             : static_cast<long long>(result));
     else if (item.type == 'p')
-      *va_arg(args, void **) = reinterpret_cast<void *>(
-          static_cast<ftl::uintptr_t>(result));
+      *va_arg(args, void **) =
+          reinterpret_cast<void *>(static_cast<ftl::uintptr_t>(result));
     else
-      store_unsigned(args, item.length,
-                     negative ? 0ULL - result : result);
+      store_unsigned(args, item.length, negative ? 0ULL - result : result);
   }
   return true;
 }
@@ -588,9 +625,10 @@ bool scan_integer(input_source &source, conversion item, va_list_type &args,
 bool scan_float(input_source &source, conversion item, va_list_type &args,
                 bool suppress) {
   char buffer[512];
-  int limit = item.width > 0 && item.width < static_cast<int>(sizeof(buffer) - 1)
-                  ? item.width
-                  : static_cast<int>(sizeof(buffer) - 1);
+  int limit =
+      item.width > 0 && item.width < static_cast<int>(sizeof(buffer) - 1)
+          ? item.width
+          : static_cast<int>(sizeof(buffer) - 1);
   int count = 0;
   bool hexadecimal_input = false;
   bool point_seen = false;
@@ -598,10 +636,10 @@ bool scan_float(input_source &source, conversion item, va_list_type &args,
   while (count != limit) {
     int value = source.get();
     int start = count && (buffer[0] == '+' || buffer[0] == '-') ? 1 : 0;
-    bool infinity = count > start &&
-                    (buffer[start] == 'i' || buffer[start] == 'I');
-    bool not_a_number = count > start &&
-                        (buffer[start] == 'n' || buffer[start] == 'N');
+    bool infinity =
+        count > start && (buffer[start] == 'i' || buffer[start] == 'I');
+    bool not_a_number =
+        count > start && (buffer[start] == 'n' || buffer[start] == 'N');
     bool valid = false;
     if (count == 0 && (value == '+' || value == '-')) {
       valid = true;
@@ -611,16 +649,20 @@ bool scan_float(input_source &source, conversion item, va_list_type &args,
     } else if (infinity) {
       static constexpr char spelling[] = "infinity";
       int index = count - start;
-      valid = index < 8 &&
-              (value == spelling[index] || value == spelling[index] - 'a' + 'A');
-    } else if (not_a_number) {
+      valid = index < 8 && (value == spelling[index] ||
+                            value == spelling[index] - 'a' + 'A');
+    } else if (not_a_number && count < start + 3) {
       static constexpr char spelling[] = "nan";
       int index = count - start;
-      valid = index < 3 &&
-              (value == spelling[index] || value == spelling[index] - 'a' + 'A');
-    } else if (digit(value) ||
-               (hexadecimal_input && digit_value(value) >= 10 &&
-                digit_value(value) < 16)) {
+      valid = index < 3 && (value == spelling[index] ||
+                            value == spelling[index] - 'a' + 'A');
+    } else if (not_a_number && count == start + 3) {
+      valid = value == '(';
+    } else if (not_a_number && count > start + 3 && buffer[start + 3] == '(' &&
+               buffer[count - 1] != ')') {
+      valid = nan_sequence_character(value) || value == ')';
+    } else if (digit(value) || (hexadecimal_input && digit_value(value) >= 10 &&
+                                digit_value(value) < 16)) {
       valid = true;
     } else if (!point_seen && !exponent_seen && value == '.') {
       point_seen = true;
@@ -659,7 +701,7 @@ bool scan_float(input_source &source, conversion item, va_list_type &args,
   if (hexadecimal) {
     char adjusted[512];
     int adjusted_count = 0;
-    if (prefix)
+    if (prefix && buffer[0] == '-')
       adjusted[adjusted_count++] = buffer[0];
     for (int index = prefix + 2; index != count; ++index)
       adjusted[adjusted_count++] = buffer[index];
@@ -668,7 +710,8 @@ bool scan_float(input_source &source, conversion item, va_list_type &args,
     if (parsed.ptr != adjusted + adjusted_count)
       return false;
   } else {
-    auto parsed = ftl::from_chars(buffer, buffer + count, result,
+    const char *first = buffer[0] == '+' ? buffer + 1 : buffer;
+    auto parsed = ftl::from_chars(first, buffer + count, result,
                                   ftl::chars_format::general);
     if (parsed.ptr != buffer + count)
       return false;
@@ -699,7 +742,7 @@ int scan_from(input_source &source, const FormatCharacter *format,
       int value = source.get();
       if (value != static_cast<unsigned char>(*format++)) {
         source.unget(value);
-        return assignments;
+        return assignments ? assignments : (source.last_was_eof ? EOF : 0);
       }
       continue;
     }
@@ -708,7 +751,7 @@ int scan_from(input_source &source, const FormatCharacter *format,
       int value = source.get();
       if (value != '%') {
         source.unget(value);
-        return assignments;
+        return assignments ? assignments : (source.last_was_eof ? EOF : 0);
       }
       ++format;
       continue;
@@ -720,11 +763,11 @@ int scan_from(input_source &source, const FormatCharacter *format,
     while (digit(*format))
       item.width = item.width * 10 + (*format++ - '0');
     if (*format == 'h')
-      item.length = *++format == 'h' ? (++format, length_type::hh)
-                                     : length_type::h;
+      item.length =
+          *++format == 'h' ? (++format, length_type::hh) : length_type::h;
     else if (*format == 'l')
-      item.length = *++format == 'l' ? (++format, length_type::ll)
-                                     : length_type::l;
+      item.length =
+          *++format == 'l' ? (++format, length_type::ll) : length_type::l;
     else if (*format == 'j')
       item.length = (++format, length_type::j);
     else if (*format == 'z')
@@ -862,7 +905,8 @@ int scan_from(input_source &source, const FormatCharacter *format,
       matched = count != 0;
     } else if (item.type == 'n') {
       if (!suppress)
-        store_signed(args, item.length, static_cast<long long>(source.consumed));
+        store_signed(args, item.length,
+                     static_cast<long long>(source.consumed));
       continue;
     } else {
       return assignments;
@@ -916,8 +960,7 @@ int snprintf(char *buffer, size_t size, const char *format, ...) {
   va_end(args);
   return result;
 }
-int vsprintf(char *buffer, const char *format,
-             ftl::va_list args) {
+int vsprintf(char *buffer, const char *format, ftl::va_list args) {
   output_sink sink{nullptr, buffer, static_cast<size_t>(-1)};
   return format_to(sink, format, args);
 }
@@ -980,8 +1023,7 @@ int vfwscanf(file_type *stream, const wchar_t *format, ftl::va_list args) {
   return result;
 }
 
-int vswscanf(const wchar_t *buffer, const wchar_t *format,
-             ftl::va_list args) {
+int vswscanf(const wchar_t *buffer, const wchar_t *format, ftl::va_list args) {
   input_source source;
   source.wide_text = buffer;
   return scan_from(source, format, args);

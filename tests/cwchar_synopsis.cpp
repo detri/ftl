@@ -40,7 +40,8 @@ using swprintf_type = int (*)(wchar_t *, tested::size_t, const wchar_t *, ...);
 
 using swscanf_type = int (*)(const wchar_t *, const wchar_t *, ...);
 
-using vfwprintf_type = int (*)(tested::FILE *, const wchar_t *, tested::va_list);
+using vfwprintf_type = int (*)(tested::FILE *, const wchar_t *,
+                               tested::va_list);
 
 using vfwscanf_type = int (*)(tested::FILE *, const wchar_t *, tested::va_list);
 

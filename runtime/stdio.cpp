@@ -31,7 +31,7 @@ using namespace ftl::detail;
 #if defined(_WIN32)
 #if !defined(__clang__)
 extern "C" long __cdecl _InterlockedCompareExchange(long volatile *, long,
-                                                     long);
+                                                    long);
 extern "C" long __cdecl _InterlockedExchange(long volatile *, long);
 extern "C" long __cdecl _InterlockedIncrement(long volatile *);
 #endif
@@ -93,6 +93,7 @@ struct file_guard {
 
 constexpr unsigned stream_count = FOPEN_MAX < 32 ? 32 : FOPEN_MAX;
 ftl_file streams[stream_count];
+bool standard_stream_initialized[3]{};
 volatile long stream_table_lock = 0;
 volatile unsigned long temporary_counter = 0;
 
@@ -100,15 +101,16 @@ ftl_file *standard_stream(unsigned index) {
   auto &stream = streams[index];
   while (!acquire(stream_table_lock)) {
   }
-  if (!stream.occupied) {
+  if (!standard_stream_initialized[index]) {
     stream.handle = index == 0   ? native_standard_input()
                     : index == 1 ? native_standard_output()
                                  : native_standard_error();
     stream.readable = index == 0;
     stream.writable = index != 0;
-    stream.owned_handle = false;
+    stream.owned_handle = true;
     stream.buffering = index == 2 ? _IONBF : _IOLBF;
     stream.occupied = true;
+    standard_stream_initialized[index] = true;
   }
   release(stream_table_lock);
   return &stream;
@@ -201,13 +203,12 @@ bool parse_mode(const char *mode, native_open_options &options, bool &readable,
     return false;
   readable = operation == 'r' || update;
   writable = operation != 'r' || update;
-  options.access = update ? native_file_access::read_write
+  options.access = update     ? native_file_access::read_write
                    : readable ? native_file_access::read
                               : native_file_access::write;
   options.append = operation == 'a';
-  options.creation = operation == 'r'
-                         ? native_file_creation::open_existing
-                     : exclusive ? native_file_creation::create_new
+  options.creation = operation == 'r'   ? native_file_creation::open_existing
+                     : exclusive        ? native_file_creation::create_new
                      : operation == 'w' ? native_file_creation::create_always
                                         : native_file_creation::open_or_create;
   return true;
@@ -252,13 +253,11 @@ size_type write_physical_unlocked(ftl_file *stream, const unsigned char *data,
         return written;
       continue;
     }
-    if (stream->buffered == stream->buffer_capacity &&
-        !flush_unlocked(stream))
+    if (stream->buffered == stream->buffer_capacity && !flush_unlocked(stream))
       return written;
     unsigned char value = data[written++];
     stream->buffer[stream->buffered++] = value;
-    if (stream->buffering == _IOLBF && value == '\n' &&
-        !flush_unlocked(stream))
+    if (stream->buffering == _IOLBF && value == '\n' && !flush_unlocked(stream))
       return written - 1;
   }
   return written;
@@ -298,17 +297,19 @@ size_type read_physical_unlocked(ftl_file *stream, unsigned char *data,
     data[read_count++] = static_cast<unsigned char>(stream->pushback);
     stream->pushback = -1;
   }
-  if (read_count != count) {
+  while (read_count != count) {
     native_io_size transferred = 0;
     native_io_error error;
-    if (!native_read_file(stream->handle, data + read_count,
-                          count - read_count, transferred, error)) {
+    if (!native_read_file(stream->handle, data + read_count, count - read_count,
+                          transferred, error)) {
       set_error(stream, error);
       return read_count;
     }
-    read_count += transferred;
-    if (transferred == 0)
+    if (transferred == 0) {
       stream->eof = true;
+      break;
+    }
+    read_count += transferred;
   }
   return read_count;
 }
@@ -421,7 +422,8 @@ size_type write_bytes_locked(const void *data, size_type count,
   if (!stream || stream->orientation > 0)
     return 0;
   stream->orientation = -1;
-  return write_unlocked(stream, static_cast<const unsigned char *>(data), count);
+  return write_unlocked(stream, static_cast<const unsigned char *>(data),
+                        count);
 }
 size_type read_bytes_locked(void *data, size_type count,
                             file_type *stream) noexcept {
@@ -431,8 +433,8 @@ size_type read_bytes_locked(void *data, size_type count,
   return read_unlocked(stream, static_cast<unsigned char *>(data), count);
 }
 int unget_byte_locked(int value, file_type *stream) noexcept {
-  if (!stream || value == EOF || stream->orientation > 0 ||
-      !stream->readable || stream->pushback != -1)
+  if (!stream || value == EOF || stream->orientation > 0 || !stream->readable ||
+      stream->pushback != -1)
     return EOF;
   stream->orientation = -1;
   stream->pushback = static_cast<unsigned char>(value);
@@ -454,8 +456,8 @@ int write_wide_byte_locked(int value, file_type *stream) noexcept {
   return write_unlocked(stream, &byte, 1) == 1 ? byte : EOF;
 }
 int unget_wide_byte_locked(int value, file_type *stream) noexcept {
-  if (!stream || value == EOF || stream->orientation < 0 ||
-      !stream->readable || stream->pushback != -1)
+  if (!stream || value == EOF || stream->orientation < 0 || !stream->readable ||
+      stream->pushback != -1)
     return EOF;
   stream->orientation = 1;
   stream->pushback = static_cast<unsigned char>(value);
@@ -652,7 +654,8 @@ size_t fread(void *data, size_t size, size_t count, FILE *stream) {
     return 0;
   }
   file_guard guard(stream);
-  return ftl_stdio_runtime::read_bytes_locked(data, size * count, stream) / size;
+  return ftl_stdio_runtime::read_bytes_locked(data, size * count, stream) /
+         size;
 }
 
 int fgetc(FILE *stream) {
@@ -665,6 +668,10 @@ int getchar() { return fgetc(ftl_stdio_runtime::input_stream()); }
 char *fgets(char *destination, int count, FILE *stream) {
   if (!destination || count <= 0 || !stream)
     return nullptr;
+  if (count == 1) {
+    destination[0] = 0;
+    return destination;
+  }
   ftl_stdio_runtime::lock_file(stream);
   int used = 0;
   while (used + 1 < count) {
@@ -702,9 +709,9 @@ int puts(const char *text) {
   size_t length = 0;
   while (text[length])
     ++length;
-  bool okay = ftl_stdio_runtime::write_bytes_locked(text, length, stream) ==
-                  length &&
-              ftl_stdio_runtime::write_bytes_locked("\n", 1, stream) == 1;
+  bool okay =
+      ftl_stdio_runtime::write_bytes_locked(text, length, stream) == length &&
+      ftl_stdio_runtime::write_bytes_locked("\n", 1, stream) == 1;
   ftl_stdio_runtime::unlock_file(stream);
   return okay ? 0 : EOF;
 }
@@ -717,18 +724,18 @@ int ungetc(int value, FILE *stream) {
 }
 
 int fseek(FILE *stream, long offset, int origin) {
-  if (!stream || (origin != SEEK_SET && origin != SEEK_CUR && origin != SEEK_END))
+  if (!stream ||
+      (origin != SEEK_SET && origin != SEEK_CUR && origin != SEEK_END))
     return -1;
   file_guard guard(stream);
   if (!flush_unlocked(stream))
     return -1;
   native_io_offset position;
   native_io_error error;
-  native_seek_origin native_origin = origin == SEEK_SET
-                                         ? native_seek_origin::begin
-                                     : origin == SEEK_CUR
-                                         ? native_seek_origin::current
-                                         : native_seek_origin::end;
+  native_seek_origin native_origin =
+      origin == SEEK_SET   ? native_seek_origin::begin
+      : origin == SEEK_CUR ? native_seek_origin::current
+                           : native_seek_origin::end;
   native_io_offset adjusted_offset = offset;
   if (origin == SEEK_CUR && stream->pushback != -1)
     --adjusted_offset;
@@ -813,8 +820,18 @@ void clearerr(FILE *stream) {
     stream->eof = stream->failed = false;
   }
 }
-int feof(FILE *stream) { return stream && stream->eof; }
-int ferror(FILE *stream) { return stream && stream->failed; }
+int feof(FILE *stream) {
+  if (!stream)
+    return 0;
+  file_guard guard(stream);
+  return stream->eof;
+}
+int ferror(FILE *stream) {
+  if (!stream)
+    return 0;
+  file_guard guard(stream);
+  return stream->failed;
+}
 
 char *tmpnam(char *destination) {
   static char shared[L_tmpnam];
@@ -830,13 +847,12 @@ char *tmpnam(char *destination) {
     unsigned long number =
         __atomic_add_fetch(&temporary_counter, 1, __ATOMIC_RELAXED);
 #else
-    unsigned long number = static_cast<unsigned long>(
-        _InterlockedIncrement(reinterpret_cast<volatile long *>(
-            &temporary_counter)));
+    unsigned long number = static_cast<unsigned long>(_InterlockedIncrement(
+        reinterpret_cast<volatile long *>(&temporary_counter)));
 #endif
 #else
-    unsigned long number = __atomic_add_fetch(&temporary_counter, 1,
-                                               __ATOMIC_RELAXED);
+    unsigned long number =
+        __atomic_add_fetch(&temporary_counter, 1, __ATOMIC_RELAXED);
 #endif
     append_decimal(output, number);
     copy_text(output, ".tmp");

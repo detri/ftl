@@ -9,24 +9,26 @@ __declspec(dllimport) void *__stdcall CreateFileA(const char *, unsigned long,
                                                   unsigned long, void *,
                                                   unsigned long, unsigned long,
                                                   void *);
-__declspec(dllimport) void *__stdcall CreateFileW(const wchar_t *, unsigned long,
-                                                  unsigned long, void *,
+__declspec(dllimport) void *__stdcall CreateFileW(const wchar_t *,
                                                   unsigned long, unsigned long,
-                                                  void *);
+                                                  void *, unsigned long,
+                                                  unsigned long, void *);
 __declspec(dllimport) int __stdcall ReadFile(void *, void *, unsigned long,
                                              unsigned long *, void *);
-__declspec(dllimport) int __stdcall WriteFile(void *, const void *,
-                                              unsigned long, unsigned long *,
-                                              void *);
-__declspec(dllimport) int __stdcall SetFilePointerEx(void *, long long,
-                                                     long long *, unsigned long);
+__declspec(dllimport) int __stdcall
+WriteFile(void *, const void *, unsigned long, unsigned long *, void *);
+__declspec(dllimport) int __stdcall
+SetFilePointerEx(void *, long long, long long *, unsigned long);
 __declspec(dllimport) int __stdcall FlushFileBuffers(void *);
 __declspec(dllimport) int __stdcall CloseHandle(void *);
 __declspec(dllimport) void *__stdcall GetStdHandle(unsigned long);
 __declspec(dllimport) unsigned long __stdcall GetLastError();
 __declspec(dllimport) int __stdcall DeleteFileA(const char *);
+__declspec(dllimport) int __stdcall DeleteFileW(const wchar_t *);
 __declspec(dllimport) int __stdcall MoveFileExA(const char *, const char *,
                                                 unsigned long);
+__declspec(dllimport) int __stdcall MoveFileExW(const wchar_t *,
+                                                const wchar_t *, unsigned long);
 __declspec(dllimport) int __stdcall GetConsoleMode(void *, unsigned long *);
 }
 
@@ -81,12 +83,14 @@ bool open_windows(const Character *path, const native_open_options &options,
   if (options.temporary)
     attributes |= file_attribute_temporary | file_flag_delete_on_close;
   void *handle;
-  if constexpr (__is_same(Character, char))
-    handle = CreateFileA(path, access_for(options.access, options.append), share_all, nullptr,
-                         creation_for(options.creation), attributes, nullptr);
+  if constexpr (sizeof(Character) == sizeof(char))
+    handle = CreateFileA(path, access_for(options.access, options.append),
+                         share_all, nullptr, creation_for(options.creation),
+                         attributes, nullptr);
   else
-    handle = CreateFileW(path, access_for(options.access, options.append), share_all, nullptr,
-                         creation_for(options.creation), attributes, nullptr);
+    handle = CreateFileW(path, access_for(options.access, options.append),
+                         share_all, nullptr, creation_for(options.creation),
+                         attributes, nullptr);
   result.value = handle;
   if (!result.valid()) {
     error.value = static_cast<int>(GetLastError());
@@ -134,9 +138,8 @@ bool native_write_file(native_file_handle handle, const void *buffer,
                        native_io_error &error) noexcept {
   transferred = 0;
   while (count != 0) {
-    unsigned long chunk = count > 0x7fffffffUL
-                              ? 0x7fffffffUL
-                              : static_cast<unsigned long>(count);
+    unsigned long chunk =
+        count > 0x7fffffffUL ? 0x7fffffffUL : static_cast<unsigned long>(count);
     unsigned long done = 0;
     if (!WriteFile(handle.value, buffer, chunk, &done, nullptr)) {
       error.value = static_cast<int>(GetLastError());
@@ -200,9 +203,26 @@ bool native_remove_file(const char *path, native_io_error &error) noexcept {
   return true;
 }
 
+bool native_remove_file(const wchar_t *path, native_io_error &error) noexcept {
+  if (!DeleteFileW(path)) {
+    error.value = static_cast<int>(GetLastError());
+    return false;
+  }
+  return true;
+}
+
 bool native_rename_file(const char *old_path, const char *new_path,
                         native_io_error &error) noexcept {
   if (!MoveFileExA(old_path, new_path, move_replace_existing)) {
+    error.value = static_cast<int>(GetLastError());
+    return false;
+  }
+  return true;
+}
+
+bool native_rename_file(const wchar_t *old_path, const wchar_t *new_path,
+                        native_io_error &error) noexcept {
+  if (!MoveFileExW(old_path, new_path, move_replace_existing)) {
     error.value = static_cast<int>(GetLastError());
     return false;
   }
@@ -258,9 +278,9 @@ namespace ftl::detail {
 bool native_open_file(const char *path, const native_open_options &options,
                       native_file_handle &result,
                       native_io_error &error) noexcept {
-  int flags = options.access == native_file_access::read         ? open_read_only
-              : options.access == native_file_access::write     ? open_write_only
-                                                                 : open_read_write;
+  int flags = options.access == native_file_access::read    ? open_read_only
+              : options.access == native_file_access::write ? open_write_only
+                                                            : open_read_write;
   switch (options.creation) {
   case native_file_creation::create_always:
     flags |= open_create | open_truncate;
@@ -302,9 +322,9 @@ bool native_write_file(native_file_handle handle, const void *buffer,
                        native_io_error &error) noexcept {
   transferred = 0;
   while (transferred != count) {
-    auto result = write(handle.value,
-                        static_cast<const unsigned char *>(buffer) + transferred,
-                        count - transferred);
+    auto result = write(
+        handle.value, static_cast<const unsigned char *>(buffer) + transferred,
+        count - transferred);
     if (result <= 0) {
       error.value = current_errno();
       return false;
