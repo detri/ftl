@@ -287,7 +287,7 @@ constexpr typename basic_format_parse_context<charT>::iterator
 format_parse_fill_and_align(
     typename basic_format_parse_context<charT>::iterator current,
     typename basic_format_parse_context<charT>::iterator end,
-    standard_format_spec<charT> &spec) {
+    standard_format_spec<charT> &spec, bool reject_colon = false) {
   if (current == end)
     return current;
 
@@ -300,7 +300,8 @@ format_parse_fill_and_align(
 
     if (after != end && format_is_align(*after)) {
       if (decoded.scalar == static_cast<unsigned long>('{') ||
-          decoded.scalar == static_cast<unsigned long>('}')) {
+          decoded.scalar == static_cast<unsigned long>('}') ||
+          (reject_colon && decoded.scalar == static_cast<unsigned long>(':'))) {
         throw_format_error("invalid format fill character");
       }
 
@@ -2384,7 +2385,7 @@ format_parse_container_outer_spec(basic_format_parse_context<charT> &context,
   auto current = context.begin();
   const auto end = context.end();
 
-  current = format_parse_fill_and_align(current, end, spec);
+  current = format_parse_fill_and_align(current, end, spec, true);
 
   if (current != end && format_is_digit(*current)) {
     size_t width = 0;
@@ -2663,6 +2664,15 @@ public:
           detail::throw_format_error("range m presentation requires pair or "
                                      "two-element tuple elements");
         } else {
+          /*
+           * range-type m specifies all three
+           * range presentation delimiters.
+           * In particular it resets a separator
+           * previously supplied through
+           * set_separator().
+           */
+          separator_ = detail::format_static_view<charT>(", ", L", ");
+
           if (!no_brackets) {
             opening_bracket_ = detail::format_static_view<charT>("{", L"{");
 
@@ -3363,6 +3373,7 @@ wstring format(const locale &loc, wformat_string<Args...> fmt,
 }
 
 template <class Out>
+  requires output_iterator<Out, const char &>
 Out vformat_to(Out out, string_view fmt, format_args args) {
   const string rendered = vformat(fmt, args);
 
@@ -3371,6 +3382,7 @@ Out vformat_to(Out out, string_view fmt, format_args args) {
 }
 
 template <class Out>
+  requires output_iterator<Out, const wchar_t &>
 Out vformat_to(Out out, wstring_view fmt, wformat_args args) {
   const wstring rendered = vformat(fmt, args);
 
@@ -3379,6 +3391,7 @@ Out vformat_to(Out out, wstring_view fmt, wformat_args args) {
 }
 
 template <class Out>
+  requires output_iterator<Out, const char &>
 Out vformat_to(Out out, const locale &loc, string_view fmt, format_args args) {
   const string rendered = vformat(loc, fmt, args);
 
@@ -3387,6 +3400,7 @@ Out vformat_to(Out out, const locale &loc, string_view fmt, format_args args) {
 }
 
 template <class Out>
+  requires output_iterator<Out, const wchar_t &>
 Out vformat_to(Out out, const locale &loc, wstring_view fmt,
                wformat_args args) {
   const wstring rendered = vformat(loc, fmt, args);
@@ -3426,6 +3440,7 @@ Out format_to(Out out, const locale &loc, wformat_string<Args...> fmt,
 }
 
 template <class Out, class... Args>
+  requires output_iterator<Out, const char &>
 format_to_n_result<Out> format_to_n(Out out, iter_difference_t<Out> n,
                                     format_string<Args...> fmt,
                                     Args &&...arguments) {
@@ -3438,6 +3453,7 @@ format_to_n_result<Out> format_to_n(Out out, iter_difference_t<Out> n,
 }
 
 template <class Out, class... Args>
+  requires output_iterator<Out, const wchar_t &>
 format_to_n_result<Out> format_to_n(Out out, iter_difference_t<Out> n,
                                     wformat_string<Args...> fmt,
                                     Args &&...arguments) {
@@ -3450,6 +3466,7 @@ format_to_n_result<Out> format_to_n(Out out, iter_difference_t<Out> n,
 }
 
 template <class Out, class... Args>
+  requires output_iterator<Out, const char &>
 format_to_n_result<Out>
 format_to_n(Out out, iter_difference_t<Out> n, const locale &loc,
             format_string<Args...> fmt, Args &&...arguments) {
@@ -3462,6 +3479,7 @@ format_to_n(Out out, iter_difference_t<Out> n, const locale &loc,
 }
 
 template <class Out, class... Args>
+  requires output_iterator<Out, const wchar_t &>
 format_to_n_result<Out>
 format_to_n(Out out, iter_difference_t<Out> n, const locale &loc,
             wformat_string<Args...> fmt, Args &&...arguments) {

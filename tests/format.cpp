@@ -357,6 +357,39 @@ template <class Character> struct sink_iterator {
   }
 };
 
+struct bad_output_iterator {
+  using difference_type = tested::ptrdiff_t;
+};
+
+template <class Out>
+concept accepts_char_vformat_to = requires(Out out, tested::format_args args) {
+  tested::vformat_to(out, tested::string_view{}, args);
+};
+
+template <class Out>
+concept accepts_wchar_vformat_to =
+    requires(Out out, tested::wformat_args args) {
+      tested::vformat_to(out, tested::wstring_view{}, args);
+    };
+
+template <class Out>
+concept accepts_char_format_to_n =
+    requires(Out out, tested::iter_difference_t<Out> count) {
+      tested::format_to_n(out, count, "{}", 1);
+    };
+
+static_assert(accepts_char_vformat_to<sink_iterator<char>>);
+
+static_assert(accepts_wchar_vformat_to<sink_iterator<wchar_t>>);
+
+static_assert(accepts_char_format_to_n<sink_iterator<char>>);
+
+static_assert(!accepts_char_vformat_to<bad_output_iterator>);
+
+static_assert(!accepts_wchar_vformat_to<bad_output_iterator>);
+
+static_assert(!accepts_char_format_to_n<bad_output_iterator>);
+
 template <class Character> struct sink_context {
   using iterator = sink_iterator<Character>;
 
@@ -1306,6 +1339,85 @@ bool unicode_formatting_works() {
   return true;
 }
 
+bool final_native_format_conformance_works() {
+  /*
+   * ':' is a perfectly valid ordinary
+   * std-format fill character.
+   */
+  const auto ordinary_colon_fill = tested::format("{::>5}", "x");
+
+  if (!equal_text(ordinary_colon_fill.c_str(), "::::x")) {
+    return false;
+  }
+
+  /*
+   * But range-fill explicitly excludes ':'.
+   * Use vformat so the invalid format string
+   * can be tested at runtime.
+   */
+  sequence_range sequence;
+
+  auto sequence_store = tested::make_format_args(sequence);
+
+  try {
+    (void)tested::vformat("{::>14}", tested::format_args(sequence_store));
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  /*
+   * tuple-fill has the same ':' exclusion.
+   */
+  tested::pair<int, int> tuple_value{1, 2};
+
+  auto tuple_store = tested::make_format_args(tuple_value);
+
+  try {
+    (void)tested::vformat("{::>10}", tested::format_args(tuple_store));
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  /*
+   * range-type m must reset the range
+   * separator to ", " even if the user
+   * previously customized it.
+   */
+  tested::range_formatter<tested::pair<int, int>, char> range_formatter;
+
+  range_formatter.set_separator("; ");
+
+  tested::format_parse_context parse_context("m}");
+
+  const auto parsed = range_formatter.parse(parse_context);
+
+  if (parsed == parse_context.end() || *parsed != '}') {
+    return false;
+  }
+
+  pair_sequence_range pairs;
+
+  char buffer[128]{};
+
+  sink_context<char> context{sink_iterator<char>{buffer}};
+
+  auto result = range_formatter.format(pairs, context);
+
+  *result.current = '\0';
+
+  if (!equal_text(buffer, "{1: 2, 3: 4}")) {
+    return false;
+  }
+
+  return true;
+}
+
 bool ftl_test() {
   if (!parse_context_works())
     return false;
@@ -1362,6 +1474,9 @@ bool ftl_test() {
     return false;
 
   if (!unicode_formatting_works())
+    return false;
+
+  if (!final_native_format_conformance_works())
     return false;
 
   return true;
