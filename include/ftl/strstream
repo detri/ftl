@@ -1,0 +1,259 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_STRSTREAM_HEADER
+#define FTL_STRSTREAM_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <climits>
+#include <cstdlib>
+#include <cstring>
+#include <istream>
+#define FTL_STRSTREAM_NAMESPACE std
+#else
+#include <ftl/climits>
+#include <ftl/cstdlib>
+#include <ftl/cstring>
+#include <ftl/istream>
+#define FTL_STRSTREAM_NAMESPACE ftl
+#endif
+
+FTL_BEGIN_NAMESPACE
+class strstreambuf : public basic_streambuf<char> {
+public:
+  strstreambuf() : strstreambuf(0) {}
+  explicit strstreambuf(streamsize size) : dynamic_(true), suggested_(size) {}
+  strstreambuf(void *(*allocate)(size_t), void (*release)(void *))
+      : dynamic_(true), allocate_(allocate), release_(release) {}
+  strstreambuf(char *next, streamsize count, char *put = nullptr) {
+    initialize(next, count, put, false);
+  }
+  strstreambuf(const char *next, streamsize count) {
+    initialize(const_cast<char *>(next), count, nullptr, true);
+  }
+  strstreambuf(signed char *next, streamsize count, signed char *put = nullptr)
+      : strstreambuf(reinterpret_cast<char *>(next), count,
+                     reinterpret_cast<char *>(put)) {}
+  strstreambuf(const signed char *next, streamsize count)
+      : strstreambuf(reinterpret_cast<const char *>(next), count) {}
+  strstreambuf(unsigned char *next, streamsize count,
+               unsigned char *put = nullptr)
+      : strstreambuf(reinterpret_cast<char *>(next), count,
+                     reinterpret_cast<char *>(put)) {}
+  strstreambuf(const unsigned char *next, streamsize count)
+      : strstreambuf(reinterpret_cast<const char *>(next), count) {}
+  strstreambuf(const strstreambuf &) = delete;
+  strstreambuf &operator=(const strstreambuf &) = delete;
+  ~strstreambuf() override {
+    if (allocated_ && !frozen_)
+      deallocate(storage_);
+  }
+  void freeze(bool value = true) {
+    if (dynamic_)
+      frozen_ = value;
+  }
+  char *str() {
+    freeze();
+    return this->eback() ? this->eback() : this->pbase();
+  }
+  int pcount() const {
+    return this->pptr() ? static_cast<int>(this->pptr() - this->pbase()) : 0;
+  }
+
+protected:
+  int_type overflow(int_type value = traits_type::eof()) override {
+    if (constant_ || frozen_ || !dynamic_)
+      return traits_type::eof();
+    if (traits_type::eq_int_type(value, traits_type::eof()))
+      return traits_type::not_eof(value);
+    size_t get = get_offset(), put = put_offset(), old_size = capacity_;
+    size_t high = high_water();
+    size_t next = old_size
+                      ? old_size * 2
+                      : (suggested_ > 0 ? static_cast<size_t>(suggested_) : 32);
+    if (next <= put)
+      next = put + 1;
+    char *replacement = static_cast<char *>(allocate(next));
+    if (!replacement)
+      return traits_type::eof();
+    if (storage_ && old_size)
+      traits_type::copy(replacement, storage_, old_size);
+    if (allocated_)
+      deallocate(storage_);
+    storage_ = replacement;
+    capacity_ = next;
+    allocated_ = true;
+    get_end_ = high;
+    this->setg(storage_, storage_ + (get > get_end_ ? get_end_ : get),
+               storage_ + get_end_);
+    this->setp(storage_, storage_ + capacity_);
+    this->pbump(static_cast<int>(put));
+    *this->pptr() = traits_type::to_char_type(value);
+    this->pbump(1);
+    if (get_end_ < put + 1)
+      get_end_ = put + 1;
+    set_get(get);
+    return value;
+  }
+  int_type pbackfail(int_type value = traits_type::eof()) override {
+    if (!this->gptr() || this->gptr() == this->eback())
+      return traits_type::eof();
+    char *previous = this->gptr() - 1;
+    if (!traits_type::eq_int_type(value, traits_type::eof())) {
+      if (constant_ &&
+          !traits_type::eq(*previous, traits_type::to_char_type(value)))
+        return traits_type::eof();
+      if (!constant_)
+        *previous = traits_type::to_char_type(value);
+    }
+    this->gbump(-1);
+    return traits_type::not_eof(value);
+  }
+  pos_type seekoff(off_type offset, ios_base::seekdir direction,
+                   ios_base::openmode which = ios_base::in |
+                                              ios_base::out) override {
+    size_t high = high_water();
+    if (direction == ios_base::cur && (which & ios_base::in) &&
+        (which & ios_base::out))
+      return pos_type(off_type(-1));
+    off_type base =
+        direction == ios_base::beg ? 0
+        : direction == ios_base::end
+            ? static_cast<off_type>(high)
+            : static_cast<off_type>((which & ios_base::in) ? get_offset()
+                                                           : put_offset());
+    off_type next = base + offset;
+    if (next < 0 || static_cast<size_t>(next) > high)
+      return pos_type(off_type(-1));
+    size_t get = get_offset(), put = put_offset();
+    if (which & ios_base::in)
+      get = static_cast<size_t>(next);
+    if (which & ios_base::out) {
+      if (constant_ || !this->pbase())
+        return pos_type(off_type(-1));
+      put = static_cast<size_t>(next);
+    }
+    set_sequences(get, put);
+    return pos_type(next);
+  }
+  pos_type seekpos(pos_type position,
+                   ios_base::openmode which = ios_base::in |
+                                              ios_base::out) override {
+    return seekoff(static_cast<off_type>(position), ios_base::beg, which);
+  }
+  basic_streambuf<char> *setbuf(char *, streamsize) override { return this; }
+
+private:
+  void initialize(char *next, streamsize count, char *put, bool constant) {
+    size_t length = count > 0    ? static_cast<size_t>(count)
+                    : count == 0 ? traits_type::length(next)
+                                 : static_cast<size_t>(INT_MAX);
+    storage_ = next;
+    capacity_ = length;
+    constant_ = constant;
+    get_end_ = put ? static_cast<size_t>(put - next) : length;
+    this->setg(next, next, next + get_end_);
+    if (put) {
+      this->setp(next, next + length);
+      this->pbump(static_cast<int>(put - next));
+    }
+  }
+  void *allocate(size_t n) {
+    return allocate_ ? allocate_(n) : FTL_STRSTREAM_NAMESPACE::malloc(n);
+  }
+  void deallocate(void *p) {
+    if (release_)
+      release_(p);
+    else
+      FTL_STRSTREAM_NAMESPACE::free(p);
+  }
+  size_t get_offset() const {
+    return this->gptr() ? static_cast<size_t>(this->gptr() - this->eback()) : 0;
+  }
+  size_t put_offset() const {
+    return this->pptr() ? static_cast<size_t>(this->pptr() - this->pbase()) : 0;
+  }
+  size_t high_water() const {
+    size_t put = put_offset();
+    return put > get_end_ ? put : get_end_;
+  }
+  void set_get(size_t get) {
+    if (storage_)
+      this->setg(storage_, storage_ + (get > get_end_ ? get_end_ : get),
+                 storage_ + get_end_);
+  }
+  void set_sequences(size_t get, size_t put) {
+    get_end_ = high_water();
+    if (storage_)
+      this->setg(storage_, storage_ + (get > get_end_ ? get_end_ : get),
+                 storage_ + get_end_);
+    if (!constant_ && storage_) {
+      this->setp(storage_, storage_ + capacity_);
+      this->pbump(static_cast<int>(put));
+    }
+  }
+  char *storage_{};
+  size_t capacity_{};
+  size_t get_end_{};
+  bool dynamic_{};
+  bool constant_{};
+  bool allocated_{};
+  bool frozen_{};
+  streamsize suggested_{};
+  void *(*allocate_)(size_t){};
+  void (*release_)(void *){};
+};
+
+class istrstream : public basic_istream<char> {
+public:
+  explicit istrstream(const char *s) : basic_istream<char>(&sb_), sb_(s, 0) {}
+  explicit istrstream(char *s) : basic_istream<char>(&sb_), sb_(s, 0) {}
+  istrstream(const char *s, streamsize n)
+      : basic_istream<char>(&sb_), sb_(s, n) {}
+  istrstream(char *s, streamsize n) : basic_istream<char>(&sb_), sb_(s, n) {}
+  virtual ~istrstream() = default;
+  strstreambuf *rdbuf() const { return const_cast<strstreambuf *>(&sb_); }
+  char *str() { return sb_.str(); }
+
+private:
+  strstreambuf sb_;
+};
+class ostrstream : public basic_ostream<char> {
+public:
+  ostrstream() : basic_ostream<char>(&sb_) {}
+  ostrstream(char *s, int n, ios_base::openmode mode = ios_base::out)
+      : basic_ostream<char>(&sb_),
+        sb_(s, n,
+            (mode & ios_base::app) ? s + char_traits<char>::length(s) : s) {}
+  virtual ~ostrstream() = default;
+  strstreambuf *rdbuf() const { return const_cast<strstreambuf *>(&sb_); }
+  void freeze(bool value = true) { sb_.freeze(value); }
+  char *str() { return sb_.str(); }
+  int pcount() const { return sb_.pcount(); }
+
+private:
+  strstreambuf sb_;
+};
+class strstream : public basic_iostream<char> {
+public:
+  using char_type = char;
+  using int_type = char_traits<char>::int_type;
+  using pos_type = char_traits<char>::pos_type;
+  using off_type = char_traits<char>::off_type;
+  strstream() : basic_iostream<char>(&sb_) {}
+  strstream(char *s, int n,
+            ios_base::openmode mode = ios_base::in | ios_base::out)
+      : basic_iostream<char>(&sb_),
+        sb_(s, n,
+            (mode & ios_base::app) ? s + char_traits<char>::length(s) : s) {}
+  virtual ~strstream() = default;
+  strstreambuf *rdbuf() const { return const_cast<strstreambuf *>(&sb_); }
+  void freeze(bool value = true) { sb_.freeze(value); }
+  int pcount() const { return sb_.pcount(); }
+  char *str() { return sb_.str(); }
+
+private:
+  strstreambuf sb_;
+};
+FTL_END_NAMESPACE
+#undef FTL_STRSTREAM_NAMESPACE
+#endif

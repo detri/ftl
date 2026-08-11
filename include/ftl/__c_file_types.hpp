@@ -3,21 +3,20 @@
 #ifndef FTL_C_FILE_TYPES_HEADER
 #define FTL_C_FILE_TYPES_HEADER
 
-#if defined(_WIN32)
+struct ftl_file;
 
-struct _iobuf;
-using FILE = _iobuf;
+namespace ftl {
+using FILE = ::ftl_file;
+}
 
-#elif defined(__APPLE__)
-
-struct __sFILE;
-using FILE = __sFILE;
-
+#ifdef FTL_REPLACE_STL
+using FILE = ftl_file;
+namespace std {
+using FILE = ::ftl_file;
+}
+#define FTL_C_FILE_TYPE FILE
 #else
-
-struct _IO_FILE;
-using FILE = _IO_FILE;
-
+#define FTL_C_FILE_TYPE ::ftl_file
 #endif
 
 #endif // FTL_C_FILE_TYPES_HEADER

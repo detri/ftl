@@ -1,0 +1,189 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_IOSTREAM_HEADER
+#define FTL_IOSTREAM_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <atomic>
+#include <cstdio>
+#include <cwchar>
+#include <istream>
+#include <mutex>
+#else
+#include <ftl/atomic>
+#include <ftl/cstdio>
+#include <ftl/cwchar>
+#include <ftl/istream>
+#include <ftl/mutex>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+namespace detail {
+template <class Character, class Traits> class standard_filebuf;
+
+template <class Traits>
+class standard_filebuf<char, Traits> : public basic_streambuf<char, Traits> {
+public:
+  standard_filebuf(FILE *file, bool input) : file_(file), input_(input) {}
+
+protected:
+  typename Traits::int_type underflow() override {
+    if (!input_)
+      return Traits::eof();
+    int value = ::ftl_cstdio_runtime::fgetc(file_);
+    if (value == EOF)
+      return Traits::eof();
+    cache_ = static_cast<char>(value);
+    this->setg(&cache_, &cache_, &cache_ + 1);
+    return Traits::to_int_type(cache_);
+  }
+  typename Traits::int_type
+  pbackfail(typename Traits::int_type value = Traits::eof()) override {
+    if (!input_)
+      return Traits::eof();
+    int character =
+        Traits::eq_int_type(value, Traits::eof())
+            ? (this->gptr() && this->gptr() != this->eback()
+                   ? static_cast<unsigned char>(this->gptr()[-1])
+                   : EOF)
+            : static_cast<unsigned char>(Traits::to_char_type(value));
+    if (character == EOF ||
+        ::ftl_cstdio_runtime::ungetc(character, file_) == EOF)
+      return Traits::eof();
+    this->setg(nullptr, nullptr, nullptr);
+    return Traits::not_eof(value);
+  }
+  typename Traits::int_type
+  overflow(typename Traits::int_type value = Traits::eof()) override {
+    if (input_)
+      return Traits::eof();
+    if (Traits::eq_int_type(value, Traits::eof()))
+      return Traits::not_eof(value);
+    return ::ftl_cstdio_runtime::fputc(
+               static_cast<unsigned char>(Traits::to_char_type(value)),
+               file_) == EOF
+               ? Traits::eof()
+               : value;
+  }
+  streamsize xsputn(const char *data, streamsize count) override {
+    if (input_ || count <= 0)
+      return 0;
+    return static_cast<streamsize>(::ftl_cstdio_runtime::fwrite(
+        data, 1, static_cast<size_t>(count), file_));
+  }
+  int sync() override { return ::ftl_cstdio_runtime::fflush(file_); }
+
+private:
+  FILE *file_;
+  bool input_;
+  char cache_{};
+};
+
+template <class Traits>
+class standard_filebuf<wchar_t, Traits>
+    : public basic_streambuf<wchar_t, Traits> {
+public:
+  standard_filebuf(FILE *file, bool input) : file_(file), input_(input) {}
+
+protected:
+  typename Traits::int_type underflow() override {
+    if (!input_)
+      return Traits::eof();
+    auto value = ::ftl_stdio_runtime::read_wide_byte(file_);
+    if (value == EOF)
+      return Traits::eof();
+    cache_ = static_cast<wchar_t>(value);
+    this->setg(&cache_, &cache_, &cache_ + 1);
+    return Traits::to_int_type(cache_);
+  }
+  typename Traits::int_type
+  overflow(typename Traits::int_type value = Traits::eof()) override {
+    if (input_)
+      return Traits::eof();
+    if (Traits::eq_int_type(value, Traits::eof()))
+      return Traits::not_eof(value);
+    wchar_t character = Traits::to_char_type(value);
+    if (static_cast<unsigned long long>(character) > 0x7f)
+      return Traits::eof();
+    auto result = ::ftl_stdio_runtime::write_wide_byte(
+        static_cast<unsigned char>(character), file_);
+    return result == EOF ? Traits::eof() : value;
+  }
+  int sync() override { return ::ftl_cstdio_runtime::fflush(file_); }
+
+private:
+  FILE *file_;
+  bool input_;
+  wchar_t cache_{};
+};
+
+struct standard_stream_buffers {
+  standard_filebuf<char, char_traits<char>> in{
+      ::ftl_stdio_runtime::input_stream(), true},
+      out{::ftl_stdio_runtime::output_stream(), false},
+      err{::ftl_stdio_runtime::error_stream(), false};
+  standard_filebuf<wchar_t, char_traits<wchar_t>> win{
+      ::ftl_stdio_runtime::input_stream(), true},
+      wout{::ftl_stdio_runtime::output_stream(), false},
+      werr{::ftl_stdio_runtime::error_stream(), false};
+};
+inline standard_stream_buffers standard_buffers_instance;
+} // namespace detail
+
+inline istream cin{&detail::standard_buffers_instance.in};
+inline ostream cout{&detail::standard_buffers_instance.out};
+inline ostream cerr{&detail::standard_buffers_instance.err};
+inline ostream clog{&detail::standard_buffers_instance.err};
+inline wistream wcin{&detail::standard_buffers_instance.win};
+inline wostream wcout{&detail::standard_buffers_instance.wout};
+inline wostream wcerr{&detail::standard_buffers_instance.werr};
+inline wostream wclog{&detail::standard_buffers_instance.werr};
+
+namespace detail {
+inline once_flag standard_stream_once;
+inline atomic<unsigned> standard_stream_users{0};
+
+inline void initialize_standard_streams() {
+  call_once(standard_stream_once, [] {
+    cin.tie(&cout);
+    wcin.tie(&wcout);
+    cerr.tie(&cout);
+    wcerr.tie(&wcout);
+    cerr.setf(ios_base::unitbuf);
+    wcerr.setf(ios_base::unitbuf);
+    cin.clear();
+    cout.clear();
+    cerr.clear();
+    clog.clear();
+    wcin.clear();
+    wcout.clear();
+    wcerr.clear();
+    wclog.clear();
+  });
+}
+inline void flush_standard_streams() {
+  cout.flush();
+  cerr.flush();
+  clog.flush();
+  wcout.flush();
+  wcerr.flush();
+  wclog.flush();
+}
+} // namespace detail
+
+inline ios_base::Init::Init() {
+  detail::initialize_standard_streams();
+  detail::standard_stream_users.fetch_add(1, memory_order_relaxed);
+}
+inline ios_base::Init::~Init() {
+  if (detail::standard_stream_users.fetch_sub(1, memory_order_release) == 1) {
+    atomic_thread_fence(memory_order_acquire);
+    detail::flush_standard_streams();
+  }
+}
+
+inline ios_base::Init __ftl_standard_stream_initializer;
+
+FTL_END_NAMESPACE
+#endif

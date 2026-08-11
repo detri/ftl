@@ -1,28 +1,20 @@
 #ifdef FTL_REPLACE_STL
+#include <cstdio>
 #include <print>
 namespace tested = std;
 #else
+#include <ftl/cstdio>
 #include <ftl/print>
 namespace tested = ftl;
 #endif
 
 namespace test_stdio_runtime {
 
-using size_type = decltype(sizeof(0));
-
-extern "C" {
-
-FILE *tmpfile();
-
-int fclose(FILE *);
-
-int fflush(FILE *);
-
-int fseek(FILE *, long, int);
-
-size_type fread(void *, size_type, size_type, FILE *);
-
-} // extern "C"
+using tested::fclose;
+using tested::fflush;
+using tested::fread;
+using tested::fseek;
+using tested::tmpfile;
 
 } // namespace test_stdio_runtime
 
@@ -47,7 +39,7 @@ tested::size_t text_size(const char *value) {
   return result;
 }
 
-bool stream_equals(FILE *stream, const char *expected,
+bool stream_equals(tested::FILE *stream, const char *expected,
                    tested::size_t expected_size) {
   if (test_stdio_runtime::fflush(stream) != 0) {
     return false;
@@ -70,7 +62,7 @@ bool stream_equals(FILE *stream, const char *expected,
 }
 
 bool basic_print_works() {
-  FILE *stream = test_stdio_runtime::tmpfile();
+  tested::FILE *stream = test_stdio_runtime::tmpfile();
 
   if (stream == nullptr)
     return false;
@@ -92,7 +84,7 @@ bool basic_print_works() {
 }
 
 bool vprint_works() {
-  FILE *stream = test_stdio_runtime::tmpfile();
+  tested::FILE *stream = test_stdio_runtime::tmpfile();
 
   if (stream == nullptr)
     return false;
@@ -121,7 +113,7 @@ bool vprint_works() {
 }
 
 bool unicode_print_works() {
-  FILE *stream = test_stdio_runtime::tmpfile();
+  tested::FILE *stream = test_stdio_runtime::tmpfile();
 
   if (stream == nullptr)
     return false;
@@ -153,7 +145,7 @@ bool unicode_print_works() {
 }
 
 bool embedded_null_print_works() {
-  FILE *stream = test_stdio_runtime::tmpfile();
+  tested::FILE *stream = test_stdio_runtime::tmpfile();
 
   if (stream == nullptr)
     return false;
@@ -176,7 +168,7 @@ bool embedded_null_print_works() {
 }
 
 bool formatting_integration_works() {
-  FILE *stream = test_stdio_runtime::tmpfile();
+  tested::FILE *stream = test_stdio_runtime::tmpfile();
 
   if (stream == nullptr)
     return false;

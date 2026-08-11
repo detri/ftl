@@ -43,14 +43,17 @@ public:
   int pubsync() { return sync(); }
 
   streamsize in_avail() {
-    return get_available() ? static_cast<streamsize>(egptr_ - gptr_) : showmanyc();
+    return get_available() ? static_cast<streamsize>(egptr_ - gptr_)
+                           : showmanyc();
   }
   int_type snextc() {
     return traits_type::eq_int_type(sbumpc(), traits_type::eof())
-               ? traits_type::eof() : sgetc();
+               ? traits_type::eof()
+               : sgetc();
   }
   int_type sbumpc() {
-    if (!get_available()) return uflow();
+    if (!get_available())
+      return uflow();
     return traits_type::to_int_type(*gptr_++);
   }
   int_type sgetc() {
@@ -60,7 +63,8 @@ public:
     return xsgetn(destination, count);
   }
   int_type sputbackc(char_type character) {
-    if (gptr_ && eback_ && gptr_ != eback_ && traits_type::eq(gptr_[-1], character))
+    if (gptr_ && eback_ && gptr_ != eback_ &&
+        traits_type::eq(gptr_[-1], character))
       return traits_type::to_int_type(*--gptr_);
     return pbackfail(traits_type::to_int_type(character));
   }
@@ -87,14 +91,21 @@ protected:
         egptr_(other.egptr_), pbase_(other.pbase_), pptr_(other.pptr_),
         epptr_(other.epptr_) {}
   basic_streambuf &operator=(const basic_streambuf &other) {
-    eback_ = other.eback_; gptr_ = other.gptr_;
-    egptr_ = other.egptr_; pbase_ = other.pbase_; pptr_ = other.pptr_;
-    epptr_ = other.epptr_; return *this;
+    locale_ = other.locale_;
+    eback_ = other.eback_;
+    gptr_ = other.gptr_;
+    egptr_ = other.egptr_;
+    pbase_ = other.pbase_;
+    pptr_ = other.pptr_;
+    epptr_ = other.epptr_;
+    return *this;
   }
   void swap(basic_streambuf &other) {
-    swap_value(eback_, other.eback_); swap_value(gptr_, other.gptr_);
+    swap_value(eback_, other.eback_);
+    swap_value(gptr_, other.gptr_);
     swap_value(egptr_, other.egptr_);
-    swap_value(pbase_, other.pbase_); swap_value(pptr_, other.pptr_);
+    swap_value(pbase_, other.pbase_);
+    swap_value(pptr_, other.pptr_);
     swap_value(epptr_, other.epptr_);
   }
 
@@ -103,14 +114,18 @@ protected:
   char_type *egptr() const { return egptr_; }
   void gbump(int count) { gptr_ += count; }
   void setg(char_type *begin, char_type *next, char_type *end) {
-    eback_ = begin; gptr_ = next; egptr_ = end;
+    eback_ = begin;
+    gptr_ = next;
+    egptr_ = end;
   }
   char_type *pbase() const { return pbase_; }
   char_type *pptr() const { return pptr_; }
   char_type *epptr() const { return epptr_; }
   void pbump(int count) { pptr_ += count; }
   void setp(char_type *begin, char_type *end) {
-    pbase_ = begin; pptr_ = begin; epptr_ = end;
+    pbase_ = begin;
+    pptr_ = begin;
+    epptr_ = end;
   }
 
   virtual void imbue(const locale &) {}
@@ -129,7 +144,8 @@ protected:
     streamsize done = 0;
     while (done < count) {
       int_type value = sbumpc();
-      if (traits_type::eq_int_type(value, traits_type::eof())) break;
+      if (traits_type::eq_int_type(value, traits_type::eof()))
+        break;
       destination[done++] = traits_type::to_char_type(value);
     }
     return done;
@@ -137,7 +153,8 @@ protected:
   virtual int_type underflow() { return traits_type::eof(); }
   virtual int_type uflow() {
     int_type value = underflow();
-    if (!traits_type::eq_int_type(value, traits_type::eof()) && get_available()) ++gptr_;
+    if (!traits_type::eq_int_type(value, traits_type::eof()) && get_available())
+      ++gptr_;
     return value;
   }
   virtual int_type pbackfail(int_type = traits_type::eof()) {

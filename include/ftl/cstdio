@@ -1,0 +1,188 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_CSTDIO_HEADER
+#define FTL_CSTDIO_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <__c_file_types.hpp>
+#include <__c_wide_types.hpp>
+#include <cstdarg>
+#include <cstddef>
+#include <detail/stdio_runtime.hpp>
+#define FTL_CSTDIO_NAMESPACE std
+#else
+#include <ftl/__c_file_types.hpp>
+#include <ftl/__c_wide_types.hpp>
+#include <ftl/cstdarg>
+#include <ftl/cstddef>
+#include <ftl/detail/stdio_runtime.hpp>
+#define FTL_CSTDIO_NAMESPACE ftl
+#endif
+
+#ifndef EOF
+#define EOF (-1)
+#endif
+#ifndef BUFSIZ
+#if defined(_WIN32)
+#define BUFSIZ 512
+#elif defined(__APPLE__)
+#define BUFSIZ 1024
+#else
+#define BUFSIZ 8192
+#endif
+#endif
+#ifndef FOPEN_MAX
+#if defined(__linux__)
+#define FOPEN_MAX 16
+#else
+#define FOPEN_MAX 20
+#endif
+#endif
+#ifndef FILENAME_MAX
+#if defined(_WIN32)
+#define FILENAME_MAX 260
+#elif defined(__linux__)
+#define FILENAME_MAX 4096
+#else
+#define FILENAME_MAX 1024
+#endif
+#endif
+#ifndef L_tmpnam
+#define L_tmpnam 64
+#endif
+#ifndef TMP_MAX
+#define TMP_MAX 32767
+#endif
+#ifndef _IOFBF
+#define _IOFBF 0
+#define _IOLBF 1
+#define _IONBF 2
+#endif
+#ifndef SEEK_SET
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
+#endif
+
+namespace ftl_cstdio_runtime {
+using FILE = ::ftl_file;
+using size_t = decltype(sizeof(0));
+struct fpos_t {
+  long long position;
+  FTL_CSTDIO_NAMESPACE::mbstate_t state;
+};
+
+int remove(const char *);
+int rename(const char *, const char *);
+FILE *tmpfile();
+char *tmpnam(char *);
+int fclose(FILE *);
+FILE *fopen(const char *, const char *);
+FILE *freopen(const char *, const char *, FILE *);
+void setbuf(FILE *, char *);
+int setvbuf(FILE *, char *, int, size_t);
+int fprintf(FILE *, const char *, ...);
+int fscanf(FILE *, const char *, ...);
+int printf(const char *, ...);
+int scanf(const char *, ...);
+int snprintf(char *, size_t, const char *, ...);
+int sprintf(char *, const char *, ...);
+int sscanf(const char *, const char *, ...);
+int vfprintf(FILE *, const char *, FTL_CSTDIO_NAMESPACE::va_list);
+int vfscanf(FILE *, const char *, FTL_CSTDIO_NAMESPACE::va_list);
+int vprintf(const char *, FTL_CSTDIO_NAMESPACE::va_list);
+int vscanf(const char *, FTL_CSTDIO_NAMESPACE::va_list);
+int vsnprintf(char *, size_t, const char *, FTL_CSTDIO_NAMESPACE::va_list);
+int vsprintf(char *, const char *, FTL_CSTDIO_NAMESPACE::va_list);
+int vsscanf(const char *, const char *, FTL_CSTDIO_NAMESPACE::va_list);
+int fgetc(FILE *);
+char *fgets(char *, int, FILE *);
+int fputc(int, FILE *);
+int fputs(const char *, FILE *);
+int getc(FILE *);
+int getchar();
+int putc(int, FILE *);
+int putchar(int);
+int puts(const char *);
+int ungetc(int, FILE *);
+size_t fread(void *, size_t, size_t, FILE *);
+int fgetpos(FILE *, fpos_t *);
+int fseek(FILE *, long, int);
+int fsetpos(FILE *, const fpos_t *);
+long ftell(FILE *);
+void rewind(FILE *);
+void clearerr(FILE *);
+int feof(FILE *);
+int ferror(FILE *);
+void perror(const char *);
+using ::ftl_stdio_runtime::fflush;
+using ::ftl_stdio_runtime::fwrite;
+} // namespace ftl_cstdio_runtime
+
+#ifdef FTL_REPLACE_STL
+#ifdef stdin
+#undef stdin
+#endif
+#ifdef stdout
+#undef stdout
+#endif
+#ifdef stderr
+#undef stderr
+#endif
+#define stdin (::ftl_stdio_runtime::input_stream())
+#define stdout (::ftl_stdio_runtime::output_stream())
+#define stderr (::ftl_stdio_runtime::error_stream())
+#endif
+
+namespace FTL_CSTDIO_NAMESPACE {
+using FILE = ::ftl_file;
+using fpos_t = ::ftl_cstdio_runtime::fpos_t;
+using ::ftl_cstdio_runtime::clearerr;
+using ::ftl_cstdio_runtime::fclose;
+using ::ftl_cstdio_runtime::feof;
+using ::ftl_cstdio_runtime::ferror;
+using ::ftl_cstdio_runtime::fflush;
+using ::ftl_cstdio_runtime::fgetc;
+using ::ftl_cstdio_runtime::fgetpos;
+using ::ftl_cstdio_runtime::fgets;
+using ::ftl_cstdio_runtime::fopen;
+using ::ftl_cstdio_runtime::fprintf;
+using ::ftl_cstdio_runtime::fputc;
+using ::ftl_cstdio_runtime::fputs;
+using ::ftl_cstdio_runtime::fread;
+using ::ftl_cstdio_runtime::freopen;
+using ::ftl_cstdio_runtime::fscanf;
+using ::ftl_cstdio_runtime::fseek;
+using ::ftl_cstdio_runtime::fsetpos;
+using ::ftl_cstdio_runtime::ftell;
+using ::ftl_cstdio_runtime::fwrite;
+using ::ftl_cstdio_runtime::getc;
+using ::ftl_cstdio_runtime::getchar;
+using ::ftl_cstdio_runtime::perror;
+using ::ftl_cstdio_runtime::printf;
+using ::ftl_cstdio_runtime::putc;
+using ::ftl_cstdio_runtime::putchar;
+using ::ftl_cstdio_runtime::puts;
+using ::ftl_cstdio_runtime::remove;
+using ::ftl_cstdio_runtime::rename;
+using ::ftl_cstdio_runtime::rewind;
+using ::ftl_cstdio_runtime::scanf;
+using ::ftl_cstdio_runtime::setbuf;
+using ::ftl_cstdio_runtime::setvbuf;
+using ::ftl_cstdio_runtime::snprintf;
+using ::ftl_cstdio_runtime::sprintf;
+using ::ftl_cstdio_runtime::sscanf;
+using ::ftl_cstdio_runtime::tmpfile;
+using ::ftl_cstdio_runtime::tmpnam;
+using ::ftl_cstdio_runtime::ungetc;
+using ::ftl_cstdio_runtime::vfprintf;
+using ::ftl_cstdio_runtime::vfscanf;
+using ::ftl_cstdio_runtime::vprintf;
+using ::ftl_cstdio_runtime::vscanf;
+using ::ftl_cstdio_runtime::vsnprintf;
+using ::ftl_cstdio_runtime::vsprintf;
+using ::ftl_cstdio_runtime::vsscanf;
+} // namespace FTL_CSTDIO_NAMESPACE
+
+#undef FTL_CSTDIO_NAMESPACE
+#endif

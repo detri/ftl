@@ -1,0 +1,220 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_SYNCSTREAM_HEADER
+#define FTL_SYNCSTREAM_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <mutex>
+#include <ostream>
+#include <string>
+#include <vector>
+#else
+#include <ftl/mutex>
+#include <ftl/ostream>
+#include <ftl/string>
+#include <ftl/vector>
+#endif
+
+#if !defined(__cpp_lib_syncbuf) || __cpp_lib_syncbuf < 201803L
+#undef __cpp_lib_syncbuf
+#define __cpp_lib_syncbuf 201803L
+#endif
+
+FTL_BEGIN_NAMESPACE
+namespace detail {
+template <class C, class T> struct syncbuf_lock_entry {
+  basic_streambuf<C, T> *buffer;
+  mutex lock;
+};
+template <class C, class T>
+mutex &syncbuf_mutex(basic_streambuf<C, T> *buffer) {
+  static mutex registry_lock;
+  static vector<syncbuf_lock_entry<C, T> *> entries;
+  lock_guard guard(registry_lock);
+  for (auto *entry : entries)
+    if (entry->buffer == buffer)
+      return entry->lock;
+  auto *entry = new syncbuf_lock_entry<C, T>{buffer, {}};
+  entries.push_back(entry);
+  return entry->lock;
+}
+} // namespace detail
+
+template <class Character, class Traits, class Allocator>
+class basic_syncbuf : public basic_streambuf<Character, Traits> {
+public:
+  using char_type = Character;
+  using traits_type = Traits;
+  using int_type = typename Traits::int_type;
+  using pos_type = typename Traits::pos_type;
+  using off_type = typename Traits::off_type;
+  using allocator_type = Allocator;
+  using streambuf_type = basic_streambuf<Character, Traits>;
+  basic_syncbuf() : basic_syncbuf(nullptr) {}
+  explicit basic_syncbuf(streambuf_type *buffer)
+      : wrapped_(buffer), pending_(Allocator{}) {}
+  basic_syncbuf(streambuf_type *buffer, const Allocator &allocator)
+      : wrapped_(buffer), pending_(allocator) {}
+  basic_syncbuf(const basic_syncbuf &) = delete;
+  basic_syncbuf(basic_syncbuf &&other)
+      : basic_streambuf<Character, Traits>(
+            static_cast<basic_syncbuf &&>(other)),
+        wrapped_(other.wrapped_),
+        pending_(static_cast<basic_string<Character, Traits, Allocator> &&>(
+            other.pending_)),
+        emit_on_sync_(other.emit_on_sync_), needs_emit_(other.needs_emit_),
+        flush_pending_(other.flush_pending_) {
+    other.wrapped_ = nullptr;
+    other.needs_emit_ = false;
+    other.flush_pending_ = false;
+  }
+  basic_syncbuf &operator=(const basic_syncbuf &) = delete;
+  basic_syncbuf &operator=(basic_syncbuf &&other) {
+    if (this != &other) {
+      emit();
+      basic_streambuf<Character, Traits>::operator=(other);
+      wrapped_ = other.wrapped_;
+      pending_ = static_cast<basic_string<Character, Traits, Allocator> &&>(
+          other.pending_);
+      emit_on_sync_ = other.emit_on_sync_;
+      needs_emit_ = other.needs_emit_;
+      flush_pending_ = other.flush_pending_;
+      other.wrapped_ = nullptr;
+      other.needs_emit_ = false;
+      other.flush_pending_ = false;
+    }
+    return *this;
+  }
+  void swap(basic_syncbuf &other) {
+    basic_streambuf<Character, Traits>::swap(other);
+    auto *w = wrapped_;
+    wrapped_ = other.wrapped_;
+    other.wrapped_ = w;
+    pending_.swap(other.pending_);
+    auto e = emit_on_sync_;
+    emit_on_sync_ = other.emit_on_sync_;
+    other.emit_on_sync_ = e;
+    auto n = needs_emit_;
+    needs_emit_ = other.needs_emit_;
+    other.needs_emit_ = n;
+    auto f = flush_pending_;
+    flush_pending_ = other.flush_pending_;
+    other.flush_pending_ = f;
+  }
+  ~basic_syncbuf() {
+#if FTL_HAS_EXCEPTIONS
+    try {
+      emit();
+    } catch (...) {
+    }
+#else
+    emit();
+#endif
+  }
+  bool emit() {
+    if (!wrapped_)
+      return false;
+    lock_guard guard(detail::syncbuf_mutex(wrapped_));
+    streamsize count = static_cast<streamsize>(pending_.size());
+    streamsize written = wrapped_->sputn(pending_.data(), count);
+    bool okay = written == count;
+    if (okay && flush_pending_)
+      okay = wrapped_->pubsync() == 0;
+    if (okay) {
+      pending_.clear();
+      needs_emit_ = false;
+      flush_pending_ = false;
+    }
+    return okay;
+  }
+  streambuf_type *get_wrapped() const noexcept { return wrapped_; }
+  allocator_type get_allocator() const noexcept {
+    return pending_.get_allocator();
+  }
+  void set_emit_on_sync(bool value) noexcept { emit_on_sync_ = value; }
+
+protected:
+  int sync() override {
+    flush_pending_ = true;
+    if (emit_on_sync_)
+      return emit() ? 0 : -1;
+    return 0;
+  }
+  int_type overflow(int_type value = Traits::eof()) override {
+    if (Traits::eq_int_type(value, Traits::eof()))
+      return Traits::not_eof(value);
+    pending_.push_back(Traits::to_char_type(value));
+    needs_emit_ = true;
+    return value;
+  }
+  streamsize xsputn(const Character *source, streamsize count) override {
+    if (count <= 0)
+      return 0;
+    pending_.append(source, static_cast<size_t>(count));
+    needs_emit_ = true;
+    return count;
+  }
+
+private:
+  streambuf_type *wrapped_{};
+  basic_string<Character, Traits, Allocator> pending_;
+  bool emit_on_sync_{};
+  bool needs_emit_{};
+  bool flush_pending_{};
+};
+template <class C, class T, class A>
+void swap(basic_syncbuf<C, T, A> &l, basic_syncbuf<C, T, A> &r) {
+  l.swap(r);
+}
+
+template <class Character, class Traits, class Allocator>
+class basic_osyncstream : public basic_ostream<Character, Traits> {
+public:
+  using char_type = Character;
+  using traits_type = Traits;
+  using int_type = typename Traits::int_type;
+  using pos_type = typename Traits::pos_type;
+  using off_type = typename Traits::off_type;
+  using allocator_type = Allocator;
+  using streambuf_type = basic_streambuf<Character, Traits>;
+  using syncbuf_type = basic_syncbuf<Character, Traits, Allocator>;
+  explicit basic_osyncstream(streambuf_type *buffer)
+      : basic_ostream<Character, Traits>(&sb_), sb_(buffer) {}
+  basic_osyncstream(streambuf_type *buffer, const Allocator &allocator)
+      : basic_ostream<Character, Traits>(&sb_), sb_(buffer, allocator) {}
+  explicit basic_osyncstream(basic_ostream<Character, Traits> &stream)
+      : basic_osyncstream(stream.rdbuf()) {}
+  basic_osyncstream(basic_ostream<Character, Traits> &stream,
+                    const Allocator &allocator)
+      : basic_osyncstream(stream.rdbuf(), allocator) {}
+  basic_osyncstream(const basic_osyncstream &) = delete;
+  basic_osyncstream(basic_osyncstream &&other) noexcept
+      : basic_ostream<Character, Traits>(
+            static_cast<basic_ostream<Character, Traits> &&>(other)),
+        sb_(static_cast<syncbuf_type &&>(other.sb_)) {
+    this->set_rdbuf(&sb_);
+  }
+  ~basic_osyncstream() = default;
+  basic_osyncstream &operator=(const basic_osyncstream &) = delete;
+  basic_osyncstream &operator=(basic_osyncstream &&other) noexcept {
+    basic_ostream<Character, Traits>::operator=(
+        static_cast<basic_ostream<Character, Traits> &&>(other));
+    sb_ = static_cast<syncbuf_type &&>(other.sb_);
+    this->set_rdbuf(&sb_);
+    return *this;
+  }
+  syncbuf_type *rdbuf() const noexcept {
+    return const_cast<syncbuf_type *>(&sb_);
+  }
+  streambuf_type *get_wrapped() const noexcept { return sb_.get_wrapped(); }
+  void emit() {
+    if (!sb_.emit())
+      this->setstate(ios_base::badbit);
+  }
+
+private:
+  syncbuf_type sb_;
+};
+
+FTL_END_NAMESPACE
+#endif

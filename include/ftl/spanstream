@@ -1,0 +1,313 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_SPANSTREAM_HEADER
+#define FTL_SPANSTREAM_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <istream>
+#include <span>
+#define FTL_SPANSTREAM_NAMESPACE std
+#else
+#include <ftl/istream>
+#include <ftl/span>
+#define FTL_SPANSTREAM_NAMESPACE ftl
+#endif
+
+#if !defined(__cpp_lib_spanstream) || __cpp_lib_spanstream < 202106L
+#undef __cpp_lib_spanstream
+#define __cpp_lib_spanstream 202106L
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+template <class Character, class Traits>
+class basic_spanbuf : public basic_streambuf<Character, Traits> {
+public:
+  using char_type = Character;
+  using traits_type = Traits;
+  using int_type = typename Traits::int_type;
+  using pos_type = typename Traits::pos_type;
+  using off_type = typename Traits::off_type;
+
+  basic_spanbuf() : basic_spanbuf(ios_base::in | ios_base::out) {}
+  explicit basic_spanbuf(ios_base::openmode which) : mode_(which) { reset({}); }
+  explicit basic_spanbuf(FTL_SPANSTREAM_NAMESPACE::span<Character> value,
+                         ios_base::openmode which = ios_base::in |
+                                                    ios_base::out)
+      : mode_(which) {
+    reset(value);
+  }
+  basic_spanbuf(const basic_spanbuf &) = delete;
+  basic_spanbuf &operator=(const basic_spanbuf &) = delete;
+  basic_spanbuf(basic_spanbuf &&other)
+      : basic_streambuf<Character, Traits>(
+            static_cast<basic_spanbuf &&>(other)),
+        span_(other.span_), mode_(other.mode_) {
+    restore(other);
+  }
+  basic_spanbuf &operator=(basic_spanbuf &&other) {
+    if (this != &other) {
+      basic_streambuf<Character, Traits>::operator=(other);
+      span_ = other.span_;
+      mode_ = other.mode_;
+      restore(other);
+    }
+    return *this;
+  }
+  void swap(basic_spanbuf &other) {
+    basic_streambuf<Character, Traits>::swap(other);
+    auto s = span_;
+    span_ = other.span_;
+    other.span_ = s;
+    auto m = mode_;
+    mode_ = other.mode_;
+    other.mode_ = m;
+    set_sequences(current_get(), current_put());
+    other.set_sequences(other.current_get(), other.current_put());
+  }
+  FTL_SPANSTREAM_NAMESPACE::span<Character> span() const noexcept {
+    return {span_.data(),
+            (mode_ & ios_base::out) ? current_put() : span_.size()};
+  }
+  void span(FTL_SPANSTREAM_NAMESPACE::span<Character> value) noexcept {
+    reset(value);
+  }
+
+protected:
+  basic_streambuf<Character, Traits> *setbuf(Character *data,
+                                             streamsize count) override {
+    span(FTL_SPANSTREAM_NAMESPACE::span<Character>(data,
+                                                   static_cast<size_t>(count)));
+    return this;
+  }
+  pos_type seekoff(off_type offset, ios_base::seekdir direction,
+                   ios_base::openmode which = ios_base::in |
+                                              ios_base::out) override {
+    if ((which & ios_base::in) && !(mode_ & ios_base::in))
+      return pos_type(off_type(-1));
+    if ((which & ios_base::out) && !(mode_ & ios_base::out))
+      return pos_type(off_type(-1));
+    if (direction == ios_base::cur && (which & ios_base::in) &&
+        (which & ios_base::out))
+      return pos_type(off_type(-1));
+    off_type base =
+        direction == ios_base::beg ? 0
+        : direction == ios_base::end
+            ? static_cast<off_type>((mode_ & ios_base::out) &&
+                                            !(mode_ & ios_base::in)
+                                        ? current_put()
+                                        : span_.size())
+            : static_cast<off_type>((which & ios_base::in) ? current_get()
+                                                           : current_put());
+    off_type next = base + offset;
+    if (next < 0 || static_cast<size_t>(next) > span_.size())
+      return pos_type(off_type(-1));
+    size_t get = current_get(), put = current_put();
+    if (which & ios_base::in)
+      get = static_cast<size_t>(next);
+    if (which & ios_base::out)
+      put = static_cast<size_t>(next);
+    set_sequences(get, put);
+    return pos_type(next);
+  }
+  pos_type seekpos(pos_type position,
+                   ios_base::openmode which = ios_base::in |
+                                              ios_base::out) override {
+    return seekoff(static_cast<off_type>(position), ios_base::beg, which);
+  }
+
+private:
+  size_t current_get() const {
+    return this->gptr() ? static_cast<size_t>(this->gptr() - this->eback()) : 0;
+  }
+  size_t current_put() const {
+    return this->pptr() ? static_cast<size_t>(this->pptr() - this->pbase()) : 0;
+  }
+  void reset(FTL_SPANSTREAM_NAMESPACE::span<Character> value) {
+    span_ = value;
+    size_t put = (mode_ & ios_base::ate) ? value.size() : 0;
+    set_sequences(0, put);
+  }
+  void set_sequences(size_t get, size_t put) {
+    Character *data = span_.data();
+    if (mode_ & ios_base::in)
+      this->setg(data, data + (get > span_.size() ? span_.size() : get),
+                 data + span_.size());
+    else
+      this->setg(nullptr, nullptr, nullptr);
+    if (mode_ & ios_base::out) {
+      this->setp(data, data + span_.size());
+      this->pbump(static_cast<int>(put));
+    } else
+      this->setp(nullptr, nullptr);
+  }
+  void restore(basic_spanbuf &other) {
+    size_t get = other.current_get(), put = other.current_put();
+    set_sequences(get, put);
+    other.span_ = {};
+    other.setg(nullptr, nullptr, nullptr);
+    other.setp(nullptr, nullptr);
+  }
+  FTL_SPANSTREAM_NAMESPACE::span<Character> span_{};
+  ios_base::openmode mode_;
+};
+
+template <class C, class T>
+void swap(basic_spanbuf<C, T> &l, basic_spanbuf<C, T> &r) {
+  l.swap(r);
+}
+
+template <class C, class T>
+class basic_ispanstream : public basic_istream<C, T> {
+public:
+  using char_type = C;
+  using traits_type = T;
+  using int_type = typename T::int_type;
+  using pos_type = typename T::pos_type;
+  using off_type = typename T::off_type;
+  explicit basic_ispanstream(FTL_SPANSTREAM_NAMESPACE::span<C> s,
+                             ios_base::openmode w = ios_base::in)
+      : basic_istream<C, T>(&sb_), sb_(s, w | ios_base::in) {}
+  template <class ROS>
+    requires(ranges::borrowed_range<ROS> &&
+             (!convertible_to<ROS, FTL_SPANSTREAM_NAMESPACE::span<C>>) &&
+             convertible_to<ROS, FTL_SPANSTREAM_NAMESPACE::span<const C>>)
+  explicit basic_ispanstream(ROS &&s)
+      : basic_ispanstream(as_writable(static_cast<ROS &&>(s))) {}
+  basic_ispanstream(const basic_ispanstream &) = delete;
+  basic_ispanstream(basic_ispanstream &&r)
+      : basic_istream<C, T>(static_cast<basic_istream<C, T> &&>(r)),
+        sb_(static_cast<basic_spanbuf<C, T> &&>(r.sb_)) {
+    this->set_rdbuf(&sb_);
+  }
+  basic_ispanstream &operator=(const basic_ispanstream &) = delete;
+  basic_ispanstream &operator=(basic_ispanstream &&r) {
+    basic_istream<C, T>::operator=(static_cast<basic_istream<C, T> &&>(r));
+    sb_ = static_cast<basic_spanbuf<C, T> &&>(r.sb_);
+    this->set_rdbuf(&sb_);
+    return *this;
+  }
+  void swap(basic_ispanstream &r) {
+    basic_istream<C, T>::swap(r);
+    sb_.swap(r.sb_);
+    this->set_rdbuf(&sb_);
+    r.set_rdbuf(&r.sb_);
+  }
+  basic_spanbuf<C, T> *rdbuf() const noexcept {
+    return const_cast<basic_spanbuf<C, T> *>(&sb_);
+  }
+  FTL_SPANSTREAM_NAMESPACE::span<const C> span() const noexcept {
+    auto s = sb_.span();
+    return {s.data(), s.size()};
+  }
+  void span(FTL_SPANSTREAM_NAMESPACE::span<C> s) noexcept { sb_.span(s); }
+  template <class ROS>
+    requires(ranges::borrowed_range<ROS> &&
+             (!convertible_to<ROS, FTL_SPANSTREAM_NAMESPACE::span<C>>) &&
+             convertible_to<ROS, FTL_SPANSTREAM_NAMESPACE::span<const C>>)
+  void span(ROS &&s) noexcept {
+    sb_.span(as_writable(static_cast<ROS &&>(s)));
+  }
+
+private:
+  template <class ROS>
+  static FTL_SPANSTREAM_NAMESPACE::span<C> as_writable(ROS &&range) {
+    FTL_SPANSTREAM_NAMESPACE::span<const C> s(static_cast<ROS &&>(range));
+    return {const_cast<C *>(s.data()), s.size()};
+  }
+  basic_spanbuf<C, T> sb_;
+};
+template <class C, class T>
+class basic_ospanstream : public basic_ostream<C, T> {
+public:
+  using char_type = C;
+  using traits_type = T;
+  using int_type = typename T::int_type;
+  using pos_type = typename T::pos_type;
+  using off_type = typename T::off_type;
+  explicit basic_ospanstream(FTL_SPANSTREAM_NAMESPACE::span<C> s,
+                             ios_base::openmode w = ios_base::out)
+      : basic_ostream<C, T>(&sb_), sb_(s, w | ios_base::out) {}
+  basic_ospanstream(const basic_ospanstream &) = delete;
+  basic_ospanstream(basic_ospanstream &&r) noexcept
+      : basic_ostream<C, T>(static_cast<basic_ostream<C, T> &&>(r)),
+        sb_(static_cast<basic_spanbuf<C, T> &&>(r.sb_)) {
+    this->set_rdbuf(&sb_);
+  }
+  basic_ospanstream &operator=(const basic_ospanstream &) = delete;
+  basic_ospanstream &operator=(basic_ospanstream &&r) {
+    basic_ostream<C, T>::operator=(static_cast<basic_ostream<C, T> &&>(r));
+    sb_ = static_cast<basic_spanbuf<C, T> &&>(r.sb_);
+    this->set_rdbuf(&sb_);
+    return *this;
+  }
+  void swap(basic_ospanstream &r) {
+    basic_ostream<C, T>::swap(r);
+    sb_.swap(r.sb_);
+    this->set_rdbuf(&sb_);
+    r.set_rdbuf(&r.sb_);
+  }
+  basic_spanbuf<C, T> *rdbuf() const noexcept {
+    return const_cast<basic_spanbuf<C, T> *>(&sb_);
+  }
+  FTL_SPANSTREAM_NAMESPACE::span<C> span() const noexcept { return sb_.span(); }
+  void span(FTL_SPANSTREAM_NAMESPACE::span<C> s) noexcept { sb_.span(s); }
+
+private:
+  basic_spanbuf<C, T> sb_;
+};
+template <class C, class T>
+class basic_spanstream : public basic_iostream<C, T> {
+public:
+  using char_type = C;
+  using traits_type = T;
+  using int_type = typename T::int_type;
+  using pos_type = typename T::pos_type;
+  using off_type = typename T::off_type;
+  explicit basic_spanstream(FTL_SPANSTREAM_NAMESPACE::span<C> s,
+                            ios_base::openmode w = ios_base::out | ios_base::in)
+      : basic_iostream<C, T>(&sb_), sb_(s, w | ios_base::out | ios_base::in) {}
+  basic_spanstream(const basic_spanstream &) = delete;
+  basic_spanstream(basic_spanstream &&r)
+      : basic_iostream<C, T>(static_cast<basic_iostream<C, T> &&>(r)),
+        sb_(static_cast<basic_spanbuf<C, T> &&>(r.sb_)) {
+    this->set_rdbuf(&sb_);
+  }
+  basic_spanstream &operator=(const basic_spanstream &) = delete;
+  basic_spanstream &operator=(basic_spanstream &&r) {
+    basic_iostream<C, T>::operator=(static_cast<basic_iostream<C, T> &&>(r));
+    sb_ = static_cast<basic_spanbuf<C, T> &&>(r.sb_);
+    this->set_rdbuf(&sb_);
+    return *this;
+  }
+  void swap(basic_spanstream &r) {
+    basic_iostream<C, T>::swap(r);
+    sb_.swap(r.sb_);
+    this->set_rdbuf(&sb_);
+    r.set_rdbuf(&r.sb_);
+  }
+  basic_spanbuf<C, T> *rdbuf() const noexcept {
+    return const_cast<basic_spanbuf<C, T> *>(&sb_);
+  }
+  FTL_SPANSTREAM_NAMESPACE::span<C> span() const noexcept { return sb_.span(); }
+  void span(FTL_SPANSTREAM_NAMESPACE::span<C> s) noexcept { sb_.span(s); }
+
+private:
+  basic_spanbuf<C, T> sb_;
+};
+template <class C, class T>
+void swap(basic_ispanstream<C, T> &l, basic_ispanstream<C, T> &r) {
+  l.swap(r);
+}
+template <class C, class T>
+void swap(basic_ospanstream<C, T> &l, basic_ospanstream<C, T> &r) {
+  l.swap(r);
+}
+template <class C, class T>
+void swap(basic_spanstream<C, T> &l, basic_spanstream<C, T> &r) {
+  l.swap(r);
+}
+
+FTL_END_NAMESPACE
+#undef FTL_SPANSTREAM_NAMESPACE
+#endif

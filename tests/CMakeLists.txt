@@ -56,7 +56,7 @@ function(add_ftl_test header)
 
         if (mode STREQUAL replace AND
                 header MATCHES
-                "^(string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|locale(_.*)?|codecvt|format|chrono|print|exception|iosfwd|streambuf|ios|istream|istream_view|ostream|complex|random|thread|stacktrace)$")
+                "^(string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|locale(_.*)?|codecvt|format|chrono|print|exception|iosfwd|streambuf|ios|istream|istream_view|ostream|complex|random|thread|stacktrace|iostream|fstream|sstream|spanstream|syncstream|iomanip|cstdio|strstream)$")
             set(ftl_standalone_replace TRUE)
         endif ()
 
@@ -574,6 +574,16 @@ foreach (header IN ITEMS
         codecvt
         format
         print
+        cstdio
+        cstdio_synopsis
+        native_io
+        iomanip
+        sstream
+        spanstream
+        syncstream
+        fstream
+        iostream
+        strstream
 )
     add_ftl_test(${header})
 endforeach ()

@@ -6,6 +6,7 @@
 #ifdef FTL_REPLACE_STL
 #include <__c_file_types.hpp>
 #include <cerrno>
+#include <detail/stdio_runtime.hpp>
 #include <format>
 #include <string>
 #include <system_error>
@@ -13,6 +14,7 @@
 #else
 #include <ftl/__c_file_types.hpp>
 #include <ftl/cerrno>
+#include <ftl/detail/stdio_runtime.hpp>
 #include <ftl/format>
 #include <ftl/string>
 #include <ftl/system_error>
@@ -36,92 +38,32 @@ extern "C" void __cdecl __fastfail(unsigned int);
 namespace ftl_print_runtime {
 
 using size_type = decltype(sizeof(0));
+using file_type = ::ftl_file;
+using ::ftl_stdio_runtime::fflush;
+using ::ftl_stdio_runtime::fwrite;
 
 extern "C" {
 
-size_type fwrite(const void *, size_type, size_type, FILE *);
-
-int fflush(FILE *);
-
 #if defined(_WIN32)
-
-FILE *__cdecl __acrt_iob_func(unsigned);
-
-int __cdecl _fileno(FILE *);
-int __cdecl _isatty(int);
-
-#if defined(_WIN64)
-using native_intptr = long long;
-#else
-using native_intptr = int;
-#endif
-
-native_intptr __cdecl _get_osfhandle(int);
-
-__declspec(dllimport) int __stdcall GetConsoleMode(void *, unsigned long *);
-
 __declspec(dllimport) int __stdcall
 WriteConsoleW(void *, const void *, unsigned long, unsigned long *, void *);
-
-#elif defined(__APPLE__)
-
-extern FILE *__stdoutp;
-
-#else
-
-extern FILE *stdout;
 
 #endif
 
 } // extern "C"
 
 [[nodiscard]]
-inline FILE *stdout_stream() noexcept {
-#if defined(_WIN32)
-  return __acrt_iob_func(1);
-#elif defined(__APPLE__)
-  return __stdoutp;
-#else
-  return stdout;
-#endif
+inline file_type *stdout_stream() noexcept {
+  return ::ftl_stdio_runtime::output_stream();
 }
 
 #if defined(_WIN32)
 
 [[nodiscard]]
-inline void *console_handle(FILE *stream) noexcept {
-  const int descriptor = _fileno(stream);
-
-  if (descriptor < 0)
+inline void *console_handle(file_type *stream) noexcept {
+  if (!::ftl_stdio_runtime::is_terminal(stream))
     return nullptr;
-
-  /*
-   * Do not poke arbitrary file handles
-   * with the Win32 console API.
-   *
-   * In particular this keeps tmpfile(),
-   * redirected output, pipes, and ordinary
-   * files entirely on the byte-oriented
-   * fwrite path.
-   */
-  if (_isatty(descriptor) == 0)
-    return nullptr;
-
-  const native_intptr handle = _get_osfhandle(descriptor);
-
-  if (handle == static_cast<native_intptr>(-1)) {
-    return nullptr;
-  }
-
-  unsigned long mode = 0;
-
-  void *native = reinterpret_cast<void *>(handle);
-
-  if (GetConsoleMode(native, &mode) == 0) {
-    return nullptr;
-  }
-
-  return native;
+  return ::ftl_stdio_runtime::native_handle(stream).value;
 }
 
 #endif

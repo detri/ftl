@@ -1,0 +1,302 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_IOMANIP_HEADER
+#define FTL_IOMANIP_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <ctime>
+#include <istream>
+#include <iterator>
+#include <locale>
+#include <string>
+#include <string_view>
+#define FTL_IOMANIP_NAMESPACE std
+#else
+#include <ftl/ctime>
+#include <ftl/istream>
+#include <ftl/iterator>
+#include <ftl/locale>
+#include <ftl/string>
+#include <ftl/string_view>
+#define FTL_IOMANIP_NAMESPACE ftl
+#endif
+
+FTL_BEGIN_NAMESPACE
+namespace detail {
+struct reset_flags {
+  ios_base::fmtflags mask;
+};
+struct set_flags {
+  ios_base::fmtflags mask;
+};
+struct set_base {
+  int base;
+};
+template <class C> struct set_fill {
+  C value;
+};
+struct set_precision {
+  int value;
+};
+struct set_width {
+  int value;
+};
+template <class Money> struct get_money_value {
+  Money &value;
+  bool international;
+};
+template <class Money> struct put_money_value {
+  const Money &value;
+  bool international;
+};
+template <class C> struct get_time_value {
+  tm *value;
+  const C *format;
+};
+template <class C> struct put_time_value {
+  const tm *value;
+  const C *format;
+};
+template <class C, class T = char_traits<C>> struct quoted_output {
+  basic_string_view<C, T> value;
+  C delimiter;
+  C escape;
+};
+template <class C, class T, class A> struct quoted_input {
+  basic_string<C, T, A> &value;
+  C delimiter;
+  C escape;
+};
+template <class Stream> Stream &apply_base(Stream &s, int base) {
+  auto flag = base == 8    ? ios_base::oct
+              : base == 10 ? ios_base::dec
+              : base == 16 ? ios_base::hex
+                           : ios_base::fmtflags{};
+  s.setf(flag, ios_base::basefield);
+  return s;
+}
+} // namespace detail
+
+inline detail::reset_flags resetiosflags(ios_base::fmtflags mask) {
+  return {mask};
+}
+inline detail::set_flags setiosflags(ios_base::fmtflags mask) { return {mask}; }
+inline detail::set_base setbase(int base) { return {base}; }
+template <class C> detail::set_fill<C> setfill(C value) { return {value}; }
+inline detail::set_precision setprecision(int value) { return {value}; }
+inline detail::set_width setw(int value) { return {value}; }
+template <class Money>
+detail::get_money_value<Money> get_money(Money &value,
+                                         bool international = false) {
+  return {value, international};
+}
+template <class Money>
+detail::put_money_value<Money> put_money(const Money &value,
+                                         bool international = false) {
+  return {value, international};
+}
+template <class C>
+detail::get_time_value<C> get_time(tm *value, const C *format) {
+  return {value, format};
+}
+template <class C>
+detail::put_time_value<C> put_time(const tm *value, const C *format) {
+  return {value, format};
+}
+template <class C>
+detail::quoted_output<C> quoted(const C *value, C delimiter = C('"'),
+                                C escape = C('\\')) {
+  return {{value}, delimiter, escape};
+}
+template <class C, class T, class A>
+detail::quoted_input<C, T, A> quoted(basic_string<C, T, A> &value,
+                                     C delimiter = C('"'), C escape = C('\\')) {
+  return {value, delimiter, escape};
+}
+template <class C, class T, class A>
+detail::quoted_output<C, T> quoted(const basic_string<C, T, A> &value,
+                                   C delimiter = C('"'), C escape = C('\\')) {
+  return {{value.data(), value.size()}, delimiter, escape};
+}
+template <class C, class T>
+detail::quoted_output<C, T> quoted(basic_string_view<C, T> value,
+                                   C delimiter = C('"'), C escape = C('\\')) {
+  return {value, delimiter, escape};
+}
+
+template <class C, class T>
+basic_ostream<C, T> &operator<<(basic_ostream<C, T> &s, detail::reset_flags v) {
+  s.unsetf(v.mask);
+  return s;
+}
+template <class C, class T>
+basic_istream<C, T> &operator>>(basic_istream<C, T> &s, detail::reset_flags v) {
+  s.unsetf(v.mask);
+  return s;
+}
+template <class C, class T>
+basic_ostream<C, T> &operator<<(basic_ostream<C, T> &s, detail::set_flags v) {
+  s.setf(v.mask);
+  return s;
+}
+template <class C, class T>
+basic_istream<C, T> &operator>>(basic_istream<C, T> &s, detail::set_flags v) {
+  s.setf(v.mask);
+  return s;
+}
+template <class C, class T>
+basic_ostream<C, T> &operator<<(basic_ostream<C, T> &s, detail::set_base v) {
+  return detail::apply_base(s, v.base);
+}
+template <class C, class T>
+basic_istream<C, T> &operator>>(basic_istream<C, T> &s, detail::set_base v) {
+  return detail::apply_base(s, v.base);
+}
+template <class C, class T>
+basic_ostream<C, T> &operator<<(basic_ostream<C, T> &s, detail::set_fill<C> v) {
+  s.fill(v.value);
+  return s;
+}
+template <class C, class T>
+basic_istream<C, T> &operator>>(basic_istream<C, T> &s, detail::set_fill<C> v) {
+  s.fill(v.value);
+  return s;
+}
+template <class C, class T>
+basic_ostream<C, T> &operator<<(basic_ostream<C, T> &s,
+                                detail::set_precision v) {
+  s.precision(v.value);
+  return s;
+}
+template <class C, class T>
+basic_istream<C, T> &operator>>(basic_istream<C, T> &s,
+                                detail::set_precision v) {
+  s.precision(v.value);
+  return s;
+}
+template <class C, class T>
+basic_ostream<C, T> &operator<<(basic_ostream<C, T> &s, detail::set_width v) {
+  s.width(v.value);
+  return s;
+}
+template <class C, class T>
+basic_istream<C, T> &operator>>(basic_istream<C, T> &s, detail::set_width v) {
+  s.width(v.value);
+  return s;
+}
+
+template <class C, class T, class Money>
+basic_istream<C, T> &operator>>(basic_istream<C, T> &s,
+                                detail::get_money_value<Money> v) {
+  typename basic_istream<C, T>::sentry guard(s);
+  ios_base::iostate state = ios_base::goodbit;
+  if (guard) {
+    using iterator = istreambuf_iterator<C, T>;
+    use_facet<money_get<C, iterator>>(s.getloc())
+        .get(iterator(s), iterator(), v.international, s, state, v.value);
+  }
+  if (state)
+    s.setstate(state);
+  return s;
+}
+template <class C, class T, class Money>
+basic_ostream<C, T> &operator<<(basic_ostream<C, T> &s,
+                                detail::put_money_value<Money> v) {
+  typename basic_ostream<C, T>::sentry guard(s);
+  if (guard) {
+    using iterator = ostreambuf_iterator<C, T>;
+    auto result = use_facet<money_put<C, iterator>>(s.getloc())
+                      .put(iterator(s), v.international, s, s.fill(), v.value);
+    if (result.failed())
+      s.setstate(ios_base::badbit);
+  }
+  return s;
+}
+template <class C, class T>
+basic_istream<C, T> &operator>>(basic_istream<C, T> &s,
+                                detail::get_time_value<C> v) {
+  typename basic_istream<C, T>::sentry guard(s);
+  ios_base::iostate state = ios_base::goodbit;
+  if (guard) {
+    using iterator = istreambuf_iterator<C, T>;
+    const C *end = v.format;
+    while (*end)
+      ++end;
+    use_facet<time_get<C, iterator>>(s.getloc())
+        .get(iterator(s), iterator(), s, state, v.value, v.format, end);
+  }
+  if (state)
+    s.setstate(state);
+  return s;
+}
+template <class C, class T>
+basic_ostream<C, T> &operator<<(basic_ostream<C, T> &s,
+                                detail::put_time_value<C> v) {
+  typename basic_ostream<C, T>::sentry guard(s);
+  if (guard) {
+    using iterator = ostreambuf_iterator<C, T>;
+    const C *end = v.format;
+    while (*end)
+      ++end;
+    auto result = use_facet<time_put<C, iterator>>(s.getloc())
+                      .put(iterator(s), s, s.fill(), v.value, v.format, end);
+    if (result.failed())
+      s.setstate(ios_base::badbit);
+  }
+  return s;
+}
+
+template <class C, class T>
+basic_ostream<C, T> &operator<<(basic_ostream<C, T> &s,
+                                const detail::quoted_output<C, T> &v) {
+  basic_string<C, T> text;
+  text.push_back(v.delimiter);
+  for (C c : v.value) {
+    if (T::eq(c, v.delimiter) || T::eq(c, v.escape))
+      text.push_back(v.escape);
+    text.push_back(c);
+  }
+  text.push_back(v.delimiter);
+  return s << text;
+}
+template <class C, class T, class A>
+basic_ostream<C, T> &operator<<(basic_ostream<C, T> &s,
+                                const detail::quoted_input<C, T, A> &v) {
+  return s << detail::quoted_output<C, T>{
+             {v.value.data(), v.value.size()}, v.delimiter, v.escape};
+}
+template <class C, class T, class A>
+basic_istream<C, T> &operator>>(basic_istream<C, T> &s,
+                                const detail::quoted_input<C, T, A> &v) {
+  C first{};
+  if (!(s >> first))
+    return s;
+  if (!T::eq(first, v.delimiter)) {
+    s.putback(first);
+    return s >> v.value;
+  }
+  auto flags = s.flags();
+  s.unsetf(ios_base::skipws);
+  v.value.clear();
+  bool escaped = false, closed = false;
+  for (C c{}; s.get(c);) {
+    if (escaped) {
+      v.value.push_back(c);
+      escaped = false;
+    } else if (T::eq(c, v.escape))
+      escaped = true;
+    else if (T::eq(c, v.delimiter)) {
+      closed = true;
+      break;
+    } else
+      v.value.push_back(c);
+  }
+  s.flags(flags);
+  if (!closed)
+    s.setstate(ios_base::failbit);
+  return s;
+}
+
+FTL_END_NAMESPACE
+#undef FTL_IOMANIP_NAMESPACE
+#endif

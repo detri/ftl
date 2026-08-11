@@ -13,6 +13,18 @@ target_include_directories(ftl INTERFACE include)
 target_compile_features(ftl INTERFACE cxx_std_23)
 target_link_libraries(ftl INTERFACE ftl_math_runtime)
 
+add_library(ftl_io_runtime STATIC runtime/native_io.cpp runtime/stdio.cpp
+                                  runtime/stdio_format.cpp)
+target_include_directories(ftl_io_runtime PRIVATE include)
+target_compile_features(ftl_io_runtime PRIVATE cxx_std_23)
+target_link_libraries(ftl_io_runtime PRIVATE ftl_math_runtime)
+if (MSVC)
+    target_compile_options(ftl_io_runtime PRIVATE /EHs-c-)
+else ()
+    target_compile_options(ftl_io_runtime PRIVATE -fno-exceptions -fno-rtti)
+endif ()
+target_link_libraries(ftl INTERFACE ftl_io_runtime)
+
 # Compiler
 
 add_library(ftl_compiler_runtime STATIC runtime/memory.cpp)
