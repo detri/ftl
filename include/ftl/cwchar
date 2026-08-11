@@ -27,9 +27,12 @@
 
 #if defined(_MSC_VER)
 
+#ifndef FTL_MSVC_FLTUSED_DEFINED
+#define FTL_MSVC_FLTUSED_DEFINED
 extern "C" {
 __declspec(selectany) int _fltused = 1;
 }
+#endif
 
 #endif
 

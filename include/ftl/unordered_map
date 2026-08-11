@@ -35,8 +35,8 @@
 #if !defined(__clang__)
 extern "C" void __cdecl __fastfail(unsigned int);
 #endif
-#ifndef FTL_ASSOCIATIVE_FLTUSED_DEFINED
-#define FTL_ASSOCIATIVE_FLTUSED_DEFINED
+#ifndef FTL_MSVC_FLTUSED_DEFINED
+#define FTL_MSVC_FLTUSED_DEFINED
 extern "C" __declspec(selectany) int _fltused = 1;
 #endif
 #if !defined(__clang__)

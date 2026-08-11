@@ -8,6 +8,7 @@
 #include <concepts>
 #include <cstdint>
 #include <initializer_list>
+#include <iosfwd>
 #include <new>
 #include <utility>
 #else
@@ -15,6 +16,7 @@
 #include <ftl/concepts>
 #include <ftl/cstdint>
 #include <ftl/initializer_list>
+#include <ftl/iosfwd>
 #include <ftl/new>
 #include <ftl/utility>
 #endif
@@ -2349,6 +2351,17 @@ template <class C, class T> class basic_istream;
 template <class C, class T> class basic_ostream;
 template <class C, class T> class basic_streambuf;
 
+namespace detail {
+template <class C, class Traits>
+typename Traits::int_type streambuf_sgetc(basic_streambuf<C, Traits> *);
+template <class C, class Traits>
+typename Traits::int_type streambuf_snextc(basic_streambuf<C, Traits> *);
+template <class C, class Traits>
+typename Traits::int_type streambuf_sbumpc(basic_streambuf<C, Traits> *);
+template <class C, class Traits>
+typename Traits::int_type streambuf_sputc(basic_streambuf<C, Traits> *, C);
+} // namespace detail
+
 template <class T, class C = char, class Traits = char_traits<C>,
           class Distance = ptrdiff_t>
 class istream_iterator {
@@ -2422,7 +2435,7 @@ public:
   ostream_iterator &operator++(int) { return *this; }
 };
 
-template <class C, class Traits = char_traits<C>> class istreambuf_iterator {
+template <class C, class Traits> class istreambuf_iterator {
   basic_streambuf<C, Traits> *buffer{};
 
 public:
@@ -2435,24 +2448,38 @@ public:
   using char_type = C;
   using traits_type = Traits;
   using int_type = typename Traits::int_type;
+  using streambuf_type = basic_streambuf<C, Traits>;
+  using istream_type = basic_istream<C, Traits>;
+
+  class proxy {
+    C kept_;
+    streambuf_type *buffer_;
+    proxy(C value, streambuf_type *buffer) : kept_(value), buffer_(buffer) {}
+    friend class istreambuf_iterator;
+  public:
+    C operator*() { return kept_; }
+  };
 
   constexpr istreambuf_iterator() noexcept = default;
+  constexpr istreambuf_iterator(default_sentinel_t) noexcept {}
 
   istreambuf_iterator(basic_istream<C, Traits> &s) noexcept
       : buffer(s.rdbuf()) {}
   istreambuf_iterator(basic_streambuf<C, Traits> *b) noexcept : buffer(b) {}
+  istreambuf_iterator(const proxy &value) noexcept : buffer(value.buffer_) {}
 
-  C operator*() const { return Traits::to_char_type(buffer->sgetc()); }
+  C operator*() const {
+    return Traits::to_char_type(detail::streambuf_sgetc(buffer));
+  }
 
   istreambuf_iterator &operator++() {
-    buffer->snextc();
+    detail::streambuf_snextc(buffer);
     return *this;
   }
 
-  istreambuf_iterator operator++(int) {
-    auto x = *this;
-    ++*this;
-    return x;
+  proxy operator++(int) {
+    return proxy(Traits::to_char_type(detail::streambuf_sbumpc(buffer)),
+                 buffer);
   }
 
   bool equal(const istreambuf_iterator &x) const {
@@ -2461,12 +2488,16 @@ public:
 
 private:
   bool at_end() const {
-    return !buffer || Traits::eq_int_type(buffer->sgetc(), Traits::eof());
+    return !buffer || Traits::eq_int_type(detail::streambuf_sgetc(buffer),
+                                          Traits::eof());
   }
 
   template <class X, class Y>
   friend bool operator==(const istreambuf_iterator<X, Y> &,
                          const istreambuf_iterator<X, Y> &);
+  friend bool operator==(const istreambuf_iterator &value, default_sentinel_t) {
+    return value.at_end();
+  }
 };
 
 template <class C, class Traits>
@@ -2475,7 +2506,7 @@ bool operator==(const istreambuf_iterator<C, Traits> &a,
   return a.equal(b);
 }
 
-template <class C, class Traits = char_traits<C>> class ostreambuf_iterator {
+template <class C, class Traits> class ostreambuf_iterator {
   basic_streambuf<C, Traits> *buffer{};
   bool failed_state{};
 
@@ -2493,7 +2524,8 @@ public:
   ostreambuf_iterator(streambuf_type *b) noexcept : buffer(b) {}
 
   ostreambuf_iterator &operator=(C c) {
-    if (Traits::eq_int_type(buffer->sputc(c), Traits::eof()))
+    if (!buffer || Traits::eq_int_type(detail::streambuf_sputc(buffer, c),
+                                       Traits::eof()))
       failed_state = true;
     return *this;
   }

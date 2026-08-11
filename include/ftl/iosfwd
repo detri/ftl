@@ -5,9 +5,13 @@
 
 #ifdef FTL_REPLACE_STL
 #include <cstddef>
+#include <cstdint>
+#include <cwchar>
 #include <type_traits>
 #else
 #include <ftl/cstddef>
+#include <ftl/cstdint>
+#include <ftl/cwchar>
 #include <ftl/type_traits>
 #endif
 
@@ -17,15 +21,21 @@ using streamoff = ptrdiff_t;
 using streamsize = ptrdiff_t;
 
 template <class State> class fpos;
+class ios_base;
 
 class strong_ordering;
 
 template <class Character> struct char_traits {
   using comparison_category = strong_ordering;
   using char_type = Character;
-  using int_type = unsigned long long;
+  using int_type = conditional_t<is_same_v<char_type, char>, int,
+                   conditional_t<is_same_v<char_type, wchar_t>, wint_t,
+                   conditional_t<is_same_v<char_type, char8_t>, unsigned int,
+                   conditional_t<is_same_v<char_type, char16_t>, uint_least16_t,
+                                 uint_least32_t>>>>;
   using off_type = streamoff;
-  using pos_type = size_t;
+  using state_type = mbstate_t;
+  using pos_type = fpos<state_type>;
 
   static constexpr void assign(char_type &left,
                                const char_type &right) noexcept {
@@ -113,7 +123,10 @@ template <class Character> struct char_traits {
 
   [[nodiscard]]
   static constexpr int_type to_int_type(char_type value) noexcept {
-    return static_cast<int_type>(value);
+    if constexpr (is_same_v<char_type, char>)
+      return static_cast<unsigned char>(value);
+    else
+      return static_cast<int_type>(value);
   }
 
   [[nodiscard]]
@@ -128,7 +141,7 @@ template <class Character> struct char_traits {
 
   [[nodiscard]]
   static constexpr int_type eof() noexcept {
-    return ~int_type{};
+    return static_cast<int_type>(-1);
   }
 
   [[nodiscard]]
@@ -152,6 +165,40 @@ class basic_ostream;
 template <class Character, class Traits = char_traits<Character>>
 class basic_iostream;
 
+template <class T> class allocator;
+
+template <class Character, class Traits, class Allocator>
+class basic_string;
+
+template <class Character, class Traits = char_traits<Character>,
+          class Allocator = allocator<Character>>
+class basic_stringbuf;
+template <class Character, class Traits = char_traits<Character>,
+          class Allocator = allocator<Character>>
+class basic_istringstream;
+template <class Character, class Traits = char_traits<Character>,
+          class Allocator = allocator<Character>>
+class basic_ostringstream;
+template <class Character, class Traits = char_traits<Character>,
+          class Allocator = allocator<Character>>
+class basic_stringstream;
+template <class Character, class Traits = char_traits<Character>> class basic_spanbuf;
+template <class Character, class Traits = char_traits<Character>> class basic_ispanstream;
+template <class Character, class Traits = char_traits<Character>> class basic_ospanstream;
+template <class Character, class Traits = char_traits<Character>> class basic_spanstream;
+template <class Character, class Traits = char_traits<Character>> class basic_filebuf;
+template <class Character, class Traits = char_traits<Character>> class basic_ifstream;
+template <class Character, class Traits = char_traits<Character>> class basic_ofstream;
+template <class Character, class Traits = char_traits<Character>> class basic_fstream;
+template <class Character, class Traits = char_traits<Character>,
+          class Allocator = allocator<Character>>
+class basic_syncbuf;
+template <class Character, class Traits = char_traits<Character>,
+          class Allocator = allocator<Character>>
+class basic_osyncstream;
+template <class Character, class Traits = char_traits<Character>> class istreambuf_iterator;
+template <class Character, class Traits = char_traits<Character>> class ostreambuf_iterator;
+
 using ios = basic_ios<char>;
 using wios = basic_ios<wchar_t>;
 
@@ -166,6 +213,42 @@ using wostream = basic_ostream<wchar_t>;
 
 using iostream = basic_iostream<char>;
 using wiostream = basic_iostream<wchar_t>;
+
+using stringbuf = basic_stringbuf<char>;
+using istringstream = basic_istringstream<char>;
+using ostringstream = basic_ostringstream<char>;
+using stringstream = basic_stringstream<char>;
+using spanbuf = basic_spanbuf<char>;
+using ispanstream = basic_ispanstream<char>;
+using ospanstream = basic_ospanstream<char>;
+using spanstream = basic_spanstream<char>;
+using filebuf = basic_filebuf<char>;
+using ifstream = basic_ifstream<char>;
+using ofstream = basic_ofstream<char>;
+using fstream = basic_fstream<char>;
+using syncbuf = basic_syncbuf<char>;
+using osyncstream = basic_osyncstream<char>;
+
+using wstringbuf = basic_stringbuf<wchar_t>;
+using wistringstream = basic_istringstream<wchar_t>;
+using wostringstream = basic_ostringstream<wchar_t>;
+using wstringstream = basic_stringstream<wchar_t>;
+using wspanbuf = basic_spanbuf<wchar_t>;
+using wispanstream = basic_ispanstream<wchar_t>;
+using wospanstream = basic_ospanstream<wchar_t>;
+using wspanstream = basic_spanstream<wchar_t>;
+using wfilebuf = basic_filebuf<wchar_t>;
+using wifstream = basic_ifstream<wchar_t>;
+using wofstream = basic_ofstream<wchar_t>;
+using wfstream = basic_fstream<wchar_t>;
+using wsyncbuf = basic_syncbuf<wchar_t>;
+using wosyncstream = basic_osyncstream<wchar_t>;
+
+using streampos = fpos<char_traits<char>::state_type>;
+using wstreampos = fpos<char_traits<wchar_t>::state_type>;
+using u8streampos = fpos<char_traits<char8_t>::state_type>;
+using u16streampos = fpos<char_traits<char16_t>::state_type>;
+using u32streampos = fpos<char_traits<char32_t>::state_type>;
 
 FTL_END_NAMESPACE
 

@@ -49,13 +49,14 @@ function(add_ftl_test header)
         # collide with the hosted standard library must not link GoogleTest.
         #
         # locale and its facets are especially sensitive because the hosted
-        # C++ runtime itself exports std::locale / std::ctype symbols.
+        # C++ runtime itself exports std::locale / std::ctype and stream
+        # symbols, including those reached through range stream adaptors.
         #
         set(ftl_standalone_replace FALSE)
 
         if (mode STREQUAL replace AND
                 header MATCHES
-                "^(string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|locale(_.*)?|codecvt|format|chrono|print)$")
+                "^(string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|locale(_.*)?|codecvt|format|chrono|print|exception|iosfwd|streambuf|ios|istream|istream_view|ostream|complex|random|thread|stacktrace)$")
             set(ftl_standalone_replace TRUE)
         endif ()
 
@@ -86,10 +87,10 @@ function(add_ftl_test header)
 
             if (APPLE)
                 #
-                # Keep the Itanium C++ ABI runtime for exceptions/RTTI
-                # without linking libc++ itself.
+                # Apple's public exception_ptr rethrow entry point lives in
+                # libc++, while object ownership and RTTI live in libc++abi.
                 #
-                target_link_libraries(${target} PRIVATE c++abi)
+                target_link_libraries(${target} PRIVATE c++ c++abi)
             else ()
                 # GCC-family ABI runtime without libstdc++.
                 target_link_libraries(${target} PRIVATE supc++)
@@ -156,6 +157,7 @@ function(add_ftl_freestanding_link_check name source)
                 PRIVATE
                 -nostdinc++
                 -fno-stack-protector
+                -fno-rtti
         )
 
         if (APPLE)
@@ -506,6 +508,7 @@ foreach (header IN ITEMS
         streambuf
         ios
         istream
+        ostream
         istream_view
         execution
         algorithm_ranges_result
@@ -567,6 +570,7 @@ foreach (header IN ITEMS
         locale_codecvt_byname
         locale_moneypunct
         locale_messages
+        locale_io
         codecvt
         format
         print

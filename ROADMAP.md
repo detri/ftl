@@ -176,6 +176,14 @@ dependency order, not hundreds of individual overloads.
 | `<codecvt>`            | Stage 7.1         |
 | `<format>`             | Stage 7.2         |
 | `<print>`              | Stage 7.2         |
+| `<stacktrace>`         | Stage 7.3         |
+| `<thread>`             | Stage 7.3         |
+| `<locale>`             | Stage 7.3         |
+| `<iosfwd>`             | Stage 7.3         |
+| `<ios>`                | Stage 7.3         |
+| `<streambuf>`          | Stage 7.3         |
+| `<istream>`            | Stage 7.3         |
+| `<ostream>`            | Stage 7.3         |
 
 Compiler coroutine syntax integrates with FTL only in FTL_REPLACE_STL mode
 because coroutine transformation performs lookup through std::coroutine_traits.
@@ -188,13 +196,6 @@ synopses:
 
 | Header         | Implemented direction                                                                                                                                  | Major remaining groups                                                                                                                  |
 |----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
-| `<thread>`     | complete thread/jthread runtime surface, IDs, hashing, stop-token integration, sleep/yield, and native backends                                        | `thread::id` formatter; stream insertion after the `<ostream>` closure                                                                   |
-| `<stacktrace>` | native capture, entries, allocator-aware container, comparisons, strings, PMR, and hashes                                                              | formatters and feature-test advertisement; stream insertion after the `<ostream>` closure                                                |
-| `<locale>`     | locale representation and facet ownership; ctype, collate, numpunct, moneypunct, messages, codecvt, byname facets, `time_base`, classic/global support | stream-dependent `num_get/put`, `money_get/put`, `time_get/put` families; named/category constructors and final mandatory-facet closure |
-| `<iosfwd>`     | `char_traits`, fundamental stream types, aliases, and stream-class forward declarations                                                                | complete C++23 forward-declaration and positioning-type inventory                                                                       |
-| `<streambuf>`  | input/get-area stream-buffer machinery needed by seeded input streams                                                                                  | put area, positioning/seeking, locale, synchronization, putback, and complete synopsis                                                  |
-| `<ios>`        | stream state, buffer association, state observers, and boolean conversion                                                                              | full `ios_base`/`basic_ios` formatting, locales, callbacks, ties, exception masks, and synopsis                                         |
-| `<istream>`    | core unformatted character input, bulk reads, stream-state propagation, and user-defined extraction integration                                        | sentry, formatted extraction, remaining unformatted overloads, positioning, synchronization, and complete synopsis                      |
 | `<chrono>`     | durations, time points, calendars, clocks, clock conversion, literals, `hh_mm_ss`, and C++23 formatter specializations                                  | tzdb; stream insertion and `from_stream` after the `<ostream>`/`<istream>` closures                                                      |
 
 `include/ftl/detail/rapidhash` is an implementation detail, not a standard
@@ -212,7 +213,7 @@ remain required when C++23 still specifies them; they are not silently dropped.
 | Area                     | Absent headers                                                                                                                                                     |
 |--------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Text/encoding            | `<regex>`; `<text_encoding>` is not C++23 and is therefore out of scope                                                                                            |
-| I/O/formatting/files     | `<cstdio>`, `<fstream>`, `<iomanip>`, `<iostream>`, `<ostream>`, `<sstream>`, `<spanstream>`, `<strstream>`, `<syncstream>`, `<filesystem>`                      |
+| I/O/formatting/files     | `<cstdio>`, `<fstream>`, `<iomanip>`, `<iostream>`, `<sstream>`, `<spanstream>`, `<strstream>`, `<syncstream>`, `<filesystem>`                                    |
 
 Freestanding C compatibility also requires deciding and documenting how the
 corresponding `.h` spellings are supplied. That is part of the relevant
@@ -499,10 +500,9 @@ skip/depth behavior, and provide the specified container, comparison, string,
 PMR, and hash interfaces. Native symbol/source lookup is allowed to report no
 information and currently does so.
 
-The `<stacktrace>` formatter specializations can proceed now that Stage 7.2 has
-completed `<format>`; stream insertion still depends on the `<ostream>`
-closure. Those interfaces and the `__cpp_lib_stacktrace` advertisement remain
-outstanding; the runtime surface does not import vendor C++ library APIs.
+Stage 7.3 completes the `<stacktrace>` formatter specializations, narrow stream
+insertion, and feature-test advertisement. The runtime surface does not import
+vendor C++ library APIs.
 
 Stage 5.3 starts with the freestanding, header-only C++23 `<numbers>` surface.
 The remaining closure will be taken in dependency order:
@@ -532,16 +532,15 @@ every supported floating-point format.
 The N4950 audit covers the complete `<numbers>` and `<cfenv>` synopses,
 `<cmath>` including arithmetic promotions, C++23 `constexpr` functions, and all
 21 special-function families, and `<complex>` including conversion-rank and
-mixed-arithmetic rules. The two `<complex>` stream operators remain staged with
-Stage 7's stream closure so this freestanding header does not import an
-incomplete I/O dependency.
+mixed-arithmetic rules. Stage 7.3 supplies the two specified `<complex>` stream
+operators over the completed stream substrate.
 
 Stage 5.4 provides the complete N4950 computational `<random>` and `<valarray>`
 surfaces. Random engines match all nine mandated 10,000th values; distributions
 have range, state, and statistical checks; and `valarray` covers owning arrays,
 all four selector proxies, arithmetic, transcendental operations, and range
-access. Random engine, adaptor, and distribution stream operators remain staged
-with Stage 7's `<ostream>` closure, matching the existing `<complex>` boundary.
+access. Stage 7.3 supplies the random engine, adaptor, and distribution stream
+operators, including complete engine and cached-distribution state round trips.
 `random_device` uses native nondeterministic entropy on supported hosts:
 `RtlGenRandom` on Windows, `getrandom` on x86-64 Linux, and `arc4random_buf` on
 macOS. Only unknown freestanding targets retain the deterministic zero-entropy
@@ -554,9 +553,8 @@ fallback.
 Take these closures in order:
 
 1. `<atomic>` + `<stdatomic.h>` — **complete**
-2. `<stop_token>` + `<thread>` — **runtime closure complete**;
-   `<stop_token>` complete, with `<thread>` stream insertion and formatting
-   deferred to Stage 7
+2. `<stop_token>` + `<thread>` — **complete**; Stage 7.3 supplies the deferred
+   `thread::id` stream insertion and formatting surfaces
 3. `<mutex>` + `<shared_mutex>` + `<condition_variable>` — **complete**
 4. `<semaphore>` + `<latch>` + `<barrier>` — **complete**
 5. `<future>` — **complete**
@@ -582,9 +580,8 @@ compiler limitation rather than introducing a type-specific padding model.
 Stage 6.2 provides the native runtime surface for `<stop_token>` and `<thread>`,
 including stop states and callbacks, `thread`, `jthread`, thread IDs, hashing,
 hardware-concurrency queries, yielding, sleeping, joining, detaching, and
-stop-token integration. `<stop_token>` is complete. `<thread>` remains seeded
-only because the C++23 `thread::id` stream insertion and formatter interfaces
-depend on the Stage 7 stream and formatting closures.
+stop-token integration. Stage 7.3 completes the remaining C++23 `thread::id`
+stream insertion and formatter interfaces.
 
 The current CMake integration has one known feature-gating limitation on UNIX:
 the `ftl` interface target links `Threads::Threads` unconditionally, even when
@@ -679,8 +676,7 @@ completed facility does not introduce one.
 **Exit:** all Stage 6 concurrency runtime closures are complete and pass the
 supported compiler/platform matrix in normal and replacement modes. The
 `thread::id` formatter can proceed after the completed Stage 7.2 formatting
-closure; stream insertion remains deferred until `<ostream>` exists. Neither is
-missing concurrency runtime functionality.
+closure, and Stage 7.3 supplies both its formatter and stream insertion.
 
 ### Stage 7 — Localization, formatting, and I/O
 
@@ -688,19 +684,19 @@ missing concurrency runtime functionality.
 
 Take these closures in order:
 
-1. Locale core — `<clocale>` and deprecated `<codecvt>` complete; `<locale>`
+1. **Complete:** Locale core — `<clocale>` and deprecated `<codecvt>`;
+   `<locale>`
    provides the dependency-independent representation, category vocabulary,
    `ctype`, `collate`, `numpunct`, `moneypunct`, `messages`, `codecvt`,
    required byname facets, `time_base`, and classic/global facet machinery.
-   `<locale>` remains seeded because its stream-dependent facet families and
-   named/category constructors cannot be completed until the stream substrate
-   exists.
+   Stage 7.3 adds its stream-dependent facet families, named/category
+   constructors, and complete mandatory facet table.
 2. **Complete:** `<format>` + `<print>`, including the C++23 chrono formatter
-   specializations. Formatter specializations owned by `<thread>` and
-   `<stacktrace>` remain in those seeded closures; their stream insertion
-   operators, along with chrono stream insertion and `from_stream`, await the
-   `<ostream>`/`<istream>` substrate in step 3.
-3. `<iosfwd>` + `<ios>` + `<streambuf>` + `<istream>` + `<ostream>`, followed
+   specializations. Stage 7.3 completes the formatter and stream-insertion
+   surfaces owned by `<thread>` and `<stacktrace>`; chrono stream insertion and
+   `from_stream` remain in step 4.
+3. **Complete:** `<iosfwd>` + `<ios>` + `<streambuf>` + `<istream>` +
+   `<ostream>`, followed
    immediately by the final `<locale>` closure: `num_get`/`num_put`,
    `money_get`/`money_put`, `time_get`/`time_put` and their required
    specializations/byname forms, named/category locale construction, and the

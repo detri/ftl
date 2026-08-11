@@ -1,8 +1,10 @@
 #ifdef FTL_REPLACE_STL
+#include <istream>
 #include <ranges>
 #include <type_traits>
 namespace tested = std;
 #else
+#include <ftl/istream>
 #include <ftl/ranges>
 #include <ftl/type_traits>
 namespace tested = ftl;

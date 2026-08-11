@@ -5,12 +5,14 @@
 
 #ifdef FTL_REPLACE_STL
 #include <cmath>
+#include <iosfwd>
 #include <type_traits>
 #include <detail/complex_runtime>
 #define FTL_COMPLEX_BEGIN namespace std {
 #define FTL_COMPLEX_END }
 #else
 #include <ftl/cmath>
+#include <ftl/iosfwd>
 #include <ftl/type_traits>
 #include <ftl/detail/complex_runtime>
 #define FTL_COMPLEX_BEGIN namespace ftl {
@@ -361,7 +363,59 @@ inline complex<long double> log10(const complex<long double> &value) {
   return log(value) / log(10.0L);
 }
 
-namespace literals::complex_literals {
+template <class Character, class Traits, class Value>
+basic_istream<Character, Traits> &operator>>(basic_istream<Character, Traits> &input,
+                                             complex<Value> &value) {
+  Value real{}, imaginary{};
+  Character character{};
+  if (!(input >> character)) return input;
+  if (character != input.widen('(')) {
+    input.putback(character);
+    if (input >> real) value = complex<Value>(real, Value{});
+    return input;
+  }
+  if (!(input >> real >> character)) return input;
+  if (character == input.widen(')')) {
+    value = complex<Value>(real, Value{});
+    return input;
+  }
+  if (character != input.widen(',')) {
+    input.setstate(input.failbit);
+    return input;
+  }
+  if (input >> imaginary >> character && character == input.widen(')'))
+    value = complex<Value>(real, imaginary);
+  else
+    input.setstate(input.failbit);
+  return input;
+}
+
+template <class Character, class Traits, class Value>
+basic_ostream<Character, Traits> &operator<<(basic_ostream<Character, Traits> &output,
+                                             const complex<Value> &value) {
+  class buffer_type : public basic_streambuf<Character, Traits> {
+  public:
+    basic_string<Character, Traits, allocator<Character>> value;
+  protected:
+    typename Traits::int_type overflow(typename Traits::int_type character) override {
+      if (Traits::eq_int_type(character, Traits::eof())) return Traits::not_eof(character);
+      value.push_back(Traits::to_char_type(character)); return character;
+    }
+    streamsize xsputn(const Character *source, streamsize count) override {
+      value.append(source, static_cast<size_t>(count)); return count;
+    }
+  } buffer;
+  basic_ostream<Character, Traits> temporary(&buffer);
+  temporary.flags(output.flags());
+  temporary.imbue(output.getloc());
+  temporary.precision(output.precision());
+  temporary << output.widen('(') << value.real() << output.widen(',')
+            << value.imag() << output.widen(')');
+  return output << buffer.value;
+}
+
+inline namespace literals {
+inline namespace complex_literals {
 constexpr complex<double> operator""i(long double value) {
   return {0.0, static_cast<double>(value)};
 }
@@ -380,10 +434,8 @@ constexpr complex<long double> operator""il(long double value) {
 constexpr complex<long double> operator""il(unsigned long long value) {
   return {0.0L, static_cast<long double>(value)};
 }
-} // namespace literals::complex_literals
-
-namespace complex_literals = literals::complex_literals;
-namespace literals { using namespace complex_literals; }
+} // namespace complex_literals
+} // namespace literals
 
 FTL_COMPLEX_END
 

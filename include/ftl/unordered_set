@@ -28,8 +28,8 @@
 #include <ftl/__associative/unordered.hpp>
 #endif
 #if defined(_MSC_VER)
-#ifndef FTL_ASSOCIATIVE_FLTUSED_DEFINED
-#define FTL_ASSOCIATIVE_FLTUSED_DEFINED
+#ifndef FTL_MSVC_FLTUSED_DEFINED
+#define FTL_MSVC_FLTUSED_DEFINED
 extern "C" __declspec(selectany) int _fltused = 1;
 #endif
 #endif

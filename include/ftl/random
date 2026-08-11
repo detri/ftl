@@ -10,7 +10,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <istream>
 #include <limits>
+#include <ostream>
 #include <string>
 #include <stdexcept>
 #include <type_traits>
@@ -23,7 +25,9 @@
 #include <ftl/cstddef>
 #include <ftl/cstdint>
 #include <ftl/initializer_list>
+#include <ftl/istream>
 #include <ftl/limits>
+#include <ftl/ostream>
 #include <ftl/string>
 #include <ftl/stdexcept>
 #include <ftl/type_traits>
@@ -46,6 +50,8 @@ concept uniform_random_bit_generator =
     };
 
 namespace detail {
+
+struct random_stream_access;
 
 #if defined(_WIN32)
 extern "C" unsigned char __stdcall SystemFunction036(void *, unsigned long);
@@ -260,6 +266,7 @@ public:
                          const linear_congruential_engine &) = default;
 
 private:
+  friend struct detail::random_stream_access;
   result_type state_;
 };
 
@@ -354,6 +361,7 @@ public:
   }
 
 private:
+  friend struct detail::random_stream_access;
   result_type state_[n]{};
   size_t index_ = 0;
 };
@@ -439,6 +447,7 @@ public:
   }
 
 private:
+  friend struct detail::random_stream_access;
   result_type state_[r]{};
   size_t index_ = 0;
   unsigned int carry_ = 0;
@@ -499,6 +508,7 @@ public:
   }
 
 private:
+  friend struct detail::random_stream_access;
   Engine engine_{};
   size_t used_ = 0;
 };
@@ -604,6 +614,7 @@ public:
                          const independent_bits_engine &) = default;
 
 private:
+  friend struct detail::random_stream_access;
   Engine engine_{};
 };
 
@@ -666,6 +677,7 @@ public:
   }
 
 private:
+  friend struct detail::random_stream_access;
   void initialize() {
     for (size_t i = 0; i < k; ++i)
       table_[i] = engine_();
@@ -1086,6 +1098,7 @@ public:
            (!left.saved_ || left.saved_value_ == right.saved_value_);
   }
 private:
+  friend struct detail::random_stream_access;
   param_type parameters_;
   result_type saved_value_{};
   bool saved_ = false;
@@ -1190,6 +1203,7 @@ public:
     return left.parameters_ == right.parameters_ && left.normal_ == right.normal_;
   }
 private:
+  friend struct detail::random_stream_access;
   param_type parameters_;
   normal_distribution<result_type> normal_{};
 };
@@ -1567,6 +1581,7 @@ public:
     return left.parameters_ == right.parameters_ && left.normal_ == right.normal_;
   }
 private:
+  friend struct detail::random_stream_access;
   param_type parameters_;
   normal_distribution<result_type> normal_{};
 };
@@ -1602,6 +1617,7 @@ public:
     friend bool operator==(const param_type &, const param_type &) = default;
   private:
     friend class discrete_distribution;
+    friend struct detail::random_stream_access;
     void normalize() {
       if (probabilities_.empty()) {
         probabilities_.push_back(1.0);
@@ -1646,6 +1662,7 @@ public:
   friend bool operator==(const discrete_distribution &,
                          const discrete_distribution &) = default;
 private:
+  friend struct detail::random_stream_access;
   param_type parameters_;
 };
 
@@ -1705,6 +1722,7 @@ public:
     friend bool operator==(const param_type &, const param_type &) = default;
   private:
     friend class piecewise_constant_distribution;
+    friend struct detail::random_stream_access;
     void initialize(const vector<result_type> &weights) {
       result_type sum = 0;
       for (result_type weight : weights)
@@ -1755,6 +1773,7 @@ public:
   friend bool operator==(const piecewise_constant_distribution &,
                          const piecewise_constant_distribution &) = default;
 private:
+  friend struct detail::random_stream_access;
   param_type parameters_;
 };
 
@@ -1810,6 +1829,7 @@ public:
     friend bool operator==(const param_type &, const param_type &) = default;
   private:
     friend class piecewise_linear_distribution;
+    friend struct detail::random_stream_access;
     void set_default() {
       intervals_ = vector<result_type>{result_type{0}, result_type{1}};
       densities_ = vector<result_type>{result_type{1}, result_type{1}};
@@ -1874,8 +1894,314 @@ public:
   friend bool operator==(const piecewise_linear_distribution &,
                          const piecewise_linear_distribution &) = default;
 private:
+  friend struct detail::random_stream_access;
   param_type parameters_;
 };
+
+namespace detail {
+
+template <class Stream> class random_output_guard {
+public:
+  explicit random_output_guard(Stream &stream)
+      : stream_(stream), flags_(stream.flags()), fill_(stream.fill()),
+        precision_(stream.precision()) {
+    stream_.setf(ios_base::dec, ios_base::basefield);
+    stream_.setf(ios_base::left, ios_base::adjustfield);
+    stream_.fill(stream_.widen(' '));
+    stream_.precision(numeric_limits<long double>::max_digits10);
+  }
+  ~random_output_guard() {
+    stream_.flags(flags_); stream_.fill(fill_); stream_.precision(precision_);
+  }
+private:
+  Stream &stream_;
+  ios_base::fmtflags flags_;
+  typename Stream::char_type fill_;
+  streamsize precision_;
+};
+
+template <class Stream> class random_input_guard {
+public:
+  explicit random_input_guard(Stream &stream)
+      : stream_(stream), flags_(stream.flags()) {
+    stream_.setf(ios_base::dec, ios_base::basefield);
+  }
+  ~random_input_guard() { stream_.flags(flags_); }
+private:
+  Stream &stream_;
+  ios_base::fmtflags flags_;
+};
+
+struct random_stream_access {
+  template <class O, class U, U a, U c, U m>
+  static void write(O &o, const linear_congruential_engine<U, a, c, m> &x) {
+    o << x.state_;
+  }
+  template <class I, class U, U a, U c, U m>
+  static void read(I &i, linear_congruential_engine<U, a, c, m> &x) {
+    U state{}; i >> state;
+    if (i && state >= linear_congruential_engine<U, a, c, m>::min() &&
+        state <= linear_congruential_engine<U, a, c, m>::max()) x.state_ = state;
+    else i.setstate(ios_base::failbit);
+  }
+
+  template <class O, class U, size_t w, size_t n, size_t m, size_t r, U a,
+            size_t u, U d, size_t s, U b, size_t t, U c, size_t l, U f>
+  static void write(O &o, const mersenne_twister_engine<U, w, n, m, r, a, u,
+                    d, s, b, t, c, l, f> &x) {
+    for (size_t index = 0; index < n; ++index) {
+      if (index) o << o.widen(' ');
+      o << x.state_[(x.index_ + index) % n];
+    }
+  }
+  template <class I, class U, size_t w, size_t n, size_t m, size_t r, U a,
+            size_t u, U d, size_t s, U b, size_t t, U c, size_t l, U f>
+  static void read(I &i, mersenne_twister_engine<U, w, n, m, r, a, u,
+                   d, s, b, t, c, l, f> &x) {
+    U state[n]{};
+    for (size_t index = 0; index < n; ++index) i >> state[index];
+    if (!i) return;
+    for (size_t index = 0; index < n; ++index)
+      if (state[index] > mersenne_twister_engine<U, w, n, m, r, a, u, d, s,
+                                               b, t, c, l, f>::max()) {
+        i.setstate(ios_base::failbit); return;
+      }
+    for (size_t index = 0; index < n; ++index) x.state_[index] = state[index];
+    x.index_ = 0;
+  }
+
+  template <class O, class U, size_t w, size_t s, size_t r>
+  static void write(O &o, const subtract_with_carry_engine<U, w, s, r> &x) {
+    for (size_t index = 0; index < r; ++index) {
+      if (index) o << o.widen(' ');
+      o << x.state_[(x.index_ + index) % r];
+    }
+    o << o.widen(' ') << x.carry_;
+  }
+  template <class I, class U, size_t w, size_t s, size_t r>
+  static void read(I &i, subtract_with_carry_engine<U, w, s, r> &x) {
+    U state[r]{}; unsigned int carry{};
+    for (size_t index = 0; index < r; ++index) i >> state[index];
+    i >> carry;
+    if (!i || carry > 1) { i.setstate(ios_base::failbit); return; }
+    for (size_t index = 0; index < r; ++index)
+      if (state[index] > subtract_with_carry_engine<U, w, s, r>::max()) {
+        i.setstate(ios_base::failbit); return;
+      }
+    for (size_t index = 0; index < r; ++index) x.state_[index] = state[index];
+    x.index_ = 0; x.carry_ = carry;
+  }
+
+  template <class O, class E, size_t p, size_t r>
+  static void write(O &o, const discard_block_engine<E, p, r> &x) {
+    o << x.engine_ << o.widen(' ') << x.used_;
+  }
+  template <class I, class E, size_t p, size_t r>
+  static void read(I &i, discard_block_engine<E, p, r> &x) {
+    E engine; size_t used{}; i >> engine >> used;
+    if (!i || used > r) { i.setstate(ios_base::failbit); return; }
+    x.engine_ = engine; x.used_ = used;
+  }
+
+  template <class O, class E, size_t w, class U>
+  static void write(O &o, const independent_bits_engine<E, w, U> &x) { o << x.engine_; }
+  template <class I, class E, size_t w, class U>
+  static void read(I &i, independent_bits_engine<E, w, U> &x) {
+    E engine; i >> engine; if (i) x.engine_ = engine;
+  }
+
+  template <class O, class E, size_t k>
+  static void write(O &o, const shuffle_order_engine<E, k> &x) {
+    o << x.engine_;
+    for (size_t index = 0; index < k; ++index) o << o.widen(' ') << x.table_[index];
+    o << o.widen(' ') << x.value_;
+  }
+  template <class I, class E, size_t k>
+  static void read(I &i, shuffle_order_engine<E, k> &x) {
+    E engine; typename E::result_type table[k]{}, value{}; i >> engine;
+    for (size_t index = 0; index < k; ++index) i >> table[index];
+    i >> value; if (!i) return;
+    x.engine_ = engine;
+    for (size_t index = 0; index < k; ++index) x.table_[index] = table[index];
+    x.value_ = value;
+  }
+
+#define FTL_RANDOM_IO_ONE(Type, Getter)                                      \
+  template <class O, class T> static void write(O &o, const Type<T> &x) {    \
+    o << x.Getter();                                                         \
+  }                                                                          \
+  template <class I, class T> static void read(I &i, Type<T> &x) {           \
+    T value{}; i >> value; if (i) x = Type<T>(value);                        \
+  }
+
+#define FTL_RANDOM_IO_TWO(Type, First, Second)                               \
+  template <class O, class T> static void write(O &o, const Type<T> &x) {    \
+    o << x.First() << o.widen(' ') << x.Second();                            \
+  }                                                                          \
+  template <class I, class T> static void read(I &i, Type<T> &x) {           \
+    T first{}, second{}; i >> first >> second;                               \
+    if (i) x = Type<T>(first, second);                                       \
+  }
+
+  FTL_RANDOM_IO_TWO(uniform_int_distribution, a, b)
+  FTL_RANDOM_IO_TWO(uniform_real_distribution, a, b)
+  FTL_RANDOM_IO_ONE(exponential_distribution, lambda)
+  FTL_RANDOM_IO_TWO(gamma_distribution, alpha, beta)
+  FTL_RANDOM_IO_TWO(weibull_distribution, a, b)
+  FTL_RANDOM_IO_TWO(extreme_value_distribution, a, b)
+  FTL_RANDOM_IO_TWO(cauchy_distribution, a, b)
+  FTL_RANDOM_IO_ONE(chi_squared_distribution, n)
+  FTL_RANDOM_IO_TWO(fisher_f_distribution, m, n)
+
+#undef FTL_RANDOM_IO_TWO
+#undef FTL_RANDOM_IO_ONE
+
+  template <class O> static void write(O &o, const bernoulli_distribution &x) {
+    o << x.p();
+  }
+  template <class I> static void read(I &i, bernoulli_distribution &x) {
+    double value{}; i >> value; if (i) x = bernoulli_distribution(value);
+  }
+
+  template <class O, class T> static void write(O &o, const binomial_distribution<T> &x) {
+    o << x.t() << o.widen(' ') << x.p();
+  }
+  template <class I, class T> static void read(I &i, binomial_distribution<T> &x) {
+    T trials{}; double probability{}; i >> trials >> probability;
+    if (i) x = binomial_distribution<T>(trials, probability);
+  }
+  template <class O, class T>
+  static void write(O &o, const negative_binomial_distribution<T> &x) {
+    o << x.k() << o.widen(' ') << x.p();
+  }
+  template <class I, class T>
+  static void read(I &i, negative_binomial_distribution<T> &x) {
+    T successes{}; double probability{}; i >> successes >> probability;
+    if (i) x = negative_binomial_distribution<T>(successes, probability);
+  }
+  template <class O, class T> static void write(O &o, const geometric_distribution<T> &x) {
+    o << x.p();
+  }
+  template <class I, class T> static void read(I &i, geometric_distribution<T> &x) {
+    double probability{}; i >> probability;
+    if (i) x = geometric_distribution<T>(probability);
+  }
+  template <class O, class T> static void write(O &o, const poisson_distribution<T> &x) {
+    o << x.mean();
+  }
+  template <class I, class T> static void read(I &i, poisson_distribution<T> &x) {
+    double mean{}; i >> mean; if (i) x = poisson_distribution<T>(mean);
+  }
+
+  template <class O, class T> static void write(O &o, const normal_distribution<T> &x) {
+    o << x.mean() << o.widen(' ') << x.stddev() << o.widen(' ')
+      << static_cast<unsigned int>(x.saved_);
+    if (x.saved_) o << o.widen(' ') << x.saved_value_;
+  }
+  template <class I, class T> static void read(I &i, normal_distribution<T> &x) {
+    T mean{}, deviation{}, saved_value{}; unsigned int saved{};
+    i >> mean >> deviation >> saved;
+    if (saved) i >> saved_value;
+    if (i) {
+      x.parameters_ = typename normal_distribution<T>::param_type(mean, deviation);
+      if (saved > 1) { i.setstate(ios_base::failbit); return; }
+      x.saved_ = saved != 0; x.saved_value_ = saved_value;
+    }
+  }
+
+  template <class O, class T> static void write(O &o, const lognormal_distribution<T> &x) {
+    o << x.m() << o.widen(' ') << x.s() << o.widen(' ') << x.normal_;
+  }
+  template <class I, class T> static void read(I &i, lognormal_distribution<T> &x) {
+    T mean{}, deviation{}; normal_distribution<T> normal;
+    i >> mean >> deviation >> normal;
+    if (i) {
+      x.parameters_ = typename lognormal_distribution<T>::param_type(mean, deviation);
+      x.normal_ = normal;
+    }
+  }
+
+  template <class O, class T> static void write(O &o, const student_t_distribution<T> &x) {
+    o << x.n() << o.widen(' ') << x.normal_;
+  }
+  template <class I, class T> static void read(I &i, student_t_distribution<T> &x) {
+    T degrees{}; normal_distribution<T> normal; i >> degrees >> normal;
+    if (i) {
+      x.parameters_ = typename student_t_distribution<T>::param_type(degrees);
+      x.normal_ = normal;
+    }
+  }
+
+  template <class O, class T> static void write(O &o, const discrete_distribution<T> &x) {
+    o << x.parameters_.probabilities_.size();
+    for (double value : x.parameters_.probabilities_) o << o.widen(' ') << value;
+  }
+  template <class I, class T> static void read(I &i, discrete_distribution<T> &x) {
+    size_t count{}; i >> count; vector<double> values(count);
+    for (size_t index = 0; index < count; ++index) i >> values[index];
+    if (!i || count == 0) { i.setstate(ios_base::failbit); return; }
+    x.parameters_.probabilities_ = static_cast<vector<double> &&>(values);
+  }
+
+  template <class O, class T>
+  static void write(O &o, const piecewise_constant_distribution<T> &x) {
+    o << x.parameters_.intervals_.size();
+    for (T value : x.parameters_.intervals_) o << o.widen(' ') << value;
+    for (T value : x.parameters_.densities_) o << o.widen(' ') << value;
+  }
+  template <class I, class T>
+  static void read(I &i, piecewise_constant_distribution<T> &x) {
+    size_t count{}; i >> count;
+    vector<T> intervals(count), densities(count > 0 ? count - 1 : 0);
+    for (T &value : intervals) i >> value;
+    for (T &value : densities) i >> value;
+    if (!i || count < 2) { i.setstate(ios_base::failbit); return; }
+    x.parameters_.intervals_ = static_cast<vector<T> &&>(intervals);
+    x.parameters_.densities_ = static_cast<vector<T> &&>(densities);
+  }
+
+  template <class O, class T>
+  static void write(O &o, const piecewise_linear_distribution<T> &x) {
+    o << x.parameters_.intervals_.size();
+    for (T value : x.parameters_.intervals_) o << o.widen(' ') << value;
+    for (T value : x.parameters_.densities_) o << o.widen(' ') << value;
+  }
+  template <class I, class T>
+  static void read(I &i, piecewise_linear_distribution<T> &x) {
+    size_t count{}; i >> count; vector<T> intervals(count), densities(count);
+    for (T &value : intervals) i >> value;
+    for (T &value : densities) i >> value;
+    if (!i || count < 2) { i.setstate(ios_base::failbit); return; }
+    x.parameters_.intervals_ = static_cast<vector<T> &&>(intervals);
+    x.parameters_.densities_ = static_cast<vector<T> &&>(densities);
+  }
+};
+
+} // namespace detail
+
+template <class Character, class Traits, class Random>
+  requires requires(basic_ostream<Character, Traits> &stream, const Random &value) {
+    detail::random_stream_access::write(stream, value);
+  }
+basic_ostream<Character, Traits> &operator<<(basic_ostream<Character, Traits> &stream,
+                                             const Random &value) {
+  detail::random_output_guard guard(stream);
+  detail::random_stream_access::write(stream, value);
+  return stream;
+}
+
+template <class Character, class Traits, class Random>
+  requires requires(basic_istream<Character, Traits> &stream, Random &value) {
+    detail::random_stream_access::read(stream, value);
+  }
+basic_istream<Character, Traits> &operator>>(basic_istream<Character, Traits> &stream,
+                                             Random &value) {
+  detail::random_input_guard guard(stream);
+  Random candidate(value);
+  detail::random_stream_access::read(stream, candidate);
+  if (stream) value = candidate;
+  return stream;
+}
 
 FTL_END_NAMESPACE
 #endif

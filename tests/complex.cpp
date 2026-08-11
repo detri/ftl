@@ -1,9 +1,13 @@
 #ifdef FTL_REPLACE_STL
 #include <complex>
+#include <istream>
+#include <ostream>
 #include <type_traits>
 namespace tested = std;
 #else
 #include <ftl/complex>
+#include <ftl/istream>
+#include <ftl/ostream>
 #include <ftl/type_traits>
 namespace tested = ftl;
 #endif
@@ -41,6 +45,48 @@ static_assert(tested::is_same_v<decltype(tested::pow(complex<float>{}, 2.0)),
 static_assert(tested::is_same_v<decltype(tested::pow(complex<float>{},
                                                      complex<long double>{})),
                                 complex<long double>>);
+
+class complex_input_buffer : public tested::streambuf {
+public:
+  complex_input_buffer(char *first, char *last) { setg(first, first, last); }
+};
+
+class complex_output_buffer : public tested::streambuf {
+public:
+  tested::string text;
+protected:
+  int_type overflow(int_type value) override {
+    if (traits_type::eq_int_type(value, traits_type::eof()))
+      return traits_type::not_eof(value);
+    text.push_back(traits_type::to_char_type(value));
+    return value;
+  }
+  tested::streamsize xsputn(const char *source,
+                            tested::streamsize count) override {
+    text.append(source, static_cast<tested::size_t>(count));
+    return count;
+  }
+};
+
+bool stream_round_trip_works() {
+  complex_output_buffer output;
+  tested::ostream destination(&output);
+  destination << complex<double>{3.5, -2.25};
+  if (output.text != "(3.5,-2.25)")
+    return false;
+  complex_input_buffer input(output.text.data(),
+                             output.text.data() + output.text.size());
+  tested::istream source(&input);
+  complex<double> value;
+  source >> value;
+  if (value != complex<double>{3.5, -2.25})
+    return false;
+  char scalar_text[] = {'4', '.', '5'};
+  complex_input_buffer scalar_buffer(scalar_text, scalar_text + 3);
+  tested::istream scalar_stream(&scalar_buffer);
+  scalar_stream >> value;
+  return value == complex<double>{4.5, 0.0};
+}
 
 bool ftl_test() {
   const complex<double> value{3.0, 4.0};
@@ -88,5 +134,5 @@ bool ftl_test() {
          !tested::signbit(infinite_numerator.real()) &&
          tested::signbit(infinite_numerator.imag()) &&
          tested::isnan(nan_quotient.real()) &&
-         tested::isnan(nan_quotient.imag());
+         tested::isnan(nan_quotient.imag()) && stream_round_trip_works();
 }

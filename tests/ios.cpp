@@ -49,6 +49,12 @@ static_assert(
 
 static_assert(tested::is_same_v<tested::ios, tested::basic_ios<char>>);
 
+int callback_events[3]{};
+
+void observe_callback(tested::ios_base::event event, tested::ios_base &, int) {
+  ++callback_events[static_cast<int>(event)];
+}
+
 bool initial_state_works() {
   char characters[] = {'a', 'b', 'c'};
 
@@ -155,8 +161,55 @@ bool protected_initialization_works() {
          stream.rdstate() == tested::ios_base::eofbit;
 }
 
+bool formatting_state_works() {
+  char character = 'x';
+  fixed_streambuf buffer{&character, &character + 1};
+  tested_ios stream{&buffer};
+  if (stream.flags() != (tested::ios_base::skipws | tested::ios_base::dec) ||
+      stream.precision() != 6 || stream.width() != 0 || stream.fill() != ' ')
+    return false;
+  stream.setf(tested::ios_base::hex, tested::ios_base::basefield);
+  stream.setf(tested::ios_base::showbase);
+  stream.precision(9);
+  stream.width(12);
+  stream.fill('_');
+  return (stream.flags() & tested::ios_base::basefield) == tested::ios_base::hex &&
+         (stream.flags() & tested::ios_base::showbase) != 0 &&
+         stream.precision() == 9 && stream.width() == 12 && stream.fill() == '_';
+}
+
+bool extensible_storage_and_callbacks_work() {
+  char character = 'x';
+  fixed_streambuf buffer{&character, &character + 1};
+  tested_ios first{&buffer};
+  tested_ios second{&buffer};
+  int integer_index = tested::ios_base::xalloc();
+  int pointer_index = tested::ios_base::xalloc();
+  int marker = 0;
+  first.iword(integer_index) = 42;
+  first.pword(pointer_index) = &marker;
+  first.register_callback(observe_callback, 7);
+  second.register_callback(observe_callback, 8);
+  second.copyfmt(first);
+  return second.iword(integer_index) == 42 &&
+         second.pword(pointer_index) == &marker &&
+         callback_events[static_cast<int>(tested::ios_base::erase_event)] >= 1 &&
+         callback_events[static_cast<int>(tested::ios_base::copyfmt_event)] >= 1;
+}
+
+bool positioning_and_error_code_work() {
+  tested::streampos position(7);
+  position += 3;
+  tested::error_code code = tested::make_error_code(tested::io_errc::stream);
+  return static_cast<tested::streamoff>(position) == 10 &&
+         (position - tested::streampos(4)) == 6 && code.value() == 1 &&
+         &code.category() == &tested::iostream_category();
+}
+
 bool ftl_test() {
   return initial_state_works() && state_flags_work() &&
          null_buffer_state_works() && buffer_replacement_works() &&
-         protected_initialization_works();
+         protected_initialization_works() && formatting_state_works() &&
+         extensible_storage_and_callbacks_work() &&
+         positioning_and_error_code_work();
 }

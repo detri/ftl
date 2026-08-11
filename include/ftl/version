@@ -3,6 +3,21 @@
 #ifndef FTL_VERSION_HEADER
 #define FTL_VERSION_HEADER
 
+#if !defined(__cpp_lib_ios_noreplace) || __cpp_lib_ios_noreplace < 202207L
+#undef __cpp_lib_ios_noreplace
+#define __cpp_lib_ios_noreplace 202207L
+#endif
+
+#if !defined(__cpp_lib_stacktrace) || __cpp_lib_stacktrace < 202011L
+#undef __cpp_lib_stacktrace
+#define __cpp_lib_stacktrace 202011L
+#endif
+
+#if !defined(__cpp_lib_formatters) || __cpp_lib_formatters < 202302L
+#undef __cpp_lib_formatters
+#define __cpp_lib_formatters 202302L
+#endif
+
 #if !defined(__cpp_lib_math_constants) || __cpp_lib_math_constants < 201907L
 #undef __cpp_lib_math_constants
 #define __cpp_lib_math_constants 201907L

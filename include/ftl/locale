@@ -3,33 +3,50 @@
 #ifndef FTL_LOCALE_HEADER
 #define FTL_LOCALE_HEADER
 
+extern "C" int snprintf(char *, decltype(sizeof(0)), const char *, ...);
+
 #ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <clocale>
+#include <climits>
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cwchar>
 #include <cwctype>
+#include <ctime>
 #include <detail/locale_runtime.hpp>
 #include <detail/rapidhash>
 #include <memory>
+#include <limits>
 #include <mutex>
+#include <iosfwd>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <typeinfo>
 #include <vector>
+
 #else
 #include <ftl/atomic>
 #include <ftl/clocale>
+#include <ftl/climits>
+#include <ftl/cerrno>
 #include <ftl/cstddef>
 #include <ftl/cstdint>
+#include <ftl/cstdlib>
 #include <ftl/cwchar>
 #include <ftl/cwctype>
+#include <ftl/ctime>
 #include <ftl/detail/locale_runtime.hpp>
 #include <ftl/detail/rapidhash>
 #include <ftl/memory>
+#include <ftl/limits>
 #include <ftl/mutex>
+#include <ftl/iosfwd>
+#include <ftl/iterator>
 #include <ftl/stdexcept>
 #include <ftl/string>
 #include <ftl/type_traits>
@@ -55,6 +72,19 @@ namespace detail {
 struct locale_facet_control;
 struct locale_facet_slot;
 struct locale_state;
+int locale_stream_base(const ios_base &) noexcept;
+bool locale_stream_boolalpha(const ios_base &) noexcept;
+bool locale_stream_showbase(const ios_base &) noexcept;
+bool locale_stream_showpoint(const ios_base &) noexcept;
+bool locale_stream_showpos(const ios_base &) noexcept;
+bool locale_stream_uppercase(const ios_base &) noexcept;
+int locale_stream_float_mode(const ios_base &) noexcept;
+int locale_stream_adjust(const ios_base &) noexcept;
+streamsize locale_stream_precision(const ios_base &) noexcept;
+streamsize locale_stream_take_width(ios_base &) noexcept;
+locale locale_stream_locale(ios_base &);
+unsigned int locale_stream_failbit() noexcept;
+unsigned int locale_stream_eofbit() noexcept;
 } // namespace detail
 
 class locale {
@@ -76,6 +106,11 @@ public:
 
   locale() noexcept;
   locale(const locale &other) noexcept;
+  explicit locale(const char *name);
+  explicit locale(const string &name);
+  locale(const locale &other, const char *name, category selected);
+  locale(const locale &other, const string &name, category selected);
+  locale(const locale &other, const locale &one, category selected);
 
   template <class Facet> locale(const locale &other, Facet *value);
 
@@ -628,10 +663,10 @@ namespace detail {
 
 [[noreturn]]
 inline void locale_named_ctype_failure() {
-#if defined(FTL_NO_EXCEPTIONS)
-  terminate();
-#else
+#if FTL_HAS_EXCEPTIONS
   throw runtime_error("ctype_byname");
+#else
+  terminate();
 #endif
 }
 
@@ -1016,10 +1051,10 @@ namespace detail {
 
 [[noreturn]]
 inline void locale_named_collate_failure() {
-#if defined(FTL_NO_EXCEPTIONS)
-  terminate();
-#else
+#if FTL_HAS_EXCEPTIONS
   throw runtime_error("collate_byname");
+#else
+  terminate();
 #endif
 }
 
@@ -2629,6 +2664,442 @@ private:
   detail::locale_named_numpunct_context *context_;
 };
 
+namespace detail {
+struct locale_named_time_context {
+  string name;
+  ftl_locale_runtime::native_handle native;
+  explicit locale_named_time_context(const char *value)
+      : name(value ? value : ""), native(ftl_locale_runtime::create_numeric(value)) {
+    if (!native) locale_named_numpunct_failure();
+  }
+  locale_named_time_context(const locale_named_time_context &) = delete;
+  locale_named_time_context &operator=(const locale_named_time_context &) = delete;
+  ~locale_named_time_context() { ftl_locale_runtime::destroy(native); }
+};
+
+#if defined(_WIN32)
+class locale_windows_time_scope {
+public:
+  explicit locale_windows_time_scope(const char *name)
+      : previous_mode_(ftl_locale_runtime::_configthreadlocale(1)) {
+    const char *current = ::setlocale(LC_TIME, nullptr);
+    if (current) previous_ = current;
+    if (::setlocale(LC_TIME, name) == nullptr) locale_named_numpunct_failure();
+  }
+  ~locale_windows_time_scope() {
+    if (!previous_.empty()) (void)::setlocale(LC_TIME, previous_.c_str());
+    if (previous_mode_ != -1) (void)ftl_locale_runtime::_configthreadlocale(previous_mode_);
+  }
+private:
+  int previous_mode_;
+  string previous_;
+};
+#endif
+
+inline size_t locale_named_time_format(const locale_named_time_context &context,
+                                       char *buffer, size_t count,
+                                       const char *pattern, const tm *value) {
+#if defined(_WIN32)
+  locale_windows_time_scope scope(context.name.c_str());
+#else
+  locale_posix_numeric_scope scope(context.native);
+#endif
+  return strftime(buffer, count, pattern, value);
+}
+} // namespace detail
+
+template <class Character,
+          class InputIterator = istreambuf_iterator<Character>>
+class num_get : public locale::facet {
+public:
+  using char_type = Character;
+  using iter_type = InputIterator;
+
+  explicit num_get(size_t refs = 0) : locale::facet(refs) {}
+  iter_type get(iter_type in, iter_type end, ios_base &format,
+                unsigned int &error, bool &value) const {
+    return do_get(in, end, format, error, value);
+  }
+#define FTL_NUM_GET_PUBLIC(Type) \
+  iter_type get(iter_type in, iter_type end, ios_base &format, \
+                unsigned int &error, Type &value) const { \
+    return do_get(in, end, format, error, value); \
+  }
+  FTL_NUM_GET_PUBLIC(long)
+  FTL_NUM_GET_PUBLIC(long long)
+  FTL_NUM_GET_PUBLIC(unsigned short)
+  FTL_NUM_GET_PUBLIC(unsigned int)
+  FTL_NUM_GET_PUBLIC(unsigned long)
+  FTL_NUM_GET_PUBLIC(unsigned long long)
+  FTL_NUM_GET_PUBLIC(float)
+  FTL_NUM_GET_PUBLIC(double)
+  FTL_NUM_GET_PUBLIC(long double)
+  FTL_NUM_GET_PUBLIC(void *)
+#undef FTL_NUM_GET_PUBLIC
+  inline static locale::id id{};
+
+protected:
+  ~num_get() override = default;
+
+  virtual iter_type do_get(iter_type in, iter_type end, ios_base &format,
+                           unsigned int &error, bool &value) const {
+    char token[512]; size_t count = 0;
+    in = collect(in, end, token, count, format, false,
+                 detail::locale_stream_boolalpha(format));
+    if (detail::locale_stream_boolalpha(format)) {
+      const locale where = format_locale(format);
+      const auto &punctuation = use_facet<numpunct<char_type>>(where);
+      if (equals(token, count, punctuation.truename())) value = true;
+      else if (equals(token, count, punctuation.falsename())) value = false;
+      else error |= stream_failbit();
+    } else {
+      normalize(token, count, format);
+      char *last = nullptr; errno = 0; long parsed = ::strtol(token, &last, detail::locale_stream_base(format));
+      if (errno == ERANGE || last != token + count || (parsed != 0 && parsed != 1)) error |= stream_failbit();
+      value = parsed != 0;
+    }
+    if (in == end) error |= stream_eofbit();
+    return in;
+  }
+#define FTL_NUM_GET_SIGNED(Type) \
+  virtual iter_type do_get(iter_type in, iter_type end, ios_base &format, \
+                           unsigned int &error, Type &value) const { \
+    char token[512]; size_t count = 0; in = collect(in, end, token, count, format, false, false); normalize(token, count, format); \
+    char *last = nullptr; errno = 0; long long parsed = ::strtoll(token, &last, detail::locale_stream_base(format)); \
+    if (errno == ERANGE || last != token + count || !assign_signed(parsed, value)) error |= stream_failbit(); \
+    if (in == end) error |= stream_eofbit(); return in; \
+  }
+  FTL_NUM_GET_SIGNED(long)
+  FTL_NUM_GET_SIGNED(long long)
+#undef FTL_NUM_GET_SIGNED
+#define FTL_NUM_GET_UNSIGNED(Type) \
+  virtual iter_type do_get(iter_type in, iter_type end, ios_base &format, \
+                           unsigned int &error, Type &value) const { \
+    char token[512]; size_t count = 0; in = collect(in, end, token, count, format, false, false); normalize(token, count, format); \
+    char *last = nullptr; errno = 0; unsigned long long parsed = ::strtoull(token, &last, detail::locale_stream_base(format)); \
+    if (errno == ERANGE || last != token + count || !assign_unsigned(parsed, value)) error |= stream_failbit(); \
+    if (in == end) error |= stream_eofbit(); return in; \
+  }
+  FTL_NUM_GET_UNSIGNED(unsigned short)
+  FTL_NUM_GET_UNSIGNED(unsigned int)
+  FTL_NUM_GET_UNSIGNED(unsigned long)
+  FTL_NUM_GET_UNSIGNED(unsigned long long)
+#undef FTL_NUM_GET_UNSIGNED
+#define FTL_NUM_GET_FLOAT(Type) \
+  virtual iter_type do_get(iter_type in, iter_type end, ios_base &format, \
+                           unsigned int &error, Type &value) const { \
+    char token[512]; size_t count = 0; in = collect(in, end, token, count, format, true, false); normalize(token, count, format); \
+    char *last = nullptr; errno = 0; long double parsed = ::strtold(token, &last); \
+    if (errno == ERANGE || last != token + count || !assign_float(parsed, value)) error |= stream_failbit(); \
+    if (in == end) error |= stream_eofbit(); return in; \
+  }
+  FTL_NUM_GET_FLOAT(float)
+  FTL_NUM_GET_FLOAT(double)
+  FTL_NUM_GET_FLOAT(long double)
+#undef FTL_NUM_GET_FLOAT
+  virtual iter_type do_get(iter_type in, iter_type end, ios_base &format,
+                           unsigned int &error, void *&value) const {
+    unsigned long long parsed = 0;
+    in = do_get(in, end, format, error, parsed);
+    value = reinterpret_cast<void *>(static_cast<size_t>(parsed));
+    return in;
+  }
+
+private:
+  static unsigned int stream_failbit();
+  static unsigned int stream_eofbit();
+  static locale format_locale(ios_base &);
+  bool accepted(char value, ios_base &format, bool floating, bool alpha,
+                const char *token, size_t count) const {
+    const locale where = format_locale(format);
+    const auto &punctuation = use_facet<numpunct<char_type>>(where);
+    if ((value >= '0' && value <= '9') || value == '+' || value == '-' ||
+        value == static_cast<char>(punctuation.decimal_point()) ||
+        (!punctuation.grouping().empty() &&
+         value == static_cast<char>(punctuation.thousands_sep())))
+      return true;
+    if (alpha) return (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z');
+    int base = detail::locale_stream_base(format);
+    size_t numeric_start = count && (token[0] == '+' || token[0] == '-') ? 1 : 0;
+    bool hexadecimal = base == 16 ||
+        (base == 0 && count >= numeric_start + 2 && token[numeric_start] == '0' &&
+         (token[numeric_start + 1] == 'x' || token[numeric_start + 1] == 'X'));
+    if ((hexadecimal || (base == 0 && count == numeric_start + 1 && token[numeric_start] == '0')) &&
+        ((value >= 'a' && value <= 'f') ||
+                                     (value >= 'A' && value <= 'F') ||
+                                     value == 'x' || value == 'X')) return true;
+    if (!floating) return false;
+    if (value == 'e' || value == 'E' || value == 'p' || value == 'P') return true;
+    size_t start = numeric_start;
+    if (count == start && (value == 'i' || value == 'I' || value == 'n' || value == 'N')) return true;
+    if (count > start && (token[start] == 'i' || token[start] == 'I'))
+      return (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z');
+    if (count > start && (token[start] == 'n' || token[start] == 'N'))
+      return (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z') ||
+             value == '(' || value == ')' || value == '_';
+    return false;
+  }
+  iter_type collect(iter_type in, iter_type end, char *token, size_t &count,
+                    ios_base &format, bool floating, bool alpha) const {
+    while (in != end && count + 1 < 512) {
+      char value = static_cast<char>(*in);
+      if (!accepted(value, format, floating, alpha, token, count)) break;
+      token[count++] = value; ++in;
+    }
+    token[count] = '\0';
+    return in;
+  }
+  void normalize(char *token, size_t &count, ios_base &format) const {
+    const locale where = format_locale(format);
+    const auto &punctuation = use_facet<numpunct<char_type>>(where);
+    const char decimal = static_cast<char>(punctuation.decimal_point());
+    const char separator = static_cast<char>(punctuation.thousands_sep());
+    const string grouping = punctuation.grouping();
+    size_t groups[64]{}; size_t group_count = 0, digits = 0;
+    bool has_separator = false;
+    for (size_t index = 0; index < count; ++index) {
+      char value = token[index];
+      if (value == decimal || value == 'e' || value == 'E' || value == 'p' || value == 'P') break;
+      if (value >= '0' && value <= '9') ++digits;
+      else if (value == separator) {
+        has_separator = true;
+        if (group_count < 64) groups[group_count++] = digits;
+        digits = 0;
+      }
+    }
+    if (has_separator && group_count < 64) groups[group_count++] = digits;
+    bool valid_grouping = !has_separator;
+    if (has_separator && !grouping.empty() && group_count > 1) {
+      valid_grouping = true; size_t rule_index = 0;
+      unsigned char repeated = static_cast<unsigned char>(grouping[0]);
+      for (size_t position = group_count; position != 0; --position) {
+        unsigned char expected = static_cast<unsigned char>(grouping[rule_index]);
+        if (expected == 0) expected = repeated;
+        else repeated = expected;
+        if (expected == 0 || expected == static_cast<unsigned char>(CHAR_MAX)) {
+          valid_grouping = false; break;
+        }
+        size_t actual = groups[position - 1];
+        if ((position == 1 && (actual == 0 || actual > expected)) ||
+            (position != 1 && actual != expected)) {
+          valid_grouping = false; break;
+        }
+        if (rule_index + 1 < grouping.size()) ++rule_index;
+      }
+    }
+    size_t output = 0;
+    for (size_t input = 0; input < count; ++input) {
+      if (valid_grouping && token[input] == separator) continue;
+      token[output++] = token[input] == decimal ? '.' : token[input];
+    }
+    count = output;
+    token[count] = '\0';
+  }
+  template <class String>
+  static bool equals(const char *token, size_t count, const String &value) {
+    if (count != value.size()) return false;
+    for (size_t i = 0; i < count; ++i)
+      if (token[i] != static_cast<char>(value[i])) return false;
+    return true;
+  }
+  template <class Value> static bool assign_signed(long long parsed, Value &value) {
+    if (parsed < static_cast<long long>(numeric_limits<Value>::min())) {
+      value = numeric_limits<Value>::min(); return false;
+    }
+    if (parsed > static_cast<long long>(numeric_limits<Value>::max())) {
+      value = numeric_limits<Value>::max(); return false;
+    }
+    value = static_cast<Value>(parsed); return true;
+  }
+  template <class Value> static bool assign_unsigned(unsigned long long parsed, Value &value) {
+    if (parsed > static_cast<unsigned long long>(numeric_limits<Value>::max())) {
+      value = numeric_limits<Value>::max(); return false;
+    }
+    value = static_cast<Value>(parsed); return true;
+  }
+  template <class Value> static bool assign_float(long double parsed, Value &value) {
+    if (parsed < -numeric_limits<Value>::max()) {
+      value = -numeric_limits<Value>::max(); return false;
+    }
+    if (parsed > numeric_limits<Value>::max()) {
+      value = numeric_limits<Value>::max(); return false;
+    }
+    value = static_cast<Value>(parsed); return true;
+  }
+};
+
+template <class Character,
+          class OutputIterator = ostreambuf_iterator<Character>>
+class num_put : public locale::facet {
+public:
+  using char_type = Character;
+  using iter_type = OutputIterator;
+  explicit num_put(size_t refs = 0) : locale::facet(refs) {}
+#define FTL_NUM_PUT_PUBLIC(Type) \
+  iter_type put(iter_type out, ios_base &format, char_type fill, Type value) const { \
+    return do_put(out, format, fill, value); \
+  }
+  FTL_NUM_PUT_PUBLIC(bool)
+  FTL_NUM_PUT_PUBLIC(long)
+  FTL_NUM_PUT_PUBLIC(unsigned long)
+  FTL_NUM_PUT_PUBLIC(long long)
+  FTL_NUM_PUT_PUBLIC(unsigned long long)
+  FTL_NUM_PUT_PUBLIC(double)
+  FTL_NUM_PUT_PUBLIC(long double)
+  FTL_NUM_PUT_PUBLIC(const void *)
+#undef FTL_NUM_PUT_PUBLIC
+  inline static locale::id id{};
+
+protected:
+  ~num_put() override = default;
+  virtual iter_type do_put(iter_type out, ios_base &format, char_type fill, bool value) const {
+    if (detail::locale_stream_boolalpha(format)) {
+      const locale where = format_locale(format);
+      const auto &punctuation = use_facet<numpunct<char_type>>(where);
+      return emit_string(out, format, fill, value ? punctuation.truename() : punctuation.falsename());
+    }
+    return put_unsigned(out, format, fill, value ? 1 : 0);
+  }
+  virtual iter_type do_put(iter_type out, ios_base &format, char_type fill, long value) const {
+    return put_signed(out, format, fill, value);
+  }
+  virtual iter_type do_put(iter_type out, ios_base &format, char_type fill, unsigned long value) const {
+    return put_unsigned(out, format, fill, value);
+  }
+  virtual iter_type do_put(iter_type out, ios_base &format, char_type fill, long long value) const {
+    return put_signed(out, format, fill, value);
+  }
+  virtual iter_type do_put(iter_type out, ios_base &format, char_type fill, unsigned long long value) const {
+    return put_unsigned(out, format, fill, value);
+  }
+  virtual iter_type do_put(iter_type out, ios_base &format, char_type fill, double value) const {
+    return put_float(out, format, fill, static_cast<long double>(value), false);
+  }
+  virtual iter_type do_put(iter_type out, ios_base &format, char_type fill, long double value) const {
+    return put_float(out, format, fill, value, true);
+  }
+  virtual iter_type do_put(iter_type out, ios_base &format, char_type fill, const void *value) const {
+    return put_unsigned(out, format, fill,
+                        static_cast<unsigned long long>(reinterpret_cast<size_t>(value)), true);
+  }
+
+private:
+  static locale format_locale(ios_base &);
+  template <class String>
+  static iter_type emit_string(iter_type out, ios_base &format, char_type fill,
+                               const String &value, size_t prefix = 0) {
+    streamsize width = detail::locale_stream_take_width(format);
+    streamsize padding = width > static_cast<streamsize>(value.size())
+        ? width - static_cast<streamsize>(value.size()) : 0;
+    int adjustment = detail::locale_stream_adjust(format);
+    if (adjustment == 0) while (padding-- > 0) *out++ = fill;
+    for (size_t index = 0; index < prefix; ++index) *out++ = value[index];
+    if (adjustment == 2) while (padding-- > 0) *out++ = fill;
+    for (size_t index = prefix; index < value.size(); ++index) *out++ = value[index];
+    if (adjustment == 1) while (padding-- > 0) *out++ = fill;
+    return out;
+  }
+  iter_type put_signed(iter_type out, ios_base &format, char_type fill,
+                       long long value) const {
+    bool negative = value < 0;
+    unsigned long long magnitude = negative ? 0ull - static_cast<unsigned long long>(value)
+                                            : static_cast<unsigned long long>(value);
+    return put_unsigned(out, format, fill, magnitude, false, negative);
+  }
+  iter_type put_unsigned(iter_type out, ios_base &format, char_type fill,
+                         unsigned long long value, bool pointer = false,
+                         bool negative = false) const {
+    int base = pointer ? 16 : detail::locale_stream_base(format);
+    if (base == 0) base = 10;
+    const char *digits = detail::locale_stream_uppercase(format)
+        ? "0123456789ABCDEF" : "0123456789abcdef";
+    char buffer[70]; size_t end = 70, begin = end;
+    do { buffer[--begin] = digits[value % static_cast<unsigned>(base)];
+         value /= static_cast<unsigned>(base); } while (value);
+    if ((pointer || detail::locale_stream_showbase(format)) && base == 16) {
+      buffer[--begin] = detail::locale_stream_uppercase(format) ? 'X' : 'x'; buffer[--begin] = '0';
+    } else if (detail::locale_stream_showbase(format) && base == 8 && buffer[begin] != '0') {
+      buffer[--begin] = '0';
+    }
+    if (negative) buffer[--begin] = '-';
+    else if (detail::locale_stream_showpos(format)) buffer[--begin] = '+';
+    basic_string<char_type> converted;
+    for (size_t i = begin; i < end; ++i) converted.push_back(static_cast<char_type>(buffer[i]));
+    size_t prefix = negative || detail::locale_stream_showpos(format) ? 1 : 0;
+    if ((pointer || detail::locale_stream_showbase(format)) && base == 16) prefix += 2;
+    else if (detail::locale_stream_showbase(format) && base == 8) prefix += 1;
+    const locale where = format_locale(format);
+    const auto &punctuation = use_facet<numpunct<char_type>>(where);
+    const string grouping = punctuation.grouping();
+    if (!grouping.empty()) {
+      size_t position = converted.size(); size_t group_index = 0;
+      unsigned char group = static_cast<unsigned char>(grouping[0]);
+      while (group > 0 && group != static_cast<unsigned char>(CHAR_MAX) &&
+             position > prefix + group) {
+        position -= group;
+        converted.insert(converted.begin() + static_cast<ptrdiff_t>(position),
+                         punctuation.thousands_sep());
+        if (group_index + 1 < grouping.size()) {
+          unsigned char next = static_cast<unsigned char>(grouping[++group_index]);
+          if (next != 0) group = next;
+        }
+      }
+    }
+    return emit_string(out, format, fill, converted, prefix);
+  }
+  iter_type put_float(iter_type out, ios_base &format, char_type fill,
+                      long double value, bool extended) const {
+    char specification[16]; size_t at = 0; specification[at++] = '%';
+    if (detail::locale_stream_showpos(format)) specification[at++] = '+';
+    if (detail::locale_stream_showpoint(format)) specification[at++] = '#';
+    specification[at++] = '.'; specification[at++] = '*';
+    if (extended) specification[at++] = 'L';
+    int mode = detail::locale_stream_float_mode(format);
+    char conversion = mode == 1 ? 'f' : mode == 2 ? 'e' : mode == 3 ? 'a' : 'g';
+    if (detail::locale_stream_uppercase(format)) conversion -= 'a' - 'A';
+    specification[at++] = conversion; specification[at] = '\0';
+    int precision = static_cast<int>(detail::locale_stream_precision(format));
+    int count = extended ? ::snprintf(nullptr, 0, specification, precision, value)
+                         : ::snprintf(nullptr, 0, specification, precision,
+                                      static_cast<double>(value));
+    string buffer;
+    if (count > 0) {
+      buffer.resize(static_cast<size_t>(count) + 1);
+      if (extended) ::snprintf(buffer.data(), buffer.size(), specification, precision, value);
+      else ::snprintf(buffer.data(), buffer.size(), specification, precision,
+                      static_cast<double>(value));
+    }
+    basic_string<char_type> converted;
+    if (count > 0) for (int i = 0; i < count; ++i) converted.push_back(static_cast<char_type>(buffer[static_cast<size_t>(i)]));
+    const locale where = format_locale(format);
+    const auto &punctuation = use_facet<numpunct<char_type>>(where);
+    for (size_t index = 0; index < converted.size(); ++index)
+      if (converted[index] == static_cast<char_type>('.')) {
+        converted[index] = punctuation.decimal_point(); break;
+      }
+    size_t prefix = !converted.empty() &&
+        (converted[0] == static_cast<char_type>('+') || converted[0] == static_cast<char_type>('-')) ? 1 : 0;
+    const string grouping = punctuation.grouping();
+    if (!grouping.empty()) {
+      size_t position = prefix;
+      while (position < converted.size() && converted[position] >= static_cast<char_type>('0') &&
+             converted[position] <= static_cast<char_type>('9')) ++position;
+      size_t group_index = 0;
+      unsigned char group = static_cast<unsigned char>(grouping[0]);
+      while (group && group != static_cast<unsigned char>(CHAR_MAX) && position > prefix + group) {
+        position -= group;
+        converted.insert(converted.begin() + static_cast<ptrdiff_t>(position),
+                         punctuation.thousands_sep());
+        if (group_index + 1 < grouping.size()) {
+          unsigned char next = static_cast<unsigned char>(grouping[++group_index]);
+          if (next) group = next;
+        }
+      }
+    }
+    return emit_string(out, format, fill, converted, prefix);
+  }
+};
+
 class time_base {
 public:
   enum dateorder {
@@ -2638,6 +3109,348 @@ public:
     ymd,
     ydm
   };
+};
+
+template <class Character,
+          class InputIterator = istreambuf_iterator<Character>>
+class time_get : public locale::facet, public time_base {
+public:
+  using char_type = Character;
+  using iter_type = InputIterator;
+  explicit time_get(size_t refs = 0) : locale::facet(refs) {}
+  dateorder date_order() const { return do_date_order(); }
+  iter_type get_time(iter_type first, iter_type last, ios_base &format,
+                     unsigned int &error, tm *value) const {
+    return do_get_time(first, last, format, error, value);
+  }
+  iter_type get_date(iter_type first, iter_type last, ios_base &format,
+                     unsigned int &error, tm *value) const {
+    return do_get_date(first, last, format, error, value);
+  }
+  iter_type get_weekday(iter_type first, iter_type last, ios_base &format,
+                        unsigned int &error, tm *value) const {
+    return do_get_weekday(first, last, format, error, value);
+  }
+  iter_type get_monthname(iter_type first, iter_type last, ios_base &format,
+                          unsigned int &error, tm *value) const {
+    return do_get_monthname(first, last, format, error, value);
+  }
+  iter_type get_year(iter_type first, iter_type last, ios_base &format,
+                     unsigned int &error, tm *value) const {
+    return do_get_year(first, last, format, error, value);
+  }
+  iter_type get(iter_type first, iter_type last, ios_base &format,
+                unsigned int &error, tm *value, char conversion,
+                char modifier = 0) const {
+    return do_get(first, last, format, error, value, conversion, modifier);
+  }
+  iter_type get(iter_type first, iter_type last, ios_base &format,
+                unsigned int &error, tm *value, const char_type *pattern,
+                const char_type *pattern_end) const {
+    while (pattern != pattern_end && first != last && !(error & stream_failbit())) {
+      char current = static_cast<char>(*pattern++);
+      if (current != '%') {
+        if (static_cast<char>(*first) != current) { error |= stream_failbit(); break; }
+        ++first; continue;
+      }
+      char modifier = 0;
+      if (pattern != pattern_end && (*pattern == static_cast<char_type>('E') ||
+                                     *pattern == static_cast<char_type>('O')))
+        modifier = static_cast<char>(*pattern++);
+      if (pattern == pattern_end) { error |= stream_failbit(); break; }
+      first = do_get(first, last, format, error, value,
+                     static_cast<char>(*pattern++), modifier);
+    }
+    if (first == last) error |= stream_eofbit();
+    return first;
+  }
+  inline static locale::id id{};
+
+protected:
+  ~time_get() override = default;
+  virtual dateorder do_date_order() const { return no_order; }
+  virtual iter_type do_get_time(iter_type first, iter_type last, ios_base &format,
+                                unsigned int &error, tm *value) const {
+    const char_type pattern[] = {char_type('%'), char_type('H'), char_type(':'),
+                                 char_type('%'), char_type('M'), char_type(':'),
+                                 char_type('%'), char_type('S')};
+    return get(first, last, format, error, value, pattern, pattern + 8);
+  }
+  virtual iter_type do_get_date(iter_type first, iter_type last, ios_base &format,
+                                unsigned int &error, tm *value) const {
+    const char_type pattern[] = {char_type('%'), char_type('m'), char_type('/'),
+                                 char_type('%'), char_type('d'), char_type('/'),
+                                 char_type('%'), char_type('y')};
+    return get(first, last, format, error, value, pattern, pattern + 8);
+  }
+  virtual iter_type do_get_weekday(iter_type first, iter_type last, ios_base &,
+                                   unsigned int &error, tm *value) const {
+    int matched = match_name(first, last, weekdays(), 7, error);
+    if (matched >= 0) value->tm_wday = matched;
+    return advance_name(first, last);
+  }
+  virtual iter_type do_get_monthname(iter_type first, iter_type last, ios_base &,
+                                     unsigned int &error, tm *value) const {
+    int matched = match_name(first, last, months(), 12, error);
+    if (matched >= 0) value->tm_mon = matched;
+    return advance_name(first, last);
+  }
+  virtual iter_type do_get_year(iter_type first, iter_type last, ios_base &,
+                                unsigned int &error, tm *value) const {
+    int year = 0, digits = 0;
+    first = parse_number(first, last, 4, year, digits);
+    if (digits == 2) year += year < 69 ? 2000 : 1900;
+    if (digits != 2 && digits != 4) error |= stream_failbit();
+    else value->tm_year = year - 1900;
+    if (first == last) error |= stream_eofbit();
+    return first;
+  }
+  virtual iter_type do_get(iter_type first, iter_type last, ios_base &format,
+                           unsigned int &error, tm *value, char conversion,
+                           char) const {
+    error = 0;
+    int parsed = 0, digits = 0;
+    switch (conversion) {
+    case 'H': case 'I':
+      first = parse_number(first, last, 2, parsed, digits);
+      if (!digits || parsed > 23 || (conversion == 'I' && (parsed < 1 || parsed > 12))) error |= stream_failbit();
+      else value->tm_hour = parsed; break;
+    case 'M':
+      first = parse_number(first, last, 2, parsed, digits);
+      if (!digits || parsed > 59) error |= stream_failbit(); else value->tm_min = parsed; break;
+    case 'S':
+      first = parse_number(first, last, 2, parsed, digits);
+      if (!digits || parsed > 60) error |= stream_failbit(); else value->tm_sec = parsed; break;
+    case 'd': case 'e':
+      first = parse_number(first, last, 2, parsed, digits);
+      if (!digits || parsed < 1 || parsed > 31) error |= stream_failbit(); else value->tm_mday = parsed; break;
+    case 'm':
+      first = parse_number(first, last, 2, parsed, digits);
+      if (!digits || parsed < 1 || parsed > 12) error |= stream_failbit(); else value->tm_mon = parsed - 1; break;
+    case 'y':
+      first = parse_number(first, last, 2, parsed, digits);
+      if (digits != 2) error |= stream_failbit(); else value->tm_year = (parsed < 69 ? parsed + 100 : parsed); break;
+    case 'Y': return do_get_year(first, last, format, error, value);
+    case 'a': case 'A': return do_get_weekday(first, last, format, error, value);
+    case 'b': case 'B': case 'h': return do_get_monthname(first, last, format, error, value);
+    case 'R': return do_get_time_short(first, last, format, error, value, false);
+    case 'T': case 'X': return do_get_time(first, last, format, error, value);
+    case 'D': case 'x': return do_get_date(first, last, format, error, value);
+    case '%':
+      if (first == last || static_cast<char>(*first) != '%') error |= stream_failbit(); else ++first;
+      break;
+    default: error |= stream_failbit(); break;
+    }
+    if (first == last) error |= stream_eofbit();
+    return first;
+  }
+
+private:
+  static unsigned int stream_failbit();
+  static unsigned int stream_eofbit();
+  static iter_type parse_number(iter_type first, iter_type last, int maximum,
+                                int &value, int &digits) {
+    value = 0; digits = 0;
+    while (first != last && digits < maximum) {
+      char character = static_cast<char>(*first);
+      if (character < '0' || character > '9') break;
+      value = value * 10 + character - '0'; ++digits; ++first;
+    }
+    return first;
+  }
+  iter_type do_get_time_short(iter_type first, iter_type last, ios_base &format,
+                              unsigned int &error, tm *value, bool) const {
+    const char_type pattern[] = {char_type('%'), char_type('H'), char_type(':'),
+                                 char_type('%'), char_type('M')};
+    return get(first, last, format, error, value, pattern, pattern + 5);
+  }
+  static const char *const *weekdays() {
+    static const char *values[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+    return values;
+  }
+  static const char *const *months() {
+    static const char *values[] = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};
+    return values;
+  }
+  static int match_name(iter_type first, iter_type last, const char *const *names,
+                        int count, unsigned int &error) {
+    basic_string<char_type> input;
+    iter_type position = first;
+    while (position != last) {
+      char value = static_cast<char>(*position);
+      if (!((value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z'))) break;
+      input.push_back(*position); ++position;
+    }
+    for (int index = 0; index < count; ++index) {
+      size_t length = 0; while (names[index][length]) ++length;
+      if (input.size() != length && input.size() != 3) continue;
+      bool equal = true;
+      for (size_t offset = 0; offset < input.size(); ++offset)
+        if (static_cast<char>(input[offset]) != names[index][offset]) { equal = false; break; }
+      if (equal) return index;
+    }
+    error |= stream_failbit(); return -1;
+  }
+  static iter_type advance_name(iter_type first, iter_type last) {
+    int count = 0;
+    while (first != last && count < 9) {
+      char value = static_cast<char>(*first);
+      if (!((value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z'))) break;
+      ++first; ++count;
+    }
+    return first;
+  }
+};
+
+template <class Character, class InputIterator = istreambuf_iterator<Character>>
+class time_get_byname : public time_get<Character, InputIterator> {
+public:
+  using dateorder = time_base::dateorder;
+  using iter_type = InputIterator;
+  explicit time_get_byname(const char *name, size_t refs = 0)
+      : time_get<Character, InputIterator>(refs), context_(name) {}
+  explicit time_get_byname(const string &name, size_t refs = 0)
+      : time_get_byname(name.c_str(), refs) {}
+protected:
+  ~time_get_byname() override = default;
+  iter_type do_get_weekday(iter_type first, iter_type last, ios_base &format,
+                           unsigned int &error, tm *value) const override {
+    int matched = match(first, last, format, error, false);
+    if (matched >= 0) value->tm_wday = matched;
+    if (first == last) error |= detail::locale_stream_eofbit();
+    return consume_name(first, last, format);
+  }
+  iter_type do_get_monthname(iter_type first, iter_type last, ios_base &format,
+                             unsigned int &error, tm *value) const override {
+    int matched = match(first, last, format, error, true);
+    if (matched >= 0) value->tm_mon = matched;
+    if (first == last) error |= detail::locale_stream_eofbit();
+    return consume_name(first, last, format);
+  }
+private:
+  basic_string<Character> formatted_name(int index, bool month, bool abbreviated) const {
+    tm value{};
+    if (month) value.tm_mon = index; else value.tm_wday = index;
+    char pattern[3] = {'%', abbreviated ? (month ? 'b' : 'a') : (month ? 'B' : 'A'), 0};
+    string buffer(128, '\0');
+    size_t count = detail::locale_named_time_format(
+        context_, buffer.data(), buffer.size(), pattern, &value);
+    basic_string<Character> result;
+    if constexpr (is_same_v<Character, char>) {
+      result.assign(buffer.data(), count);
+    } else {
+      const char *first = buffer.data(); const char *last = first + count;
+      while (first != last) {
+        auto decoded = ftl_locale_runtime::decode_wide(context_.native, first, last);
+        if (decoded.result != ftl_locale_runtime::decoded_wide::status::complete) break;
+        result.push_back(static_cast<Character>(decoded.value)); first += decoded.consumed;
+      }
+    }
+    return result;
+  }
+  int match(iter_type first, iter_type last, ios_base &format,
+            unsigned int &error, bool month) const {
+    basic_string<Character> input;
+    const locale where = detail::locale_stream_locale(format);
+    const auto &classification = use_facet<ctype<Character>>(where);
+    iter_type position = first;
+    while (position != last && classification.is(ctype_base::alpha, *position)) {
+      input.push_back(*position); ++position;
+    }
+    int count = month ? 12 : 7;
+    for (int index = 0; index < count; ++index) {
+      auto full = formatted_name(index, month, false);
+      auto abbreviated = formatted_name(index, month, true);
+      if (input == full || input == abbreviated) return index;
+    }
+    error |= detail::locale_stream_failbit();
+    return -1;
+  }
+  iter_type consume_name(iter_type first, iter_type last, ios_base &format) const {
+    const locale where = detail::locale_stream_locale(format);
+    const auto &classification = use_facet<ctype<Character>>(where);
+    while (first != last && classification.is(ctype_base::alpha, *first)) ++first;
+    return first;
+  }
+  detail::locale_named_time_context context_;
+};
+
+template <class Character,
+          class OutputIterator = ostreambuf_iterator<Character>>
+class time_put : public locale::facet {
+public:
+  using char_type = Character;
+  using iter_type = OutputIterator;
+  explicit time_put(size_t refs = 0) : locale::facet(refs) {}
+  iter_type put(iter_type out, ios_base &format, char_type fill, const tm *value,
+                const char_type *pattern, const char_type *pattern_end) const {
+    while (pattern != pattern_end) {
+      char character = static_cast<char>(*pattern++);
+      if (character != '%') { *out++ = static_cast<char_type>(character); continue; }
+      char modifier = 0;
+      if (pattern != pattern_end && (*pattern == char_type('E') || *pattern == char_type('O')))
+        modifier = static_cast<char>(*pattern++);
+      if (pattern != pattern_end) out = do_put(out, format, fill, value,
+                                               static_cast<char>(*pattern++), modifier);
+    }
+    return out;
+  }
+  iter_type put(iter_type out, ios_base &format, char_type fill, const tm *value,
+                char conversion, char modifier = 0) const {
+    return do_put(out, format, fill, value, conversion, modifier);
+  }
+  inline static locale::id id{};
+protected:
+  ~time_put() override = default;
+  virtual iter_type do_put(iter_type out, ios_base &, char_type, const tm *value,
+                           char conversion, char modifier) const {
+    char pattern[4] = {'%', 0, 0, 0};
+    size_t at = 1; if (modifier) pattern[at++] = modifier; pattern[at++] = conversion;
+    char buffer[256]; size_t count = strftime(buffer, sizeof(buffer), pattern, value);
+    for (size_t index = 0; index < count; ++index) *out++ = static_cast<char_type>(buffer[index]);
+    return out;
+  }
+};
+
+template <class Character, class OutputIterator = ostreambuf_iterator<Character>>
+class time_put_byname : public time_put<Character, OutputIterator> {
+public:
+  using char_type = Character;
+  using iter_type = OutputIterator;
+  explicit time_put_byname(const char *name, size_t refs = 0)
+      : time_put<Character, OutputIterator>(refs), context_(name) {}
+  explicit time_put_byname(const string &name, size_t refs = 0)
+      : time_put_byname(name.c_str(), refs) {}
+protected:
+  ~time_put_byname() override = default;
+  iter_type do_put(iter_type out, ios_base &, char_type, const tm *value,
+                   char conversion, char modifier) const override {
+    char pattern[4] = {'%', 0, 0, 0};
+    size_t at = 1; if (modifier) pattern[at++] = modifier; pattern[at++] = conversion;
+    size_t capacity = 128;
+    string buffer;
+    for (;;) {
+      buffer.resize(capacity);
+      size_t count = detail::locale_named_time_format(
+          context_, buffer.data(), buffer.size(), pattern, value);
+      if (count || capacity >= 65536) {
+        if constexpr (is_same_v<char_type, char>) {
+          for (size_t index = 0; index < count; ++index) *out++ = buffer[index];
+        } else {
+          const char *first = buffer.data(); const char *last = first + count;
+          while (first != last) {
+            auto decoded = ftl_locale_runtime::decode_wide(context_.native, first, last);
+            if (decoded.result != ftl_locale_runtime::decoded_wide::status::complete) break;
+            *out++ = static_cast<char_type>(decoded.value); first += decoded.consumed;
+          }
+        }
+        return out;
+      }
+      capacity *= 2;
+    }
+  }
+private:
+  detail::locale_named_time_context context_;
 };
 
 class money_base {
@@ -3352,6 +4165,250 @@ private:
   detail::locale_named_moneypunct_context *context_;
 };
 
+template <class Character, class InputIterator = istreambuf_iterator<Character>>
+class money_get : public locale::facet {
+public:
+  using char_type = Character;
+  using iter_type = InputIterator;
+  using string_type = basic_string<char_type>;
+  explicit money_get(size_t refs = 0) : locale::facet(refs) {}
+  iter_type get(iter_type first, iter_type last, bool intl, ios_base &format,
+                unsigned int &error, long double &units) const {
+    return do_get(first, last, intl, format, error, units);
+  }
+  iter_type get(iter_type first, iter_type last, bool intl, ios_base &format,
+                unsigned int &error, string_type &digits) const {
+    return do_get(first, last, intl, format, error, digits);
+  }
+  inline static locale::id id{};
+protected:
+  ~money_get() override = default;
+  virtual iter_type do_get(iter_type first, iter_type last, bool intl,
+                           ios_base &format, unsigned int &error,
+                           long double &units) const {
+    string_type digits;
+    first = do_get(first, last, intl, format, error, digits);
+    if ((error & stream_failbit()) == 0) {
+      char buffer[512]; size_t count = digits.size() < 511 ? digits.size() : 511;
+      for (size_t index = 0; index < count; ++index)
+        buffer[index] = static_cast<char>(digits[index]);
+      buffer[count] = '\0'; char *end = nullptr; units = ::strtold(buffer, &end);
+      if (end != buffer + count) error |= stream_failbit();
+    }
+    return first;
+  }
+  virtual iter_type do_get(iter_type first, iter_type last, bool intl,
+                           ios_base &format, unsigned int &error,
+                           string_type &digits) const {
+    const locale where = format_locale(format);
+    string_type symbol, positive, negative_text;
+    string grouping;
+    money_base::pattern pattern{};
+    int fractional;
+    char_type decimal, separator;
+    if (intl) {
+      const auto &punctuation = use_facet<moneypunct<char_type, true>>(where);
+      symbol = punctuation.curr_symbol(); positive = punctuation.positive_sign();
+      negative_text = punctuation.negative_sign(); grouping = punctuation.grouping();
+      pattern = punctuation.neg_format(); fractional = punctuation.frac_digits();
+      decimal = punctuation.decimal_point(); separator = punctuation.thousands_sep();
+    } else {
+      const auto &punctuation = use_facet<moneypunct<char_type, false>>(where);
+      symbol = punctuation.curr_symbol(); positive = punctuation.positive_sign();
+      negative_text = punctuation.negative_sign(); grouping = punctuation.grouping();
+      pattern = punctuation.neg_format(); fractional = punctuation.frac_digits();
+      decimal = punctuation.decimal_point(); separator = punctuation.thousands_sep();
+    }
+    const auto &classification = use_facet<ctype<char_type>>(where);
+    string_type parsed; bool negative = false, any = false, saw_decimal = false;
+    size_t fractional_count = 0;
+    string_type sign_tail;
+    for (int component = 0; component < 4 && (error & stream_failbit()) == 0; ++component) {
+      bool final = component == 3;
+      switch (static_cast<money_base::part>(pattern.field[component])) {
+      case money_base::symbol:
+        if (detail::locale_stream_showbase(format) && !consume_text(first, last, symbol))
+          error |= stream_failbit();
+        break;
+      case money_base::sign:
+        if (!positive.empty() && first != last && *first == positive[0]) {
+          ++first; sign_tail.assign(positive.data() + 1, positive.size() - 1);
+        } else if (!negative_text.empty() && first != last && *first == negative_text[0]) {
+          ++first; negative = true;
+          sign_tail.assign(negative_text.data() + 1, negative_text.size() - 1);
+        } else if (positive.empty()) {
+          negative = false;
+        } else if (negative_text.empty()) {
+          negative = true;
+        } else error |= stream_failbit();
+        break;
+      case money_base::space: {
+        bool consumed = false;
+        if (!final) while (first != last && classification.is(ctype_base::space, *first)) {
+          consumed = true; ++first;
+        }
+        if (!final && !consumed) error |= stream_failbit();
+        break;
+      }
+      case money_base::none:
+        if (!final) while (first != last && classification.is(ctype_base::space, *first)) ++first;
+        break;
+      case money_base::value:
+        while (first != last) {
+          char_type character = *first; char narrow = static_cast<char>(character);
+          if (narrow >= '0' && narrow <= '9') {
+            parsed.push_back(character); any = true;
+            if (saw_decimal) ++fractional_count;
+            ++first;
+          } else if (character == separator && !saw_decimal && !grouping.empty()) {
+            ++first;
+          } else if (character == decimal && !saw_decimal && fractional > 0) {
+            saw_decimal = true; ++first;
+          } else break;
+        }
+        break;
+      }
+    }
+    if (!sign_tail.empty() && !consume_text(first, last, sign_tail)) error |= stream_failbit();
+    if (!any || (fractional > 0 && fractional_count != static_cast<size_t>(fractional)))
+      error |= stream_failbit();
+    else {
+      if (negative) parsed.insert(parsed.begin(), static_cast<char_type>('-'));
+      digits = parsed;
+    }
+    if (first == last) error |= stream_eofbit();
+    return first;
+  }
+private:
+  static unsigned int stream_failbit();
+  static unsigned int stream_eofbit();
+  static locale format_locale(ios_base &);
+  static bool consume_text(iter_type &first, iter_type last,
+                           const string_type &text) {
+    for (char_type expected : text) {
+      if (first == last || *first != expected) return false;
+      ++first;
+    }
+    return true;
+  }
+};
+
+template <class Character, class OutputIterator = ostreambuf_iterator<Character>>
+class money_put : public locale::facet {
+public:
+  using char_type = Character;
+  using iter_type = OutputIterator;
+  using string_type = basic_string<char_type>;
+  explicit money_put(size_t refs = 0) : locale::facet(refs) {}
+  iter_type put(iter_type out, bool intl, ios_base &format, char_type fill,
+                long double units) const {
+    return do_put(out, intl, format, fill, units);
+  }
+  iter_type put(iter_type out, bool intl, ios_base &format, char_type fill,
+                const string_type &digits) const {
+    return do_put(out, intl, format, fill, digits);
+  }
+  inline static locale::id id{};
+protected:
+  ~money_put() override = default;
+  virtual iter_type do_put(iter_type out, bool intl, ios_base &format,
+                           char_type fill, long double units) const {
+    char buffer[512]; int count = ::snprintf(buffer, sizeof(buffer), "%.0Lf", units);
+    string_type digits;
+    for (int index = 0; index < count && index < 512; ++index)
+      digits.push_back(static_cast<char_type>(buffer[index]));
+    return do_put(out, intl, format, fill, digits);
+  }
+  virtual iter_type do_put(iter_type out, bool intl, ios_base &format,
+                           char_type fill, const string_type &digits) const {
+    const locale where = format_locale(format);
+    bool negative = !digits.empty() && digits[0] == static_cast<char_type>('-');
+    string_type symbol, positive, negative_sign;
+    string grouping;
+    money_base::pattern pattern{};
+    int fractional;
+    char_type decimal, separator;
+    if (intl) {
+      const auto &punctuation = use_facet<moneypunct<char_type, true>>(where);
+      symbol = punctuation.curr_symbol(); positive = punctuation.positive_sign();
+      negative_sign = punctuation.negative_sign(); grouping = punctuation.grouping();
+      pattern = negative ? punctuation.neg_format() : punctuation.pos_format();
+      fractional = punctuation.frac_digits(); decimal = punctuation.decimal_point();
+      separator = punctuation.thousands_sep();
+    } else {
+      const auto &punctuation = use_facet<moneypunct<char_type, false>>(where);
+      symbol = punctuation.curr_symbol(); positive = punctuation.positive_sign();
+      negative_sign = punctuation.negative_sign(); grouping = punctuation.grouping();
+      pattern = negative ? punctuation.neg_format() : punctuation.pos_format();
+      fractional = punctuation.frac_digits(); decimal = punctuation.decimal_point();
+      separator = punctuation.thousands_sep();
+    }
+    if (!detail::locale_stream_showbase(format)) symbol.clear();
+    const string_type &sign_text = negative ? negative_sign : positive;
+    size_t begin = negative ? 1 : 0, count = 0;
+    while (begin + count < digits.size()) {
+      char value = static_cast<char>(digits[begin + count]);
+      if (value < '0' || value > '9') break;
+      ++count;
+    }
+    string_type number;
+    if (fractional > 0 && count <= static_cast<size_t>(fractional)) {
+      number.push_back(static_cast<char_type>('0')); number.push_back(decimal);
+      for (size_t zeros = static_cast<size_t>(fractional) - count; zeros; --zeros)
+        number.push_back(static_cast<char_type>('0'));
+      number.append(digits.data() + begin, count);
+    } else {
+      size_t whole = fractional > 0 ? count - static_cast<size_t>(fractional) : count;
+      number.append(digits.data() + begin, whole);
+      if (!grouping.empty()) {
+        size_t position = whole, rule = 0;
+        unsigned char group = static_cast<unsigned char>(grouping[0]);
+        while (group && group != static_cast<unsigned char>(CHAR_MAX) && position > group) {
+          position -= group;
+          number.insert(number.begin() + static_cast<ptrdiff_t>(position), separator);
+          if (rule + 1 < grouping.size()) {
+            unsigned char next = static_cast<unsigned char>(grouping[++rule]);
+            if (next) group = next;
+          }
+        }
+      }
+      if (fractional > 0) {
+        number.push_back(decimal);
+        number.append(digits.data() + begin + whole, static_cast<size_t>(fractional));
+      }
+    }
+    string_type result;
+    size_t internal_position = 0;
+    for (int index = 0; index < 4; ++index) {
+      switch (static_cast<money_base::part>(pattern.field[index])) {
+      case money_base::symbol: result += symbol; break;
+      case money_base::sign:
+        if (!sign_text.empty()) result.push_back(sign_text[0]);
+        break;
+      case money_base::value: result += number; break;
+      case money_base::space: result.push_back(static_cast<char_type>(' '));
+        [[fallthrough]];
+      case money_base::none: internal_position = result.size(); break;
+      }
+    }
+    if (sign_text.size() > 1) result.append(sign_text.data() + 1, sign_text.size() - 1);
+    streamsize width = detail::locale_stream_take_width(format);
+    streamsize padding = width > static_cast<streamsize>(result.size())
+        ? width - static_cast<streamsize>(result.size()) : 0;
+    int adjustment = detail::locale_stream_adjust(format);
+    if (adjustment == 2 && padding > 0) {
+      result.insert(internal_position, static_cast<size_t>(padding), fill);
+      padding = 0;
+    }
+    if (adjustment == 0) while (padding-- > 0) *out++ = fill;
+    for (char_type value : result) *out++ = value;
+    if (adjustment == 1) while (padding-- > 0) *out++ = fill;
+    return out;
+  }
+private:
+  static locale format_locale(ios_base &);
+};
+
 class messages_base {
 public:
   using catalog = intptr_t;
@@ -3933,11 +4990,17 @@ inline void locale_release_state(locale_state *state) noexcept {
   delete state;
 }
 
+template <class Facet> inline locale_facet_control &locale_classic_stream_control() {
+  static Facet *facet = new Facet(1);
+  static locale_facet_control control(facet);
+  return control;
+}
+
 inline locale_state &locale_classic_state() {
   static locale_state state;
 
   static const bool initialized = [] {
-    state.facets.reserve(18);
+    state.facets.reserve(30);
 
     state.facets.push_back(
         {&ctype<char>::id, &locale_classic_ctype_char_control()});
@@ -3956,6 +5019,31 @@ inline locale_state &locale_classic_state() {
 
     state.facets.push_back(
         {&numpunct<wchar_t>::id, &locale_classic_numpunct_wchar_control()});
+
+    state.facets.push_back(
+        {&num_get<char>::id, &locale_classic_stream_control<num_get<char>>()});
+    state.facets.push_back(
+        {&num_get<wchar_t>::id, &locale_classic_stream_control<num_get<wchar_t>>()});
+    state.facets.push_back(
+        {&num_put<char>::id, &locale_classic_stream_control<num_put<char>>()});
+    state.facets.push_back(
+        {&num_put<wchar_t>::id, &locale_classic_stream_control<num_put<wchar_t>>()});
+    state.facets.push_back(
+        {&money_get<char>::id, &locale_classic_stream_control<money_get<char>>()});
+    state.facets.push_back(
+        {&money_get<wchar_t>::id, &locale_classic_stream_control<money_get<wchar_t>>()});
+    state.facets.push_back(
+        {&money_put<char>::id, &locale_classic_stream_control<money_put<char>>()});
+    state.facets.push_back(
+        {&money_put<wchar_t>::id, &locale_classic_stream_control<money_put<wchar_t>>()});
+    state.facets.push_back(
+        {&time_get<char>::id, &locale_classic_stream_control<time_get<char>>()});
+    state.facets.push_back(
+        {&time_get<wchar_t>::id, &locale_classic_stream_control<time_get<wchar_t>>()});
+    state.facets.push_back(
+        {&time_put<char>::id, &locale_classic_stream_control<time_put<char>>()});
+    state.facets.push_back(
+        {&time_put<wchar_t>::id, &locale_classic_stream_control<time_put<wchar_t>>()});
 
     state.facets.push_back({&codecvt<char, char, mbstate_t>::id,
                             &locale_classic_codecvt_char_control()});
@@ -4068,6 +5156,115 @@ locale_find_facet(const locale_state *state, const locale::id *key) noexcept {
 }
 
 template <class Facet>
+inline void locale_replace_facet(locale_state *state, Facet *value) {
+  const locale::id *key = &Facet::id;
+  locale_facet_slot *slot = locale_find_facet(state, key);
+  if (slot == nullptr) {
+    state->facets.push_back({key, nullptr});
+    slot = &state->facets.back();
+  }
+  locale_facet_control *replacement = new locale_facet_control(value);
+  locale_facet_control *previous = slot->control;
+  slot->control = replacement;
+  if (previous) previous->release();
+}
+
+inline void locale_copy_facet(locale_state *destination,
+                              const locale_state *source,
+                              const locale::id *key) {
+  const locale_facet_slot *from = locale_find_facet(source, key);
+  if (!from) return;
+  locale_facet_slot *to = locale_find_facet(destination, key);
+  if (!to) {
+    destination->facets.push_back({key, nullptr});
+    to = &destination->facets.back();
+  }
+  from->control->retain();
+  locale_facet_control *previous = to->control;
+  to->control = from->control;
+  if (previous) previous->release();
+}
+
+inline locale_state *locale_make_named_state(const char *name) {
+  if (!name) locale_named_numpunct_failure();
+  unique_ptr<locale_state> state{new locale_state(locale_classic_state(), true)};
+  state->named = true;
+  state->static_name = nullptr;
+  state->owned_name = name;
+
+  locale_replace_facet(state.get(), new ctype_byname<char>(name));
+  locale_replace_facet(state.get(), new ctype_byname<wchar_t>(name));
+  locale_replace_facet(state.get(), new collate_byname<char>(name));
+  locale_replace_facet(state.get(), new collate_byname<wchar_t>(name));
+  locale_replace_facet(state.get(), new numpunct_byname<char>(name));
+  locale_replace_facet(state.get(), new numpunct_byname<wchar_t>(name));
+  locale_replace_facet(state.get(), new codecvt_byname<char, char, mbstate_t>(name));
+  locale_replace_facet(state.get(), new codecvt_byname<wchar_t, char, mbstate_t>(name));
+  locale_replace_facet(state.get(), new moneypunct_byname<char, false>(name));
+  locale_replace_facet(state.get(), new moneypunct_byname<wchar_t, false>(name));
+  locale_replace_facet(state.get(), new moneypunct_byname<char, true>(name));
+  locale_replace_facet(state.get(), new moneypunct_byname<wchar_t, true>(name));
+  locale_replace_facet(state.get(), new time_get_byname<char>(name));
+  locale_replace_facet(state.get(), new time_get_byname<wchar_t>(name));
+  locale_replace_facet(state.get(), new time_put_byname<char>(name));
+  locale_replace_facet(state.get(), new time_put_byname<wchar_t>(name));
+  locale_replace_facet(state.get(), new messages_byname<char>(name));
+  locale_replace_facet(state.get(), new messages_byname<wchar_t>(name));
+  return state.release();
+}
+
+inline bool locale_valid_category(locale::category value) noexcept {
+  return (value & ~locale::all) == 0;
+}
+
+inline void locale_copy_category(locale_state *destination,
+                                 const locale_state *source,
+                                 locale::category selected) {
+  if (selected & locale::collate) {
+    locale_copy_facet(destination, source, &collate<char>::id);
+    locale_copy_facet(destination, source, &collate<wchar_t>::id);
+  }
+  if (selected & locale::ctype) {
+    locale_copy_facet(destination, source, &ctype<char>::id);
+    locale_copy_facet(destination, source, &ctype<wchar_t>::id);
+    locale_copy_facet(destination, source, &codecvt<char, char, mbstate_t>::id);
+    locale_copy_facet(destination, source, &codecvt<wchar_t, char, mbstate_t>::id);
+    locale_copy_facet(destination, source, &codecvt<char16_t, char8_t, mbstate_t>::id);
+    locale_copy_facet(destination, source, &codecvt<char32_t, char8_t, mbstate_t>::id);
+    locale_copy_facet(destination, source, &codecvt<char16_t, char, mbstate_t>::id);
+    locale_copy_facet(destination, source, &codecvt<char32_t, char, mbstate_t>::id);
+  }
+  if (selected & locale::numeric) {
+    locale_copy_facet(destination, source, &numpunct<char>::id);
+    locale_copy_facet(destination, source, &numpunct<wchar_t>::id);
+    locale_copy_facet(destination, source, &num_get<char>::id);
+    locale_copy_facet(destination, source, &num_get<wchar_t>::id);
+    locale_copy_facet(destination, source, &num_put<char>::id);
+    locale_copy_facet(destination, source, &num_put<wchar_t>::id);
+  }
+  if (selected & locale::monetary) {
+    locale_copy_facet(destination, source, &moneypunct<char, false>::id);
+    locale_copy_facet(destination, source, &moneypunct<wchar_t, false>::id);
+    locale_copy_facet(destination, source, &moneypunct<char, true>::id);
+    locale_copy_facet(destination, source, &moneypunct<wchar_t, true>::id);
+    locale_copy_facet(destination, source, &money_get<char>::id);
+    locale_copy_facet(destination, source, &money_get<wchar_t>::id);
+    locale_copy_facet(destination, source, &money_put<char>::id);
+    locale_copy_facet(destination, source, &money_put<wchar_t>::id);
+  }
+  if (selected & locale::time) {
+    locale_copy_facet(destination, source, &time_get<char>::id);
+    locale_copy_facet(destination, source, &time_get<wchar_t>::id);
+    locale_copy_facet(destination, source, &time_put<char>::id);
+    locale_copy_facet(destination, source, &time_put<wchar_t>::id);
+  }
+  if (selected & locale::messages) {
+    locale_copy_facet(destination, source, &messages<char>::id);
+    locale_copy_facet(destination, source, &messages<wchar_t>::id);
+  }
+}
+
+template <class Facet>
 [[nodiscard]]
 inline const locale::id *locale_facet_key() {
   using bare_facet = remove_cv_t<Facet>;
@@ -4083,19 +5280,19 @@ inline const locale::id *locale_facet_key() {
 
 [[noreturn]]
 inline void locale_missing_facet() {
-#if defined(FTL_NO_EXCEPTIONS)
-  terminate();
-#else
+#if FTL_HAS_EXCEPTIONS
   throw bad_cast{};
+#else
+  terminate();
 #endif
 }
 
 [[noreturn]]
 inline void locale_combine_missing_facet() {
-#if defined(FTL_NO_EXCEPTIONS)
-  terminate();
-#else
+#if FTL_HAS_EXCEPTIONS
   throw runtime_error("locale::combine");
+#else
+  terminate();
 #endif
 }
 
@@ -4107,6 +5304,63 @@ inline locale::locale() noexcept : state_(detail::locale_global().state) {
 
 inline locale::locale(const locale &other) noexcept : state_(other.state_) {
   detail::locale_retain_state(state_);
+}
+
+inline locale::locale(const char *name)
+    : state_(detail::locale_make_named_state(name)) {}
+
+inline locale::locale(const string &name) : locale(name.c_str()) {}
+
+inline locale::locale(const locale &other, const char *name, category selected)
+    : state_(nullptr) {
+  if (!detail::locale_valid_category(selected))
+    detail::locale_named_numpunct_failure();
+  locale named{name};
+  unique_ptr<detail::locale_state> next{
+      new detail::locale_state(*other.state_, selected == none)};
+  detail::locale_copy_category(next.get(), named.state_, selected);
+  if (selected != none && other.state_->named) {
+    next->named = true;
+    next->static_name = nullptr;
+    next->owned_name = other.name();
+    next->owned_name.push_back(';');
+    next->owned_name += name;
+    next->owned_name.push_back(';');
+    for (category bit = 1; bit <= messages; bit <<= 1)
+      if (selected & bit) next->owned_name.push_back(static_cast<char>('0' + bit));
+  } else if (selected != none) {
+    next->named = false;
+    next->static_name = nullptr;
+    next->owned_name.clear();
+  }
+  state_ = next.release();
+}
+
+inline locale::locale(const locale &other, const string &name, category selected)
+    : locale(other, name.c_str(), selected) {}
+
+inline locale::locale(const locale &other, const locale &one, category selected)
+    : state_(nullptr) {
+  if (!detail::locale_valid_category(selected))
+    detail::locale_named_numpunct_failure();
+  unique_ptr<detail::locale_state> next{
+      new detail::locale_state(*other.state_, selected == none)};
+  detail::locale_copy_category(next.get(), one.state_, selected);
+  if (selected != none && other.state_->named && one.state_->named) {
+    next->named = true;
+    next->static_name = nullptr;
+    next->owned_name = other.name();
+    next->owned_name.push_back(';');
+    next->owned_name += one.name();
+    next->owned_name.push_back(';');
+    for (category bit = 1; bit <= messages; bit <<= 1)
+      if (selected & bit) next->owned_name.push_back(static_cast<char>('0' + bit));
+  } else if (selected != none) {
+    next->named = false;
+    next->static_name = nullptr;
+    next->owned_name.clear();
+  }
+  state_ = next.release();
 }
 
 template <class Facet>
@@ -4332,5 +5586,13 @@ bool locale::operator()(
 FTL_END_NAMESPACE
 
 #undef FTL_LOCALE_NAMESPACE
+
+#ifndef FTL_IOS_HEADER
+#ifdef FTL_REPLACE_STL
+#include <ios>
+#else
+#include <ftl/ios>
+#endif
+#endif
 
 #endif

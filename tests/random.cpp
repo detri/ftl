@@ -14,6 +14,28 @@ static_assert(tested::uniform_random_bit_generator<tested::ranlux48_base>);
 static_assert(tested::is_same_v<tested::seed_seq::result_type,
                                 tested::uint_least32_t>);
 
+class random_input_buffer : public tested::streambuf {
+public:
+  random_input_buffer(char *first, char *last) { setg(first, first, last); }
+};
+
+class random_output_buffer : public tested::streambuf {
+public:
+  tested::string text;
+protected:
+  int_type overflow(int_type value) override {
+    if (traits_type::eq_int_type(value, traits_type::eof()))
+      return traits_type::not_eof(value);
+    text.push_back(traits_type::to_char_type(value));
+    return value;
+  }
+  tested::streamsize xsputn(const char *source,
+                            tested::streamsize count) override {
+    text.append(source, static_cast<tested::size_t>(count));
+    return count;
+  }
+};
+
 template <class Distribution>
 concept complete_distribution_surface = requires(
     Distribution distribution, const Distribution constant_distribution,
@@ -33,6 +55,10 @@ concept complete_distribution_surface = requires(
   { constant_distribution.min() } -> tested::same_as<typename Distribution::result_type>;
   { constant_distribution.max() } -> tested::same_as<typename Distribution::result_type>;
   { constant_distribution == constant_distribution } -> tested::same_as<bool>;
+  { tested::declval<tested::ostream &>() << constant_distribution } ->
+      tested::same_as<tested::ostream &>;
+  { tested::declval<tested::istream &>() >> distribution } ->
+      tested::same_as<tested::istream &>;
 };
 
 static_assert(complete_distribution_surface<tested::uniform_int_distribution<>>);
@@ -71,6 +97,10 @@ concept complete_engine_surface =
       { engine() } -> tested::same_as<typename Engine::result_type>;
       { engine.discard(1) } -> tested::same_as<void>;
       { constant_engine == constant_engine } -> tested::same_as<bool>;
+      { tested::declval<tested::ostream &>() << constant_engine } ->
+          tested::same_as<tested::ostream &>;
+      { tested::declval<tested::istream &>() >> engine } ->
+          tested::same_as<tested::istream &>;
     };
 
 static_assert(complete_engine_surface<tested::minstd_rand0>);
@@ -256,9 +286,57 @@ bool distribution_moments_are_sane() {
          near(gamma_sum / samples, 6.0, 0.09);
 }
 
+template <class Random>
+bool stream_round_trip(Random value) {
+  random_output_buffer output;
+  tested::ostream destination(&output);
+  destination.setf(tested::ios_base::hex, tested::ios_base::basefield);
+  destination.fill('_');
+  const auto flags = destination.flags();
+  destination << value;
+  if (!destination || destination.flags() != flags || destination.fill() != '_')
+    return false;
+  random_input_buffer input(output.text.data(),
+                            output.text.data() + output.text.size());
+  tested::istream source(&input);
+  Random restored;
+  source >> restored;
+  return source && restored == value;
+}
+
+bool stream_state_round_trips_work() {
+  tested::mt19937 engine(42);
+  engine.discard(37);
+  tested::ranlux24 adaptor(17);
+  adaptor.discard(13);
+  tested::normal_distribution<double> normal(2.0, 3.0);
+  (void)normal(engine);
+  tested::lognormal_distribution<double> lognormal(1.0, 0.5);
+  (void)lognormal(engine);
+  tested::discrete_distribution<int> discrete{1.0, 2.0, 4.0};
+  const double boundaries[] = {0.0, 1.0, 3.0};
+  const double weights[] = {1.0, 2.0, 1.0};
+  tested::piecewise_linear_distribution<double> piecewise(
+      boundaries, boundaries + 3, weights);
+  return stream_round_trip(engine) && stream_round_trip(adaptor) &&
+         stream_round_trip(normal) && stream_round_trip(lognormal) &&
+         stream_round_trip(discrete) && stream_round_trip(piecewise);
+}
+
+bool malformed_stream_preserves_state() {
+  char text[] = {'n', 'o', 't', '-', 'a', '-', 's', 't', 'a', 't', 'e'};
+  random_input_buffer input(text, text + sizeof(text));
+  tested::istream source(&input);
+  tested::minstd_rand value(123);
+  tested::minstd_rand original = value;
+  source >> value;
+  return source.fail() && value == original;
+}
+
 bool ftl_test() {
   return engine_sequences_match_n4950() && seed_sequence_matches_known_vectors() &&
          random_device_uses_platform_entropy() &&
          uniform_distributions_stay_in_range() && scalar_distributions_work() &&
-         distribution_moments_are_sane();
+         distribution_moments_are_sane() && stream_state_round_trips_work() &&
+         malformed_stream_preserves_state();
 }
