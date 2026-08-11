@@ -5,10 +5,6 @@
 #if defined(_WIN32)
 
 extern "C" {
-__declspec(dllimport) void *__stdcall CreateFileA(const char *, unsigned long,
-                                                  unsigned long, void *,
-                                                  unsigned long, unsigned long,
-                                                  void *);
 __declspec(dllimport) void *__stdcall CreateFileW(const wchar_t *,
                                                   unsigned long, unsigned long,
                                                   void *, unsigned long,
@@ -23,12 +19,13 @@ __declspec(dllimport) int __stdcall FlushFileBuffers(void *);
 __declspec(dllimport) int __stdcall CloseHandle(void *);
 __declspec(dllimport) void *__stdcall GetStdHandle(unsigned long);
 __declspec(dllimport) unsigned long __stdcall GetLastError();
-__declspec(dllimport) int __stdcall DeleteFileA(const char *);
 __declspec(dllimport) int __stdcall DeleteFileW(const wchar_t *);
-__declspec(dllimport) int __stdcall MoveFileExA(const char *, const char *,
-                                                unsigned long);
 __declspec(dllimport) int __stdcall MoveFileExW(const wchar_t *,
                                                 const wchar_t *, unsigned long);
+__declspec(dllimport) int __stdcall MultiByteToWideChar(unsigned int,
+                                                        unsigned long,
+                                                        const char *, int,
+                                                        wchar_t *, int);
 __declspec(dllimport) int __stdcall GetConsoleMode(void *, unsigned long *);
 }
 
@@ -48,6 +45,29 @@ constexpr unsigned long move_replace_existing = 0x1UL;
 constexpr unsigned long std_input_handle = static_cast<unsigned long>(-10);
 constexpr unsigned long std_output_handle = static_cast<unsigned long>(-11);
 constexpr unsigned long std_error_handle = static_cast<unsigned long>(-12);
+constexpr unsigned int code_page_utf8 = 65001;
+constexpr unsigned long invalid_utf8_error = 8;
+constexpr int invalid_name_error = 123;
+
+bool windows_path(const char *source, wchar_t *result, int capacity,
+                  ftl::detail::native_io_error &error) noexcept {
+  for (const char *i = source; *i; ++i) {
+    if (*i == '\\') {
+      error.value = invalid_name_error;
+      return false;
+    }
+  }
+  int size = MultiByteToWideChar(code_page_utf8, invalid_utf8_error, source, -1,
+                                 result, capacity);
+  if (!size) {
+    error.value = static_cast<int>(GetLastError());
+    return false;
+  }
+  for (int i = 0; i != size; ++i)
+    if (result[i] == L'/')
+      result[i] = L'\\';
+  return true;
+}
 
 unsigned long access_for(ftl::detail::native_file_access access, bool append) {
   switch (access) {
@@ -76,21 +96,15 @@ unsigned long creation_for(ftl::detail::native_file_creation creation) {
 
 namespace ftl::detail {
 
-template <class Character>
-bool open_windows(const Character *path, const native_open_options &options,
+bool open_windows(const wchar_t *path, const native_open_options &options,
                   native_file_handle &result, native_io_error &error) noexcept {
   unsigned long attributes = file_attribute_normal;
   if (options.temporary)
     attributes |= file_attribute_temporary | file_flag_delete_on_close;
   void *handle;
-  if constexpr (sizeof(Character) == sizeof(char))
-    handle = CreateFileA(path, access_for(options.access, options.append),
-                         share_all, nullptr, creation_for(options.creation),
-                         attributes, nullptr);
-  else
-    handle = CreateFileW(path, access_for(options.access, options.append),
-                         share_all, nullptr, creation_for(options.creation),
-                         attributes, nullptr);
+  handle =
+      CreateFileW(path, access_for(options.access, options.append), share_all,
+                  nullptr, creation_for(options.creation), attributes, nullptr);
   result.value = handle;
   if (!result.valid()) {
     error.value = static_cast<int>(GetLastError());
@@ -102,7 +116,9 @@ bool open_windows(const Character *path, const native_open_options &options,
 bool native_open_file(const char *path, const native_open_options &options,
                       native_file_handle &result,
                       native_io_error &error) noexcept {
-  return open_windows(path, options, result, error);
+  wchar_t converted[32768];
+  return windows_path(path, converted, 32768, error) &&
+         open_windows(converted, options, result, error);
 }
 
 bool native_open_file(const wchar_t *path, const native_open_options &options,
@@ -196,7 +212,10 @@ native_file_handle native_standard_error() noexcept {
 }
 
 bool native_remove_file(const char *path, native_io_error &error) noexcept {
-  if (!DeleteFileA(path)) {
+  wchar_t converted[32768];
+  if (!windows_path(path, converted, 32768, error))
+    return false;
+  if (!DeleteFileW(converted)) {
     error.value = static_cast<int>(GetLastError());
     return false;
   }
@@ -213,7 +232,12 @@ bool native_remove_file(const wchar_t *path, native_io_error &error) noexcept {
 
 bool native_rename_file(const char *old_path, const char *new_path,
                         native_io_error &error) noexcept {
-  if (!MoveFileExA(old_path, new_path, move_replace_existing)) {
+  wchar_t old_converted[32768];
+  wchar_t new_converted[32768];
+  if (!windows_path(old_path, old_converted, 32768, error) ||
+      !windows_path(new_path, new_converted, 32768, error))
+    return false;
+  if (!MoveFileExW(old_converted, new_converted, move_replace_existing)) {
     error.value = static_cast<int>(GetLastError());
     return false;
   }

@@ -557,4 +557,48 @@ void swap(basic_fstream<C, T> &l, basic_fstream<C, T> &r) {
 }
 
 FTL_END_NAMESPACE
+
+#ifdef FTL_REPLACE_STL
+#include <filesystem>
+#else
+#include <ftl/filesystem>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+template <class Character, class Traits>
+basic_filebuf<Character, Traits> *
+basic_filebuf<Character, Traits>::open(const filesystem::path &name,
+                                       ios_base::openmode mode) {
+  return open(name.c_str(), mode);
+}
+
+template <class Character, class Traits>
+void basic_ifstream<Character, Traits>::open(const filesystem::path &name,
+                                             ios_base::openmode mode) {
+  if (!sb_.open(name, mode | ios_base::in))
+    this->setstate(ios_base::failbit);
+  else
+    this->clear();
+}
+
+template <class Character, class Traits>
+void basic_ofstream<Character, Traits>::open(const filesystem::path &name,
+                                             ios_base::openmode mode) {
+  if (!sb_.open(name, mode | ios_base::out))
+    this->setstate(ios_base::failbit);
+  else
+    this->clear();
+}
+
+template <class Character, class Traits>
+void basic_fstream<Character, Traits>::open(const filesystem::path &name,
+                                            ios_base::openmode mode) {
+  if (!sb_.open(name, mode))
+    this->setstate(ios_base::failbit);
+  else
+    this->clear();
+}
+
+FTL_END_NAMESPACE
 #endif

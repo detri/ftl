@@ -3,6 +3,11 @@
 #ifndef FTL_VERSION_HEADER
 #define FTL_VERSION_HEADER
 
+#if !defined(__cpp_lib_filesystem) || __cpp_lib_filesystem < 201703L
+#undef __cpp_lib_filesystem
+#define __cpp_lib_filesystem 201703L
+#endif
+
 #if !defined(__cpp_lib_ios_noreplace) || __cpp_lib_ios_noreplace < 202207L
 #undef __cpp_lib_ios_noreplace
 #define __cpp_lib_ios_noreplace 202207L
