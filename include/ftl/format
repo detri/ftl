@@ -261,9 +261,7 @@ constexpr size_t parse_dynamic_format_argument(
 
   if (*current == format_widen<charT>('}')) {
     const size_t id = context.next_arg_id();
-
     ++current;
-
     return id;
   }
 
@@ -312,6 +310,7 @@ parse_standard_format_spec(basic_format_parse_context<charT> &context,
       }
 
       spec.fill = *current;
+
       spec.alignment = format_alignment_from_character(*next);
 
       spec.alignment_specified = true;
@@ -970,10 +969,6 @@ format_integer_value(Integer value, FormatContext &context,
   return output;
 }
 
-/*
- * Floating conversion is deliberately expressed in
- * terms of FTL's own to_chars implementation.
- */
 [[nodiscard]]
 inline bool format_floating_is_special(basic_string_view<char> text) noexcept {
   size_t index = 0;
@@ -1062,9 +1057,6 @@ inline size_t format_floating_significant_digits(basic_string_view<char> text,
     ++count;
   }
 
-  /*
-   * Zero has one significant digit.
-   */
   return seen_nonzero ? count : size_t{1};
 }
 
@@ -1182,6 +1174,7 @@ string format_convert_floating(Float value, FormatContext &context,
                                const standard_format_spec<charT> &spec,
                                size_t &conversion_precision) {
   bool use_precision = false;
+
   chars_format conversion_format = chars_format::general;
 
   conversion_precision = 0;
@@ -2162,6 +2155,177 @@ concept formattable = detail::formattable_with<
     remove_reference_t<T>,
     basic_format_context<back_insert_iterator<basic_string<charT>>, charT>>;
 
+namespace detail {
+
+template <class charT>
+constexpr size_t format_parse_replacement_arg_id(
+    typename basic_format_parse_context<charT>::iterator &current,
+    typename basic_format_parse_context<charT>::iterator end,
+    basic_format_parse_context<charT> &context) {
+  if (current == end) {
+    throw_format_error("unterminated replacement field");
+  }
+
+  if (*current == format_widen<charT>('}') ||
+      *current == format_widen<charT>(':')) {
+    return context.next_arg_id();
+  }
+
+  if (!format_is_digit(*current)) {
+    throw_format_error("invalid replacement field argument id");
+  }
+
+  size_t id = 0;
+
+  if (*current == format_widen<charT>('0')) {
+    ++current;
+
+    if (current != end && format_is_digit(*current)) {
+      throw_format_error("format argument id has a leading zero");
+    }
+
+    context.check_arg_id(0);
+
+    return 0;
+  }
+
+  while (current != end && format_is_digit(*current)) {
+    const size_t digit =
+        static_cast<size_t>(*current - format_widen<charT>('0'));
+
+    if (id > (numeric_limits<size_t>::max() - digit) / size_t{10}) {
+      throw_format_error("format argument index is too large");
+    }
+
+    id = id * size_t{10} + digit;
+
+    ++current;
+  }
+
+  context.check_arg_id(id);
+
+  return id;
+}
+
+template <class charT>
+consteval void format_validate_argument(size_t,
+                                        basic_format_parse_context<charT> &) {
+  throw_format_error("format argument index out of range");
+}
+
+template <class charT, class First, class... Rest>
+consteval void
+format_validate_argument(size_t id,
+                         basic_format_parse_context<charT> &context) {
+  if (id == 0) {
+    using value_type = remove_cvref_t<First>;
+
+    formatter<value_type, charT> formatter_value;
+
+    context.advance_to(formatter_value.parse(context));
+
+    return;
+  }
+
+  if constexpr (sizeof...(Rest) != 0) {
+    format_validate_argument<charT, Rest...>(id - 1, context);
+  } else {
+    throw_format_error("format argument index out of range");
+  }
+}
+
+template <class charT, class... Args>
+consteval void format_validate_string(basic_string_view<charT> value) {
+  basic_format_parse_context<charT> parse_context(value, sizeof...(Args));
+
+  auto current = value.begin();
+  const auto end = value.end();
+
+  while (current != end) {
+    if (*current == format_widen<charT>('{')) {
+      auto next = current;
+      ++next;
+
+      if (next != end && *next == format_widen<charT>('{')) {
+        current = next;
+        ++current;
+        continue;
+      }
+
+      current = next;
+
+      const size_t id =
+          format_parse_replacement_arg_id(current, end, parse_context);
+
+      if (current == end) {
+        throw_format_error("unterminated replacement field");
+      }
+
+      if (*current == format_widen<charT>(':')) {
+        ++current;
+      } else if (*current != format_widen<charT>('}')) {
+        throw_format_error("invalid replacement field");
+      }
+
+      parse_context.advance_to(current);
+
+      format_validate_argument<charT, Args...>(id, parse_context);
+
+      current = parse_context.begin();
+
+      if (current == end || *current != format_widen<charT>('}')) {
+        throw_format_error("unterminated format specification");
+      }
+
+      ++current;
+
+      parse_context.advance_to(current);
+
+      continue;
+    }
+
+    if (*current == format_widen<charT>('}')) {
+      auto next = current;
+      ++next;
+
+      if (next == end || *next != format_widen<charT>('}')) {
+        throw_format_error("unmatched closing brace");
+      }
+
+      current = next;
+      ++current;
+      continue;
+    }
+
+    ++current;
+  }
+}
+
+} // namespace detail
+
+template <class charT, class... Args> struct basic_format_string {
+private:
+  basic_string_view<charT> str_;
+
+public:
+  template <class T>
+    requires convertible_to<const T &, basic_string_view<charT>>
+  consteval basic_format_string(const T &value) : str_(value) {
+    detail::format_validate_string<charT, Args...>(str_);
+  }
+
+  [[nodiscard]]
+  constexpr basic_string_view<charT> get() const noexcept {
+    return str_;
+  }
+};
+
+template <class... Args>
+using format_string = basic_format_string<char, type_identity_t<Args>...>;
+
+template <class... Args>
+using wformat_string = basic_format_string<wchar_t, type_identity_t<Args>...>;
+
 template <class Context = format_context, class... Args>
 detail::format_arg_store<Context, Args...>
 make_format_args(Args &&...arguments) {
@@ -2174,6 +2338,352 @@ detail::format_arg_store<wformat_context, Args...>
 make_wformat_args(Args &&...arguments) {
   return detail::format_arg_store<wformat_context, Args...>(
       forward<Args>(arguments)...);
+}
+
+template <class Out> struct format_to_n_result {
+  Out out;
+  iter_difference_t<Out> size;
+};
+
+namespace detail {
+
+template <class Context>
+void format_runtime_argument(
+    basic_format_arg<Context> argument,
+    basic_format_parse_context<typename Context::char_type> &parse_context,
+    Context &format_context) {
+  if (!argument) {
+    throw_format_error("format argument index out of range");
+  }
+
+  using charT = typename Context::char_type;
+
+  using handle_type = typename basic_format_arg<Context>::handle;
+
+  visit_format_arg(
+      [&](auto value) {
+        using value_type = remove_cvref_t<decltype(value)>;
+
+        if constexpr (is_same_v<value_type, monostate>) {
+          throw_format_error("format argument index out of range");
+        } else if constexpr (is_same_v<value_type, handle_type>) {
+          value.format(parse_context, format_context);
+        } else {
+          formatter<value_type, charT> formatter_value;
+
+          parse_context.advance_to(formatter_value.parse(parse_context));
+
+          format_context.advance_to(
+              formatter_value.format(value, format_context));
+        }
+      },
+      argument);
+}
+
+template <class charT>
+using runtime_format_context =
+    basic_format_context<back_insert_iterator<basic_string<charT>>, charT>;
+
+template <class charT>
+basic_string<charT>
+format_runtime(basic_string_view<charT> fmt,
+               basic_format_args<runtime_format_context<charT>> arguments,
+               const FTL_FORMAT_NS::locale *loc) {
+  using context_type = runtime_format_context<charT>;
+
+  basic_string<charT> output;
+
+  context_type format_context_value(back_inserter(output), arguments, loc);
+
+  basic_format_parse_context<charT> parse_context(fmt);
+
+  auto current = fmt.begin();
+  const auto end = fmt.end();
+
+  while (current != end) {
+    if (*current == format_widen<charT>('{')) {
+      auto next = current;
+      ++next;
+
+      if (next != end && *next == format_widen<charT>('{')) {
+        output.push_back(format_widen<charT>('{'));
+
+        current = next;
+        ++current;
+        continue;
+      }
+
+      current = next;
+
+      const size_t id =
+          format_parse_replacement_arg_id(current, end, parse_context);
+
+      if (current == end) {
+        throw_format_error("unterminated replacement field");
+      }
+
+      if (*current == format_widen<charT>(':')) {
+        ++current;
+      } else if (*current != format_widen<charT>('}')) {
+        throw_format_error("invalid replacement field");
+      }
+
+      parse_context.advance_to(current);
+
+      format_runtime_argument(format_context_value.arg(id), parse_context,
+                              format_context_value);
+
+      current = parse_context.begin();
+
+      if (current == end || *current != format_widen<charT>('}')) {
+        throw_format_error("unterminated format specification");
+      }
+
+      ++current;
+
+      parse_context.advance_to(current);
+
+      continue;
+    }
+
+    if (*current == format_widen<charT>('}')) {
+      auto next = current;
+      ++next;
+
+      if (next == end || *next != format_widen<charT>('}')) {
+        throw_format_error("unmatched closing brace");
+      }
+
+      output.push_back(format_widen<charT>('}'));
+
+      current = next;
+      ++current;
+      continue;
+    }
+
+    output.push_back(*current);
+    ++current;
+  }
+
+  return output;
+}
+
+template <class Out, class charT>
+Out format_copy_to(Out out, basic_string_view<charT> value) {
+  for (charT character : value) {
+    *out = character;
+    ++out;
+  }
+
+  return out;
+}
+
+template <class Out, class charT>
+format_to_n_result<Out> format_copy_to_n(Out out, iter_difference_t<Out> n,
+                                         basic_string_view<charT> value) {
+  size_t count = 0;
+
+  if (n > 0) {
+    const size_t requested = static_cast<size_t>(n);
+
+    count = requested < value.size() ? requested : value.size();
+  }
+
+  for (size_t index = 0; index < count; ++index) {
+    *out = value[index];
+    ++out;
+  }
+
+  return {move(out), static_cast<iter_difference_t<Out>>(value.size())};
+}
+
+} // namespace detail
+
+inline string vformat(string_view fmt, format_args args) {
+  return detail::format_runtime<char>(fmt, args, nullptr);
+}
+
+inline wstring vformat(wstring_view fmt, wformat_args args) {
+  return detail::format_runtime<wchar_t>(fmt, args, nullptr);
+}
+
+inline string vformat(const locale &loc, string_view fmt, format_args args) {
+  return detail::format_runtime<char>(fmt, args, &loc);
+}
+
+inline wstring vformat(const locale &loc, wstring_view fmt, wformat_args args) {
+  return detail::format_runtime<wchar_t>(fmt, args, &loc);
+}
+
+template <class... Args>
+string format(format_string<Args...> fmt, Args &&...arguments) {
+  auto store = make_format_args(arguments...);
+
+  return vformat(fmt.get(), format_args(store));
+}
+
+template <class... Args>
+wstring format(wformat_string<Args...> fmt, Args &&...arguments) {
+  auto store = make_wformat_args(arguments...);
+
+  return vformat(fmt.get(), wformat_args(store));
+}
+
+template <class... Args>
+string format(const locale &loc, format_string<Args...> fmt,
+              Args &&...arguments) {
+  auto store = make_format_args(arguments...);
+
+  return vformat(loc, fmt.get(), format_args(store));
+}
+
+template <class... Args>
+wstring format(const locale &loc, wformat_string<Args...> fmt,
+               Args &&...arguments) {
+  auto store = make_wformat_args(arguments...);
+
+  return vformat(loc, fmt.get(), wformat_args(store));
+}
+
+template <class Out>
+Out vformat_to(Out out, string_view fmt, format_args args) {
+  const string rendered = vformat(fmt, args);
+
+  return detail::format_copy_to(move(out),
+                                string_view(rendered.data(), rendered.size()));
+}
+
+template <class Out>
+Out vformat_to(Out out, wstring_view fmt, wformat_args args) {
+  const wstring rendered = vformat(fmt, args);
+
+  return detail::format_copy_to(move(out),
+                                wstring_view(rendered.data(), rendered.size()));
+}
+
+template <class Out>
+Out vformat_to(Out out, const locale &loc, string_view fmt, format_args args) {
+  const string rendered = vformat(loc, fmt, args);
+
+  return detail::format_copy_to(move(out),
+                                string_view(rendered.data(), rendered.size()));
+}
+
+template <class Out>
+Out vformat_to(Out out, const locale &loc, wstring_view fmt,
+               wformat_args args) {
+  const wstring rendered = vformat(loc, fmt, args);
+
+  return detail::format_copy_to(move(out),
+                                wstring_view(rendered.data(), rendered.size()));
+}
+
+template <class Out, class... Args>
+Out format_to(Out out, format_string<Args...> fmt, Args &&...arguments) {
+  auto store = make_format_args(arguments...);
+
+  return vformat_to(move(out), fmt.get(), format_args(store));
+}
+
+template <class Out, class... Args>
+Out format_to(Out out, wformat_string<Args...> fmt, Args &&...arguments) {
+  auto store = make_wformat_args(arguments...);
+
+  return vformat_to(move(out), fmt.get(), wformat_args(store));
+}
+
+template <class Out, class... Args>
+Out format_to(Out out, const locale &loc, format_string<Args...> fmt,
+              Args &&...arguments) {
+  auto store = make_format_args(arguments...);
+
+  return vformat_to(move(out), loc, fmt.get(), format_args(store));
+}
+
+template <class Out, class... Args>
+Out format_to(Out out, const locale &loc, wformat_string<Args...> fmt,
+              Args &&...arguments) {
+  auto store = make_wformat_args(arguments...);
+
+  return vformat_to(move(out), loc, fmt.get(), wformat_args(store));
+}
+
+template <class Out, class... Args>
+format_to_n_result<Out> format_to_n(Out out, iter_difference_t<Out> n,
+                                    format_string<Args...> fmt,
+                                    Args &&...arguments) {
+  auto store = make_format_args(arguments...);
+
+  const string rendered = vformat(fmt.get(), format_args(store));
+
+  return detail::format_copy_to_n(
+      move(out), n, string_view(rendered.data(), rendered.size()));
+}
+
+template <class Out, class... Args>
+format_to_n_result<Out> format_to_n(Out out, iter_difference_t<Out> n,
+                                    wformat_string<Args...> fmt,
+                                    Args &&...arguments) {
+  auto store = make_wformat_args(arguments...);
+
+  const wstring rendered = vformat(fmt.get(), wformat_args(store));
+
+  return detail::format_copy_to_n(
+      move(out), n, wstring_view(rendered.data(), rendered.size()));
+}
+
+template <class Out, class... Args>
+format_to_n_result<Out>
+format_to_n(Out out, iter_difference_t<Out> n, const locale &loc,
+            format_string<Args...> fmt, Args &&...arguments) {
+  auto store = make_format_args(arguments...);
+
+  const string rendered = vformat(loc, fmt.get(), format_args(store));
+
+  return detail::format_copy_to_n(
+      move(out), n, string_view(rendered.data(), rendered.size()));
+}
+
+template <class Out, class... Args>
+format_to_n_result<Out>
+format_to_n(Out out, iter_difference_t<Out> n, const locale &loc,
+            wformat_string<Args...> fmt, Args &&...arguments) {
+  auto store = make_wformat_args(arguments...);
+
+  const wstring rendered = vformat(loc, fmt.get(), wformat_args(store));
+
+  return detail::format_copy_to_n(
+      move(out), n, wstring_view(rendered.data(), rendered.size()));
+}
+
+template <class... Args>
+size_t formatted_size(format_string<Args...> fmt, Args &&...arguments) {
+  auto store = make_format_args(arguments...);
+
+  return vformat(fmt.get(), format_args(store)).size();
+}
+
+template <class... Args>
+size_t formatted_size(wformat_string<Args...> fmt, Args &&...arguments) {
+  auto store = make_wformat_args(arguments...);
+
+  return vformat(fmt.get(), wformat_args(store)).size();
+}
+
+template <class... Args>
+size_t formatted_size(const locale &loc, format_string<Args...> fmt,
+                      Args &&...arguments) {
+  auto store = make_format_args(arguments...);
+
+  return vformat(loc, fmt.get(), format_args(store)).size();
+}
+
+template <class... Args>
+size_t formatted_size(const locale &loc, wformat_string<Args...> fmt,
+                      Args &&...arguments) {
+  auto store = make_wformat_args(arguments...);
+
+  return vformat(loc, fmt.get(), wformat_args(store)).size();
 }
 
 FTL_END_NAMESPACE

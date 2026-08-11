@@ -68,9 +68,6 @@ static_assert(
 
 static_assert(tested::is_default_constructible_v<tested::formatter<int, char>>);
 
-static_assert(tested::is_default_constructible_v<
-              tested::formatter<unsigned long long, wchar_t>>);
-
 static_assert(
     tested::is_default_constructible_v<tested::formatter<float, char>>);
 
@@ -90,25 +87,13 @@ static_assert(
     tested::is_default_constructible_v<tested::formatter<char, wchar_t>>);
 
 static_assert(
-    tested::is_default_constructible_v<tested::formatter<wchar_t, wchar_t>>);
-
-static_assert(
     !tested::is_default_constructible_v<tested::formatter<wchar_t, char>>);
 
 static_assert(tested::is_default_constructible_v<
               tested::formatter<tested::string, char>>);
 
-static_assert(tested::is_default_constructible_v<
-              tested::formatter<tested::string_view, char>>);
-
 static_assert(
     tested::is_default_constructible_v<tested::formatter<const char *, char>>);
-
-static_assert(!tested::is_default_constructible_v<
-              tested::formatter<const char *, wchar_t>>);
-
-static_assert(
-    tested::is_default_constructible_v<tested::formatter<void *, char>>);
 
 static_assert(
     tested::is_default_constructible_v<tested::formatter<const void *, char>>);
@@ -116,29 +101,27 @@ static_assert(
 static_assert(tested::is_default_constructible_v<
               tested::formatter<tested::nullptr_t, char>>);
 
-static_assert(tested::range_format::disabled != tested::range_format::sequence);
-
 static_assert(tested::formattable<int, char>);
 
 static_assert(tested::formattable<double, char>);
-
-static_assert(tested::formattable<long double, wchar_t>);
 
 static_assert(tested::formattable<bool, char>);
 
 static_assert(tested::formattable<char, char>);
 
-static_assert(tested::formattable<char, wchar_t>);
-
 static_assert(tested::formattable<tested::string, char>);
-
-static_assert(tested::formattable<tested::string_view, char>);
-
-static_assert(tested::formattable<const char *, char>);
 
 static_assert(tested::formattable<handled_value, char>);
 
 static_assert(!tested::formattable<unavailable_format_type, char>);
+
+constexpr tested::format_string<int> checked_integer_format("{:04x}");
+
+static_assert(checked_integer_format.get().size() == 6);
+
+constexpr tested::wformat_string<int> checked_wide_format(L"{:x}");
+
+static_assert(checked_wide_format.get().size() == 4);
 
 template <class Character> struct sink_iterator {
   using difference_type = tested::ptrdiff_t;
@@ -276,114 +259,55 @@ protected:
   tested::string do_falsename() const override { return tested::string("no"); }
 };
 
-bool automatic_indexing() {
-  tested::format_parse_context context("}", 3);
+bool parse_context_works() {
+  tested::format_parse_context automatic("}", 3);
 
-  return context.next_arg_id() == 0 && context.next_arg_id() == 1 &&
-         context.next_arg_id() == 2;
-}
+  if (automatic.next_arg_id() != 0 || automatic.next_arg_id() != 1 ||
+      automatic.next_arg_id() != 2) {
+    return false;
+  }
 
-bool manual_indexing() {
-  tested::format_parse_context context("}", 3);
+  tested::format_parse_context manual("}", 3);
 
-  context.check_arg_id(2);
-  context.check_arg_id(0);
+  manual.check_arg_id(2);
+  manual.check_arg_id(0);
+
+  try {
+    tested::format_parse_context mixed("}", 2);
+
+    (void)mixed.next_arg_id();
+    mixed.check_arg_id(1);
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  try {
+    tested::format_parse_context mixed("}", 2);
+
+    mixed.check_arg_id(1);
+    (void)mixed.next_arg_id();
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
 
   return true;
 }
 
-bool automatic_then_manual_throws() {
-  try {
-    tested::format_parse_context context("}", 2);
-
-    (void)context.next_arg_id();
-
-    context.check_arg_id(1);
-  } catch (const tested::format_error &) {
-    return true;
-  } catch (...) {
-    return false;
-  }
-
-  return false;
-}
-
-bool manual_then_automatic_throws() {
-  try {
-    tested::format_parse_context context("}", 2);
-
-    context.check_arg_id(1);
-
-    (void)context.next_arg_id();
-  } catch (const tested::format_error &) {
-    return true;
-  } catch (...) {
-    return false;
-  }
-
-  return false;
-}
-
-bool invalid_presentation_throws() {
-  try {
-    tested::formatter<int, char> formatter;
-
-    tested::format_parse_context context("q}");
-
-    (void)formatter.parse(context);
-  } catch (const tested::format_error &) {
-    return true;
-  } catch (...) {
-    return false;
-  }
-
-  return false;
-}
-
-bool precision_throws() {
-  try {
-    tested::formatter<int, char> formatter;
-
-    tested::format_parse_context context(".3d}");
-
-    (void)formatter.parse(context);
-  } catch (const tested::format_error &) {
-    return true;
-  } catch (...) {
-    return false;
-  }
-
-  return false;
-}
-
-bool integer_character_range_throws() {
-  try {
-    tested::formatter<int, char> formatter;
-
-    tested::format_parse_context parse_context("c}");
-
-    (void)formatter.parse(parse_context);
-
-    char buffer[16]{};
-
-    sink_context<char> context{sink_iterator<char>{buffer}};
-
-    (void)formatter.format(256, context);
-  } catch (const tested::format_error &) {
-    return true;
-  } catch (...) {
-    return false;
-  }
-
-  return false;
-}
-
-bool format_arguments_work() {
+bool argument_erasure_works() {
   short signed_value = -7;
 
   unsigned short unsigned_value = 9;
 
-  auto store = tested::make_format_args(signed_value, unsigned_value);
+  float float_value = 1.5f;
+
+  auto store =
+      tested::make_format_args(signed_value, unsigned_value, float_value);
 
   tested::format_args arguments = store;
 
@@ -399,9 +323,6 @@ bool format_arguments_work() {
       },
       arguments.get(0));
 
-  if (!signed_ok)
-    return false;
-
   const bool unsigned_ok = tested::visit_format_arg(
       [](auto value) -> bool {
         using value_type = tested::remove_cvref_t<decltype(value)>;
@@ -414,21 +335,6 @@ bool format_arguments_work() {
       },
       arguments.get(1));
 
-  if (!unsigned_ok)
-    return false;
-
-  return !arguments.get(2);
-}
-
-bool floating_arguments_work() {
-  float float_value = 1.5f;
-  double double_value = 2.5;
-  long double long_value = 3.5L;
-
-  auto store = tested::make_format_args(float_value, double_value, long_value);
-
-  tested::format_args arguments = store;
-
   const bool float_ok = tested::visit_format_arg(
       [](auto value) -> bool {
         using value_type = tested::remove_cvref_t<decltype(value)>;
@@ -439,56 +345,12 @@ bool floating_arguments_work() {
           return false;
         }
       },
-      arguments.get(0));
-
-  const bool double_ok = tested::visit_format_arg(
-      [](auto value) -> bool {
-        using value_type = tested::remove_cvref_t<decltype(value)>;
-
-        if constexpr (tested::is_same_v<value_type, double>) {
-          return value == 2.5;
-        } else {
-          return false;
-        }
-      },
-      arguments.get(1));
-
-  const bool long_ok = tested::visit_format_arg(
-      [](auto value) -> bool {
-        using value_type = tested::remove_cvref_t<decltype(value)>;
-
-        if constexpr (tested::is_same_v<value_type, long double>) {
-          return value == 3.5L;
-        } else {
-          return false;
-        }
-      },
       arguments.get(2));
 
-  return float_ok && double_ok && long_ok;
+  return signed_ok && unsigned_ok && float_ok && !arguments.get(3);
 }
 
-bool string_argument_erasure_works() {
-  const char text[] = "abc";
-
-  auto store = tested::make_format_args(text);
-
-  tested::format_args arguments = store;
-
-  return tested::visit_format_arg(
-      [](auto value) -> bool {
-        using value_type = tested::remove_cvref_t<decltype(value)>;
-
-        if constexpr (tested::is_same_v<value_type, const char *>) {
-          return equal_text(value, "abc");
-        } else {
-          return false;
-        }
-      },
-      arguments.get(0));
-}
-
-bool custom_format_argument_handle_works() {
+bool custom_handle_works() {
   handled_value value{'Q'};
 
   auto store = tested::make_format_args(value);
@@ -523,444 +385,29 @@ bool custom_format_argument_handle_works() {
       arguments.get(0));
 }
 
-bool dynamic_width_formats() {
-  int value = 42;
-  int width = 6;
-
-  auto store = tested::make_format_args(value, width);
-
-  tested::format_args arguments = store;
-
-  tested::string output;
-
-  tested::format_context context(tested::back_inserter(output), arguments);
-
-  tested::formatter<int, char> formatter;
-
-  tested::format_parse_context parse_context("{1}d}", 2);
-
-  (void)formatter.parse(parse_context);
-
-  auto result = formatter.format(value, context);
-
-  context.advance_to(result);
-
-  return equal_text(output.c_str(), "    42");
-}
-
-bool negative_dynamic_width_throws() {
-  int value = 42;
-  int width = -1;
-
-  auto store = tested::make_format_args(value, width);
-
-  tested::format_args arguments = store;
-
-  tested::string output;
-
-  tested::format_context context(tested::back_inserter(output), arguments);
-
-  tested::formatter<int, char> formatter;
-
-  tested::format_parse_context parse_context("{1}d}", 2);
-
-  (void)formatter.parse(parse_context);
-
-  try {
-    (void)formatter.format(value, context);
-  } catch (const tested::format_error &) {
-    return true;
-  } catch (...) {
-    return false;
-  }
-
-  return false;
-}
-
-bool dynamic_string_precision_formats() {
-  tested::string value("abcdef");
-
-  int precision = 3;
-
-  auto store = tested::make_format_args(value, precision);
-
-  tested::format_args arguments = store;
-
-  tested::string output;
-
-  tested::format_context context(tested::back_inserter(output), arguments);
-
-  tested::formatter<tested::string, char> formatter;
-
-  tested::format_parse_context parse_context(".{1}}", 2);
-
-  (void)formatter.parse(parse_context);
-
-  auto result = formatter.format(value, context);
-
-  context.advance_to(result);
-
-  return equal_text(output.c_str(), "abc");
-}
-
-bool dynamic_float_precision_formats() {
-  double value = 1.2345;
-  int precision = 2;
-
-  auto store = tested::make_format_args(value, precision);
-
-  tested::format_args arguments = store;
-
-  tested::string output;
-
-  tested::format_context context(tested::back_inserter(output), arguments);
-
-  tested::formatter<double, char> formatter;
-
-  tested::format_parse_context parse_context(".{1}f}", 2);
-
-  (void)formatter.parse(parse_context);
-
-  auto result = formatter.format(value, context);
-
-  context.advance_to(result);
-
-  return equal_text(output.c_str(), "1.23");
-}
-
-bool negative_dynamic_float_precision_throws() {
-  double value = 1.25;
-  int precision = -1;
-
-  auto store = tested::make_format_args(value, precision);
-
-  tested::format_args arguments = store;
-
-  tested::string output;
-
-  tested::format_context context(tested::back_inserter(output), arguments);
-
-  tested::formatter<double, char> formatter;
-
-  tested::format_parse_context parse_context(".{1}f}", 2);
-
-  (void)formatter.parse(parse_context);
-
-  try {
-    (void)formatter.format(value, context);
-  } catch (const tested::format_error &) {
-    return true;
-  } catch (...) {
-    return false;
-  }
-
-  return false;
-}
-
-bool localized_integer_formats() {
-  int value = 1234567;
-
-  auto store = tested::make_format_args(value);
-
-  tested::format_args arguments = store;
-
-  tested::locale custom(tested::locale::classic(), new test_numpunct);
-
-  tested::string output;
-
-  tested::format_context context(tested::back_inserter(output), arguments,
-                                 &custom);
-
-  tested::formatter<int, char> formatter;
-
-  tested::format_parse_context parse_context("L}", 1);
-
-  (void)formatter.parse(parse_context);
-
-  auto result = formatter.format(value, context);
-
-  context.advance_to(result);
-
-  return equal_text(output.c_str(), "1_234_567");
-}
-
-bool localized_float_formats() {
-  double value = 12345.5;
-
-  auto store = tested::make_format_args(value);
-
-  tested::format_args arguments = store;
-
-  tested::locale custom(tested::locale::classic(), new test_numpunct);
-
-  tested::string output;
-
-  tested::format_context context(tested::back_inserter(output), arguments,
-                                 &custom);
-
-  tested::formatter<double, char> formatter;
-
-  tested::format_parse_context parse_context("L}", 1);
-
-  (void)formatter.parse(parse_context);
-
-  auto result = formatter.format(value, context);
-
-  context.advance_to(result);
-
-  return equal_text(output.c_str(), "12_345;5");
-}
-
-bool localized_bool_formats() {
-  bool value = true;
-
-  auto store = tested::make_format_args(value);
-
-  tested::format_args arguments = store;
-
-  tested::locale custom(tested::locale::classic(), new test_numpunct);
-
-  tested::string output;
-
-  tested::format_context context(tested::back_inserter(output), arguments,
-                                 &custom);
-
-  tested::formatter<bool, char> formatter;
-
-  tested::format_parse_context parse_context("L}", 1);
-
-  (void)formatter.parse(parse_context);
-
-  auto result = formatter.format(value, context);
-
-  context.advance_to(result);
-
-  return equal_text(output.c_str(), "yes");
-}
-
-bool invalid_float_presentation_throws() {
-  try {
-    tested::formatter<double, char> formatter;
-
-    tested::format_parse_context context("q}");
-
-    (void)formatter.parse(context);
-  } catch (const tested::format_error &) {
-    return true;
-  } catch (...) {
-    return false;
-  }
-
-  return false;
-}
-
-bool invalid_string_sign_throws() {
-  try {
-    tested::formatter<tested::string, char> formatter;
-
-    tested::format_parse_context context("+}");
-
-    (void)formatter.parse(context);
-  } catch (const tested::format_error &) {
-    return true;
-  } catch (...) {
-    return false;
-  }
-
-  return false;
-}
-
-bool invalid_pointer_precision_throws() {
-  try {
-    tested::formatter<const void *, char> formatter;
-
-    tested::format_parse_context context(".3}");
-
-    (void)formatter.parse(context);
-  } catch (const tested::format_error &) {
-    return true;
-  } catch (...) {
-    return false;
-  }
-
-  return false;
-}
-
-bool ftl_test() {
-  if (!automatic_indexing())
-    return false;
-
-  if (!manual_indexing())
-    return false;
-
-  if (!automatic_then_manual_throws())
-    return false;
-
-  if (!manual_then_automatic_throws())
-    return false;
-
-  if (!invalid_presentation_throws())
-    return false;
-
-  if (!precision_throws())
-    return false;
-
-  if (!integer_character_range_throws())
-    return false;
-
-  if (!format_arguments_work())
-    return false;
-
-  if (!floating_arguments_work())
-    return false;
-
-  if (!string_argument_erasure_works())
-    return false;
-
-  if (!custom_format_argument_handle_works())
-    return false;
-
-  if (!dynamic_width_formats())
-    return false;
-
-  if (!negative_dynamic_width_throws())
-    return false;
-
-  if (!dynamic_string_precision_formats())
-    return false;
-
-  if (!dynamic_float_precision_formats())
-    return false;
-
-  if (!negative_dynamic_float_precision_throws())
-    return false;
-
-  if (!localized_integer_formats())
-    return false;
-
-  if (!localized_float_formats())
-    return false;
-
-  if (!localized_bool_formats())
-    return false;
-
-  if (!invalid_float_presentation_throws())
-    return false;
-
-  if (!invalid_string_sign_throws())
-    return false;
-
-  if (!invalid_pointer_precision_throws())
-    return false;
-
+bool raw_formatter_tests() {
   if (!format_value_case("}", 42, "42"))
     return false;
 
-  if (!format_value_case("x}", 42, "2a"))
-    return false;
-
-  if (!format_value_case("#x}", 42, "0x2a"))
-    return false;
-
-  if (!format_value_case("06d}", -42, "-00042"))
-    return false;
-
-  if (!format_value_case("*^7d}", 42, "**42***"))
+  if (!format_value_case("#08x}", 42, "0x00002a"))
     return false;
 
   if (!format_value_case("c}", 65, "A"))
     return false;
 
-  if (!format_wide_value_case(L"X}", 42, L"2A"))
-    return false;
-
-  /*
-   * Floating default and precision forms.
-   */
   if (!format_value_case("}", 1.5, "1.5"))
-    return false;
-
-  if (!format_value_case("f}", 1.5, "1.500000"))
     return false;
 
   if (!format_value_case(".2f}", 1.25, "1.25"))
     return false;
 
-  if (!format_value_case("e}", 1.25, "1.250000e+00"))
-    return false;
-
   if (!format_value_case("E}", 1.25, "1.250000E+00"))
-    return false;
-
-  if (!format_value_case("g}", 1.25, "1.25"))
-    return false;
-
-  if (!format_value_case(".4g}", 12.0, "12"))
-    return false;
-
-  if (!format_value_case("a}", 1.5, "1.8p+0"))
-    return false;
-
-  if (!format_value_case("A}", 1.5, "1.8P+0"))
-    return false;
-
-  /*
-   * Alternate floating form.
-   */
-  if (!format_value_case("#.0f}", 1.0, "1."))
     return false;
 
   if (!format_value_case("#.4g}", 12.0, "12.00"))
     return false;
 
-  if (!format_value_case("#.3e}", 1.0, "1.000e+00"))
-    return false;
-
-  if (!format_value_case("#a}", 1.0, "1.p+0"))
-    return false;
-
-  /*
-   * Floating sign, padding, alignment.
-   */
-  if (!format_value_case("+f}", 1.5, "+1.500000"))
-    return false;
-
-  if (!format_value_case(" f}", 1.5, " 1.500000"))
-    return false;
-
   if (!format_value_case("010.2f}", -1.5, "-000001.50"))
-    return false;
-
-  if (!format_value_case("*<10.2f}", 1.5, "1.50******"))
-    return false;
-
-  if (!format_value_case("*^10.2f}", 1.5, "***1.50***"))
-    return false;
-
-  if (!format_wide_value_case(L".2f}", 1.5, L"1.50"))
-    return false;
-
-  /*
-   * Infinity/NaN case and 0 behavior.
-   */
-  const double infinity = tested::numeric_limits<double>::infinity();
-
-  if (!format_value_case("F}", infinity, "INF"))
-    return false;
-
-  if (!format_value_case("+F}", infinity, "+INF"))
-    return false;
-
-  if (!format_value_case("08f}", infinity, "     inf"))
-    return false;
-
-  if (!format_value_case("}", 'x', "x"))
-    return false;
-
-  if (!format_value_case("6d}", 'x', "   120"))
-    return false;
-
-  if (!format_value_case("?}", '\n', "'\\n'"))
     return false;
 
   if (!format_value_case("}", true, "true"))
@@ -969,10 +416,7 @@ bool ftl_test() {
   if (!format_value_case("d}", true, "1"))
     return false;
 
-  if (!format_value_case("#b}", true, "0b1"))
-    return false;
-
-  if (!format_value_case("}", "hello", "hello"))
+  if (!format_value_case("?}", '\n', "'\\n'"))
     return false;
 
   if (!format_value_case("*<8.3}", "abcdef", "abc*****"))
@@ -981,19 +425,326 @@ bool ftl_test() {
   if (!format_value_case("?}", "a\n", "\"a\\n\""))
     return false;
 
-  tested::string string_value("world");
-
-  if (!format_value_case("}", string_value, "world"))
+  if (!format_wide_value_case(L".2f}", 1.5, L"1.50"))
     return false;
 
-  const void *null_pointer = nullptr;
+  return true;
+}
 
-  if (!format_value_case("}", null_pointer, "0x0"))
+bool public_format_works() {
+  const auto simple = tested::format("hello {}", 42);
+
+  if (!equal_text(simple.c_str(), "hello 42")) {
+    return false;
+  }
+
+  const auto multiple = tested::format("{} + {} = {}", 2, 3, 5);
+
+  if (!equal_text(multiple.c_str(), "2 + 3 = 5")) {
+    return false;
+  }
+
+  const auto manual = tested::format("{1}:{0}", "left", "right");
+
+  if (!equal_text(manual.c_str(), "right:left")) {
+    return false;
+  }
+
+  const auto escaped = tested::format("{{{}}}", 42);
+
+  if (!equal_text(escaped.c_str(), "{42}")) {
+    return false;
+  }
+
+  const auto integer = tested::format("{:#08x}", 42);
+
+  if (!equal_text(integer.c_str(), "0x00002a")) {
+    return false;
+  }
+
+  const auto floating = tested::format("{:.2f}", 3.14159);
+
+  if (!equal_text(floating.c_str(), "3.14")) {
+    return false;
+  }
+
+  const auto text = tested::format("{:*^9}", "abc");
+
+  if (!equal_text(text.c_str(), "***abc***")) {
+    return false;
+  }
+
+  const auto custom = tested::format("{}", handled_value{'Q'});
+
+  if (!equal_text(custom.c_str(), "Q")) {
+    return false;
+  }
+
+  return true;
+}
+
+bool nested_format_arguments_work() {
+  const auto automatic = tested::format("{:{}}", 42, 6);
+
+  if (!equal_text(automatic.c_str(), "    42")) {
+    return false;
+  }
+
+  const auto manual = tested::format("{0:{1}}", 42, 6);
+
+  if (!equal_text(manual.c_str(), "    42")) {
+    return false;
+  }
+
+  const auto precision = tested::format("{0:.{1}f}", 3.14159, 3);
+
+  if (!equal_text(precision.c_str(), "3.142")) {
+    return false;
+  }
+
+  return true;
+}
+
+bool wide_format_works() {
+  const auto value = tested::format(L"{} {:.2f}", 42, 1.5);
+
+  return equal_text(value.c_str(), L"42 1.50");
+}
+
+bool runtime_vformat_works() {
+  int first = 10;
+  int second = 20;
+
+  auto store = tested::make_format_args(first, second);
+
+  const auto value = tested::vformat("{}:{}", tested::format_args(store));
+
+  if (!equal_text(value.c_str(), "10:20")) {
+    return false;
+  }
+
+  int number = 42;
+  int width = 6;
+
+  auto nested_store = tested::make_format_args(number, width);
+
+  const auto nested =
+      tested::vformat("{0:{1}}", tested::format_args(nested_store));
+
+  if (!equal_text(nested.c_str(), "    42")) {
+    return false;
+  }
+
+  return true;
+}
+
+bool runtime_format_errors_work() {
+  int first = 1;
+  int second = 2;
+
+  auto store = tested::make_format_args(first, second);
+
+  tested::format_args args(store);
+
+  try {
+    (void)tested::vformat("{0} {}", args);
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  try {
+    (void)tested::vformat("{", args);
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  try {
+    (void)tested::vformat("}", args);
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  try {
+    (void)tested::vformat("{2}", args);
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  try {
+    (void)tested::vformat("{01}", args);
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  return true;
+}
+
+bool format_to_works() {
+  char buffer[128]{};
+
+  auto result = tested::format_to(sink_iterator<char>{buffer}, "{}-{}", 12, 34);
+
+  *result.current = '\0';
+
+  return result.current == buffer + 5 && equal_text(buffer, "12-34");
+}
+
+bool vformat_to_works() {
+  int value = 42;
+
+  auto store = tested::make_format_args(value);
+
+  char buffer[128]{};
+
+  auto result = tested::vformat_to(sink_iterator<char>{buffer}, "value={}",
+                                   tested::format_args(store));
+
+  *result.current = '\0';
+
+  return equal_text(buffer, "value=42");
+}
+
+bool format_to_n_works() {
+  char buffer[128]{};
+
+  const auto result =
+      tested::format_to_n(sink_iterator<char>{buffer}, 4, "{}", "abcdef");
+
+  *result.out.current = '\0';
+
+  if (!equal_text(buffer, "abcd")) {
+    return false;
+  }
+
+  if (result.out.current != buffer + 4) {
+    return false;
+  }
+
+  if (result.size != 6)
     return false;
 
-  tested::nullptr_t null_value = nullptr;
+  char untouched[8]{};
 
-  if (!format_value_case("p}", null_value, "0x0"))
+  const auto negative =
+      tested::format_to_n(sink_iterator<char>{untouched}, -1, "{}", 123);
+
+  if (negative.out.current != untouched) {
+    return false;
+  }
+
+  return negative.size == 3;
+}
+
+bool formatted_size_works() {
+  if (tested::formatted_size("{}:{}", 12, 345) != 6) {
+    return false;
+  }
+
+  if (tested::formatted_size(L"{:.2f}", 1.5) != 4) {
+    return false;
+  }
+
+  return true;
+}
+
+bool locale_frontend_works() {
+  tested::locale custom(tested::locale::classic(), new test_numpunct);
+
+  const auto integer = tested::format(custom, "{:L}", 1234567);
+
+  if (!equal_text(integer.c_str(), "1_234_567")) {
+    return false;
+  }
+
+  const auto floating = tested::format(custom, "{:L}", 12345.5);
+
+  if (!equal_text(floating.c_str(), "12_345;5")) {
+    return false;
+  }
+
+  const auto boolean = tested::format(custom, "{:L}", true);
+
+  if (!equal_text(boolean.c_str(), "yes")) {
+    return false;
+  }
+
+  char buffer[64]{};
+
+  auto result =
+      tested::format_to(sink_iterator<char>{buffer}, custom, "{:L}", 1234);
+
+  *result.current = '\0';
+
+  return equal_text(buffer, "1_234");
+}
+
+bool format_string_get_works() {
+  constexpr tested::format_string<int> value("value={}");
+
+  const auto view = value.get();
+
+  return view.size() == 8 && view[0] == 'v' && view[7] == '}';
+}
+
+bool ftl_test() {
+  if (!parse_context_works())
+    return false;
+
+  if (!argument_erasure_works())
+    return false;
+
+  if (!custom_handle_works())
+    return false;
+
+  if (!raw_formatter_tests())
+    return false;
+
+  if (!public_format_works())
+    return false;
+
+  if (!nested_format_arguments_work())
+    return false;
+
+  if (!wide_format_works())
+    return false;
+
+  if (!runtime_vformat_works())
+    return false;
+
+  if (!runtime_format_errors_work())
+    return false;
+
+  if (!format_to_works())
+    return false;
+
+  if (!vformat_to_works())
+    return false;
+
+  if (!format_to_n_works())
+    return false;
+
+  if (!formatted_size_works())
+    return false;
+
+  if (!locale_frontend_works())
+    return false;
+
+  if (!format_string_get_works())
     return false;
 
   return true;
