@@ -191,8 +191,8 @@ public:
 #if FTL_HAS_EXCEPTIONS
     try {
 #endif
-    ensure_word(index);
-    return words_[static_cast<size_t>(index)].integer;
+      ensure_word(index);
+      return words_[static_cast<size_t>(index)].integer;
 #if FTL_HAS_EXCEPTIONS
     } catch (...) {
       storage_failure();
@@ -206,8 +206,8 @@ public:
 #if FTL_HAS_EXCEPTIONS
     try {
 #endif
-    ensure_word(index);
-    return words_[static_cast<size_t>(index)].pointer;
+      ensure_word(index);
+      return words_[static_cast<size_t>(index)].pointer;
 #if FTL_HAS_EXCEPTIONS
     } catch (...) {
       storage_failure();
@@ -267,8 +267,14 @@ protected:
   }
 
 private:
-  struct word { long integer = 0; void *pointer = nullptr; };
-  struct callback { event_callback function; int index; };
+  struct word {
+    long integer = 0;
+    void *pointer = nullptr;
+  };
+  struct callback {
+    event_callback function;
+    int index;
+  };
 
   void ensure_word(int index) {
     if (index < 0) {
@@ -297,9 +303,10 @@ private:
 
 namespace detail {
 inline int locale_stream_base(const ios_base &stream) noexcept {
-  return (stream.flags() & ios_base::hex) ? 16
-       : (stream.flags() & ios_base::oct) ? 8
-       : (stream.flags() & ios_base::dec) ? 10 : 0;
+  return (stream.flags() & ios_base::hex)   ? 16
+         : (stream.flags() & ios_base::oct) ? 8
+         : (stream.flags() & ios_base::dec) ? 10
+                                            : 0;
 }
 inline bool locale_stream_boolalpha(const ios_base &stream) noexcept {
   return (stream.flags() & ios_base::boolalpha) != 0;
@@ -318,8 +325,10 @@ inline bool locale_stream_uppercase(const ios_base &stream) noexcept {
 }
 inline int locale_stream_float_mode(const ios_base &stream) noexcept {
   auto mode = stream.flags() & ios_base::floatfield;
-  return mode == ios_base::fixed ? 1 : mode == ios_base::scientific ? 2
-       : mode == ios_base::floatfield ? 3 : 0;
+  return mode == ios_base::fixed        ? 1
+         : mode == ios_base::scientific ? 2
+         : mode == ios_base::floatfield ? 3
+                                        : 0;
 }
 inline int locale_stream_adjust(const ios_base &stream) noexcept {
   auto mode = stream.flags() & ios_base::adjustfield;
@@ -332,30 +341,46 @@ inline streamsize locale_stream_take_width(ios_base &stream) noexcept {
   return stream.width(0);
 }
 inline locale locale_stream_locale(ios_base &stream) { return stream.getloc(); }
-inline unsigned int locale_stream_failbit() noexcept { return ios_base::failbit; }
+inline unsigned int locale_stream_failbit() noexcept {
+  return ios_base::failbit;
+}
 inline unsigned int locale_stream_eofbit() noexcept { return ios_base::eofbit; }
 } // namespace detail
 
+template <class C, class I> unsigned int num_get<C, I>::stream_failbit() {
+  return ios_base::failbit;
+}
+template <class C, class I> unsigned int num_get<C, I>::stream_eofbit() {
+  return ios_base::eofbit;
+}
 template <class C, class I>
-unsigned int num_get<C, I>::stream_failbit() { return ios_base::failbit; }
+locale num_get<C, I>::format_locale(ios_base &stream) {
+  return stream.getloc();
+}
 template <class C, class I>
-unsigned int num_get<C, I>::stream_eofbit() { return ios_base::eofbit; }
+locale num_put<C, I>::format_locale(ios_base &stream) {
+  return stream.getloc();
+}
+template <class C, class I> unsigned int time_get<C, I>::stream_failbit() {
+  return ios_base::failbit;
+}
+template <class C, class I> unsigned int time_get<C, I>::stream_eofbit() {
+  return ios_base::eofbit;
+}
+template <class C, class I> unsigned int money_get<C, I>::stream_failbit() {
+  return ios_base::failbit;
+}
+template <class C, class I> unsigned int money_get<C, I>::stream_eofbit() {
+  return ios_base::eofbit;
+}
 template <class C, class I>
-locale num_get<C, I>::format_locale(ios_base &stream) { return stream.getloc(); }
+locale money_get<C, I>::format_locale(ios_base &stream) {
+  return stream.getloc();
+}
 template <class C, class I>
-locale num_put<C, I>::format_locale(ios_base &stream) { return stream.getloc(); }
-template <class C, class I>
-unsigned int time_get<C, I>::stream_failbit() { return ios_base::failbit; }
-template <class C, class I>
-unsigned int time_get<C, I>::stream_eofbit() { return ios_base::eofbit; }
-template <class C, class I>
-unsigned int money_get<C, I>::stream_failbit() { return ios_base::failbit; }
-template <class C, class I>
-unsigned int money_get<C, I>::stream_eofbit() { return ios_base::eofbit; }
-template <class C, class I>
-locale money_get<C, I>::format_locale(ios_base &stream) { return stream.getloc(); }
-template <class C, class I>
-locale money_put<C, I>::format_locale(ios_base &stream) { return stream.getloc(); }
+locale money_put<C, I>::format_locale(ios_base &stream) {
+  return stream.getloc();
+}
 
 template <class Character, class Traits> class basic_ios : public ios_base {
 public:
@@ -365,7 +390,9 @@ public:
   using pos_type = typename traits_type::pos_type;
   using off_type = typename traits_type::off_type;
 
-  explicit basic_ios(basic_streambuf<char_type, traits_type> *buffer) { init(buffer); }
+  explicit basic_ios(basic_streambuf<char_type, traits_type> *buffer) {
+    init(buffer);
+  }
   virtual ~basic_ios() = default;
 
   explicit operator bool() const { return !fail(); }
@@ -387,18 +414,29 @@ public:
   bool fail() const { return (rdstate() & (failbit | badbit)) != 0; }
   bool bad() const { return (rdstate() & badbit) != 0; }
   iostate exceptions() const { return exceptions_; }
-  void exceptions(iostate value) { exceptions_ = value; clear(rdstate()); }
+  void exceptions(iostate value) {
+    exceptions_ = value;
+    clear(rdstate());
+  }
 
   basic_ostream<char_type, traits_type> *tie() const { return tie_; }
-  basic_ostream<char_type, traits_type> *tie(basic_ostream<char_type, traits_type> *value) {
-    auto *previous = tie_; tie_ = value; return previous;
+  basic_ostream<char_type, traits_type> *
+  tie(basic_ostream<char_type, traits_type> *value) {
+    auto *previous = tie_;
+    tie_ = value;
+    return previous;
   }
   basic_streambuf<char_type, traits_type> *rdbuf() const { return buffer_; }
-  basic_streambuf<char_type, traits_type> *rdbuf(basic_streambuf<char_type, traits_type> *value) {
-    auto *previous = buffer_; buffer_ = value; clear(); return previous;
+  basic_streambuf<char_type, traits_type> *
+  rdbuf(basic_streambuf<char_type, traits_type> *value) {
+    auto *previous = buffer_;
+    buffer_ = value;
+    clear();
+    return previous;
   }
   basic_ios &copyfmt(const basic_ios &other) {
-    if (this == &other) return *this;
+    if (this == &other)
+      return *this;
     ios_base::copyfmt_from(other);
     fill_ = other.fill_;
     tie_ = other.tie_;
@@ -406,7 +444,11 @@ public:
     return *this;
   }
   char_type fill() const { return fill_; }
-  char_type fill(char_type value) { char_type old = fill_; fill_ = value; return old; }
+  char_type fill(char_type value) {
+    char_type old = fill_;
+    fill_ = value;
+    return old;
+  }
   locale imbue(const locale &value);
   char narrow(char_type value, char fallback) const {
     return use_facet<ctype<char_type>>(getloc()).narrow(value, fallback);
@@ -421,25 +463,43 @@ public:
 protected:
   basic_ios() = default;
   void init(basic_streambuf<char_type, traits_type> *buffer) {
-    buffer_ = buffer; tie_ = nullptr; fill_ = char_type(' '); exceptions_ = goodbit;
+    buffer_ = buffer;
+    tie_ = nullptr;
+    fill_ = char_type(' ');
+    exceptions_ = goodbit;
     state_ = buffer == nullptr ? badbit : goodbit;
   }
   void move(basic_ios &other) {
-    ios_base::move(other); tie_ = other.tie_; fill_ = other.fill_;
-    state_ = other.state_; exceptions_ = other.exceptions_; buffer_ = nullptr;
+    ios_base::move(other);
+    tie_ = other.tie_;
+    fill_ = other.fill_;
+    state_ = other.state_;
+    exceptions_ = other.exceptions_;
+    buffer_ = nullptr;
   }
   void move(basic_ios &&other) { move(other); }
   void swap(basic_ios &other) noexcept {
     ios_base::swap(other);
-    auto *tie = tie_; tie_ = other.tie_; other.tie_ = tie;
-    char_type fill = fill_; fill_ = other.fill_; other.fill_ = fill;
-    iostate state = state_; state_ = other.state_; other.state_ = state;
-    iostate except = exceptions_; exceptions_ = other.exceptions_; other.exceptions_ = except;
+    auto *tie = tie_;
+    tie_ = other.tie_;
+    other.tie_ = tie;
+    char_type fill = fill_;
+    fill_ = other.fill_;
+    other.fill_ = fill;
+    iostate state = state_;
+    state_ = other.state_;
+    other.state_ = state;
+    iostate except = exceptions_;
+    exceptions_ = other.exceptions_;
+    other.exceptions_ = except;
   }
-  void set_rdbuf(basic_streambuf<char_type, traits_type> *buffer) { buffer_ = buffer; }
+  void set_rdbuf(basic_streambuf<char_type, traits_type> *buffer) {
+    buffer_ = buffer;
+  }
   void __setstate_nothrow(iostate value) noexcept {
     state_ |= value;
-    if (!buffer_) state_ |= badbit;
+    if (!buffer_)
+      state_ |= badbit;
   }
   void storage_failure() override { setstate(badbit); }
 
@@ -451,17 +511,20 @@ private:
   iostate exceptions_ = goodbit;
 };
 
-template <class C, class T>
-locale basic_ios<C, T>::imbue(const locale &value) {
+template <class C, class T> locale basic_ios<C, T>::imbue(const locale &value) {
   locale previous = ios_base::imbue(value);
-  if (rdbuf()) rdbuf()->pubimbue(value);
+  if (rdbuf())
+    rdbuf()->pubimbue(value);
   return previous;
 }
 
-#define FTL_IOS_FLAG_MANIP(name, flag, set) \
-  inline ios_base &name(ios_base &stream) { \
-    if constexpr (set) stream.setf(ios_base::flag); else stream.unsetf(ios_base::flag); \
-    return stream; \
+#define FTL_IOS_FLAG_MANIP(name, flag, set)                                    \
+  inline ios_base &name(ios_base &stream) {                                    \
+    if constexpr (set)                                                         \
+      stream.setf(ios_base::flag);                                             \
+    else                                                                       \
+      stream.unsetf(ios_base::flag);                                           \
+    return stream;                                                             \
   }
 FTL_IOS_FLAG_MANIP(boolalpha, boolalpha, true)
 FTL_IOS_FLAG_MANIP(noboolalpha, boolalpha, false)
@@ -479,16 +542,46 @@ FTL_IOS_FLAG_MANIP(unitbuf, unitbuf, true)
 FTL_IOS_FLAG_MANIP(nounitbuf, unitbuf, false)
 #undef FTL_IOS_FLAG_MANIP
 
-inline ios_base &internal(ios_base &s) { s.setf(ios_base::internal, ios_base::adjustfield); return s; }
-inline ios_base &left(ios_base &s) { s.setf(ios_base::left, ios_base::adjustfield); return s; }
-inline ios_base &right(ios_base &s) { s.setf(ios_base::right, ios_base::adjustfield); return s; }
-inline ios_base &dec(ios_base &s) { s.setf(ios_base::dec, ios_base::basefield); return s; }
-inline ios_base &hex(ios_base &s) { s.setf(ios_base::hex, ios_base::basefield); return s; }
-inline ios_base &oct(ios_base &s) { s.setf(ios_base::oct, ios_base::basefield); return s; }
-inline ios_base &fixed(ios_base &s) { s.setf(ios_base::fixed, ios_base::floatfield); return s; }
-inline ios_base &scientific(ios_base &s) { s.setf(ios_base::scientific, ios_base::floatfield); return s; }
-inline ios_base &hexfloat(ios_base &s) { s.setf(ios_base::fixed | ios_base::scientific, ios_base::floatfield); return s; }
-inline ios_base &defaultfloat(ios_base &s) { s.unsetf(ios_base::floatfield); return s; }
+inline ios_base &internal(ios_base &s) {
+  s.setf(ios_base::internal, ios_base::adjustfield);
+  return s;
+}
+inline ios_base &left(ios_base &s) {
+  s.setf(ios_base::left, ios_base::adjustfield);
+  return s;
+}
+inline ios_base &right(ios_base &s) {
+  s.setf(ios_base::right, ios_base::adjustfield);
+  return s;
+}
+inline ios_base &dec(ios_base &s) {
+  s.setf(ios_base::dec, ios_base::basefield);
+  return s;
+}
+inline ios_base &hex(ios_base &s) {
+  s.setf(ios_base::hex, ios_base::basefield);
+  return s;
+}
+inline ios_base &oct(ios_base &s) {
+  s.setf(ios_base::oct, ios_base::basefield);
+  return s;
+}
+inline ios_base &fixed(ios_base &s) {
+  s.setf(ios_base::fixed, ios_base::floatfield);
+  return s;
+}
+inline ios_base &scientific(ios_base &s) {
+  s.setf(ios_base::scientific, ios_base::floatfield);
+  return s;
+}
+inline ios_base &hexfloat(ios_base &s) {
+  s.setf(ios_base::fixed | ios_base::scientific, ios_base::floatfield);
+  return s;
+}
+inline ios_base &defaultfloat(ios_base &s) {
+  s.unsetf(ios_base::floatfield);
+  return s;
+}
 
 class iostream_error_category final : public error_category {
 public:

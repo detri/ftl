@@ -19,15 +19,6 @@
 
 FTL_BEGIN_NAMESPACE
 
-inline istream cin{nullptr};
-inline ostream cout{nullptr};
-inline ostream cerr{nullptr};
-inline ostream clog{nullptr};
-inline wistream wcin{nullptr};
-inline wostream wcout{nullptr};
-inline wostream wcerr{nullptr};
-inline wostream wclog{nullptr};
-
 namespace detail {
 template <class Character, class Traits> class standard_filebuf;
 
@@ -131,22 +122,24 @@ struct standard_stream_buffers {
   standard_filebuf<wchar_t, char_traits<wchar_t>> win{stdin, true},
       wout{stdout, false}, werr{stderr, false};
 };
+inline standard_stream_buffers standard_buffers_instance;
+} // namespace detail
+
+inline istream cin{&detail::standard_buffers_instance.in};
+inline ostream cout{&detail::standard_buffers_instance.out};
+inline ostream cerr{&detail::standard_buffers_instance.err};
+inline ostream clog{&detail::standard_buffers_instance.err};
+inline wistream wcin{&detail::standard_buffers_instance.win};
+inline wostream wcout{&detail::standard_buffers_instance.wout};
+inline wostream wcerr{&detail::standard_buffers_instance.werr};
+inline wostream wclog{&detail::standard_buffers_instance.werr};
+
+namespace detail {
 inline once_flag standard_stream_once;
 inline atomic<unsigned> standard_stream_users{0};
-inline standard_stream_buffers *standard_buffers{};
 
 inline void initialize_standard_streams() {
   call_once(standard_stream_once, [] {
-    static standard_stream_buffers buffers;
-    standard_buffers = &buffers;
-    cin.rdbuf(&buffers.in);
-    cout.rdbuf(&buffers.out);
-    cerr.rdbuf(&buffers.err);
-    clog.rdbuf(&buffers.err);
-    wcin.rdbuf(&buffers.win);
-    wcout.rdbuf(&buffers.wout);
-    wcerr.rdbuf(&buffers.werr);
-    wclog.rdbuf(&buffers.werr);
     cin.tie(&cout);
     wcin.tie(&wcout);
     cerr.tie(&cout);
@@ -184,9 +177,7 @@ inline ios_base::Init::~Init() {
   }
 }
 
-namespace {
-ios_base::Init __ftl_standard_stream_initializer;
-}
+inline ios_base::Init __ftl_standard_stream_initializer;
 
 FTL_END_NAMESPACE
 #endif

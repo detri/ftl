@@ -53,7 +53,7 @@ inline const char *file_open_mode(ios_base::openmode mode, char (&text)[5]) {
   if (binary)
     text[n++] = 'b';
   if (exclusive) {
-    if (!out || (!trunc && !app))
+    if (!out || app || (in && !trunc))
       return nullptr;
     text[n++] = 'x';
   }
@@ -157,30 +157,30 @@ public:
 #if FTL_HAS_EXCEPTIONS
     try {
 #endif
-    if (last_output_ && !is_same_v<Character, char>) {
-      char bytes[64];
-      char *next = bytes;
-      const auto &conversion =
-          use_facet<codecvt<Character, char, typename Traits::state_type>>(
-              this->getloc());
-      auto result = conversion.unshift(state_, bytes, bytes + 64, next);
-      if (result == codecvt_base::error ||
-          ::ftl_cstdio_runtime::fwrite(
-              bytes, 1, static_cast<size_t>(next - bytes), file_) !=
-              static_cast<size_t>(next - bytes))
+      if (last_output_ && !is_same_v<Character, char>) {
+        char bytes[64];
+        char *next = bytes;
+        const auto &conversion =
+            use_facet<codecvt<Character, char, typename Traits::state_type>>(
+                this->getloc());
+        auto result = conversion.unshift(state_, bytes, bytes + 64, next);
+        if (result == codecvt_base::error ||
+            ::ftl_cstdio_runtime::fwrite(
+                bytes, 1, static_cast<size_t>(next - bytes), file_) !=
+                static_cast<size_t>(next - bytes))
+          okay = false;
+      }
+      if (sync() != 0)
         okay = false;
-    }
-    if (sync() != 0)
-      okay = false;
-    FILE *old = file_;
-    file_ = nullptr;
-    this->setg(nullptr, nullptr, nullptr);
-    this->setp(nullptr, nullptr);
-    if (::ftl_cstdio_runtime::fclose(old) != 0)
-      okay = false;
-    state_ = {};
-    last_output_ = false;
-    return okay ? this : nullptr;
+      FILE *old = file_;
+      file_ = nullptr;
+      this->setg(nullptr, nullptr, nullptr);
+      this->setp(nullptr, nullptr);
+      if (::ftl_cstdio_runtime::fclose(old) != 0)
+        okay = false;
+      state_ = {};
+      last_output_ = false;
+      return okay ? this : nullptr;
 #if FTL_HAS_EXCEPTIONS
     } catch (...) {
       FILE *old = file_;
@@ -401,8 +401,7 @@ public:
   void open(const basic_string<char> &s, ios_base::openmode m = ios_base::in) {
     open(s.c_str(), m);
   }
-  void open(const filesystem::path &p,
-            ios_base::openmode m = ios_base::in);
+  void open(const filesystem::path &p, ios_base::openmode m = ios_base::in);
   void close() {
     if (!sb_.close())
       this->setstate(ios_base::failbit);
@@ -466,8 +465,7 @@ public:
   void open(const basic_string<char> &s, ios_base::openmode m = ios_base::out) {
     open(s.c_str(), m);
   }
-  void open(const filesystem::path &p,
-            ios_base::openmode m = ios_base::out);
+  void open(const filesystem::path &p, ios_base::openmode m = ios_base::out);
   void close() {
     if (!sb_.close())
       this->setstate(ios_base::failbit);

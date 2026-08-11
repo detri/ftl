@@ -82,8 +82,7 @@ public:
   }
   basic_stringbuf(basic_stringbuf &&other, const Allocator &allocator)
       : basic_streambuf<Character, Traits>(other), mode_(other.mode_),
-        storage_(allocator),
-        high_(other.high_) {
+        storage_(allocator), high_(other.high_) {
     size_t get = current_get(), put = current_put();
     storage_ = basic_string<Character, Traits, Allocator>(
         static_cast<basic_string<Character, Traits, Allocator> &&>(

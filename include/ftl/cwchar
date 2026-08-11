@@ -7,22 +7,22 @@
 #include <__c_file_types.hpp>
 #include <__c_time_types.hpp>
 #include <__c_wide_types.hpp>
-#include <detail/stdio_runtime.hpp>
 #include <cerrno>
 #include <cstdarg>
 #include <cstdint>
 #include <cstring>
+#include <detail/stdio_runtime.hpp>
 #include <limits>
 #include <type_traits>
 #else
 #include <ftl/__c_file_types.hpp>
 #include <ftl/__c_time_types.hpp>
 #include <ftl/__c_wide_types.hpp>
-#include <ftl/detail/stdio_runtime.hpp>
 #include <ftl/cerrno>
 #include <ftl/cstdarg>
 #include <ftl/cstdint>
 #include <ftl/cstring>
+#include <ftl/detail/stdio_runtime.hpp>
 #include <ftl/limits>
 #include <ftl/type_traits>
 #endif
@@ -58,82 +58,49 @@ extern "C" {
 
 #if defined(_WIN32)
 
-int __cdecl __stdio_common_vfwprintf(
-    unsigned long long options,
-    FILE *stream,
-    const wchar_t *format,
-    void *locale,
-    ftl_cwchar_native_va_list arguments);
+int __cdecl __stdio_common_vfwprintf(unsigned long long options, FILE *stream,
+                                     const wchar_t *format, void *locale,
+                                     ftl_cwchar_native_va_list arguments);
 
-int __cdecl __stdio_common_vfwscanf(
-    unsigned long long options,
-    FILE *stream,
-    const wchar_t *format,
-    void *locale,
-    ftl_cwchar_native_va_list arguments);
+int __cdecl __stdio_common_vfwscanf(unsigned long long options, FILE *stream,
+                                    const wchar_t *format, void *locale,
+                                    ftl_cwchar_native_va_list arguments);
 
-int __cdecl __stdio_common_vswscanf(
-    unsigned long long options,
-    const wchar_t *buffer,
-    decltype(sizeof(0)) buffer_count,
-    const wchar_t *format,
-    void *locale,
-    ftl_cwchar_native_va_list arguments);
+int __cdecl __stdio_common_vswscanf(unsigned long long options,
+                                    const wchar_t *buffer,
+                                    decltype(sizeof(0)) buffer_count,
+                                    const wchar_t *format, void *locale,
+                                    ftl_cwchar_native_va_list arguments);
 
 #else
 
-int vfwprintf(
-    FILE *,
-    const wchar_t *,
-    ftl_cwchar_native_va_list);
+int vfwprintf(FILE *, const wchar_t *, ftl_cwchar_native_va_list);
 
-int vfwscanf(
-    FILE *,
-    const wchar_t *,
-    ftl_cwchar_native_va_list);
+int vfwscanf(FILE *, const wchar_t *, ftl_cwchar_native_va_list);
 
-int vswscanf(
-    const wchar_t *,
-    const wchar_t *,
-    ftl_cwchar_native_va_list);
+int vswscanf(const wchar_t *, const wchar_t *, ftl_cwchar_native_va_list);
 
-int vwprintf(
-    const wchar_t *,
-    ftl_cwchar_native_va_list);
+int vwprintf(const wchar_t *, ftl_cwchar_native_va_list);
 
-int vwscanf(
-    const wchar_t *,
-    ftl_cwchar_native_va_list);
+int vwscanf(const wchar_t *, ftl_cwchar_native_va_list);
 
 #endif
 
 ftl_cwchar_native_wint_t fgetwc(FILE *);
 
-wchar_t *fgetws(
-    wchar_t *,
-    int,
-    FILE *);
+wchar_t *fgetws(wchar_t *, int, FILE *);
 
-ftl_cwchar_native_wint_t fputwc(
-    wchar_t,
-    FILE *);
+ftl_cwchar_native_wint_t fputwc(wchar_t, FILE *);
 
-int fputws(
-    const wchar_t *,
-    FILE *);
+int fputws(const wchar_t *, FILE *);
 
-int fwide(
-    FILE *,
-    int);
+int fwide(FILE *, int);
 
 ftl_cwchar_native_wint_t getwchar();
 
-ftl_cwchar_native_wint_t putwchar(
-    wchar_t);
+ftl_cwchar_native_wint_t putwchar(wchar_t);
 
-ftl_cwchar_native_wint_t ungetwc(
-    ftl_cwchar_native_wint_t,
-    FILE *);
+ftl_cwchar_native_wint_t ungetwc(ftl_cwchar_native_wint_t, FILE *);
 
 } // extern "C"
 
@@ -192,98 +159,53 @@ using size_t = decltype(sizeof(0));
 
 namespace cwchar_detail {
 
-inline int runtime_vfwprintf(
-    FILE *stream,
-    const wchar_t *format,
-    va_list arguments) {
+inline int runtime_vfwprintf(FILE *stream, const wchar_t *format,
+                             va_list arguments) {
 #if defined(_WIN32)
-  return ::ftl_cwchar_runtime::__stdio_common_vfwprintf(
-      0,
-      stream,
-      format,
-      nullptr,
-      arguments);
+  return ::ftl_cwchar_runtime::__stdio_common_vfwprintf(0, stream, format,
+                                                        nullptr, arguments);
 #else
-  return ::ftl_cwchar_runtime::vfwprintf(
-      stream,
-      format,
-      arguments);
+  return ::ftl_cwchar_runtime::vfwprintf(stream, format, arguments);
 #endif
 }
 
-inline int runtime_vfwscanf(
-    FILE *stream,
-    const wchar_t *format,
-    va_list arguments) {
+inline int runtime_vfwscanf(FILE *stream, const wchar_t *format,
+                            va_list arguments) {
 #if defined(_WIN32)
-  return ::ftl_cwchar_runtime::__stdio_common_vfwscanf(
-      0,
-      stream,
-      format,
-      nullptr,
-      arguments);
+  return ::ftl_cwchar_runtime::__stdio_common_vfwscanf(0, stream, format,
+                                                       nullptr, arguments);
 #else
-  return ::ftl_cwchar_runtime::vfwscanf(
-      stream,
-      format,
-      arguments);
+  return ::ftl_cwchar_runtime::vfwscanf(stream, format, arguments);
 #endif
 }
 
-inline int runtime_vswscanf(
-    const wchar_t *string,
-    const wchar_t *format,
-    va_list arguments) {
+inline int runtime_vswscanf(const wchar_t *string, const wchar_t *format,
+                            va_list arguments) {
 #if defined(_WIN32)
   return ::ftl_cwchar_runtime::__stdio_common_vswscanf(
-      0,
-      string,
-      static_cast<size_t>(-1),
-      format,
-      nullptr,
-      arguments);
+      0, string, static_cast<size_t>(-1), format, nullptr, arguments);
 #else
-  return ::ftl_cwchar_runtime::vswscanf(
-      string,
-      format,
-      arguments);
+  return ::ftl_cwchar_runtime::vswscanf(string, format, arguments);
 #endif
 }
 
-inline int runtime_vwprintf(
-    const wchar_t *format,
-    va_list arguments) {
+inline int runtime_vwprintf(const wchar_t *format, va_list arguments) {
 #if defined(_WIN32)
   return ::ftl_cwchar_runtime::__stdio_common_vfwprintf(
-      0,
-      ::ftl_stdio_runtime::output_stream(),
-      format,
-      nullptr,
-      arguments);
+      0, ::ftl_stdio_runtime::output_stream(), format, nullptr, arguments);
 #else
-  return ::ftl_cwchar_runtime::vwprintf(
-      format,
-      arguments);
+  return ::ftl_cwchar_runtime::vwprintf(format, arguments);
 #endif
 }
 
-inline int runtime_vwscanf(
-    const wchar_t *format,
-    va_list arguments) {
+inline int runtime_vwscanf(const wchar_t *format, va_list arguments) {
 #if defined(_WIN32)
   return ::ftl_cwchar_runtime::__stdio_common_vfwscanf(
-      0,
-      ::ftl_stdio_runtime::input_stream(),
-      format,
-      nullptr,
-      arguments);
+      0, ::ftl_stdio_runtime::input_stream(), format, nullptr, arguments);
 #else
-  return ::ftl_cwchar_runtime::vwscanf(
-      format,
-      arguments);
+  return ::ftl_cwchar_runtime::vwscanf(format, arguments);
 #endif
 }
-
 
 inline constexpr wint_t wide_eof = static_cast<wint_t>(~0u);
 
@@ -4034,16 +3956,21 @@ inline wchar_t *fgetws(wchar_t *string, int count, FILE *stream) {
 }
 
 inline wint_t fputwc(wchar_t character, FILE *stream) {
-  return cwchar_detail::from_native_wint(::ftl_cwchar_runtime::fputwc(character, stream));
+  return cwchar_detail::from_native_wint(
+      ::ftl_cwchar_runtime::fputwc(character, stream));
 }
 
 inline int fputws(const wchar_t *string, FILE *stream) {
   return ::ftl_cwchar_runtime::fputws(string, stream);
 }
 
-inline int fwide(FILE *stream, int mode) { return ::ftl_cwchar_runtime::fwide(stream, mode); }
+inline int fwide(FILE *stream, int mode) {
+  return ::ftl_cwchar_runtime::fwide(stream, mode);
+}
 
-inline wint_t getwc(FILE *stream) { return ::ftl_cwchar_runtime::fgetwc(stream); }
+inline wint_t getwc(FILE *stream) {
+  return ::ftl_cwchar_runtime::fgetwc(stream);
+}
 
 inline wint_t getwchar() {
   return cwchar_detail::from_native_wint(::ftl_cwchar_runtime::getwchar());
@@ -4054,7 +3981,8 @@ inline wint_t putwc(wchar_t character, FILE *stream) {
 }
 
 inline wint_t putwchar(wchar_t character) {
-  return cwchar_detail::from_native_wint(::ftl_cwchar_runtime::putwchar(character));
+  return cwchar_detail::from_native_wint(
+      ::ftl_cwchar_runtime::putwchar(character));
 }
 
 inline wint_t ungetwc(wint_t character, FILE *stream) {
@@ -4062,8 +3990,8 @@ inline wint_t ungetwc(wint_t character, FILE *stream) {
     return cwchar_detail::wide_eof;
   }
 
-  return cwchar_detail::from_native_wint(
-      ::ftl_cwchar_runtime::ungetwc(cwchar_detail::to_native_wint(character), stream));
+  return cwchar_detail::from_native_wint(::ftl_cwchar_runtime::ungetwc(
+      cwchar_detail::to_native_wint(character), stream));
 }
 
 } // namespace std or ftl

@@ -38,13 +38,13 @@
 #define __cpp_lib_byte 201603L
 #endif
 
-#if !defined(__cpp_lib_integral_constant_callable) || \
+#if !defined(__cpp_lib_integral_constant_callable) ||                          \
     __cpp_lib_integral_constant_callable < 201304L
 #undef __cpp_lib_integral_constant_callable
 #define __cpp_lib_integral_constant_callable 201304L
 #endif
 
-#if !defined(__cpp_lib_transformation_trait_aliases) || \
+#if !defined(__cpp_lib_transformation_trait_aliases) ||                        \
     __cpp_lib_transformation_trait_aliases < 201304L
 #undef __cpp_lib_transformation_trait_aliases
 #define __cpp_lib_transformation_trait_aliases 201304L
@@ -65,13 +65,13 @@
 #define __cpp_lib_logical_traits 201510L
 #endif
 
-#if !defined(__cpp_lib_type_trait_variable_templates) || \
+#if !defined(__cpp_lib_type_trait_variable_templates) ||                       \
     __cpp_lib_type_trait_variable_templates < 201510L
 #undef __cpp_lib_type_trait_variable_templates
 #define __cpp_lib_type_trait_variable_templates 201510L
 #endif
 
-#if !defined(__cpp_lib_has_unique_object_representations) || \
+#if !defined(__cpp_lib_has_unique_object_representations) ||                   \
     __cpp_lib_has_unique_object_representations < 201606L
 #undef __cpp_lib_has_unique_object_representations
 #define __cpp_lib_has_unique_object_representations 201606L
@@ -102,7 +102,7 @@
 #define __cpp_lib_is_invocable 201703L
 #endif
 
-#if !defined(__cpp_lib_is_nothrow_convertible) || \
+#if !defined(__cpp_lib_is_nothrow_convertible) ||                              \
     __cpp_lib_is_nothrow_convertible < 201806L
 #undef __cpp_lib_is_nothrow_convertible
 #define __cpp_lib_is_nothrow_convertible 201806L
@@ -113,7 +113,7 @@
 #define __cpp_lib_remove_cvref 201711L
 #endif
 
-#if !defined(__cpp_lib_is_constant_evaluated) || \
+#if !defined(__cpp_lib_is_constant_evaluated) ||                               \
     __cpp_lib_is_constant_evaluated < 201811L
 #undef __cpp_lib_is_constant_evaluated
 #define __cpp_lib_is_constant_evaluated 201811L
@@ -124,19 +124,19 @@
 #define __cpp_lib_unwrap_ref 201811L
 #endif
 
-#if !defined(__cpp_lib_bounded_array_traits) || \
+#if !defined(__cpp_lib_bounded_array_traits) ||                                \
     __cpp_lib_bounded_array_traits < 201902L
 #undef __cpp_lib_bounded_array_traits
 #define __cpp_lib_bounded_array_traits 201902L
 #endif
 
-#if !defined(__cpp_lib_is_layout_compatible) || \
+#if !defined(__cpp_lib_is_layout_compatible) ||                                \
     __cpp_lib_is_layout_compatible < 201907L
 #undef __cpp_lib_is_layout_compatible
 #define __cpp_lib_is_layout_compatible 201907L
 #endif
 
-#if !defined(__cpp_lib_is_pointer_interconvertible) || \
+#if !defined(__cpp_lib_is_pointer_interconvertible) ||                         \
     __cpp_lib_is_pointer_interconvertible < 201907L
 #undef __cpp_lib_is_pointer_interconvertible
 #define __cpp_lib_is_pointer_interconvertible 201907L
@@ -147,13 +147,13 @@
 #define __cpp_lib_is_scoped_enum 202011L
 #endif
 
-#if !defined(__cpp_lib_reference_from_temporary) || \
+#if !defined(__cpp_lib_reference_from_temporary) ||                            \
     __cpp_lib_reference_from_temporary < 202202L
 #undef __cpp_lib_reference_from_temporary
 #define __cpp_lib_reference_from_temporary 202202L
 #endif
 
-#if !defined(__cpp_lib_is_implicit_lifetime) || \
+#if !defined(__cpp_lib_is_implicit_lifetime) ||                                \
     __cpp_lib_is_implicit_lifetime < 202302L
 #undef __cpp_lib_is_implicit_lifetime
 #define __cpp_lib_is_implicit_lifetime 202302L
@@ -169,7 +169,7 @@
 #define __cpp_lib_const_iterator 202207L
 #endif
 
-#if !defined(__cpp_lib_move_iterator_concept) || \
+#if !defined(__cpp_lib_move_iterator_concept) ||                               \
     __cpp_lib_move_iterator_concept < 202207L
 #undef __cpp_lib_move_iterator_concept
 #define __cpp_lib_move_iterator_concept 202207L
@@ -180,7 +180,7 @@
 #define __cpp_lib_common_reference 202302L
 #endif
 
-#if !defined(__cpp_lib_exchange_function) || \
+#if !defined(__cpp_lib_exchange_function) ||                                   \
     __cpp_lib_exchange_function < 201304L
 #undef __cpp_lib_exchange_function
 #define __cpp_lib_exchange_function 201304L
@@ -191,20 +191,19 @@
 #define __cpp_lib_as_const 201510L
 #endif
 
-#if !defined(__cpp_lib_constexpr_utility) || \
+#if !defined(__cpp_lib_constexpr_utility) ||                                   \
     __cpp_lib_constexpr_utility < 201811L
 #undef __cpp_lib_constexpr_utility
 #define __cpp_lib_constexpr_utility 201811L
 #endif
 
-#if !defined(__cpp_lib_integer_comparison_functions) || \
+#if !defined(__cpp_lib_integer_comparison_functions) ||                        \
     __cpp_lib_integer_comparison_functions < 202002L
 #undef __cpp_lib_integer_comparison_functions
 #define __cpp_lib_integer_comparison_functions 202002L
 #endif
 
-#if !defined(__cpp_lib_integer_sequence) || \
-    __cpp_lib_integer_sequence < 201304L
+#if !defined(__cpp_lib_integer_sequence) || __cpp_lib_integer_sequence < 201304L
 #undef __cpp_lib_integer_sequence
 #define __cpp_lib_integer_sequence 201304L
 #endif
@@ -264,7 +263,7 @@
 #define __cpp_lib_concepts 202002L
 #endif
 
-#if !defined(__cpp_lib_three_way_comparison) || \
+#if !defined(__cpp_lib_three_way_comparison) ||                                \
     __cpp_lib_three_way_comparison < 201907L
 #undef __cpp_lib_three_way_comparison
 #define __cpp_lib_three_way_comparison 201907L
@@ -300,13 +299,12 @@
 #define __cpp_lib_constexpr_bitset 202207L
 #endif
 
-#if !defined(__cpp_lib_source_location) || \
-    __cpp_lib_source_location < 201907L
+#if !defined(__cpp_lib_source_location) || __cpp_lib_source_location < 201907L
 #undef __cpp_lib_source_location
 #define __cpp_lib_source_location 201907L
 #endif
 
-#if !defined(__cpp_lib_hardware_interference_size) || \
+#if !defined(__cpp_lib_hardware_interference_size) ||                          \
     __cpp_lib_hardware_interference_size < 201703L
 #undef __cpp_lib_hardware_interference_size
 #define __cpp_lib_hardware_interference_size 201703L
@@ -317,7 +315,7 @@
 #define __cpp_lib_launder 201606L
 #endif
 
-#if !defined(__cpp_lib_uncaught_exceptions) || \
+#if !defined(__cpp_lib_uncaught_exceptions) ||                                 \
     __cpp_lib_uncaught_exceptions < 201411L
 #undef __cpp_lib_uncaught_exceptions
 #define __cpp_lib_uncaught_exceptions 201411L
@@ -348,31 +346,31 @@
 #define __cpp_lib_bind_back 202202L
 #endif
 
-#if !defined(__cpp_lib_boyer_moore_searcher) || \
+#if !defined(__cpp_lib_boyer_moore_searcher) ||                                \
     __cpp_lib_boyer_moore_searcher < 201603L
 #undef __cpp_lib_boyer_moore_searcher
 #define __cpp_lib_boyer_moore_searcher 201603L
 #endif
 
-#if !defined(__cpp_lib_constexpr_functional) || \
+#if !defined(__cpp_lib_constexpr_functional) ||                                \
     __cpp_lib_constexpr_functional < 201907L
 #undef __cpp_lib_constexpr_functional
 #define __cpp_lib_constexpr_functional 201907L
 #endif
 
-#if !defined(__cpp_lib_move_only_function) || \
+#if !defined(__cpp_lib_move_only_function) ||                                  \
     __cpp_lib_move_only_function < 202110L
 #undef __cpp_lib_move_only_function
 #define __cpp_lib_move_only_function 202110L
 #endif
 
-#if !defined(__cpp_lib_transparent_operators) || \
+#if !defined(__cpp_lib_transparent_operators) ||                               \
     __cpp_lib_transparent_operators < 201510L
 #undef __cpp_lib_transparent_operators
 #define __cpp_lib_transparent_operators 201510L
 #endif
 
-#if !defined(__cpp_lib_raw_memory_algorithms) || \
+#if !defined(__cpp_lib_raw_memory_algorithms) ||                               \
     __cpp_lib_raw_memory_algorithms < 201606L
 #undef __cpp_lib_raw_memory_algorithms
 #define __cpp_lib_raw_memory_algorithms 201606L
@@ -383,13 +381,13 @@
 #define __cpp_lib_make_unique 201304L
 #endif
 
-#if !defined(__cpp_lib_shared_ptr_arrays) || \
+#if !defined(__cpp_lib_shared_ptr_arrays) ||                                   \
     __cpp_lib_shared_ptr_arrays < 201707L
 #undef __cpp_lib_shared_ptr_arrays
 #define __cpp_lib_shared_ptr_arrays 201707L
 #endif
 
-#if !defined(__cpp_lib_smart_ptr_for_overwrite) || \
+#if !defined(__cpp_lib_smart_ptr_for_overwrite) ||                             \
     __cpp_lib_smart_ptr_for_overwrite < 202002L
 #undef __cpp_lib_smart_ptr_for_overwrite
 #define __cpp_lib_smart_ptr_for_overwrite 202002L
@@ -400,7 +398,7 @@
 #define __cpp_lib_constexpr_memory 202202L
 #endif
 
-#if !defined(__cpp_lib_allocate_at_least) || \
+#if !defined(__cpp_lib_allocate_at_least) ||                                   \
     __cpp_lib_allocate_at_least < 202302L
 #undef __cpp_lib_allocate_at_least
 #define __cpp_lib_allocate_at_least 202302L
@@ -421,97 +419,90 @@
 #define __cpp_lib_to_address 201711L
 #endif
 
-#if !defined(__cpp_lib_constexpr_dynamic_alloc) || \
+#if !defined(__cpp_lib_constexpr_dynamic_alloc) ||                             \
     __cpp_lib_constexpr_dynamic_alloc < 201907L
 #undef __cpp_lib_constexpr_dynamic_alloc
 #define __cpp_lib_constexpr_dynamic_alloc 201907L
 #endif
 
-#if !defined(__cpp_lib_uses_allocator_construction) || \
+#if !defined(__cpp_lib_uses_allocator_construction) ||                         \
     __cpp_lib_uses_allocator_construction < 201811L
 #undef __cpp_lib_uses_allocator_construction
 #define __cpp_lib_uses_allocator_construction 201811L
 #endif
 
-#if !defined(__cpp_lib_atomic_shared_ptr) || \
+#if !defined(__cpp_lib_atomic_shared_ptr) ||                                   \
     __cpp_lib_atomic_shared_ptr < 201711L
 #undef __cpp_lib_atomic_shared_ptr
 #define __cpp_lib_atomic_shared_ptr 201711L
 #endif
 
-#if !defined(__cpp_lib_atomic_float) || \
-    __cpp_lib_atomic_float < 201711L
+#if !defined(__cpp_lib_atomic_float) || __cpp_lib_atomic_float < 201711L
 #undef __cpp_lib_atomic_float
 #define __cpp_lib_atomic_float 201711L
 #endif
 
-#if !defined(__cpp_lib_atomic_is_always_lock_free) || \
+#if !defined(__cpp_lib_atomic_is_always_lock_free) ||                          \
     __cpp_lib_atomic_is_always_lock_free < 201603L
 #undef __cpp_lib_atomic_is_always_lock_free
 #define __cpp_lib_atomic_is_always_lock_free 201603L
 #endif
 
-#if !defined(__cpp_lib_atomic_lock_free_type_aliases) || \
+#if !defined(__cpp_lib_atomic_lock_free_type_aliases) ||                       \
     __cpp_lib_atomic_lock_free_type_aliases < 201907L
 #undef __cpp_lib_atomic_lock_free_type_aliases
 #define __cpp_lib_atomic_lock_free_type_aliases 201907L
 #endif
 
-#if !defined(__cpp_lib_stdatomic_h) || \
-    __cpp_lib_stdatomic_h < 202011L
+#if !defined(__cpp_lib_stdatomic_h) || __cpp_lib_stdatomic_h < 202011L
 #undef __cpp_lib_stdatomic_h
 #define __cpp_lib_stdatomic_h 202011L
 #endif
 
-#if !defined(__cpp_lib_shared_timed_mutex) || \
+#if !defined(__cpp_lib_shared_timed_mutex) ||                                  \
     __cpp_lib_shared_timed_mutex < 201402L
 #undef __cpp_lib_shared_timed_mutex
 #define __cpp_lib_shared_timed_mutex 201402L
 #endif
 
-#if !defined(__cpp_lib_shared_mutex) || \
-    __cpp_lib_shared_mutex < 201505L
+#if !defined(__cpp_lib_shared_mutex) || __cpp_lib_shared_mutex < 201505L
 #undef __cpp_lib_shared_mutex
 #define __cpp_lib_shared_mutex 201505L
 #endif
 
-#if !defined(__cpp_lib_jthread) || \
-    __cpp_lib_jthread < 201911L
+#if !defined(__cpp_lib_jthread) || __cpp_lib_jthread < 201911L
 #undef __cpp_lib_jthread
 #define __cpp_lib_jthread 201911L
 #endif
 
-#if !defined(__cpp_lib_semaphore) || \
-    __cpp_lib_semaphore < 201907L
+#if !defined(__cpp_lib_semaphore) || __cpp_lib_semaphore < 201907L
 #undef __cpp_lib_semaphore
 #define __cpp_lib_semaphore 201907L
 #endif
 
-#if !defined(__cpp_lib_latch) || \
-    __cpp_lib_latch < 201907L
+#if !defined(__cpp_lib_latch) || __cpp_lib_latch < 201907L
 #undef __cpp_lib_latch
 #define __cpp_lib_latch 201907L
 #endif
 
-#if !defined(__cpp_lib_barrier) || \
-    __cpp_lib_barrier < 202302L
+#if !defined(__cpp_lib_barrier) || __cpp_lib_barrier < 202302L
 #undef __cpp_lib_barrier
 #define __cpp_lib_barrier 202302L
 #endif
 
-#if !defined(__cpp_lib_enable_shared_from_this) || \
+#if !defined(__cpp_lib_enable_shared_from_this) ||                             \
     __cpp_lib_enable_shared_from_this < 201603L
 #undef __cpp_lib_enable_shared_from_this
 #define __cpp_lib_enable_shared_from_this 201603L
 #endif
 
-#if !defined(__cpp_lib_shared_ptr_weak_type) || \
+#if !defined(__cpp_lib_shared_ptr_weak_type) ||                                \
     __cpp_lib_shared_ptr_weak_type < 201606L
 #undef __cpp_lib_shared_ptr_weak_type
 #define __cpp_lib_shared_ptr_weak_type 201606L
 #endif
 
-#if !defined(__cpp_lib_start_lifetime_as) || \
+#if !defined(__cpp_lib_start_lifetime_as) ||                                   \
     __cpp_lib_start_lifetime_as < 202207L
 #undef __cpp_lib_start_lifetime_as
 #define __cpp_lib_start_lifetime_as 202207L
@@ -572,8 +563,7 @@
 #define __cpp_lib_ranges_slide 202202L
 #endif
 
-#if !defined(__cpp_lib_ranges_chunk_by) || \
-    __cpp_lib_ranges_chunk_by < 202202L
+#if !defined(__cpp_lib_ranges_chunk_by) || __cpp_lib_ranges_chunk_by < 202202L
 #undef __cpp_lib_ranges_chunk_by
 #define __cpp_lib_ranges_chunk_by 202202L
 #endif
@@ -583,20 +573,18 @@
 #define __cpp_lib_ranges_stride 202207L
 #endif
 
-#if !defined(__cpp_lib_ranges_cartesian_product) || \
+#if !defined(__cpp_lib_ranges_cartesian_product) ||                            \
     __cpp_lib_ranges_cartesian_product < 202207L
 #undef __cpp_lib_ranges_cartesian_product
 #define __cpp_lib_ranges_cartesian_product 202207L
 #endif
 
-#if !defined(__cpp_lib_ranges_as_const) || \
-    __cpp_lib_ranges_as_const < 202207L
+#if !defined(__cpp_lib_ranges_as_const) || __cpp_lib_ranges_as_const < 202207L
 #undef __cpp_lib_ranges_as_const
 #define __cpp_lib_ranges_as_const 202207L
 #endif
 
-#if !defined(__cpp_lib_ranges_enumerate) || \
-    __cpp_lib_ranges_enumerate < 202302L
+#if !defined(__cpp_lib_ranges_enumerate) || __cpp_lib_ranges_enumerate < 202302L
 #undef __cpp_lib_ranges_enumerate
 #define __cpp_lib_ranges_enumerate 202302L
 #endif
@@ -616,19 +604,17 @@
 #define __cpp_lib_mdspan 202207L
 #endif
 
-#if !defined(__cpp_lib_ranges_as_rvalue) || \
-    __cpp_lib_ranges_as_rvalue < 202207L
+#if !defined(__cpp_lib_ranges_as_rvalue) || __cpp_lib_ranges_as_rvalue < 202207L
 #undef __cpp_lib_ranges_as_rvalue
 #define __cpp_lib_ranges_as_rvalue 202207L
 #endif
 
-#if !defined(__cpp_lib_ranges_join_with) || \
-    __cpp_lib_ranges_join_with < 202202L
+#if !defined(__cpp_lib_ranges_join_with) || __cpp_lib_ranges_join_with < 202202L
 #undef __cpp_lib_ranges_join_with
 #define __cpp_lib_ranges_join_with 202202L
 #endif
 
-#if !defined(__cpp_lib_ranges_to_container) || \
+#if !defined(__cpp_lib_ranges_to_container) ||                                 \
     __cpp_lib_ranges_to_container < 202202L
 #undef __cpp_lib_ranges_to_container
 #define __cpp_lib_ranges_to_container 202202L
@@ -639,20 +625,18 @@
 #define __cpp_lib_execution 201902L
 #endif
 
-#if !defined(__cpp_lib_ranges_starts_ends_with) || \
+#if !defined(__cpp_lib_ranges_starts_ends_with) ||                             \
     __cpp_lib_ranges_starts_ends_with < 202106L
 #undef __cpp_lib_ranges_starts_ends_with
 #define __cpp_lib_ranges_starts_ends_with 202106L
 #endif
 
-#if !defined(__cpp_lib_ranges_contains) || \
-    __cpp_lib_ranges_contains < 202207L
+#if !defined(__cpp_lib_ranges_contains) || __cpp_lib_ranges_contains < 202207L
 #undef __cpp_lib_ranges_contains
 #define __cpp_lib_ranges_contains 202207L
 #endif
 
-#if !defined(__cpp_lib_ranges_find_last) || \
-    __cpp_lib_ranges_find_last < 202207L
+#if !defined(__cpp_lib_ranges_find_last) || __cpp_lib_ranges_find_last < 202207L
 #undef __cpp_lib_ranges_find_last
 #define __cpp_lib_ranges_find_last 202207L
 #endif
@@ -662,37 +646,34 @@
 #define __cpp_lib_shift 202202L
 #endif
 
-#if !defined(__cpp_lib_ranges_fold) || \
-    __cpp_lib_ranges_fold < 202207L
+#if !defined(__cpp_lib_ranges_fold) || __cpp_lib_ranges_fold < 202207L
 #undef __cpp_lib_ranges_fold
 #define __cpp_lib_ranges_fold 202207L
 #endif
 
-#if !defined(__cpp_lib_robust_nonmodifying_seq_ops) || \
+#if !defined(__cpp_lib_robust_nonmodifying_seq_ops) ||                         \
     __cpp_lib_robust_nonmodifying_seq_ops < 201304L
 #undef __cpp_lib_robust_nonmodifying_seq_ops
 #define __cpp_lib_robust_nonmodifying_seq_ops 201304L
 #endif
 
-#if !defined(__cpp_lib_clamp) || \
-    __cpp_lib_clamp < 201603L
+#if !defined(__cpp_lib_clamp) || __cpp_lib_clamp < 201603L
 #undef __cpp_lib_clamp
 #define __cpp_lib_clamp 201603L
 #endif
 
-#if !defined(__cpp_lib_sample) || \
-    __cpp_lib_sample < 201603L
+#if !defined(__cpp_lib_sample) || __cpp_lib_sample < 201603L
 #undef __cpp_lib_sample
 #define __cpp_lib_sample 201603L
 #endif
 
-#if !defined(__cpp_lib_constexpr_algorithms) || \
+#if !defined(__cpp_lib_constexpr_algorithms) ||                                \
     __cpp_lib_constexpr_algorithms < 201806L
 #undef __cpp_lib_constexpr_algorithms
 #define __cpp_lib_constexpr_algorithms 201806L
 #endif
 
-#if !defined(__cpp_lib_parallel_algorithm) || \
+#if !defined(__cpp_lib_parallel_algorithm) ||                                  \
     __cpp_lib_parallel_algorithm < 201603L
 #undef __cpp_lib_parallel_algorithm
 #define __cpp_lib_parallel_algorithm 201603L
@@ -730,7 +711,7 @@
 #define __cpp_lib_hypot 201603L
 #endif
 
-#if !defined(__cpp_lib_math_special_functions) ||                       \
+#if !defined(__cpp_lib_math_special_functions) ||                              \
     __cpp_lib_math_special_functions < 201603L
 #undef __cpp_lib_math_special_functions
 #define __cpp_lib_math_special_functions 201603L
@@ -741,7 +722,7 @@
 #define __cpp_lib_complex_udls 201309L
 #endif
 
-#if !defined(__cpp_lib_constexpr_complex) ||                             \
+#if !defined(__cpp_lib_constexpr_complex) ||                                   \
     __cpp_lib_constexpr_complex < 201711L
 #undef __cpp_lib_constexpr_complex
 #define __cpp_lib_constexpr_complex 201711L
@@ -757,20 +738,18 @@
 #define __cpp_lib_string_view 201803L
 #endif
 
-#if !defined(__cpp_lib_constexpr_string_view) ||                         \
+#if !defined(__cpp_lib_constexpr_string_view) ||                               \
     __cpp_lib_constexpr_string_view < 201811L
 #undef __cpp_lib_constexpr_string_view
 #define __cpp_lib_constexpr_string_view 201811L
 #endif
 
-#if !defined(__cpp_lib_starts_ends_with) ||                              \
-    __cpp_lib_starts_ends_with < 201711L
+#if !defined(__cpp_lib_starts_ends_with) || __cpp_lib_starts_ends_with < 201711L
 #undef __cpp_lib_starts_ends_with
 #define __cpp_lib_starts_ends_with 201711L
 #endif
 
-#if !defined(__cpp_lib_string_contains) ||                               \
-    __cpp_lib_string_contains < 202011L
+#if !defined(__cpp_lib_string_contains) || __cpp_lib_string_contains < 202011L
 #undef __cpp_lib_string_contains
 #define __cpp_lib_string_contains 202011L
 #endif
@@ -780,25 +759,24 @@
 #define __cpp_lib_to_chars 201611L
 #endif
 
-#if !defined(__cpp_lib_constexpr_charconv) ||                           \
+#if !defined(__cpp_lib_constexpr_charconv) ||                                  \
     __cpp_lib_constexpr_charconv < 202207L
 #undef __cpp_lib_constexpr_charconv
 #define __cpp_lib_constexpr_charconv 202207L
 #endif
 
-#if !defined(__cpp_lib_constexpr_string) ||                             \
-    __cpp_lib_constexpr_string < 201907L
+#if !defined(__cpp_lib_constexpr_string) || __cpp_lib_constexpr_string < 201907L
 #undef __cpp_lib_constexpr_string
 #define __cpp_lib_constexpr_string 201907L
 #endif
 
-#if !defined(__cpp_lib_string_resize_and_overwrite) ||                  \
+#if !defined(__cpp_lib_string_resize_and_overwrite) ||                         \
     __cpp_lib_string_resize_and_overwrite < 202110L
 #undef __cpp_lib_string_resize_and_overwrite
 #define __cpp_lib_string_resize_and_overwrite 202110L
 #endif
 
-#if !defined(__cpp_lib_containers_ranges) ||                            \
+#if !defined(__cpp_lib_containers_ranges) ||                                   \
     __cpp_lib_containers_ranges < 202202L
 #undef __cpp_lib_containers_ranges
 #define __cpp_lib_containers_ranges 202202L
@@ -814,20 +792,18 @@
 #define __cpp_lib_flat_set 202207L
 #endif
 
-#if !defined(__cpp_lib_constexpr_vector) ||                            \
-    __cpp_lib_constexpr_vector < 201907L
+#if !defined(__cpp_lib_constexpr_vector) || __cpp_lib_constexpr_vector < 201907L
 #undef __cpp_lib_constexpr_vector
 #define __cpp_lib_constexpr_vector 201907L
 #endif
 
-#if !defined(__cpp_lib_incomplete_container_elements) ||               \
+#if !defined(__cpp_lib_incomplete_container_elements) ||                       \
     __cpp_lib_incomplete_container_elements < 201505L
 #undef __cpp_lib_incomplete_container_elements
 #define __cpp_lib_incomplete_container_elements 201505L
 #endif
 
-#if !defined(__cpp_lib_print) || \
-    __cpp_lib_print < 202207L
+#if !defined(__cpp_lib_print) || __cpp_lib_print < 202207L
 #undef __cpp_lib_print
 #define __cpp_lib_print 202207L
 #endif

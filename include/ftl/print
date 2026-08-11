@@ -5,16 +5,16 @@
 
 #ifdef FTL_REPLACE_STL
 #include <__c_file_types.hpp>
-#include <detail/stdio_runtime.hpp>
 #include <cerrno>
+#include <detail/stdio_runtime.hpp>
 #include <format>
 #include <string>
 #include <system_error>
 #include <utility>
 #else
 #include <ftl/__c_file_types.hpp>
-#include <ftl/detail/stdio_runtime.hpp>
 #include <ftl/cerrno>
+#include <ftl/detail/stdio_runtime.hpp>
 #include <ftl/format>
 #include <ftl/string>
 #include <ftl/system_error>
@@ -66,7 +66,9 @@ WriteConsoleW(void *, const void *, unsigned long, unsigned long *, void *);
 } // extern "C"
 
 [[nodiscard]]
-inline FILE *stdout_stream() noexcept { return ::ftl_stdio_runtime::output_stream(); }
+inline FILE *stdout_stream() noexcept {
+  return ::ftl_stdio_runtime::output_stream();
+}
 
 #if defined(_WIN32)
 

@@ -17,7 +17,7 @@ public:
   tested::string value;
 
 protected:
-  streamsize xsputn(const char *s, streamsize n) override {
+  tested::streamsize xsputn(const char *s, tested::streamsize n) override {
     value.append(s, static_cast<tested::size_t>(n));
     return n;
   }

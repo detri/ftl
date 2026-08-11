@@ -25,7 +25,7 @@ bool ftl_test() {
   char fixed[8]{};
   tested::strstream both(fixed, 8);
   both << "12";
-  both.seekg(0);
+  both.seekg(0, tested::ios_base::beg);
   number = 0;
   both >> number;
   return okay && number == 12;

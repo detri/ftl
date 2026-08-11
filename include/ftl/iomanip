@@ -260,6 +260,12 @@ basic_ostream<C, T> &operator<<(basic_ostream<C, T> &s,
   return s << text;
 }
 template <class C, class T, class A>
+basic_ostream<C, T> &operator<<(basic_ostream<C, T> &s,
+                                const detail::quoted_input<C, T, A> &v) {
+  return s << detail::quoted_output<C, T>{
+             {v.value.data(), v.value.size()}, v.delimiter, v.escape};
+}
+template <class C, class T, class A>
 basic_istream<C, T> &operator>>(basic_istream<C, T> &s,
                                 const detail::quoted_input<C, T, A> &v) {
   C first{};

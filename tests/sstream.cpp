@@ -27,7 +27,7 @@ bool ftl_test() {
   both << 'd';
   if (both.view() != "abcd")
     return false;
-  both.seekg(1);
+  both.seekg(1, tested::ios_base::beg);
   char c{};
   both.get(c);
   if (c != 'b')
