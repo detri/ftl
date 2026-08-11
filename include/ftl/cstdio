@@ -48,13 +48,7 @@
 #endif
 #endif
 #ifndef L_tmpnam
-#if defined(_WIN32)
-#define L_tmpnam 260
-#elif defined(__linux__)
-#define L_tmpnam 20
-#else
-#define L_tmpnam 1024
-#endif
+#define L_tmpnam 64
 #endif
 #ifndef TMP_MAX
 #define TMP_MAX 32767
@@ -71,18 +65,13 @@
 #endif
 
 namespace ftl_cstdio_runtime {
-using FILE = ::FILE;
+using FILE = ::ftl_file;
 using size_t = decltype(sizeof(0));
-#if defined(_WIN32) || defined(__APPLE__)
-using fpos_t = long long;
-#else
 struct fpos_t {
-  long position;
+  long long position;
   FTL_CSTDIO_NAMESPACE::mbstate_t state;
 };
-#endif
 
-extern "C" {
 int remove(const char *);
 int rename(const char *, const char *);
 FILE *tmpfile();
@@ -126,11 +115,11 @@ void clearerr(FILE *);
 int feof(FILE *);
 int ferror(FILE *);
 void perror(const char *);
-}
 using ::ftl_stdio_runtime::fflush;
 using ::ftl_stdio_runtime::fwrite;
 } // namespace ftl_cstdio_runtime
 
+#ifdef FTL_REPLACE_STL
 #ifdef stdin
 #undef stdin
 #endif
@@ -143,9 +132,10 @@ using ::ftl_stdio_runtime::fwrite;
 #define stdin (::ftl_stdio_runtime::input_stream())
 #define stdout (::ftl_stdio_runtime::output_stream())
 #define stderr (::ftl_stdio_runtime::error_stream())
+#endif
 
 namespace FTL_CSTDIO_NAMESPACE {
-using FILE = ::FILE;
+using FILE = ::ftl_file;
 using fpos_t = ::ftl_cstdio_runtime::fpos_t;
 using ::ftl_cstdio_runtime::clearerr;
 using ::ftl_cstdio_runtime::fclose;

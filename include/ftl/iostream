@@ -90,8 +90,8 @@ protected:
   typename Traits::int_type underflow() override {
     if (!input_)
       return Traits::eof();
-    auto value = ::ftl_cwchar_runtime::fgetwc(file_);
-    if (value == static_cast<ftl_cwchar_native_wint_t>(-1))
+    auto value = ::ftl_stdio_runtime::read_wide_byte(file_);
+    if (value == EOF)
       return Traits::eof();
     cache_ = static_cast<wchar_t>(value);
     this->setg(&cache_, &cache_, &cache_ + 1);
@@ -103,10 +103,12 @@ protected:
       return Traits::eof();
     if (Traits::eq_int_type(value, Traits::eof()))
       return Traits::not_eof(value);
-    auto result =
-        ::ftl_cwchar_runtime::fputwc(Traits::to_char_type(value), file_);
-    return result == static_cast<ftl_cwchar_native_wint_t>(-1) ? Traits::eof()
-                                                               : value;
+    wchar_t character = Traits::to_char_type(value);
+    if (static_cast<unsigned long long>(character) > 0x7f)
+      return Traits::eof();
+    auto result = ::ftl_stdio_runtime::write_wide_byte(
+        static_cast<unsigned char>(character), file_);
+    return result == EOF ? Traits::eof() : value;
   }
   int sync() override { return ::ftl_cstdio_runtime::fflush(file_); }
 
@@ -117,10 +119,14 @@ private:
 };
 
 struct standard_stream_buffers {
-  standard_filebuf<char, char_traits<char>> in{stdin, true}, out{stdout, false},
-      err{stderr, false};
-  standard_filebuf<wchar_t, char_traits<wchar_t>> win{stdin, true},
-      wout{stdout, false}, werr{stderr, false};
+  standard_filebuf<char, char_traits<char>> in{
+      ::ftl_stdio_runtime::input_stream(), true},
+      out{::ftl_stdio_runtime::output_stream(), false},
+      err{::ftl_stdio_runtime::error_stream(), false};
+  standard_filebuf<wchar_t, char_traits<wchar_t>> win{
+      ::ftl_stdio_runtime::input_stream(), true},
+      wout{::ftl_stdio_runtime::output_stream(), false},
+      werr{::ftl_stdio_runtime::error_stream(), false};
 };
 inline standard_stream_buffers standard_buffers_instance;
 } // namespace detail

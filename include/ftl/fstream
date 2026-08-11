@@ -253,9 +253,9 @@ protected:
       okay = ::ftl_cstdio_runtime::ungetc(static_cast<unsigned char>(character),
                                           file_) != EOF;
     else
-      okay = ::ftl_cwchar_runtime::ungetwc(
-                 static_cast<ftl_cwchar_native_wint_t>(character), file_) !=
-             static_cast<ftl_cwchar_native_wint_t>(-1);
+      okay = static_cast<unsigned long long>(character) <= 0x7f &&
+             ::ftl_cstdio_runtime::ungetc(static_cast<unsigned char>(character),
+                                          file_) != EOF;
     if (!okay)
       return Traits::eof();
     this->setg(nullptr, nullptr, nullptr);

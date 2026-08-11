@@ -1697,5 +1697,24 @@ bool ftl_test() {
     }
   }
 
+  // Wide stdio uses the owned FILE substrate rather than the host CRT FILE.
+  {
+    tested::FILE *file = tested::tmpfile();
+    if (!file || tested::fwprintf(file, L"%ls %d", L"wide", 42) != 7 ||
+        tested::fseek(file, 0, SEEK_SET) != 0) {
+      return false;
+    }
+    wchar_t text[16]{};
+    const bool okay = tested::fgetws(text, 16, file) != nullptr &&
+                      tested::wcscmp(text, L"wide 42") == 0;
+    wchar_t word[8]{};
+    int value = 0;
+    const bool scanned = tested::fseek(file, 0, SEEK_SET) == 0 &&
+                         tested::fwscanf(file, L"%7ls %d", word, &value) == 2 &&
+                         tested::wcscmp(word, L"wide") == 0 && value == 42;
+    if (tested::fclose(file) != 0 || !okay || !scanned)
+      return false;
+  }
+
   return true;
 }

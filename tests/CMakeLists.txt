@@ -575,6 +575,8 @@ foreach (header IN ITEMS
         format
         print
         cstdio
+        cstdio_synopsis
+        native_io
         iomanip
         sstream
         spanstream

@@ -32,17 +32,17 @@ static_assert(sizeof(tested::mbstate_t) != 0);
 static_assert(sizeof(tested::wint_t) != 0);
 static_assert(sizeof(tested::tm) != 0);
 
-using fwprintf_type = int (*)(FILE *, const wchar_t *, ...);
+using fwprintf_type = int (*)(tested::FILE *, const wchar_t *, ...);
 
-using fwscanf_type = int (*)(FILE *, const wchar_t *, ...);
+using fwscanf_type = int (*)(tested::FILE *, const wchar_t *, ...);
 
 using swprintf_type = int (*)(wchar_t *, tested::size_t, const wchar_t *, ...);
 
 using swscanf_type = int (*)(const wchar_t *, const wchar_t *, ...);
 
-using vfwprintf_type = int (*)(FILE *, const wchar_t *, tested::va_list);
+using vfwprintf_type = int (*)(tested::FILE *, const wchar_t *, tested::va_list);
 
-using vfwscanf_type = int (*)(FILE *, const wchar_t *, tested::va_list);
+using vfwscanf_type = int (*)(tested::FILE *, const wchar_t *, tested::va_list);
 
 using vswprintf_type = int (*)(wchar_t *, tested::size_t, const wchar_t *,
                                tested::va_list);
@@ -58,25 +58,25 @@ using wprintf_type = int (*)(const wchar_t *, ...);
 
 using wscanf_type = int (*)(const wchar_t *, ...);
 
-using fgetwc_type = tested::wint_t (*)(FILE *);
+using fgetwc_type = tested::wint_t (*)(tested::FILE *);
 
-using fgetws_type = wchar_t *(*)(wchar_t *, int, FILE *);
+using fgetws_type = wchar_t *(*)(wchar_t *, int, tested::FILE *);
 
-using fputwc_type = tested::wint_t (*)(wchar_t, FILE *);
+using fputwc_type = tested::wint_t (*)(wchar_t, tested::FILE *);
 
-using fputws_type = int (*)(const wchar_t *, FILE *);
+using fputws_type = int (*)(const wchar_t *, tested::FILE *);
 
-using fwide_type = int (*)(FILE *, int);
+using fwide_type = int (*)(tested::FILE *, int);
 
-using getwc_type = tested::wint_t (*)(FILE *);
+using getwc_type = tested::wint_t (*)(tested::FILE *);
 
 using getwchar_type = tested::wint_t (*)();
 
-using putwc_type = tested::wint_t (*)(wchar_t, FILE *);
+using putwc_type = tested::wint_t (*)(wchar_t, tested::FILE *);
 
 using putwchar_type = tested::wint_t (*)(wchar_t);
 
-using ungetwc_type = tested::wint_t (*)(tested::wint_t, FILE *);
+using ungetwc_type = tested::wint_t (*)(tested::wint_t, tested::FILE *);
 
 using wcstod_type = double (*)(const wchar_t *, wchar_t **);
 

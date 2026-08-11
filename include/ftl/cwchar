@@ -8,10 +8,10 @@
 #include <__c_time_types.hpp>
 #include <__c_wide_types.hpp>
 #include <cerrno>
+#include <cstdio>
 #include <cstdarg>
 #include <cstdint>
 #include <cstring>
-#include <detail/stdio_runtime.hpp>
 #include <limits>
 #include <type_traits>
 #else
@@ -19,10 +19,10 @@
 #include <ftl/__c_time_types.hpp>
 #include <ftl/__c_wide_types.hpp>
 #include <ftl/cerrno>
+#include <ftl/cstdio>
 #include <ftl/cstdarg>
 #include <ftl/cstdint>
 #include <ftl/cstring>
-#include <ftl/detail/stdio_runtime.hpp>
 #include <ftl/limits>
 #include <ftl/type_traits>
 #endif
@@ -44,67 +44,10 @@ using ftl_cwchar_native_va_list = char *;
 using ftl_cwchar_native_va_list = __builtin_va_list;
 #endif
 
-#if defined(_WIN32)
-using ftl_cwchar_native_wint_t = unsigned short;
-#elif defined(__APPLE__)
-using ftl_cwchar_native_wint_t = int;
-#else
-using ftl_cwchar_native_wint_t = unsigned int;
-#endif
-
-namespace ftl_cwchar_runtime {
-
-extern "C" {
-
-#if defined(_WIN32)
-
-int __cdecl __stdio_common_vfwprintf(unsigned long long options, FILE *stream,
-                                     const wchar_t *format, void *locale,
-                                     ftl_cwchar_native_va_list arguments);
-
-int __cdecl __stdio_common_vfwscanf(unsigned long long options, FILE *stream,
-                                    const wchar_t *format, void *locale,
-                                    ftl_cwchar_native_va_list arguments);
-
-int __cdecl __stdio_common_vswscanf(unsigned long long options,
-                                    const wchar_t *buffer,
-                                    decltype(sizeof(0)) buffer_count,
-                                    const wchar_t *format, void *locale,
-                                    ftl_cwchar_native_va_list arguments);
-
-#else
-
-int vfwprintf(FILE *, const wchar_t *, ftl_cwchar_native_va_list);
-
-int vfwscanf(FILE *, const wchar_t *, ftl_cwchar_native_va_list);
-
+namespace ftl_wstdio_runtime {
+int vfwscanf(::ftl_file *, const wchar_t *, ftl_cwchar_native_va_list);
 int vswscanf(const wchar_t *, const wchar_t *, ftl_cwchar_native_va_list);
-
-int vwprintf(const wchar_t *, ftl_cwchar_native_va_list);
-
-int vwscanf(const wchar_t *, ftl_cwchar_native_va_list);
-
-#endif
-
-ftl_cwchar_native_wint_t fgetwc(FILE *);
-
-wchar_t *fgetws(wchar_t *, int, FILE *);
-
-ftl_cwchar_native_wint_t fputwc(wchar_t, FILE *);
-
-int fputws(const wchar_t *, FILE *);
-
-int fwide(FILE *, int);
-
-ftl_cwchar_native_wint_t getwchar();
-
-ftl_cwchar_native_wint_t putwchar(wchar_t);
-
-ftl_cwchar_native_wint_t ungetwc(ftl_cwchar_native_wint_t, FILE *);
-
-} // extern "C"
-
-} // namespace ftl_cwchar_runtime
+} // namespace ftl_wstdio_runtime
 
 #if defined(__clang__)
 
@@ -159,79 +102,7 @@ using size_t = decltype(sizeof(0));
 
 namespace cwchar_detail {
 
-inline int runtime_vfwprintf(FILE *stream, const wchar_t *format,
-                             va_list arguments) {
-#if defined(_WIN32)
-  return ::ftl_cwchar_runtime::__stdio_common_vfwprintf(0, stream, format,
-                                                        nullptr, arguments);
-#else
-  return ::ftl_cwchar_runtime::vfwprintf(stream, format, arguments);
-#endif
-}
-
-inline int runtime_vfwscanf(FILE *stream, const wchar_t *format,
-                            va_list arguments) {
-#if defined(_WIN32)
-  return ::ftl_cwchar_runtime::__stdio_common_vfwscanf(0, stream, format,
-                                                       nullptr, arguments);
-#else
-  return ::ftl_cwchar_runtime::vfwscanf(stream, format, arguments);
-#endif
-}
-
-inline int runtime_vswscanf(const wchar_t *string, const wchar_t *format,
-                            va_list arguments) {
-#if defined(_WIN32)
-  return ::ftl_cwchar_runtime::__stdio_common_vswscanf(
-      0, string, static_cast<size_t>(-1), format, nullptr, arguments);
-#else
-  return ::ftl_cwchar_runtime::vswscanf(string, format, arguments);
-#endif
-}
-
-inline int runtime_vwprintf(const wchar_t *format, va_list arguments) {
-#if defined(_WIN32)
-  return ::ftl_cwchar_runtime::__stdio_common_vfwprintf(
-      0, ::ftl_stdio_runtime::output_stream(), format, nullptr, arguments);
-#else
-  return ::ftl_cwchar_runtime::vwprintf(format, arguments);
-#endif
-}
-
-inline int runtime_vwscanf(const wchar_t *format, va_list arguments) {
-#if defined(_WIN32)
-  return ::ftl_cwchar_runtime::__stdio_common_vfwscanf(
-      0, ::ftl_stdio_runtime::input_stream(), format, nullptr, arguments);
-#else
-  return ::ftl_cwchar_runtime::vwscanf(format, arguments);
-#endif
-}
-
 inline constexpr wint_t wide_eof = static_cast<wint_t>(~0u);
-
-inline wint_t from_native_wint(ftl_cwchar_native_wint_t value) {
-#if defined(_WIN32)
-  if (static_cast<unsigned int>(value) == 0xffffu) {
-    return wide_eof;
-  }
-#else
-  if (static_cast<unsigned int>(value) == ~0u) {
-    return wide_eof;
-  }
-#endif
-
-  return static_cast<wint_t>(value);
-}
-
-inline ftl_cwchar_native_wint_t to_native_wint(wint_t value) {
-#if defined(_WIN32)
-  if (value == wide_eof) {
-    return static_cast<ftl_cwchar_native_wint_t>(0xffffu);
-  }
-#endif
-
-  return static_cast<ftl_cwchar_native_wint_t>(value);
-}
 
 inline wchar_t load(const wchar_t *pointer) {
 #if defined(_MSC_VER) && !defined(__clang__)
@@ -2007,8 +1878,21 @@ struct format_writer {
   size_t size = 0;
   bool overflow = false;
   bool error = false;
+  FILE *stream = nullptr;
+  bool stream_locked = false;
 
   void append(wchar_t value) {
+    if (stream != nullptr) {
+      if (!valid_wide_character(value) ||
+          (stream_locked
+               ? ::ftl_stdio_runtime::write_wide_byte_locked(
+                     static_cast<unsigned char>(value), stream)
+               : ::ftl_stdio_runtime::write_wide_byte(
+                     static_cast<unsigned char>(value), stream)) == EOF)
+        error = true;
+      ++size;
+      return;
+    }
     if (capacity == 0 || size + 1 >= capacity) {
       overflow = true;
     } else if (destination != nullptr) {
@@ -2020,6 +1904,12 @@ struct format_writer {
 
   void append(wchar_t value, size_t count) {
     if (count == 0) {
+      return;
+    }
+
+    if (stream != nullptr) {
+      while (count--)
+        append(value);
       return;
     }
 
@@ -2045,6 +1935,8 @@ struct format_writer {
   }
 
   bool finish() {
+    if (stream != nullptr)
+      return !error;
     if (error || overflow || capacity == 0 || size >= capacity) {
       return false;
     }
@@ -3603,11 +3495,8 @@ inline void append_hexadecimal_floating(format_writer &writer,
   writer.append(L' ', trailing_spaces);
 }
 
-} // namespace cwchar_detail
-
-FTL_CWCHAR_NO_BUILTIN
-inline int vswprintf(wchar_t *s, size_t n, const wchar_t *format, va_list arg) {
-  cwchar_detail::format_writer writer{s, n};
+inline int format_wide(format_writer &writer, const wchar_t *format,
+                       va_list arg) {
 
   va_list arguments;
   va_copy(arguments, arg);
@@ -3759,7 +3648,7 @@ inline int vswprintf(wchar_t *s, size_t n, const wchar_t *format, va_list arg) {
         value = static_cast<wchar_t>(converted);
       }
 
-      cwchar_detail::append_wide_character(writer, value, options);
+      append_wide_character(writer, value, options);
 
       break;
     }
@@ -3768,11 +3657,11 @@ inline int vswprintf(wchar_t *s, size_t n, const wchar_t *format, va_list arg) {
       if (options.length == cwchar_detail::format_length::l) {
         const wchar_t *string = va_arg(arguments, const wchar_t *);
 
-        cwchar_detail::append_wide_string(writer, string, options);
+        append_wide_string(writer, string, options);
       } else {
         const char *string = va_arg(arguments, const char *);
 
-        cwchar_detail::append_narrow_string(writer, string, options);
+        append_narrow_string(writer, string, options);
       }
 
       break;
@@ -3781,13 +3670,13 @@ inline int vswprintf(wchar_t *s, size_t n, const wchar_t *format, va_list arg) {
     case L'p': {
       const void *pointer = va_arg(arguments, void *);
 
-      cwchar_detail::append_pointer(writer, pointer, options);
+      append_pointer(writer, pointer, options);
 
       break;
     }
 
     case L'n':
-      cwchar_detail::store_format_count(arguments, options.length, writer.size);
+      store_format_count(arguments, options.length, writer.size);
       break;
 
     case L'f':
@@ -3797,8 +3686,7 @@ inline int vswprintf(wchar_t *s, size_t n, const wchar_t *format, va_list arg) {
               ? va_arg(arguments, long double)
               : static_cast<long double>(va_arg(arguments, double));
 
-      cwchar_detail::append_fixed_floating(writer, value, options,
-                                           conversion == L'F');
+      append_fixed_floating(writer, value, options, conversion == L'F');
 
       break;
     }
@@ -3810,8 +3698,7 @@ inline int vswprintf(wchar_t *s, size_t n, const wchar_t *format, va_list arg) {
               ? va_arg(arguments, long double)
               : static_cast<long double>(va_arg(arguments, double));
 
-      cwchar_detail::append_scientific_floating(writer, value, options,
-                                                conversion == L'E');
+      append_scientific_floating(writer, value, options, conversion == L'E');
 
       break;
     }
@@ -3823,8 +3710,7 @@ inline int vswprintf(wchar_t *s, size_t n, const wchar_t *format, va_list arg) {
               ? va_arg(arguments, long double)
               : static_cast<long double>(va_arg(arguments, double));
 
-      cwchar_detail::append_general_floating(writer, value, options,
-                                             conversion == L'G');
+      append_general_floating(writer, value, options, conversion == L'G');
 
       break;
     }
@@ -3838,7 +3724,7 @@ inline int vswprintf(wchar_t *s, size_t n, const wchar_t *format, va_list arg) {
           is_long_double ? va_arg(arguments, long double)
                          : static_cast<long double>(va_arg(arguments, double));
 
-      cwchar_detail::append_hexadecimal_floating(
+      append_hexadecimal_floating(
           writer, value, options, conversion == L'A',
           is_long_double ? numeric_limits<long double>::digits
                          : numeric_limits<double>::digits);
@@ -3865,6 +3751,14 @@ inline int vswprintf(wchar_t *s, size_t n, const wchar_t *format, va_list arg) {
   return static_cast<int>(writer.size);
 }
 
+} // namespace cwchar_detail
+
+FTL_CWCHAR_NO_BUILTIN
+inline int vswprintf(wchar_t *s, size_t n, const wchar_t *format, va_list arg) {
+  cwchar_detail::format_writer writer{s, n};
+  return cwchar_detail::format_wide(writer, format, arg);
+}
+
 FTL_CWCHAR_NO_BUILTIN
 inline int swprintf(wchar_t *s, size_t n, const wchar_t *format, ...) {
   va_list arguments;
@@ -3877,112 +3771,169 @@ inline int swprintf(wchar_t *s, size_t n, const wchar_t *format, ...) {
 }
 
 inline int vfwprintf(FILE *stream, const wchar_t *format, va_list arg) {
-  return cwchar_detail::runtime_vfwprintf(stream, format, arg);
+  if (::ftl_stdio_runtime::orient(stream, 1) < 0)
+    return -1;
+  cwchar_detail::format_writer writer{nullptr, 0};
+  writer.stream = stream;
+  writer.stream_locked = true;
+  ::ftl_stdio_runtime::lock_file(stream);
+  int result = cwchar_detail::format_wide(writer, format, arg);
+  ::ftl_stdio_runtime::unlock_file(stream);
+  return result;
 }
 
 inline int fwprintf(FILE *stream, const wchar_t *format, ...) {
   va_list arguments;
   va_start(arguments, format);
 
-  const int result =
-      cwchar_detail::runtime_vfwprintf(stream, format, arguments);
+  const int result = vfwprintf(stream, format, arguments);
 
   va_end(arguments);
   return result;
 }
 
 inline int vfwscanf(FILE *stream, const wchar_t *format, va_list arg) {
-  return cwchar_detail::runtime_vfwscanf(stream, format, arg);
+  return ::ftl_wstdio_runtime::vfwscanf(stream, format, arg);
 }
 
 inline int fwscanf(FILE *stream, const wchar_t *format, ...) {
   va_list arguments;
   va_start(arguments, format);
 
-  const int result = cwchar_detail::runtime_vfwscanf(stream, format, arguments);
+  const int result = vfwscanf(stream, format, arguments);
 
   va_end(arguments);
   return result;
 }
 
 inline int vswscanf(const wchar_t *string, const wchar_t *format, va_list arg) {
-  return cwchar_detail::runtime_vswscanf(string, format, arg);
+  return ::ftl_wstdio_runtime::vswscanf(string, format, arg);
 }
 
 inline int swscanf(const wchar_t *string, const wchar_t *format, ...) {
   va_list arguments;
   va_start(arguments, format);
 
-  const int result = cwchar_detail::runtime_vswscanf(string, format, arguments);
+  const int result = vswscanf(string, format, arguments);
 
   va_end(arguments);
   return result;
 }
 
 inline int vwprintf(const wchar_t *format, va_list arg) {
-  return cwchar_detail::runtime_vwprintf(format, arg);
+  return vfwprintf(::ftl_stdio_runtime::output_stream(), format, arg);
 }
 
 inline int wprintf(const wchar_t *format, ...) {
   va_list arguments;
   va_start(arguments, format);
 
-  const int result = cwchar_detail::runtime_vwprintf(format, arguments);
+  const int result = vwprintf(format, arguments);
 
   va_end(arguments);
   return result;
 }
 
 inline int vwscanf(const wchar_t *format, va_list arg) {
-  return cwchar_detail::runtime_vwscanf(format, arg);
+  return vfwscanf(::ftl_stdio_runtime::input_stream(), format, arg);
 }
 
 inline int wscanf(const wchar_t *format, ...) {
   va_list arguments;
   va_start(arguments, format);
 
-  const int result = cwchar_detail::runtime_vwscanf(format, arguments);
+  const int result = vwscanf(format, arguments);
 
   va_end(arguments);
   return result;
 }
 
 inline wint_t fgetwc(FILE *stream) {
-  return cwchar_detail::from_native_wint(::ftl_cwchar_runtime::fgetwc(stream));
+  if (::ftl_stdio_runtime::orient(stream, 1) < 0)
+    return cwchar_detail::wide_eof;
+  const int value = ::ftl_stdio_runtime::read_wide_byte(stream);
+  if (value == EOF)
+    return cwchar_detail::wide_eof;
+  if (value > 0x7f) {
+    errno = EILSEQ;
+    return cwchar_detail::wide_eof;
+  }
+  return static_cast<wint_t>(value);
 }
 
 inline wchar_t *fgetws(wchar_t *string, int count, FILE *stream) {
-  return ::ftl_cwchar_runtime::fgetws(string, count, stream);
+  if (!string || count <= 0)
+    return nullptr;
+  if (::ftl_stdio_runtime::orient(stream, 1) < 0)
+    return nullptr;
+  ::ftl_stdio_runtime::lock_file(stream);
+  int used = 0;
+  while (used + 1 < count) {
+    int value = ::ftl_stdio_runtime::read_wide_byte_locked(stream);
+    if (value == EOF)
+      break;
+    if (value > 0x7f) {
+      errno = EILSEQ;
+      break;
+    }
+    string[used++] = static_cast<wchar_t>(value);
+    if (value == L'\n')
+      break;
+  }
+  ::ftl_stdio_runtime::unlock_file(stream);
+  if (used == 0)
+    return nullptr;
+  string[used] = L'\0';
+  return string;
 }
 
 inline wint_t fputwc(wchar_t character, FILE *stream) {
-  return cwchar_detail::from_native_wint(
-      ::ftl_cwchar_runtime::fputwc(character, stream));
+  if (::ftl_stdio_runtime::orient(stream, 1) < 0 ||
+      !cwchar_detail::valid_wide_character(character)) {
+    errno = EILSEQ;
+    return cwchar_detail::wide_eof;
+  }
+  return ::ftl_stdio_runtime::write_wide_byte(
+             static_cast<unsigned char>(character), stream) == EOF
+             ? cwchar_detail::wide_eof
+             : static_cast<wint_t>(character);
 }
 
 inline int fputws(const wchar_t *string, FILE *stream) {
-  return ::ftl_cwchar_runtime::fputws(string, stream);
+  if (::ftl_stdio_runtime::orient(stream, 1) < 0)
+    return -1;
+  ::ftl_stdio_runtime::lock_file(stream);
+  while (*string) {
+    wchar_t value = *string++;
+    if (!cwchar_detail::valid_wide_character(value) ||
+        ::ftl_stdio_runtime::write_wide_byte_locked(
+            static_cast<unsigned char>(value), stream) == EOF) {
+      ::ftl_stdio_runtime::unlock_file(stream);
+      return -1;
+    }
+  }
+  ::ftl_stdio_runtime::unlock_file(stream);
+  return 0;
 }
 
 inline int fwide(FILE *stream, int mode) {
-  return ::ftl_cwchar_runtime::fwide(stream, mode);
+  return ::ftl_stdio_runtime::orient(stream, mode);
 }
 
 inline wint_t getwc(FILE *stream) {
-  return ::ftl_cwchar_runtime::fgetwc(stream);
+  return fgetwc(stream);
 }
 
 inline wint_t getwchar() {
-  return cwchar_detail::from_native_wint(::ftl_cwchar_runtime::getwchar());
+  return fgetwc(::ftl_stdio_runtime::input_stream());
 }
 
 inline wint_t putwc(wchar_t character, FILE *stream) {
-  return ::ftl_cwchar_runtime::fputwc(character, stream);
+  return fputwc(character, stream);
 }
 
 inline wint_t putwchar(wchar_t character) {
-  return cwchar_detail::from_native_wint(
-      ::ftl_cwchar_runtime::putwchar(character));
+  return fputwc(character, ::ftl_stdio_runtime::output_stream());
 }
 
 inline wint_t ungetwc(wint_t character, FILE *stream) {
@@ -3990,8 +3941,12 @@ inline wint_t ungetwc(wint_t character, FILE *stream) {
     return cwchar_detail::wide_eof;
   }
 
-  return cwchar_detail::from_native_wint(::ftl_cwchar_runtime::ungetwc(
-      cwchar_detail::to_native_wint(character), stream));
+  if (character > 0x7f || ::ftl_stdio_runtime::orient(stream, 1) < 0)
+    return cwchar_detail::wide_eof;
+  return ::ftl_stdio_runtime::unget_wide_byte(static_cast<int>(character),
+                                               stream) == EOF
+             ? cwchar_detail::wide_eof
+             : character;
 }
 
 } // namespace std or ftl
