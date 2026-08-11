@@ -59,6 +59,16 @@ ftl_runtime_terminate_handler __cdecl _get_terminate() noexcept;
 }
 #endif
 
+#if defined(FTL_REPLACE_STL) && defined(__APPLE__) && !defined(_MSC_VER)
+extern "C" {
+void* __cxa_current_primary_exception() noexcept;
+void __cxa_increment_exception_refcount(void*) noexcept;
+void __cxa_decrement_exception_refcount(void*) noexcept;
+[[noreturn]] void __cxa_rethrow_primary_exception(void*);
+unsigned int __cxa_uncaught_exceptions() noexcept;
+}
+#endif
+
 FTL_EXCEPTION_BEGIN_NAMESPACE
 
 #if defined(FTL_REPLACE_STL) && !defined(_MSC_VER)
@@ -160,6 +170,13 @@ inline terminate_handler set_terminate(terminate_handler handler) noexcept {
 inline int uncaught_exceptions() noexcept {
     return ::__uncaught_exceptions();
 }
+#elif defined(FTL_REPLACE_STL) && defined(__APPLE__)
+terminate_handler set_terminate(terminate_handler) noexcept;
+[[nodiscard]] terminate_handler get_terminate() noexcept;
+[[noreturn]] void terminate() noexcept;
+inline int uncaught_exceptions() noexcept {
+    return static_cast<int>(::__cxa_uncaught_exceptions());
+}
 #elif defined(FTL_REPLACE_STL)
 terminate_handler set_terminate(terminate_handler) noexcept;
 [[nodiscard]] terminate_handler get_terminate() noexcept;
@@ -188,7 +205,13 @@ class exception_ptr {
 public:
     constexpr exception_ptr() noexcept = default;
     constexpr exception_ptr(nullptr_t) noexcept {}
+#if defined(__APPLE__)
+    exception_ptr(const exception_ptr& other) noexcept : object(other.object) {
+        if (object) ::__cxa_increment_exception_refcount(object);
+    }
+#else
     exception_ptr(const exception_ptr&) noexcept;
+#endif
     exception_ptr& operator=(const exception_ptr& other) noexcept {
         exception_ptr(other).swap(*this);
         return *this;
@@ -197,7 +220,13 @@ public:
         exception_ptr{}.swap(*this);
         return *this;
     }
+#if defined(__APPLE__)
+    ~exception_ptr() noexcept {
+        if (object) ::__cxa_decrement_exception_refcount(object);
+    }
+#else
     ~exception_ptr() noexcept;
+#endif
     explicit operator bool() const noexcept { return object != nullptr; }
     void swap(exception_ptr& other) noexcept {
         void* temporary = object;
@@ -210,6 +239,11 @@ public:
     }
 
 private:
+#if defined(__APPLE__)
+    explicit exception_ptr(void* value) noexcept : object(value) {}
+    friend exception_ptr current_exception() noexcept;
+    friend void rethrow_exception(exception_ptr);
+#endif
     void* object{};
 };
 #if !defined(__APPLE__)
@@ -259,7 +293,11 @@ inline void swap(exception_ptr& left, exception_ptr& right) noexcept {
     right = temporary;
 }
 
-#if defined(FTL_REPLACE_STL) && !defined(_MSC_VER)
+#if defined(FTL_REPLACE_STL) && defined(__APPLE__) && !defined(_MSC_VER)
+[[nodiscard]] inline exception_ptr current_exception() noexcept {
+    return exception_ptr(::__cxa_current_primary_exception());
+}
+#elif defined(FTL_REPLACE_STL) && !defined(_MSC_VER)
 [[nodiscard]] exception_ptr current_exception() noexcept;
 #else
 [[nodiscard]] inline exception_ptr current_exception() noexcept {
@@ -273,7 +311,12 @@ inline void swap(exception_ptr& left, exception_ptr& right) noexcept {
 }
 #endif
 
-#if !defined(FTL_REPLACE_STL) || defined(_MSC_VER)
+#if defined(FTL_REPLACE_STL) && defined(__APPLE__) && !defined(_MSC_VER)
+[[noreturn]] inline void rethrow_exception(exception_ptr value) {
+    if (value.object) ::__cxa_rethrow_primary_exception(value.object);
+    terminate();
+}
+#elif !defined(FTL_REPLACE_STL) || defined(_MSC_VER)
 [[noreturn]] inline void rethrow_exception(exception_ptr value) {
 #if defined(_MSC_VER)
     __ExceptionPtrRethrow(&value);
