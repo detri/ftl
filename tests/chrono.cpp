@@ -19,6 +19,24 @@ static_assert(tested::formattable<seconds, wchar_t>);
 
 static_assert(tested::formattable<hh_mm_ss<milliseconds>, char>);
 
+static_assert(tested::formattable<year_month_day, char>);
+
+static_assert(tested::formattable<weekday, char>);
+
+static_assert(tested::formattable<sys_seconds, char>);
+
+static_assert(tested::formattable<utc_seconds, char>);
+
+static_assert(tested::formattable<tai_seconds, char>);
+
+static_assert(tested::formattable<gps_seconds, char>);
+
+static_assert(tested::formattable<file_seconds, char>);
+
+static_assert(tested::formattable<local_seconds, char>);
+
+static_assert(tested::formattable<year_month_day, wchar_t>);
+
 static_assert(duration_cast<seconds>(1500ms).count() == 1);
 static_assert(is_clock_v<system_clock> && is_clock_v<steady_clock>);
 static_assert(!is_clock_v<int>);
@@ -200,6 +218,156 @@ bool chrono_hms_formatting_works() {
   return true;
 }
 
+bool chrono_calendar_formatting_works() {
+  const auto date = year{2024} / March / 14;
+
+  const auto default_date = tested::format("{}", date);
+
+  if (!equal_text(default_date.c_str(), "2024-03-14")) {
+    return false;
+  }
+
+  const auto explicit_date = tested::format("{:%Y-%m-%d}", date);
+
+  if (!equal_text(explicit_date.c_str(), "2024-03-14")) {
+    return false;
+  }
+
+  const auto long_date = tested::format("{:%A, %B %d, %Y}", date);
+
+  if (!equal_text(long_date.c_str(), "Thursday, March 14, 2024")) {
+    return false;
+  }
+
+  const auto day_of_year = tested::format("{:%j}", date);
+
+  if (!equal_text(day_of_year.c_str(), "074")) {
+    return false;
+  }
+
+  const auto weekday_numbers = tested::format("{:%u/%w}", date);
+
+  if (!equal_text(weekday_numbers.c_str(), "4/4")) {
+    return false;
+  }
+
+  const auto iso = tested::format("{:%G-W%V-%u}", year{2024} / January / 1);
+
+  if (!equal_text(iso.c_str(), "2024-W01-1")) {
+    return false;
+  }
+
+  const auto month_value = tested::format("{}", March);
+
+  if (!equal_text(month_value.c_str(), "Mar")) {
+    return false;
+  }
+
+  const auto weekday_value = tested::format("{}", Thursday);
+
+  if (!equal_text(weekday_value.c_str(), "Thu")) {
+    return false;
+  }
+
+  const auto indexed = tested::format("{}", Friday[2]);
+
+  if (!equal_text(indexed.c_str(), "Fri[2]")) {
+    return false;
+  }
+
+  const auto last_weekday = tested::format("{}", Friday[last]);
+
+  if (!equal_text(last_weekday.c_str(), "Fri[last]")) {
+    return false;
+  }
+
+  const auto month_day_value = tested::format("{}", March / 14);
+
+  if (!equal_text(month_day_value.c_str(), "Mar/14")) {
+    return false;
+  }
+
+  const auto year_month_value = tested::format("{}", year{2024} / March);
+
+  if (!equal_text(year_month_value.c_str(), "2024/Mar")) {
+    return false;
+  }
+
+  const auto wide_date = tested::format(L"{:%F}", date);
+
+  if (!equal_text(wide_date.c_str(), L"2024-03-14")) {
+    return false;
+  }
+
+  return true;
+}
+
+bool chrono_clock_formatting_works() {
+  const sys_seconds epoch{seconds{0}};
+
+  const auto system_default = tested::format("{}", epoch);
+
+  if (!equal_text(system_default.c_str(), "1970-01-01 00:00:00")) {
+    return false;
+  }
+
+  const auto system_zone = tested::format("{:%F %T %Z %z}", epoch);
+
+  if (!equal_text(system_zone.c_str(), "1970-01-01 00:00:00 UTC +0000")) {
+    return false;
+  }
+
+  const auto system_colon_zone = tested::format("{:%Ez}", epoch);
+
+  if (!equal_text(system_colon_zone.c_str(), "+00:00")) {
+    return false;
+  }
+
+  const auto utc_epoch = utc_clock::from_sys(epoch);
+
+  const auto utc_text = tested::format("{:%F %T %Z}", utc_epoch);
+
+  if (!equal_text(utc_text.c_str(), "1970-01-01 00:00:00 UTC")) {
+    return false;
+  }
+
+  const auto date_2000 = sys_seconds{sys_days{year{2000} / January / 1}};
+
+  const auto tai = clock_cast<tai_clock>(date_2000);
+
+  const auto tai_text = tested::format("{:%F %T %Z}", tai);
+
+  if (!equal_text(tai_text.c_str(), "2000-01-01 00:00:32 TAI")) {
+    return false;
+  }
+
+  const auto gps = clock_cast<gps_clock>(date_2000);
+
+  const auto gps_text = tested::format("{:%F %T %Z}", gps);
+
+  if (!equal_text(gps_text.c_str(), "2000-01-01 00:00:13 GPS")) {
+    return false;
+  }
+
+  const file_seconds file_epoch{seconds{0}};
+
+  const auto file_text = tested::format("{:%F %T %Z}", file_epoch);
+
+  if (!equal_text(file_text.c_str(), "1970-01-01 00:00:00 UTC")) {
+    return false;
+  }
+
+  const local_seconds local_epoch{seconds{0}};
+
+  const auto local_text = tested::format("{}", local_epoch);
+
+  if (!equal_text(local_text.c_str(), "1970-01-01 00:00:00")) {
+    return false;
+  }
+
+  return true;
+}
+
 bool chrono_format_errors_work() {
   seconds value{42};
 
@@ -246,6 +414,45 @@ bool chrono_format_errors_work() {
     return false;
   }
 
+  local_seconds local{seconds{0}};
+
+  auto local_store = tested::make_format_args(local);
+
+  try {
+    (void)tested::vformat("{:%Z}", tested::format_args(local_store));
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  try {
+    (void)tested::vformat("{:%z}", tested::format_args(local_store));
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  month only_month{3};
+
+  auto month_store = tested::make_format_args(only_month);
+
+  try {
+    /*
+     * A month does not contain
+     * enough information for %F.
+     */
+    (void)tested::vformat("{:%F}", tested::format_args(month_store));
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
   return true;
 }
 
@@ -265,6 +472,12 @@ bool ftl_test() {
     return false;
 
   if (!chrono_format_errors_work())
+    return false;
+
+  if (!chrono_calendar_formatting_works())
+    return false;
+
+  if (!chrono_clock_formatting_works())
     return false;
 
   return true;

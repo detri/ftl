@@ -4330,6 +4330,1087 @@ private:
   chrono_format_spec<charT> spec_{};
 };
 
+struct chrono_date_fields {
+  bool has_year = false;
+  bool has_month = false;
+  bool has_day = false;
+  bool has_weekday = false;
+
+  int year = 0;
+  unsigned month = 0;
+  unsigned day = 0;
+  unsigned weekday = 0;
+
+  bool complete_date = false;
+};
+
+inline constexpr chrono_date_fields
+chrono_fields_from_ymd(const chrono::year_month_day &value) {
+  chrono_date_fields fields{};
+
+  fields.has_year = true;
+  fields.has_month = true;
+  fields.has_day = true;
+
+  fields.year = static_cast<int>(value.year());
+
+  fields.month = static_cast<unsigned>(value.month());
+
+  fields.day = static_cast<unsigned>(value.day());
+
+  if (value.ok()) {
+    fields.has_weekday = true;
+
+    fields.weekday =
+        chrono::weekday{static_cast<chrono::sys_days>(value)}.c_encoding();
+
+    fields.complete_date = true;
+  }
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields chrono_fields(const chrono::day &value) {
+  chrono_date_fields fields{};
+
+  fields.has_day = true;
+  fields.day = static_cast<unsigned>(value);
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields chrono_fields(const chrono::month &value) {
+  chrono_date_fields fields{};
+
+  fields.has_month = true;
+  fields.month = static_cast<unsigned>(value);
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields chrono_fields(const chrono::year &value) {
+  chrono_date_fields fields{};
+
+  fields.has_year = true;
+  fields.year = static_cast<int>(value);
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::weekday &value) {
+  chrono_date_fields fields{};
+
+  fields.has_weekday = true;
+  fields.weekday = value.c_encoding();
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::weekday_indexed &value) {
+  return chrono_fields(value.weekday());
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::weekday_last &value) {
+  return chrono_fields(value.weekday());
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::month_day &value) {
+  chrono_date_fields fields{};
+
+  fields.has_month = true;
+  fields.has_day = true;
+
+  fields.month = static_cast<unsigned>(value.month());
+
+  fields.day = static_cast<unsigned>(value.day());
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::month_day_last &value) {
+  chrono_date_fields fields{};
+
+  fields.has_month = true;
+
+  fields.month = static_cast<unsigned>(value.month());
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::month_weekday &value) {
+  chrono_date_fields fields{};
+
+  fields.has_month = true;
+  fields.has_weekday = true;
+
+  fields.month = static_cast<unsigned>(value.month());
+
+  fields.weekday = value.weekday_indexed().weekday().c_encoding();
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::month_weekday_last &value) {
+  chrono_date_fields fields{};
+
+  fields.has_month = true;
+  fields.has_weekday = true;
+
+  fields.month = static_cast<unsigned>(value.month());
+
+  fields.weekday = value.weekday_last().weekday().c_encoding();
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::year_month &value) {
+  chrono_date_fields fields{};
+
+  fields.has_year = true;
+  fields.has_month = true;
+
+  fields.year = static_cast<int>(value.year());
+
+  fields.month = static_cast<unsigned>(value.month());
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::year_month_day &value) {
+  return chrono_fields_from_ymd(value);
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::year_month_day_last &value) {
+  return chrono_fields_from_ymd(chrono::year_month_day{value});
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::year_month_weekday &value) {
+  chrono_date_fields fields{};
+
+  fields.has_year = true;
+  fields.has_month = true;
+  fields.has_weekday = true;
+
+  fields.year = static_cast<int>(value.year());
+
+  fields.month = static_cast<unsigned>(value.month());
+
+  fields.weekday = value.weekday().c_encoding();
+
+  if (value.ok()) {
+    return chrono_fields_from_ymd(
+        chrono::year_month_day{static_cast<chrono::sys_days>(value)});
+  }
+
+  return fields;
+}
+
+inline constexpr chrono_date_fields
+chrono_fields(const chrono::year_month_weekday_last &value) {
+  chrono_date_fields fields{};
+
+  fields.has_year = true;
+  fields.has_month = true;
+  fields.has_weekday = true;
+
+  fields.year = static_cast<int>(value.year());
+
+  fields.month = static_cast<unsigned>(value.month());
+
+  fields.weekday = value.weekday().c_encoding();
+
+  if (value.ok()) {
+    return chrono_fields_from_ymd(
+        chrono::year_month_day{static_cast<chrono::sys_days>(value)});
+  }
+
+  return fields;
+}
+
+template <class charT>
+void chrono_append_year(basic_string<charT> &output, int value) {
+  chrono_append_integer(output, value, 4);
+}
+
+[[nodiscard]]
+constexpr int chrono_floor_div_100(int value) noexcept {
+  int quotient = value / 100;
+
+  if (value < 0 && value % 100 != 0) {
+    --quotient;
+  }
+
+  return quotient;
+}
+
+[[nodiscard]]
+constexpr unsigned chrono_year_remainder(int value) noexcept {
+  const int century = chrono_floor_div_100(value);
+
+  return static_cast<unsigned>(value - century * 100);
+}
+
+inline constexpr const char *chrono_short_month_name(unsigned value) noexcept {
+  constexpr const char *names[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+
+  return value >= 1 && value <= 12 ? names[value - 1] : nullptr;
+}
+
+inline constexpr const char *chrono_long_month_name(unsigned value) noexcept {
+  constexpr const char *names[] = {
+      "January", "February", "March",     "April",   "May",      "June",
+      "July",    "August",   "September", "October", "November", "December"};
+
+  return value >= 1 && value <= 12 ? names[value - 1] : nullptr;
+}
+
+inline constexpr const char *
+chrono_short_weekday_name(unsigned value) noexcept {
+  constexpr const char *names[] = {"Sun", "Mon", "Tue", "Wed",
+                                   "Thu", "Fri", "Sat"};
+
+  return value <= 6 ? names[value] : nullptr;
+}
+
+inline constexpr const char *chrono_long_weekday_name(unsigned value) noexcept {
+  constexpr const char *names[] = {"Sunday",   "Monday", "Tuesday", "Wednesday",
+                                   "Thursday", "Friday", "Saturday"};
+
+  return value <= 6 ? names[value] : nullptr;
+}
+
+[[nodiscard]]
+inline chrono::sys_days
+chrono_fields_sys_days(const chrono_date_fields &fields) {
+  if (!fields.has_year || !fields.has_month || !fields.has_day) {
+    throw_format_error("chrono conversion requires a complete date");
+  }
+
+  chrono::year_month_day value{chrono::year{fields.year},
+                               chrono::month{fields.month},
+                               chrono::day{fields.day}};
+
+  if (!value.ok()) {
+    throw_format_error("chrono conversion requires a valid date");
+  }
+
+  return static_cast<chrono::sys_days>(value);
+}
+
+[[nodiscard]]
+inline unsigned chrono_day_of_year(const chrono_date_fields &fields) {
+  const auto current = chrono_fields_sys_days(fields);
+
+  const auto first =
+      chrono::sys_days{chrono::year{fields.year} / chrono::January / 1};
+
+  return static_cast<unsigned>((current - first).count()) + 1;
+}
+
+[[nodiscard]]
+inline unsigned chrono_week_number_sunday(const chrono_date_fields &fields) {
+  const auto current = chrono_fields_sys_days(fields);
+
+  const auto first =
+      chrono::sys_days{chrono::year{fields.year} / chrono::January / 1};
+
+  const unsigned first_weekday = chrono::weekday{first}.c_encoding();
+
+  const long long offset = static_cast<long long>((7u - first_weekday) % 7u);
+
+  const long long day = (current - first).count();
+
+  if (day < offset)
+    return 0;
+
+  return static_cast<unsigned>(1 + (day - offset) / 7);
+}
+
+[[nodiscard]]
+inline unsigned chrono_week_number_monday(const chrono_date_fields &fields) {
+  const auto current = chrono_fields_sys_days(fields);
+
+  const auto first =
+      chrono::sys_days{chrono::year{fields.year} / chrono::January / 1};
+
+  const unsigned first_weekday = chrono::weekday{first}.iso_encoding() - 1;
+
+  const long long offset = static_cast<long long>((7u - first_weekday) % 7u);
+
+  const long long day = (current - first).count();
+
+  if (day < offset)
+    return 0;
+
+  return static_cast<unsigned>(1 + (day - offset) / 7);
+}
+
+struct chrono_iso_week {
+  int year;
+  unsigned week;
+};
+
+[[nodiscard]]
+inline chrono_iso_week
+chrono_iso_week_fields(const chrono_date_fields &fields) {
+  const auto current = chrono_fields_sys_days(fields);
+
+  const unsigned weekday = chrono::weekday{current}.iso_encoding();
+
+  const auto thursday = current + chrono::days{4 - static_cast<int>(weekday)};
+
+  const int iso_year =
+      static_cast<int>(chrono::year_month_day{thursday}.year());
+
+  const auto january_fourth =
+      chrono::sys_days{chrono::year{iso_year} / chrono::January / 4};
+
+  const unsigned january_fourth_weekday =
+      chrono::weekday{january_fourth}.iso_encoding();
+
+  const auto first_monday =
+      january_fourth -
+      chrono::days{static_cast<int>(january_fourth_weekday) - 1};
+
+  return {iso_year,
+          static_cast<unsigned>(1 + (current - first_monday).count() / 7)};
+}
+
+template <class charT>
+void chrono_append_offset(basic_string<charT> &output, chrono::seconds offset,
+                          bool colon) {
+  long long value = offset.count();
+
+  const bool negative = value < 0;
+
+  unsigned long long magnitude =
+      negative ? 0ULL - static_cast<unsigned long long>(value)
+               : static_cast<unsigned long long>(value);
+
+  output.push_back(format_widen<charT>(negative ? '-' : '+'));
+
+  const unsigned long long hours = magnitude / 3600;
+
+  magnitude %= 3600;
+
+  const unsigned long long minutes = magnitude / 60;
+
+  const unsigned long long seconds = magnitude % 60;
+
+  chrono_append_integer(output, hours, 2);
+
+  if (colon) {
+    output.push_back(format_widen<charT>(':'));
+  }
+
+  chrono_append_integer(output, minutes, 2);
+
+  if (seconds != 0) {
+    if (colon) {
+      output.push_back(format_widen<charT>(':'));
+    }
+
+    chrono_append_integer(output, seconds, 2);
+  }
+}
+
+template <class charT>
+void chrono_require_year(const chrono_date_fields &fields) {
+  if (!fields.has_year) {
+    throw_format_error("chrono conversion requires year information");
+  }
+}
+
+template <class charT>
+void chrono_require_month(const chrono_date_fields &fields) {
+  if (!fields.has_month) {
+    throw_format_error("chrono conversion requires month information");
+  }
+}
+
+template <class charT>
+void chrono_require_day(const chrono_date_fields &fields) {
+  if (!fields.has_day) {
+    throw_format_error("chrono conversion requires day information");
+  }
+}
+
+template <class charT>
+void chrono_require_weekday(const chrono_date_fields &fields) {
+  if (!fields.has_weekday || fields.weekday > 6) {
+    throw_format_error("chrono conversion requires a valid weekday");
+  }
+}
+
+template <class charT>
+void chrono_append_date_conversion(basic_string<charT> &output,
+                                   const chrono_date_fields &fields,
+                                   char modifier, char conversion) {
+  (void)modifier;
+
+  switch (conversion) {
+  case 'a': {
+    chrono_require_weekday<charT>(fields);
+
+    chrono_append_ascii(output, chrono_short_weekday_name(fields.weekday));
+
+    return;
+  }
+
+  case 'A': {
+    chrono_require_weekday<charT>(fields);
+
+    chrono_append_ascii(output, chrono_long_weekday_name(fields.weekday));
+
+    return;
+  }
+
+  case 'b':
+  case 'h': {
+    chrono_require_month<charT>(fields);
+
+    const char *name = chrono_short_month_name(fields.month);
+
+    if (name == nullptr) {
+      throw_format_error("chrono conversion requires a valid month");
+    }
+
+    chrono_append_ascii(output, name);
+
+    return;
+  }
+
+  case 'B': {
+    chrono_require_month<charT>(fields);
+
+    const char *name = chrono_long_month_name(fields.month);
+
+    if (name == nullptr) {
+      throw_format_error("chrono conversion requires a valid month");
+    }
+
+    chrono_append_ascii(output, name);
+
+    return;
+  }
+
+  case 'C':
+    chrono_require_year<charT>(fields);
+
+    chrono_append_integer(output, chrono_floor_div_100(fields.year), 2);
+
+    return;
+
+  case 'd':
+    chrono_require_day<charT>(fields);
+
+    chrono_append_integer(output, fields.day, 2);
+
+    return;
+
+  case 'e':
+    chrono_require_day<charT>(fields);
+
+    chrono_append_integer(output, fields.day, 2, format_widen<charT>(' '));
+
+    return;
+
+  case 'D':
+    chrono_require_year<charT>(fields);
+    chrono_require_month<charT>(fields);
+    chrono_require_day<charT>(fields);
+
+    chrono_append_integer(output, fields.month, 2);
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_integer(output, fields.day, 2);
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_integer(output, chrono_year_remainder(fields.year), 2);
+
+    return;
+
+  case 'F':
+    chrono_require_year<charT>(fields);
+    chrono_require_month<charT>(fields);
+    chrono_require_day<charT>(fields);
+
+    chrono_append_year(output, fields.year);
+
+    output.push_back(format_widen<charT>('-'));
+
+    chrono_append_integer(output, fields.month, 2);
+
+    output.push_back(format_widen<charT>('-'));
+
+    chrono_append_integer(output, fields.day, 2);
+
+    return;
+
+  case 'g': {
+    const auto iso = chrono_iso_week_fields(fields);
+
+    chrono_append_integer(output, chrono_year_remainder(iso.year), 2);
+
+    return;
+  }
+
+  case 'G': {
+    const auto iso = chrono_iso_week_fields(fields);
+
+    chrono_append_year(output, iso.year);
+
+    return;
+  }
+
+  case 'j':
+    chrono_append_integer(output, chrono_day_of_year(fields), 3);
+
+    return;
+
+  case 'm':
+    chrono_require_month<charT>(fields);
+
+    chrono_append_integer(output, fields.month, 2);
+
+    return;
+
+  case 'u':
+    chrono_require_weekday<charT>(fields);
+
+    chrono_append_integer(output, fields.weekday == 0 ? 7u : fields.weekday);
+
+    return;
+
+  case 'U':
+    chrono_append_integer(output, chrono_week_number_sunday(fields), 2);
+
+    return;
+
+  case 'V': {
+    const auto iso = chrono_iso_week_fields(fields);
+
+    chrono_append_integer(output, iso.week, 2);
+
+    return;
+  }
+
+  case 'w':
+    chrono_require_weekday<charT>(fields);
+
+    chrono_append_integer(output, fields.weekday);
+
+    return;
+
+  case 'W':
+    chrono_append_integer(output, chrono_week_number_monday(fields), 2);
+
+    return;
+
+  case 'x':
+    /*
+     * Classic locale representation.
+     * FTL currently has no time_put
+     * facet surface, so L-sensitive
+     * names remain a locale-layer
+     * integration rather than a
+     * chrono-type problem.
+     */
+    chrono_append_date_conversion(output, fields, '\0', 'D');
+
+    return;
+
+  case 'y':
+    chrono_require_year<charT>(fields);
+
+    chrono_append_integer(output, chrono_year_remainder(fields.year), 2);
+
+    return;
+
+  case 'Y':
+    chrono_require_year<charT>(fields);
+
+    chrono_append_year(output, fields.year);
+
+    return;
+
+  default:
+    throw_format_error("chrono conversion requires information not present in "
+                       "this calendar type");
+  }
+}
+
+template <class charT>
+void chrono_append_default_day(basic_string<charT> &output, chrono::day value) {
+  chrono_append_integer(output, static_cast<unsigned>(value), 2);
+
+  if (!value.ok()) {
+    chrono_append_ascii(output, " is not a valid day");
+  }
+}
+
+template <class charT>
+void chrono_append_default_month(basic_string<charT> &output,
+                                 chrono::month value) {
+  const unsigned numeric = static_cast<unsigned>(value);
+
+  if (value.ok()) {
+    chrono_append_ascii(output, chrono_short_month_name(numeric));
+  } else {
+    chrono_append_integer(output, numeric);
+
+    chrono_append_ascii(output, " is not a valid month");
+  }
+}
+
+template <class charT>
+void chrono_append_default_year(basic_string<charT> &output,
+                                chrono::year value) {
+  chrono_append_year(output, static_cast<int>(value));
+
+  if (!value.ok()) {
+    chrono_append_ascii(output, " is not a valid year");
+  }
+}
+
+template <class charT>
+void chrono_append_default_weekday(basic_string<charT> &output,
+                                   chrono::weekday value) {
+  if (value.ok()) {
+    chrono_append_ascii(output, chrono_short_weekday_name(value.c_encoding()));
+  } else {
+    chrono_append_integer(output, value.c_encoding());
+
+    chrono_append_ascii(output, " is not a valid weekday");
+  }
+}
+
+template <class charT>
+void chrono_append_default_weekday_indexed(
+    basic_string<charT> &output, const chrono::weekday_indexed &value) {
+  chrono_append_default_weekday(output, value.weekday());
+
+  output.push_back(format_widen<charT>('['));
+
+  chrono_append_integer(output, value.index());
+
+  if (value.index() < 1 || value.index() > 5) {
+    chrono_append_ascii(output, " is not a valid index");
+  }
+
+  output.push_back(format_widen<charT>(']'));
+}
+
+template <class charT>
+void chrono_append_default_weekday_last(basic_string<charT> &output,
+                                        const chrono::weekday_last &value) {
+  chrono_append_default_weekday(output, value.weekday());
+
+  chrono_append_ascii(output, "[last]");
+}
+
+template <class charT, class T>
+void chrono_append_calendar_default(basic_string<charT> &output,
+                                    const T &value) {
+  if constexpr (is_same_v<T, chrono::day>) {
+    chrono_append_default_day(output, value);
+
+  } else if constexpr (is_same_v<T, chrono::month>) {
+    chrono_append_default_month(output, value);
+
+  } else if constexpr (is_same_v<T, chrono::year>) {
+    chrono_append_default_year(output, value);
+
+  } else if constexpr (is_same_v<T, chrono::weekday>) {
+    chrono_append_default_weekday(output, value);
+
+  } else if constexpr (is_same_v<T, chrono::weekday_indexed>) {
+    chrono_append_default_weekday_indexed(output, value);
+
+  } else if constexpr (is_same_v<T, chrono::weekday_last>) {
+    chrono_append_default_weekday_last(output, value);
+
+  } else if constexpr (is_same_v<T, chrono::month_day>) {
+    chrono_append_default_month(output, value.month());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_day(output, value.day());
+
+  } else if constexpr (is_same_v<T, chrono::month_day_last>) {
+    chrono_append_default_month(output, value.month());
+
+    chrono_append_ascii(output, "/last");
+
+  } else if constexpr (is_same_v<T, chrono::month_weekday>) {
+    chrono_append_default_month(output, value.month());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_weekday_indexed(output, value.weekday_indexed());
+
+  } else if constexpr (is_same_v<T, chrono::month_weekday_last>) {
+    chrono_append_default_month(output, value.month());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_weekday_last(output, value.weekday_last());
+
+  } else if constexpr (is_same_v<T, chrono::year_month>) {
+    chrono_append_default_year(output, value.year());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_month(output, value.month());
+
+  } else if constexpr (is_same_v<T, chrono::year_month_day>) {
+    const auto fields = chrono_fields(value);
+
+    chrono_append_date_conversion(output, fields, '\0', 'F');
+
+    if (!value.ok()) {
+      chrono_append_ascii(output, " is not a valid date");
+    }
+
+  } else if constexpr (is_same_v<T, chrono::year_month_day_last>) {
+    chrono_append_default_year(output, value.year());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_month(output, value.month());
+
+    chrono_append_ascii(output, "/last");
+
+  } else if constexpr (is_same_v<T, chrono::year_month_weekday>) {
+    chrono_append_default_year(output, value.year());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_month(output, value.month());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_weekday_indexed(output, value.weekday_indexed());
+
+  } else if constexpr (is_same_v<T, chrono::year_month_weekday_last>) {
+    chrono_append_default_year(output, value.year());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_month(output, value.month());
+
+    output.push_back(format_widen<charT>('/'));
+
+    chrono_append_default_weekday_last(output, value.weekday_last());
+  }
+}
+
+template <class T, class charT> class chrono_calendar_formatter {
+public:
+  constexpr chrono_calendar_formatter() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    return chrono_parse_format_spec(context, spec_, false);
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator format(const T &value,
+                                          FormatContext &context) const {
+    basic_string<charT> content;
+
+    if (spec_.chrono_specs.empty()) {
+      chrono_append_calendar_default(content, value);
+    } else {
+      const auto fields = chrono_fields(value);
+
+      chrono_expand_specs(content, spec_.chrono_specs, false,
+                          [&](basic_string<charT> &destination, char modifier,
+                              char conversion) {
+                            chrono_append_date_conversion(destination, fields,
+                                                          modifier, conversion);
+                          });
+    }
+
+    return format_padded_text(
+        basic_string_view<charT>(content.data(), content.size()), context,
+        spec_.outer, format_alignment::left);
+  }
+
+private:
+  chrono_format_spec<charT> spec_{};
+};
+
+template <class Duration> struct chrono_clock_hms_view {
+  const chrono::hh_mm_ss<Duration> *value;
+
+  bool leap_second = false;
+
+  [[nodiscard]]
+  constexpr long long hours() const {
+    return static_cast<long long>(value->hours().count());
+  }
+
+  [[nodiscard]]
+  constexpr long long minutes() const {
+    return static_cast<long long>(value->minutes().count());
+  }
+
+  [[nodiscard]]
+  constexpr long long seconds() const {
+    return leap_second ? 60 : static_cast<long long>(value->seconds().count());
+  }
+
+  [[nodiscard]]
+  constexpr auto subseconds() const {
+    return value->subseconds();
+  }
+
+  inline static constexpr unsigned fractional_width =
+      chrono::hh_mm_ss<Duration>::fractional_width;
+};
+
+enum class chrono_clock_kind { system, local, utc, tai, gps, file };
+
+template <chrono_clock_kind Kind, class Duration>
+[[nodiscard]]
+constexpr auto chrono_clock_sys_time(
+    const chrono::time_point<
+        conditional_t<
+            Kind == chrono_clock_kind::system, chrono::system_clock,
+            conditional_t<
+                Kind == chrono_clock_kind::local, chrono::local_t,
+                conditional_t<
+                    Kind == chrono_clock_kind::utc, chrono::utc_clock,
+                    conditional_t<Kind == chrono_clock_kind::tai,
+                                  chrono::tai_clock,
+                                  conditional_t<Kind == chrono_clock_kind::gps,
+                                                chrono::gps_clock,
+                                                chrono::file_clock>>>>>,
+        Duration> &value) {
+  using precision = common_type_t<Duration, chrono::seconds>;
+
+  if constexpr (Kind == chrono_clock_kind::system) {
+    return chrono::sys_time<precision>{precision{value.time_since_epoch()}};
+
+  } else if constexpr (Kind == chrono_clock_kind::local) {
+    /*
+     * local_time has the same civil
+     * epoch representation, but no
+     * time-zone information.
+     */
+    return chrono::sys_time<precision>{precision{value.time_since_epoch()}};
+
+  } else if constexpr (Kind == chrono_clock_kind::utc) {
+    const auto converted = chrono::utc_clock::to_sys(value);
+
+    return chrono::sys_time<precision>{precision{converted.time_since_epoch()}};
+
+  } else if constexpr (Kind == chrono_clock_kind::tai) {
+    const auto epoch_difference =
+        chrono::sys_days{chrono::year{1970} / chrono::January / 1} -
+        chrono::sys_days{chrono::year{1958} / chrono::January / 1};
+
+    return chrono::sys_time<precision>{
+        precision{value.time_since_epoch()} -
+        chrono::duration_cast<precision>(epoch_difference)};
+
+  } else if constexpr (Kind == chrono_clock_kind::gps) {
+    const auto epoch_difference =
+        chrono::sys_days{chrono::year{1980} / chrono::January /
+                         chrono::Sunday[1]} -
+        chrono::sys_days{chrono::year{1970} / chrono::January / 1};
+
+    return chrono::sys_time<precision>{
+        precision{value.time_since_epoch()} +
+        chrono::duration_cast<precision>(epoch_difference)};
+
+  } else {
+    const auto converted = chrono::file_clock::to_sys(value);
+
+    return chrono::sys_time<precision>{precision{converted.time_since_epoch()}};
+  }
+}
+
+template <chrono_clock_kind Kind>
+[[nodiscard]]
+constexpr const char *chrono_clock_abbreviation() noexcept {
+  if constexpr (Kind == chrono_clock_kind::system ||
+                Kind == chrono_clock_kind::utc ||
+                Kind == chrono_clock_kind::file) {
+    return "UTC";
+  } else if constexpr (Kind == chrono_clock_kind::tai) {
+    return "TAI";
+  } else if constexpr (Kind == chrono_clock_kind::gps) {
+    return "GPS";
+  } else {
+    return nullptr;
+  }
+}
+
+template <chrono_clock_kind Kind, class Duration, class charT>
+class chrono_time_point_formatter {
+public:
+  constexpr chrono_time_point_formatter() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    return chrono_parse_format_spec(context, spec_, false);
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator
+  format(const chrono::time_point<
+             conditional_t<
+                 Kind == chrono_clock_kind::system, chrono::system_clock,
+                 conditional_t<
+                     Kind == chrono_clock_kind::local, chrono::local_t,
+                     conditional_t<
+                         Kind == chrono_clock_kind::utc, chrono::utc_clock,
+                         conditional_t<
+                             Kind == chrono_clock_kind::tai, chrono::tai_clock,
+                             conditional_t<Kind == chrono_clock_kind::gps,
+                                           chrono::gps_clock,
+                                           chrono::file_clock>>>>>,
+             Duration> &value,
+         FormatContext &context) const {
+    using precision = common_type_t<Duration, chrono::seconds>;
+
+    const auto system_value = chrono_clock_sys_time<Kind>(value);
+
+    const auto day_point = chrono::floor<chrono::days>(system_value);
+
+    const chrono::sys_days calendar_day{day_point.time_since_epoch()};
+
+    const chrono::year_month_day calendar{calendar_day};
+
+    const auto fields = chrono_fields(calendar);
+
+    const precision time_since_midnight = precision{system_value - day_point};
+
+    const chrono::hh_mm_ss<precision> hms{time_since_midnight};
+
+    bool leap_second = false;
+
+    if constexpr (Kind == chrono_clock_kind::utc) {
+      leap_second = chrono::get_leap_second_info(value).is_leap_second;
+    }
+
+    const chrono_clock_hms_view<precision> split{addressof(hms), leap_second};
+
+    basic_string<charT> content;
+
+    basic_string_view<charT> chrono_specs = spec_.chrono_specs;
+
+    basic_string<charT> default_specs;
+
+    if (chrono_specs.empty()) {
+      chrono_append_ascii(default_specs, "%F %T");
+
+      chrono_specs =
+          basic_string_view<charT>(default_specs.data(), default_specs.size());
+    }
+
+    chrono_expand_specs(
+        content, chrono_specs, false,
+        [&](basic_string<charT> &destination, char modifier, char conversion) {
+          switch (conversion) {
+          case 'H':
+          case 'I':
+          case 'M':
+          case 'S':
+          case 'p':
+          case 'R':
+          case 'T':
+          case 'r':
+            chrono_append_time_of_day(destination, context, split,
+                                      spec_.outer.localized, conversion);
+
+            return;
+
+          case 'c':
+            chrono_append_date_conversion(destination, fields, modifier, 'a');
+
+            destination.push_back(format_widen<charT>(' '));
+
+            chrono_append_date_conversion(destination, fields, modifier, 'b');
+
+            destination.push_back(format_widen<charT>(' '));
+
+            chrono_append_date_conversion(destination, fields, modifier, 'e');
+
+            destination.push_back(format_widen<charT>(' '));
+
+            chrono_append_time_of_day(destination, context, split,
+                                      spec_.outer.localized, 'T');
+
+            destination.push_back(format_widen<charT>(' '));
+
+            chrono_append_date_conversion(destination, fields, modifier, 'Y');
+
+            return;
+
+          case 'X':
+            chrono_append_time_of_day(destination, context, split,
+                                      spec_.outer.localized, 'T');
+
+            return;
+
+          case 'z':
+            if constexpr (Kind == chrono_clock_kind::local) {
+              throw_format_error("local_time does not contain a UTC offset");
+            } else {
+              chrono_append_offset(destination, chrono::seconds{0},
+                                   modifier == 'E' || modifier == 'O');
+            }
+
+            return;
+
+          case 'Z': {
+            constexpr const char *abbreviation =
+                chrono_clock_abbreviation<Kind>();
+
+            if constexpr (abbreviation == nullptr) {
+              throw_format_error(
+                  "local_time does not contain a time-zone abbreviation");
+            } else {
+              chrono_append_ascii(destination, abbreviation);
+            }
+
+            return;
+          }
+
+          default:
+            chrono_append_date_conversion(destination, fields, modifier,
+                                          conversion);
+
+            return;
+          }
+        });
+
+    return format_padded_text(
+        basic_string_view<charT>(content.data(), content.size()), context,
+        spec_.outer, format_alignment::left);
+  }
+
+private:
+  chrono_format_spec<charT> spec_{};
+};
+
 } // namespace detail
 
 template <class Rep, class Period, class charT>
@@ -4339,6 +5420,97 @@ struct formatter<chrono::duration<Rep, Period>, charT>
 template <class Rep, class Period, class charT>
 struct formatter<chrono::hh_mm_ss<chrono::duration<Rep, Period>>, charT>
     : detail::chrono_hms_formatter<chrono::duration<Rep, Period>, charT> {};
+
+template <class charT>
+struct formatter<chrono::day, charT>
+    : detail::chrono_calendar_formatter<chrono::day, charT> {};
+
+template <class charT>
+struct formatter<chrono::month, charT>
+    : detail::chrono_calendar_formatter<chrono::month, charT> {};
+
+template <class charT>
+struct formatter<chrono::year, charT>
+    : detail::chrono_calendar_formatter<chrono::year, charT> {};
+
+template <class charT>
+struct formatter<chrono::weekday, charT>
+    : detail::chrono_calendar_formatter<chrono::weekday, charT> {};
+
+template <class charT>
+struct formatter<chrono::weekday_indexed, charT>
+    : detail::chrono_calendar_formatter<chrono::weekday_indexed, charT> {};
+
+template <class charT>
+struct formatter<chrono::weekday_last, charT>
+    : detail::chrono_calendar_formatter<chrono::weekday_last, charT> {};
+
+template <class charT>
+struct formatter<chrono::month_day, charT>
+    : detail::chrono_calendar_formatter<chrono::month_day, charT> {};
+
+template <class charT>
+struct formatter<chrono::month_day_last, charT>
+    : detail::chrono_calendar_formatter<chrono::month_day_last, charT> {};
+
+template <class charT>
+struct formatter<chrono::month_weekday, charT>
+    : detail::chrono_calendar_formatter<chrono::month_weekday, charT> {};
+
+template <class charT>
+struct formatter<chrono::month_weekday_last, charT>
+    : detail::chrono_calendar_formatter<chrono::month_weekday_last, charT> {};
+
+template <class charT>
+struct formatter<chrono::year_month, charT>
+    : detail::chrono_calendar_formatter<chrono::year_month, charT> {};
+
+template <class charT>
+struct formatter<chrono::year_month_day, charT>
+    : detail::chrono_calendar_formatter<chrono::year_month_day, charT> {};
+
+template <class charT>
+struct formatter<chrono::year_month_day_last, charT>
+    : detail::chrono_calendar_formatter<chrono::year_month_day_last, charT> {};
+
+template <class charT>
+struct formatter<chrono::year_month_weekday, charT>
+    : detail::chrono_calendar_formatter<chrono::year_month_weekday, charT> {};
+
+template <class charT>
+struct formatter<chrono::year_month_weekday_last, charT>
+    : detail::chrono_calendar_formatter<chrono::year_month_weekday_last,
+                                        charT> {};
+
+template <class Duration, class charT>
+struct formatter<chrono::sys_time<Duration>, charT>
+    : detail::chrono_time_point_formatter<detail::chrono_clock_kind::system,
+                                          Duration, charT> {};
+
+template <class Duration, class charT>
+struct formatter<chrono::local_time<Duration>, charT>
+    : detail::chrono_time_point_formatter<detail::chrono_clock_kind::local,
+                                          Duration, charT> {};
+
+template <class Duration, class charT>
+struct formatter<chrono::utc_time<Duration>, charT>
+    : detail::chrono_time_point_formatter<detail::chrono_clock_kind::utc,
+                                          Duration, charT> {};
+
+template <class Duration, class charT>
+struct formatter<chrono::tai_time<Duration>, charT>
+    : detail::chrono_time_point_formatter<detail::chrono_clock_kind::tai,
+                                          Duration, charT> {};
+
+template <class Duration, class charT>
+struct formatter<chrono::gps_time<Duration>, charT>
+    : detail::chrono_time_point_formatter<detail::chrono_clock_kind::gps,
+                                          Duration, charT> {};
+
+template <class Duration, class charT>
+struct formatter<chrono::file_time<Duration>, charT>
+    : detail::chrono_time_point_formatter<detail::chrono_clock_kind::file,
+                                          Duration, charT> {};
 
 FTL_END_NAMESPACE
 
