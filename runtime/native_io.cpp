@@ -266,10 +266,17 @@ int current_errno() {
 constexpr int open_read_only = 0;
 constexpr int open_write_only = 1;
 constexpr int open_read_write = 2;
+#if defined(__APPLE__)
+constexpr int open_create = 0x0200;
+constexpr int open_exclusive = 0x0800;
+constexpr int open_truncate = 0x0400;
+constexpr int open_append = 0x0008;
+#else
 constexpr int open_create = 0100;
 constexpr int open_exclusive = 0200;
 constexpr int open_truncate = 01000;
 constexpr int open_append = 02000;
+#endif
 constexpr int owner_read_write = 0600;
 } // namespace
 
