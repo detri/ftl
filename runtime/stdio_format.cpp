@@ -331,7 +331,7 @@ void floating(output_sink &sink, conversion item, va_list_type &args) {
   padded(sink, item, prefix, prefix_size, text, size);
 }
 
-int format_to(output_sink &sink, const char *format, va_list_type arguments) {
+int format_to(output_sink &sink, const char *format, va_list_type &arguments) {
   while (*format) {
     if (*format != '%') {
       sink.put(*format++);
@@ -729,7 +729,7 @@ bool scan_float(input_source &source, conversion item, va_list_type &args,
 
 template <class FormatCharacter>
 int scan_from(input_source &source, const FormatCharacter *format,
-              va_list_type args) {
+              va_list_type &args) {
   int assignments = 0;
   while (*format) {
     if (space_character(*format)) {
@@ -924,9 +924,12 @@ namespace ftl_cstdio_runtime {
 int vfprintf(FILE *stream, const char *format, ftl::va_list args) {
   output_sink sink{stream};
   sink.locked = true;
+  ftl::va_list arguments;
+  va_copy(arguments, args);
   ::ftl_stdio_runtime::lock_file(stream);
-  int result = format_to(sink, format, args);
+  int result = format_to(sink, format, arguments);
   ::ftl_stdio_runtime::unlock_file(stream);
+  va_end(arguments);
   return result;
 }
 int fprintf(FILE *stream, const char *format, ...) {
@@ -951,7 +954,11 @@ int vsnprintf(char *buffer, size_t size, const char *format,
   if (!buffer && size != 0)
     return -1;
   output_sink sink{nullptr, buffer, size};
-  return format_to(sink, format, args);
+  ftl::va_list arguments;
+  va_copy(arguments, args);
+  int result = format_to(sink, format, arguments);
+  va_end(arguments);
+  return result;
 }
 int snprintf(char *buffer, size_t size, const char *format, ...) {
   ftl::va_list args;
@@ -962,7 +969,11 @@ int snprintf(char *buffer, size_t size, const char *format, ...) {
 }
 int vsprintf(char *buffer, const char *format, ftl::va_list args) {
   output_sink sink{nullptr, buffer, static_cast<size_t>(-1)};
-  return format_to(sink, format, args);
+  ftl::va_list arguments;
+  va_copy(arguments, args);
+  int result = format_to(sink, format, arguments);
+  va_end(arguments);
+  return result;
 }
 int sprintf(char *buffer, const char *format, ...) {
   ftl::va_list args;
@@ -974,9 +985,12 @@ int sprintf(char *buffer, const char *format, ...) {
 int vfscanf(FILE *stream, const char *format, ftl::va_list args) {
   input_source source{stream};
   source.locked = true;
+  ftl::va_list arguments;
+  va_copy(arguments, args);
   ::ftl_stdio_runtime::lock_file(stream);
-  int result = scan_from(source, format, args);
+  int result = scan_from(source, format, arguments);
   ::ftl_stdio_runtime::unlock_file(stream);
+  va_end(arguments);
   return result;
 }
 int fscanf(FILE *stream, const char *format, ...) {
@@ -998,7 +1012,11 @@ int scanf(const char *format, ...) {
 }
 int vsscanf(const char *buffer, const char *format, ftl::va_list args) {
   input_source source{nullptr, buffer};
-  return scan_from(source, format, args);
+  ftl::va_list arguments;
+  va_copy(arguments, args);
+  int result = scan_from(source, format, arguments);
+  va_end(arguments);
+  return result;
 }
 int sscanf(const char *buffer, const char *format, ...) {
   ftl::va_list args;
@@ -1017,15 +1035,22 @@ int vfwscanf(file_type *stream, const wchar_t *format, ftl::va_list args) {
   source.file = stream;
   source.wide_file = true;
   source.locked = true;
+  ftl::va_list arguments;
+  va_copy(arguments, args);
   ::ftl_stdio_runtime::lock_file(stream);
-  int result = scan_from(source, format, args);
+  int result = scan_from(source, format, arguments);
   ::ftl_stdio_runtime::unlock_file(stream);
+  va_end(arguments);
   return result;
 }
 
 int vswscanf(const wchar_t *buffer, const wchar_t *format, ftl::va_list args) {
   input_source source;
   source.wide_text = buffer;
-  return scan_from(source, format, args);
+  ftl::va_list arguments;
+  va_copy(arguments, args);
+  int result = scan_from(source, format, arguments);
+  va_end(arguments);
+  return result;
 }
 } // namespace ftl_wstdio_runtime
