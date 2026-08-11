@@ -17,6 +17,12 @@
 #include <ftl/type_traits>
 #endif
 
+#ifdef FTL_REPLACE_STL
+#define FTL_OSTREAM_NAMESPACE std
+#else
+#define FTL_OSTREAM_NAMESPACE ftl
+#endif
+
 FTL_BEGIN_NAMESPACE
 
 template <class Character, class Traits>
@@ -107,7 +113,7 @@ public:
       exception_ptr caught = current_exception();
       bool rethrow = (this->exceptions() & ios_base::failbit) != 0;
       this->__setstate_nothrow(ios_base::failbit);
-      if (rethrow) rethrow_exception(caught);
+      if (rethrow) FTL_OSTREAM_NAMESPACE::rethrow_exception(caught);
     }
 #else
     for (;;) {
@@ -187,7 +193,7 @@ private:
       exception_ptr caught = current_exception();
       bool rethrow = (this->exceptions() & ios_base::badbit) != 0;
       this->__setstate_nothrow(ios_base::badbit);
-      if (rethrow) rethrow_exception(caught);
+      if (rethrow) FTL_OSTREAM_NAMESPACE::rethrow_exception(caught);
     }
 #else
     output = use_facet<facet_type>(this->getloc()).put(
@@ -324,5 +330,7 @@ Stream &&operator<<(Stream &&stream, const Value &value) {
 }
 
 FTL_END_NAMESPACE
+
+#undef FTL_OSTREAM_NAMESPACE
 
 #endif // FTL_OSTREAM_HEADER
