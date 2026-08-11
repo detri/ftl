@@ -1,0 +1,3216 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_REGEX_HEADER
+#define FTL_REGEX_HEADER
+
+#ifdef FTL_REPLACE_STL
+#include <algorithm>
+#include <compare>
+#include <cstddef>
+#include <initializer_list>
+#include <iosfwd>
+#include <iterator>
+#include <limits>
+#include <locale>
+#include <memory>
+#include <memory_resource>
+#include <stdexcept>
+#include <string>
+#include <type_traits>
+#include <utility>
+#include <vector>
+#else
+#include <ftl/algorithm>
+#include <ftl/compare>
+#include <ftl/cstddef>
+#include <ftl/initializer_list>
+#include <ftl/iosfwd>
+#include <ftl/iterator>
+#include <ftl/limits>
+#include <ftl/locale>
+#include <ftl/memory>
+#include <ftl/memory_resource>
+#include <ftl/stdexcept>
+#include <ftl/string>
+#include <ftl/type_traits>
+#include <ftl/utility>
+#include <ftl/vector>
+#endif
+
+FTL_BEGIN_NAMESPACE
+
+namespace regex_constants {
+
+enum syntax_option_type : unsigned {
+  icase = 1u << 0,
+  nosubs = 1u << 1,
+  optimize = 1u << 2,
+  collate = 1u << 3,
+  ECMAScript = 1u << 8,
+  basic = 1u << 9,
+  extended = 1u << 10,
+  awk = 1u << 11,
+  grep = 1u << 12,
+  egrep = 1u << 13,
+  multiline = 1u << 14
+};
+
+constexpr syntax_option_type operator|(syntax_option_type a,
+                                       syntax_option_type b) noexcept {
+  return static_cast<syntax_option_type>(static_cast<unsigned>(a) |
+                                         static_cast<unsigned>(b));
+}
+constexpr syntax_option_type operator&(syntax_option_type a,
+                                       syntax_option_type b) noexcept {
+  return static_cast<syntax_option_type>(static_cast<unsigned>(a) &
+                                         static_cast<unsigned>(b));
+}
+constexpr syntax_option_type operator^(syntax_option_type a,
+                                       syntax_option_type b) noexcept {
+  return static_cast<syntax_option_type>(static_cast<unsigned>(a) ^
+                                         static_cast<unsigned>(b));
+}
+constexpr syntax_option_type operator~(syntax_option_type a) noexcept {
+  return static_cast<syntax_option_type>(~static_cast<unsigned>(a));
+}
+constexpr syntax_option_type &operator|=(syntax_option_type &a,
+                                         syntax_option_type b) noexcept {
+  return a = a | b;
+}
+constexpr syntax_option_type &operator&=(syntax_option_type &a,
+                                         syntax_option_type b) noexcept {
+  return a = a & b;
+}
+constexpr syntax_option_type &operator^=(syntax_option_type &a,
+                                         syntax_option_type b) noexcept {
+  return a = a ^ b;
+}
+
+enum match_flag_type : unsigned {
+  match_default = 0,
+  match_not_bol = 1u << 0,
+  match_not_eol = 1u << 1,
+  match_not_bow = 1u << 2,
+  match_not_eow = 1u << 3,
+  match_any = 1u << 4,
+  match_not_null = 1u << 5,
+  match_continuous = 1u << 6,
+  match_prev_avail = 1u << 7,
+  format_default = 0,
+  format_sed = 1u << 8,
+  format_no_copy = 1u << 9,
+  format_first_only = 1u << 10
+};
+
+constexpr match_flag_type operator|(match_flag_type a,
+                                    match_flag_type b) noexcept {
+  return static_cast<match_flag_type>(static_cast<unsigned>(a) |
+                                      static_cast<unsigned>(b));
+}
+constexpr match_flag_type operator&(match_flag_type a,
+                                    match_flag_type b) noexcept {
+  return static_cast<match_flag_type>(static_cast<unsigned>(a) &
+                                      static_cast<unsigned>(b));
+}
+constexpr match_flag_type operator^(match_flag_type a,
+                                    match_flag_type b) noexcept {
+  return static_cast<match_flag_type>(static_cast<unsigned>(a) ^
+                                      static_cast<unsigned>(b));
+}
+constexpr match_flag_type operator~(match_flag_type a) noexcept {
+  return static_cast<match_flag_type>(~static_cast<unsigned>(a));
+}
+constexpr match_flag_type &operator|=(match_flag_type &a,
+                                      match_flag_type b) noexcept {
+  return a = a | b;
+}
+constexpr match_flag_type &operator&=(match_flag_type &a,
+                                      match_flag_type b) noexcept {
+  return a = a & b;
+}
+constexpr match_flag_type &operator^=(match_flag_type &a,
+                                      match_flag_type b) noexcept {
+  return a = a ^ b;
+}
+
+enum error_type {
+  error_collate,
+  error_ctype,
+  error_escape,
+  error_backref,
+  error_brack,
+  error_paren,
+  error_brace,
+  error_badbrace,
+  error_range,
+  error_space,
+  error_badrepeat,
+  error_complexity,
+  error_stack
+};
+
+} // namespace regex_constants
+
+class regex_error : public runtime_error {
+public:
+  explicit regex_error(regex_constants::error_type code)
+      : runtime_error("regex_error"), code_(code) {}
+  regex_constants::error_type code() const noexcept { return code_; }
+
+private:
+  regex_constants::error_type code_;
+};
+
+namespace detail {
+
+[[noreturn]] inline void regex_fail(regex_constants::error_type e) {
+#if FTL_HAS_EXCEPTIONS
+  throw regex_error(e);
+#else
+  (void)e;
+  terminate();
+#endif
+}
+
+constexpr bool syntax_has(regex_constants::syntax_option_type f,
+                          regex_constants::syntax_option_type b) noexcept {
+  return (static_cast<unsigned>(f) & static_cast<unsigned>(b)) != 0;
+}
+constexpr bool match_has(regex_constants::match_flag_type f,
+                         regex_constants::match_flag_type b) noexcept {
+  return (static_cast<unsigned>(f) & static_cast<unsigned>(b)) != 0;
+}
+
+inline regex_constants::syntax_option_type
+normalize_syntax(regex_constants::syntax_option_type f) {
+  using namespace regex_constants;
+  constexpr unsigned gm =
+      static_cast<unsigned>(ECMAScript) | static_cast<unsigned>(basic) |
+      static_cast<unsigned>(extended) | static_cast<unsigned>(awk) |
+      static_cast<unsigned>(grep) | static_cast<unsigned>(egrep);
+  unsigned g = static_cast<unsigned>(f) & gm;
+  if (!g)
+    f |= ECMAScript;
+  else if ((g & (g - 1)) != 0)
+    regex_fail(error_ctype);
+  return f;
+}
+
+template <class C> constexpr bool ascii_eq(C c, char x) noexcept {
+  return c == static_cast<C>(static_cast<unsigned char>(x));
+}
+template <class C> constexpr bool ascii_digit(C c) noexcept {
+  return c >= static_cast<C>('0') && c <= static_cast<C>('9');
+}
+template <class C> constexpr int ascii_hex(C c) noexcept {
+  if (c >= static_cast<C>('0') && c <= static_cast<C>('9'))
+    return int(c - static_cast<C>('0'));
+  if (c >= static_cast<C>('a') && c <= static_cast<C>('f'))
+    return int(c - static_cast<C>('a')) + 10;
+  if (c >= static_cast<C>('A') && c <= static_cast<C>('F'))
+    return int(c - static_cast<C>('A')) + 10;
+  return -1;
+}
+
+template <class C> basic_string<C> ascii_string(const char *p) {
+  basic_string<C> s;
+  while (*p)
+    s.push_back(static_cast<C>(static_cast<unsigned char>(*p++)));
+  return s;
+}
+
+} // namespace detail
+
+template <class CharT> class regex_traits {
+public:
+  using char_type = CharT;
+  using string_type = basic_string<char_type>;
+  using locale_type = locale;
+  using char_class_type = unsigned long long;
+
+  static constexpr char_class_type cc_alnum = 1ull << 0;
+  static constexpr char_class_type cc_alpha = 1ull << 1;
+  static constexpr char_class_type cc_blank = 1ull << 2;
+  static constexpr char_class_type cc_cntrl = 1ull << 3;
+  static constexpr char_class_type cc_digit = 1ull << 4;
+  static constexpr char_class_type cc_graph = 1ull << 5;
+  static constexpr char_class_type cc_lower = 1ull << 6;
+  static constexpr char_class_type cc_print = 1ull << 7;
+  static constexpr char_class_type cc_punct = 1ull << 8;
+  static constexpr char_class_type cc_space = 1ull << 9;
+  static constexpr char_class_type cc_upper = 1ull << 10;
+  static constexpr char_class_type cc_xdigit = 1ull << 11;
+  static constexpr char_class_type cc_word = 1ull << 12;
+
+  regex_traits() = default;
+
+  static size_t length(const char_type *p) {
+    return char_traits<char_type>::length(p);
+  }
+
+  char_type translate(char_type c) const { return c; }
+
+  char_type translate_nocase(char_type c) const {
+    return use_facet<ctype<char_type>>(loc_).tolower(c);
+  }
+
+  template <class It> string_type transform(It first, It last) const {
+    string_type s(first, last);
+    if (s.empty())
+      return {};
+    return use_facet<collate<char_type>>(loc_).transform(s.data(),
+                                                         s.data() + s.size());
+  }
+
+  template <class It> string_type transform_primary(It first, It last) const {
+    string_type s(first, last);
+    auto &ct = use_facet<ctype<char_type>>(loc_);
+    for (auto &c : s)
+      c = ct.tolower(c);
+    if (s.empty())
+      return {};
+    return use_facet<collate<char_type>>(loc_).transform(s.data(),
+                                                         s.data() + s.size());
+  }
+
+  template <class It> string_type lookup_collatename(It first, It last) const {
+    string_type s(first, last);
+    if (s.size() == 1)
+      return s;
+    if (name(s, "NUL") || name(s, "null"))
+      return string_type(1, char_type{});
+    if (name(s, "alert"))
+      return string_type(1, static_cast<char_type>('\a'));
+    if (name(s, "backspace"))
+      return string_type(1, static_cast<char_type>('\b'));
+    if (name(s, "tab"))
+      return string_type(1, static_cast<char_type>('\t'));
+    if (name(s, "newline"))
+      return string_type(1, static_cast<char_type>('\n'));
+    if (name(s, "vertical-tab"))
+      return string_type(1, static_cast<char_type>('\v'));
+    if (name(s, "form-feed"))
+      return string_type(1, static_cast<char_type>('\f'));
+    if (name(s, "carriage-return"))
+      return string_type(1, static_cast<char_type>('\r'));
+    return {};
+  }
+
+  template <class It>
+  char_class_type lookup_classname(It first, It last, bool fold = false) const {
+    string_type s(first, last);
+    if (fold)
+      for (auto &c : s)
+        c = translate_nocase(c);
+    if (name(s, "alnum"))
+      return cc_alnum;
+    if (name(s, "alpha"))
+      return cc_alpha;
+    if (name(s, "blank"))
+      return cc_blank;
+    if (name(s, "cntrl"))
+      return cc_cntrl;
+    if (name(s, "digit") || name(s, "d"))
+      return cc_digit;
+    if (name(s, "graph"))
+      return cc_graph;
+    if (name(s, "lower"))
+      return fold ? cc_lower | cc_upper : cc_lower;
+    if (name(s, "print"))
+      return cc_print;
+    if (name(s, "punct"))
+      return cc_punct;
+    if (name(s, "space") || name(s, "s"))
+      return cc_space;
+    if (name(s, "upper"))
+      return fold ? cc_lower | cc_upper : cc_upper;
+    if (name(s, "xdigit"))
+      return cc_xdigit;
+    if (name(s, "word") || name(s, "w"))
+      return cc_word;
+    return 0;
+  }
+
+  bool isctype(char_type c, char_class_type m) const {
+    auto &ct = use_facet<ctype<char_type>>(loc_);
+    auto any = [&](ctype_base::mask x) { return ct.is(x, c); };
+    if ((m & cc_alnum) && any(ctype_base::alnum))
+      return true;
+    if ((m & cc_alpha) && any(ctype_base::alpha))
+      return true;
+    if ((m & cc_blank) && any(ctype_base::blank))
+      return true;
+    if ((m & cc_cntrl) && any(ctype_base::cntrl))
+      return true;
+    if ((m & cc_digit) && any(ctype_base::digit))
+      return true;
+    if ((m & cc_graph) && any(ctype_base::graph))
+      return true;
+    if ((m & cc_lower) && any(ctype_base::lower))
+      return true;
+    if ((m & cc_print) && any(ctype_base::print))
+      return true;
+    if ((m & cc_punct) && any(ctype_base::punct))
+      return true;
+    if ((m & cc_space) && any(ctype_base::space))
+      return true;
+    if ((m & cc_upper) && any(ctype_base::upper))
+      return true;
+    if ((m & cc_xdigit) && any(ctype_base::xdigit))
+      return true;
+    if ((m & cc_word) &&
+        (any(ctype_base::alnum) || c == static_cast<char_type>('_')))
+      return true;
+    return false;
+  }
+
+  int value(char_type c, int radix) const {
+    int v = -1;
+    if (c >= static_cast<char_type>('0') && c <= static_cast<char_type>('9'))
+      v = int(c - static_cast<char_type>('0'));
+    else if (c >= static_cast<char_type>('a') &&
+             c <= static_cast<char_type>('z'))
+      v = int(c - static_cast<char_type>('a')) + 10;
+    else if (c >= static_cast<char_type>('A') &&
+             c <= static_cast<char_type>('Z'))
+      v = int(c - static_cast<char_type>('A')) + 10;
+    return v >= 0 && v < radix ? v : -1;
+  }
+
+  locale_type imbue(locale_type l) {
+    locale_type old = loc_;
+    loc_ = move(l);
+    return old;
+  }
+  locale_type getloc() const { return loc_; }
+
+private:
+  static bool name(const string_type &s, const char *n) {
+    size_t i = 0;
+    for (; n[i]; ++i)
+      if (i >= s.size() ||
+          s[i] != static_cast<char_type>(static_cast<unsigned char>(n[i])))
+        return false;
+    return i == s.size();
+  }
+  locale_type loc_{};
+};
+
+template <class BidirectionalIterator>
+class sub_match : public pair<BidirectionalIterator, BidirectionalIterator> {
+public:
+  using value_type =
+      typename iterator_traits<BidirectionalIterator>::value_type;
+  using difference_type =
+      typename iterator_traits<BidirectionalIterator>::difference_type;
+  using iterator = BidirectionalIterator;
+  using string_type = basic_string<value_type>;
+
+  bool matched = false;
+
+  constexpr sub_match() = default;
+
+  difference_type length() const {
+    return matched ? distance(this->first, this->second) : difference_type{};
+  }
+  operator string_type() const { return str(); }
+  string_type str() const {
+    return matched ? string_type(this->first, this->second) : string_type{};
+  }
+
+  int compare(const sub_match &x) const { return str().compare(x.str()); }
+  int compare(const string_type &x) const { return str().compare(x); }
+  int compare(const value_type *x) const { return str().compare(x); }
+
+  void
+  swap(sub_match &x) noexcept(is_nothrow_swappable_v<BidirectionalIterator>) {
+    pair<BidirectionalIterator, BidirectionalIterator>::swap(x);
+    bool m = matched;
+    matched = x.matched;
+    x.matched = m;
+  }
+};
+
+using csub_match = sub_match<const char *>;
+using wcsub_match = sub_match<const wchar_t *>;
+using ssub_match = sub_match<string::const_iterator>;
+using wssub_match = sub_match<wstring::const_iterator>;
+
+template <class BI>
+bool operator==(const sub_match<BI> &a, const sub_match<BI> &b) {
+  return a.compare(b) == 0;
+}
+template <class BI>
+auto operator<=>(const sub_match<BI> &a, const sub_match<BI> &b) {
+  return a.str() <=> b.str();
+}
+
+template <class BI, class ST, class SA>
+bool operator==(
+    const sub_match<BI> &a,
+    const basic_string<typename iterator_traits<BI>::value_type, ST, SA> &b) {
+  using S = typename sub_match<BI>::string_type;
+  return a.compare(S(b.begin(), b.end())) == 0;
+}
+template <class BI, class ST, class SA>
+auto operator<=>(
+    const sub_match<BI> &a,
+    const basic_string<typename iterator_traits<BI>::value_type, ST, SA> &b) {
+  using S = typename sub_match<BI>::string_type;
+  return a.str() <=> S(b.begin(), b.end());
+}
+
+template <class BI>
+bool operator==(const sub_match<BI> &a,
+                const typename iterator_traits<BI>::value_type *b) {
+  return a.compare(b) == 0;
+}
+template <class BI>
+auto operator<=>(const sub_match<BI> &a,
+                 const typename iterator_traits<BI>::value_type *b) {
+  using S = typename sub_match<BI>::string_type;
+  return a.str() <=> S(b);
+}
+
+template <class BI>
+bool operator==(const sub_match<BI> &a,
+                const typename iterator_traits<BI>::value_type &b) {
+  using S = typename sub_match<BI>::string_type;
+  return a.compare(S(1, b)) == 0;
+}
+template <class BI>
+auto operator<=>(const sub_match<BI> &a,
+                 const typename iterator_traits<BI>::value_type &b) {
+  using S = typename sub_match<BI>::string_type;
+  return a.str() <=> S(1, b);
+}
+
+template <class C, class ST, class BI>
+basic_ostream<C, ST> &operator<<(basic_ostream<C, ST> &os,
+                                 const sub_match<BI> &m) {
+  return os << m.str();
+}
+
+namespace detail {
+
+template <class C, class Tr> struct rx_class_item {
+  bool named = false, invert = false;
+  C lo{}, hi{};
+  typename Tr::char_class_type mask{};
+};
+
+template <class C, class Tr> struct rx_class {
+  bool negate = false;
+  vector<rx_class_item<C, Tr>> items;
+};
+
+template <class C> struct rx_node {
+  enum class kind {
+    empty,
+    literal,
+    any,
+    klass,
+    seq,
+    alt,
+    repeat,
+    capture,
+    bol,
+    eol,
+    word_boundary,
+    not_word_boundary,
+    backref,
+    look_pos,
+    look_neg
+  } type = kind::empty;
+  int a = -1, b = -1;
+  C ch{};
+  size_t aux = 0, min = 0, max = 0;
+  bool greedy = true;
+};
+
+template <class C> struct rx_inst {
+  enum class code {
+    literal,
+    any,
+    klass,
+    split,
+    jump,
+    save_begin,
+    save_end,
+    clear_caps,
+    bol,
+    eol,
+    word_boundary,
+    not_word_boundary,
+    backref,
+    guard,
+    progress,
+    look_pos,
+    look_neg,
+    accept
+  } op = code::accept;
+  size_t x = 0, y = 0, aux = 0;
+  C ch{};
+};
+
+template <class C, class Tr> struct rx_program {
+  vector<rx_inst<C>> code;
+  vector<rx_class<C, Tr>> classes;
+  vector<rx_program> assertions;
+  size_t guards = 0;
+  regex_constants::syntax_option_type flags = regex_constants::ECMAScript;
+};
+
+template <class C, class Tr> class rx_parser {
+  using node = rx_node<C>;
+  using item = rx_class_item<C, Tr>;
+  using klass = rx_class<C, Tr>;
+  static constexpr size_t inf = static_cast<size_t>(-1);
+
+public:
+  rx_parser(const C *f, const C *l, regex_constants::syntax_option_type fl,
+            const Tr &tr)
+      : p_(f), n_(static_cast<size_t>(l - f)), flags_(normalize_syntax(fl)),
+        traits_(tr) {}
+
+  int parse() {
+    int r;
+
+    if (has(regex_constants::grep)) {
+      r = parse_grep_like(false);
+    } else if (has(regex_constants::egrep)) {
+      r = parse_grep_like(true);
+    } else if (has(regex_constants::basic)) {
+      r = basic_expression(false);
+
+      if (pos_ != n_)
+        regex_fail(regex_constants::error_paren);
+    } else {
+      r = alt(false);
+
+      if (pos_ != n_)
+        regex_fail(regex_constants::error_paren);
+    }
+
+    // ECMAScript decimal escapes are validated against the TOTAL number of
+    // captures, so forward references remain valid there. POSIX BRE
+    // backreferences are validated when parsed; ERE/AWK do not have them.
+    if (ecma_mode()) {
+      for (const auto &n : nodes_) {
+        if (n.type == node::kind::backref &&
+            (n.aux == 0 || n.aux > marks_))
+          regex_fail(regex_constants::error_backref);
+      }
+    }
+
+    return r;
+  }
+
+  size_t marks() const noexcept {
+    return syntax_has(flags_, regex_constants::nosubs) ? 0 : marks_;
+  }
+
+  size_t captures() const noexcept { return marks_; }
+
+  const vector<node> &nodes() const noexcept { return nodes_; }
+  const vector<klass> &classes() const noexcept { return classes_; }
+
+private:
+  bool eof(size_t d = 0) const { return pos_ + d >= n_; }
+
+  C peek(size_t d = 0) const {
+    return eof(d) ? C{} : p_[pos_ + d];
+  }
+
+  C get() {
+    return eof() ? C{} : p_[pos_++];
+  }
+
+  bool take(char c) {
+    if (!eof() && ascii_eq(peek(), c)) {
+      ++pos_;
+      return true;
+    }
+
+    return false;
+  }
+
+  bool has(regex_constants::syntax_option_type f) const {
+    return syntax_has(flags_, f);
+  }
+
+  bool ecma_mode() const {
+    return has(regex_constants::ECMAScript);
+  }
+
+  bool bre_mode() const {
+    return has(regex_constants::basic) ||
+           has(regex_constants::grep);
+  }
+
+  bool ere_mode() const {
+    return has(regex_constants::extended) ||
+           has(regex_constants::awk) ||
+           has(regex_constants::egrep);
+  }
+
+  bool awk_mode() const {
+    return has(regex_constants::awk);
+  }
+
+  int add(typename node::kind k) {
+    node x;
+    x.type = k;
+    nodes_.push_back(x);
+    return static_cast<int>(nodes_.size() - 1);
+  }
+
+  int unary(typename node::kind k, int a) {
+    int i = add(k);
+    nodes_[i].a = a;
+    return i;
+  }
+
+  int binary(typename node::kind k, int a, int b) {
+    int i = add(k);
+    nodes_[i].a = a;
+    nodes_[i].b = b;
+    return i;
+  }
+
+  int literal(C c) {
+    int i = add(node::kind::literal);
+    nodes_[i].ch = c;
+    return i;
+  }
+
+  int append(int lhs, int rhs) {
+    return lhs < 0 ? rhs : binary(node::kind::seq, lhs, rhs);
+  }
+
+  bool bre_close() const {
+    return !eof(1) &&
+           ascii_eq(peek(), '\\') &&
+           ascii_eq(peek(1), ')');
+  }
+
+  bool is_alt() const {
+    return !bre_mode() &&
+           !eof() &&
+           ascii_eq(peek(), '|');
+  }
+
+  int parse_grep_like(bool extended_syntax) {
+    size_t whole = n_;
+    size_t start = 0;
+    int out = -1;
+
+    for (;;) {
+      size_t end = start;
+
+      while (end < whole && !ascii_eq(p_[end], '\n'))
+        ++end;
+
+      pos_ = start;
+      n_ = end;
+
+      int branch;
+
+      // grep/egrep treat an empty line as an empty RE alternative.
+      if (start == end) {
+        branch = add(node::kind::empty);
+      } else if (extended_syntax) {
+        branch = alt(false);
+
+        if (pos_ != end)
+          regex_fail(regex_constants::error_paren);
+      } else {
+        branch = basic_expression(false);
+
+        if (pos_ != end)
+          regex_fail(regex_constants::error_paren);
+      }
+
+      out = out < 0 ? branch : binary(node::kind::alt, out, branch);
+
+      if (end == whole)
+        break;
+
+      start = end + 1;
+    }
+
+    n_ = whole;
+    pos_ = whole;
+
+    return out < 0 ? add(node::kind::empty) : out;
+  }
+
+  int basic_expression(bool in_group) {
+    int out = -1;
+
+    // In BRE, ^ is an anchor only at the beginning of the entire BRE.
+    if (!in_group && take('^'))
+      out = append(out, add(node::kind::bol));
+
+    while (!eof()) {
+      if (in_group && bre_close())
+        break;
+
+      // In BRE, $ is an anchor at the end of the entire BRE.
+      if (!in_group &&
+          ascii_eq(peek(), '$') &&
+          pos_ + 1 == n_) {
+        ++pos_;
+        out = append(out, add(node::kind::eol));
+        break;
+      }
+
+      out = append(out, basic_piece());
+    }
+
+    return out < 0 ? add(node::kind::empty) : out;
+  }
+
+  int basic_piece() {
+    int a = basic_atom();
+
+    size_t mn = 0;
+    size_t mx = 0;
+    bool q = false;
+
+    if (take('*')) {
+      mn = 0;
+      mx = inf;
+      q = true;
+    } else if (!eof(1) &&
+               ascii_eq(peek(), '\\') &&
+               ascii_eq(peek(1), '{')) {
+      pos_ += 2;
+      interval(true, mn, mx);
+      q = true;
+    }
+
+    if (!q)
+      return a;
+
+    if ((!eof() && ascii_eq(peek(), '*')) ||
+        (!eof(1) &&
+         ascii_eq(peek(), '\\') &&
+         ascii_eq(peek(1), '{')))
+      regex_fail(regex_constants::error_badrepeat);
+
+    int i = unary(node::kind::repeat, a);
+    nodes_[i].min = mn;
+    nodes_[i].max = mx;
+    nodes_[i].greedy = true;
+    return i;
+  }
+
+  int basic_atom() {
+    if (eof())
+      return add(node::kind::empty);
+
+    if (take('.'))
+      return add(node::kind::any);
+
+    if (ascii_eq(peek(), '['))
+      return character_class();
+
+    if (take('\\')) {
+      if (eof())
+        regex_fail(regex_constants::error_escape);
+
+      C e = get();
+
+      if (ascii_eq(e, '(')) {
+        size_t mark = ++marks_;
+        int body = basic_expression(true);
+
+        if (!bre_close())
+          regex_fail(regex_constants::error_paren);
+
+        pos_ += 2;
+
+        int i = unary(node::kind::capture, body);
+        nodes_[i].aux = mark;
+        return i;
+      }
+
+      if (ascii_eq(e, ')'))
+        regex_fail(regex_constants::error_paren);
+
+      if (ascii_eq(e, '{'))
+        regex_fail(regex_constants::error_badrepeat);
+
+      if (e >= static_cast<C>('1') &&
+          e <= static_cast<C>('9')) {
+        int v = traits_.value(e, 10);
+
+        if (v <= 0 || static_cast<size_t>(v) > marks_)
+          regex_fail(regex_constants::error_backref);
+
+        int i = add(node::kind::backref);
+        nodes_[i].aux = static_cast<size_t>(v);
+        return i;
+      }
+
+      if (ascii_eq(e, '^') ||
+          ascii_eq(e, '.') ||
+          ascii_eq(e, '*') ||
+          ascii_eq(e, '[') ||
+          ascii_eq(e, '$') ||
+          ascii_eq(e, '\\'))
+        return literal(e);
+
+      regex_fail(regex_constants::error_escape);
+    }
+
+    return literal(get());
+  }
+
+  int alt(bool in_group) {
+    size_t branch_start = pos_;
+    int left = seq(in_group);
+
+    if (!ecma_mode() && pos_ == branch_start)
+      regex_fail(regex_constants::error_badrepeat);
+
+    while (is_alt()) {
+      ++pos_;
+
+      size_t right_start = pos_;
+      int right = seq(in_group);
+
+      if (!ecma_mode() && pos_ == right_start)
+        regex_fail(regex_constants::error_badrepeat);
+
+      left = binary(node::kind::alt, left, right);
+    }
+
+    return left;
+  }
+
+  int seq(bool in_group) {
+    int out = -1;
+
+    while (!eof()) {
+      if (in_group && ascii_eq(peek(), ')'))
+        break;
+
+      if (is_alt())
+        break;
+
+      int x = piece(in_group);
+      out = append(out, x);
+    }
+
+    return out < 0 ? add(node::kind::empty) : out;
+  }
+
+  size_t number() {
+    if (eof() || !ascii_digit(peek()))
+      regex_fail(regex_constants::error_badbrace);
+
+    size_t v = 0;
+
+    while (!eof() && ascii_digit(peek())) {
+      C c = get();
+      int d = traits_.value(c, 10);
+
+      if (d < 0)
+        regex_fail(regex_constants::error_badbrace);
+
+      if (v > 100000)
+        regex_fail(regex_constants::error_complexity);
+
+      v = v * 10 + static_cast<size_t>(d);
+    }
+
+    return v;
+  }
+
+  void interval(bool bre, size_t &mn, size_t &mx) {
+    mn = number();
+    mx = mn;
+
+    if (take(',')) {
+      bool close;
+
+      if (bre) {
+        close =
+            !eof(1) &&
+            ascii_eq(peek(), '\\') &&
+            ascii_eq(peek(1), '}');
+      } else {
+        close = !eof() && ascii_eq(peek(), '}');
+      }
+
+      mx = close ? inf : number();
+    }
+
+    if (bre) {
+      if (eof(1) ||
+          !ascii_eq(peek(), '\\') ||
+          !ascii_eq(peek(1), '}'))
+        regex_fail(regex_constants::error_brace);
+
+      pos_ += 2;
+    } else {
+      if (!take('}'))
+        regex_fail(regex_constants::error_brace);
+    }
+
+    if (mx != inf && mx < mn)
+      regex_fail(regex_constants::error_badbrace);
+  }
+
+  int piece(bool in_group) {
+    int a = atom(in_group);
+
+    size_t mn = 0;
+    size_t mx = 0;
+    bool q = false;
+
+    if (take('*')) {
+      mn = 0;
+      mx = inf;
+      q = true;
+    } else if (take('+')) {
+      mn = 1;
+      mx = inf;
+      q = true;
+    } else if (take('?')) {
+      mn = 0;
+      mx = 1;
+      q = true;
+    } else if (!eof() && ascii_eq(peek(), '{')) {
+      ++pos_;
+      interval(false, mn, mx);
+      q = true;
+    }
+
+    if (!q)
+      return a;
+
+    auto k = nodes_[static_cast<size_t>(a)].type;
+
+    if (k == node::kind::bol ||
+        k == node::kind::eol ||
+        k == node::kind::word_boundary ||
+        k == node::kind::not_word_boundary ||
+        k == node::kind::look_pos ||
+        k == node::kind::look_neg)
+      regex_fail(regex_constants::error_badrepeat);
+
+    bool greedy = true;
+
+    // Only ECMAScript has lazy quantifiers.
+    if (ecma_mode() && take('?'))
+      greedy = false;
+
+    if ((!eof() && ascii_eq(peek(), '*')) ||
+        (!eof() && ascii_eq(peek(), '+')) ||
+        (!eof() && ascii_eq(peek(), '?')) ||
+        (!eof() && ascii_eq(peek(), '{')))
+      regex_fail(regex_constants::error_badrepeat);
+
+    int i = unary(node::kind::repeat, a);
+    nodes_[i].min = mn;
+    nodes_[i].max = mx;
+    nodes_[i].greedy = greedy;
+    return i;
+  }
+
+  int atom(bool in_group) {
+    if (eof())
+      return add(node::kind::empty);
+
+    if (take('^'))
+      return add(node::kind::bol);
+
+    if (take('$'))
+      return add(node::kind::eol);
+
+    if (take('.'))
+      return add(node::kind::any);
+
+    if (ascii_eq(peek(), '['))
+      return character_class();
+
+    if (take('('))
+      return group();
+
+    if (take('\\'))
+      return escape_atom();
+
+    if (ascii_eq(peek(), '*') ||
+        ascii_eq(peek(), '+') ||
+        ascii_eq(peek(), '?') ||
+        ascii_eq(peek(), '{'))
+      regex_fail(regex_constants::error_badrepeat);
+
+    if (ascii_eq(peek(), ')')) {
+      if (in_group)
+        regex_fail(regex_constants::error_paren);
+
+      // POSIX ERE treats an unmatched ')' as an ordinary character.
+      if (ere_mode())
+        return literal(get());
+
+      regex_fail(regex_constants::error_paren);
+    }
+
+    return literal(get());
+  }
+
+  int group() {
+    bool capture = true;
+    bool lp = false;
+    bool ln = false;
+
+    // (?...) forms belong only to ECMAScript.
+    if (ecma_mode() && take('?')) {
+      if (take(':')) {
+        capture = false;
+      } else if (take('=')) {
+        capture = false;
+        lp = true;
+      } else if (take('!')) {
+        capture = false;
+        ln = true;
+      } else {
+        regex_fail(regex_constants::error_paren);
+      }
+    }
+
+    size_t mark = 0;
+
+    if (capture)
+      mark = ++marks_;
+
+    int body = alt(true);
+
+    if (!take(')'))
+      regex_fail(regex_constants::error_paren);
+
+    if (lp)
+      return unary(node::kind::look_pos, body);
+
+    if (ln)
+      return unary(node::kind::look_neg, body);
+
+    if (!mark)
+      return body;
+
+    int i = unary(node::kind::capture, body);
+    nodes_[i].aux = mark;
+    return i;
+  }
+
+  typename Tr::char_class_type class_mask(const char *n) const {
+    auto s = ascii_string<C>(n);
+
+    auto m = traits_.lookup_classname(
+        s.begin(),
+        s.end(),
+        has(regex_constants::icase));
+
+    if (!m)
+      regex_fail(regex_constants::error_ctype);
+
+    return m;
+  }
+
+  int named_class(const char *n, bool inv) {
+    klass k;
+    item x;
+
+    x.named = true;
+    x.invert = inv;
+    x.mask = class_mask(n);
+
+    k.items.push_back(x);
+
+    size_t ci = classes_.size();
+    classes_.push_back(move(k));
+
+    int i = add(node::kind::klass);
+    nodes_[i].aux = ci;
+    return i;
+  }
+
+  C escaped_char(C e) {
+    if (ascii_eq(e, 'a'))
+      return static_cast<C>('\a');
+    if (ascii_eq(e, 'b'))
+      return static_cast<C>('\b');
+    if (ascii_eq(e, 'f'))
+      return static_cast<C>('\f');
+    if (ascii_eq(e, 'n'))
+      return static_cast<C>('\n');
+    if (ascii_eq(e, 'r'))
+      return static_cast<C>('\r');
+    if (ascii_eq(e, 't'))
+      return static_cast<C>('\t');
+    if (ascii_eq(e, 'v'))
+      return static_cast<C>('\v');
+
+    return e;
+  }
+
+  C hex(unsigned digits, bool unicode = false) {
+    unsigned long long v = 0;
+
+    for (unsigned i = 0; i < digits; ++i) {
+      if (eof())
+        regex_fail(regex_constants::error_escape);
+
+      C c = get();
+      int h = traits_.value(c, 16);
+
+      if (h < 0)
+        regex_fail(regex_constants::error_escape);
+
+      v = (v << 4) | static_cast<unsigned>(h);
+    }
+
+    if (unicode &&
+        v > static_cast<unsigned long long>(
+                (numeric_limits<C>::max)()))
+      regex_fail(regex_constants::error_escape);
+
+    return static_cast<C>(v);
+  }
+
+  C awk_escape_value(C e) {
+    if (ascii_eq(e, '\\'))
+      return static_cast<C>('\\');
+    if (ascii_eq(e, '"'))
+      return static_cast<C>('"');
+    if (ascii_eq(e, '/'))
+      return static_cast<C>('/');
+    if (ascii_eq(e, 'a'))
+      return static_cast<C>('\a');
+    if (ascii_eq(e, 'b'))
+      return static_cast<C>('\b');
+    if (ascii_eq(e, 'f'))
+      return static_cast<C>('\f');
+    if (ascii_eq(e, 'n'))
+      return static_cast<C>('\n');
+    if (ascii_eq(e, 'r'))
+      return static_cast<C>('\r');
+    if (ascii_eq(e, 't'))
+      return static_cast<C>('\t');
+    if (ascii_eq(e, 'v'))
+      return static_cast<C>('\v');
+
+    if (e >= static_cast<C>('0') &&
+        e <= static_cast<C>('7')) {
+      unsigned v =
+          static_cast<unsigned>(e - static_cast<C>('0'));
+
+      for (unsigned i = 0; i < 2; ++i) {
+        if (eof() ||
+            peek() < static_cast<C>('0') ||
+            peek() > static_cast<C>('7'))
+          break;
+
+        v = v * 8 +
+            static_cast<unsigned>(
+                get() - static_cast<C>('0'));
+      }
+
+      return static_cast<C>(v);
+    }
+
+    regex_fail(regex_constants::error_escape);
+  }
+
+  int escape_atom() {
+    if (eof())
+      regex_fail(regex_constants::error_escape);
+
+    C e = get();
+
+    if (!ecma_mode()) {
+      // Escaping an ERE special character makes it literal.
+      if (ascii_eq(e, '^') ||
+          ascii_eq(e, '.') ||
+          ascii_eq(e, '*') ||
+          ascii_eq(e, '[') ||
+          ascii_eq(e, '$') ||
+          ascii_eq(e, '\\') ||
+          ascii_eq(e, '(') ||
+          ascii_eq(e, ')') ||
+          ascii_eq(e, '|') ||
+          ascii_eq(e, '+') ||
+          ascii_eq(e, '?') ||
+          ascii_eq(e, '{') ||
+          ascii_eq(e, '}'))
+        return literal(e);
+
+      // AWK adds C escapes and 1-3 digit octal escapes.
+      if (awk_mode())
+        return literal(awk_escape_value(e));
+
+      // POSIX ERE has no backreference production. An escaped ordinary
+      // character is not portable/defined, so reject it.
+      regex_fail(regex_constants::error_escape);
+    }
+
+    if (ascii_eq(e, 'd'))
+      return named_class("digit", false);
+
+    if (ascii_eq(e, 'D'))
+      return named_class("digit", true);
+
+    if (ascii_eq(e, 's'))
+      return named_class("space", false);
+
+    if (ascii_eq(e, 'S'))
+      return named_class("space", true);
+
+    if (ascii_eq(e, 'w'))
+      return named_class("word", false);
+
+    if (ascii_eq(e, 'W'))
+      return named_class("word", true);
+
+    if (ascii_eq(e, 'b'))
+      return add(node::kind::word_boundary);
+
+    if (ascii_eq(e, 'B'))
+      return add(node::kind::not_word_boundary);
+
+    if (ascii_eq(e, 'x'))
+      return literal(hex(2));
+
+    if (ascii_eq(e, 'u'))
+      return literal(hex(4, true));
+
+    if (ascii_eq(e, 'c')) {
+      if (eof())
+        regex_fail(regex_constants::error_escape);
+
+      C c = get();
+
+      bool letter =
+          (c >= static_cast<C>('a') &&
+           c <= static_cast<C>('z')) ||
+          (c >= static_cast<C>('A') &&
+           c <= static_cast<C>('Z'));
+
+      if (!letter)
+        regex_fail(regex_constants::error_escape);
+
+      return literal(
+          static_cast<C>(
+              static_cast<unsigned long long>(c) & 31ull));
+    }
+
+    if (ascii_eq(e, '0')) {
+      if (!eof() && ascii_digit(peek()))
+        regex_fail(regex_constants::error_escape);
+
+      return literal(C{});
+    }
+
+    if (e >= static_cast<C>('1') &&
+        e <= static_cast<C>('9')) {
+      int first = traits_.value(e, 10);
+
+      if (first <= 0)
+        regex_fail(regex_constants::error_backref);
+
+      size_t v = static_cast<size_t>(first);
+
+      while (!eof() && ascii_digit(peek())) {
+        C c = get();
+        int d = traits_.value(c, 10);
+
+        if (d < 0)
+          regex_fail(regex_constants::error_backref);
+
+        if (v > 100000)
+          regex_fail(regex_constants::error_backref);
+
+        v = v * 10 + static_cast<size_t>(d);
+      }
+
+      int i = add(node::kind::backref);
+      nodes_[i].aux = v;
+      return i;
+    }
+
+    return literal(escaped_char(e));
+  }
+
+  struct class_atom {
+    bool simple = true;
+    C ch{};
+    item value{};
+  };
+
+  class_atom class_value() {
+    class_atom a;
+
+    // POSIX named character class.
+    if (ascii_eq(peek(), '[') &&
+        !eof(1) &&
+        ascii_eq(peek(1), ':')) {
+      pos_ += 2;
+
+      basic_string<C> name;
+
+      while (!(ascii_eq(peek(), ':') &&
+               !eof(1) &&
+               ascii_eq(peek(1), ']'))) {
+        if (eof())
+          regex_fail(regex_constants::error_brack);
+
+        name.push_back(get());
+      }
+
+      pos_ += 2;
+
+      a.simple = false;
+      a.value.named = true;
+      a.value.mask =
+          traits_.lookup_classname(
+              name.begin(),
+              name.end(),
+              has(regex_constants::icase));
+
+      if (!a.value.mask)
+        regex_fail(regex_constants::error_ctype);
+
+      return a;
+    }
+
+    // Backslash escapes inside [] are special only for ECMAScript and AWK.
+    if ((ecma_mode() || awk_mode()) && take('\\')) {
+      if (eof())
+        regex_fail(regex_constants::error_escape);
+
+      C e = get();
+
+      if (awk_mode()) {
+        a.ch = awk_escape_value(e);
+        return a;
+      }
+
+      const char *name = nullptr;
+      bool invert = false;
+
+      if (ascii_eq(e, 'd')) {
+        name = "digit";
+      } else if (ascii_eq(e, 'D')) {
+        name = "digit";
+        invert = true;
+      } else if (ascii_eq(e, 's')) {
+        name = "space";
+      } else if (ascii_eq(e, 'S')) {
+        name = "space";
+        invert = true;
+      } else if (ascii_eq(e, 'w')) {
+        name = "word";
+      } else if (ascii_eq(e, 'W')) {
+        name = "word";
+        invert = true;
+      }
+
+      if (name) {
+        a.simple = false;
+        a.value.named = true;
+        a.value.invert = invert;
+        a.value.mask = class_mask(name);
+        return a;
+      }
+
+      if (ascii_eq(e, 'x')) {
+        a.ch = hex(2);
+      } else if (ascii_eq(e, 'u')) {
+        a.ch = hex(4, true);
+      } else if (ascii_eq(e, 'c')) {
+        if (eof())
+          regex_fail(regex_constants::error_escape);
+
+        C c = get();
+
+        bool letter =
+            (c >= static_cast<C>('a') &&
+             c <= static_cast<C>('z')) ||
+            (c >= static_cast<C>('A') &&
+             c <= static_cast<C>('Z'));
+
+        if (!letter)
+          regex_fail(regex_constants::error_escape);
+
+        a.ch =
+            static_cast<C>(
+                static_cast<unsigned long long>(c) & 31ull);
+      } else if (ascii_eq(e, 'b')) {
+        a.ch = static_cast<C>('\b');
+      } else {
+        a.ch = escaped_char(e);
+      }
+
+      return a;
+    }
+
+    if (eof())
+      regex_fail(regex_constants::error_brack);
+
+    a.ch = get();
+    return a;
+  }
+
+  int character_class() {
+    ++pos_;
+
+    klass k;
+    k.negate = take('^');
+
+    bool first = true;
+
+    for (;;) {
+      if (eof())
+        regex_fail(regex_constants::error_brack);
+
+      if (ascii_eq(peek(), ']') && !first) {
+        ++pos_;
+        break;
+      }
+
+      class_atom a = class_value();
+
+      if (a.simple &&
+          !eof() &&
+          ascii_eq(peek(), '-') &&
+          !eof(1) &&
+          !ascii_eq(peek(1), ']')) {
+        ++pos_;
+
+        class_atom b = class_value();
+
+        if (!b.simple || b.ch < a.ch)
+          regex_fail(regex_constants::error_range);
+
+        item x;
+        x.lo = a.ch;
+        x.hi = b.ch;
+        k.items.push_back(x);
+      } else if (a.simple) {
+        item x;
+        x.lo = a.ch;
+        x.hi = a.ch;
+        k.items.push_back(x);
+      } else {
+        k.items.push_back(a.value);
+      }
+
+      first = false;
+    }
+
+    size_t ci = classes_.size();
+    classes_.push_back(move(k));
+
+    int i = add(node::kind::klass);
+    nodes_[i].aux = ci;
+    return i;
+  }
+
+  const C *p_;
+  size_t n_ = 0;
+  size_t pos_ = 0;
+  size_t marks_ = 0;
+  regex_constants::syntax_option_type flags_;
+  const Tr &traits_;
+  vector<node> nodes_;
+  vector<klass> classes_;
+};
+
+template <class C, class Tr> class rx_compiler {
+  using node = rx_node<C>;
+  using inst = rx_inst<C>;
+  static constexpr size_t inf = static_cast<size_t>(-1);
+
+public:
+  rx_compiler(const vector<node> &n, const vector<rx_class<C, Tr>> &c,
+              regex_constants::syntax_option_type f)
+      : nodes_(n), classes_(c), flags_(f) {}
+
+  rx_program<C, Tr> compile(int root) {
+    rx_program<C, Tr> p;
+    p.classes = classes_;
+    p.flags = flags_;
+    emit_node(root, p);
+    emit(p, inst::code::accept);
+    return p;
+  }
+
+private:
+  void capture_span(int id, size_t &lo, size_t &hi, bool &any) const {
+    if (id < 0)
+      return;
+
+    const node &n = nodes_[static_cast<size_t>(id)];
+    using K = typename node::kind;
+
+    auto mark = [&](size_t m) {
+      if (!m)
+        return;
+
+      if (!any) {
+        lo = hi = m;
+        any = true;
+      } else {
+        if (m < lo)
+          lo = m;
+        if (m > hi)
+          hi = m;
+      }
+    };
+
+    switch (n.type) {
+    case K::capture:
+      mark(n.aux);
+      capture_span(n.a, lo, hi, any);
+      break;
+
+    case K::seq:
+    case K::alt:
+      capture_span(n.a, lo, hi, any);
+      capture_span(n.b, lo, hi, any);
+      break;
+
+    case K::repeat:
+    case K::look_pos:
+    case K::look_neg:
+      capture_span(n.a, lo, hi, any);
+      break;
+
+    default:
+      break;
+    }
+  }
+
+  void emit_clear(int id, rx_program<C, Tr> &p) {
+    using O = typename inst::code;
+
+    size_t lo = 0, hi = 0;
+    bool any = false;
+
+    capture_span(id, lo, hi, any);
+
+    if (!any)
+      return;
+
+    size_t q = emit(p, O::clear_caps);
+    p.code[q].aux = lo;
+    p.code[q].x = hi;
+  }
+
+  size_t emit(rx_program<C, Tr> &p, typename inst::code op) {
+    inst x;
+    x.op = op;
+    p.code.push_back(x);
+    return p.code.size() - 1;
+  }
+
+  void emit_node(int id, rx_program<C, Tr> &p) {
+    const node &n = nodes_[static_cast<size_t>(id)];
+    using K = typename node::kind;
+    using O = typename inst::code;
+    switch (n.type) {
+    case K::empty:
+      break;
+    case K::literal: {
+      size_t q = emit(p, O::literal);
+      p.code[q].ch = n.ch;
+      break;
+    }
+    case K::any:
+      emit(p, O::any);
+      break;
+    case K::klass: {
+      size_t q = emit(p, O::klass);
+      p.code[q].aux = n.aux;
+      break;
+    }
+    case K::seq:
+      emit_node(n.a, p);
+      emit_node(n.b, p);
+      break;
+    case K::alt: {
+      size_t s = emit(p, O::split), l = p.code.size();
+      emit_node(n.a, p);
+      size_t j = emit(p, O::jump), r = p.code.size();
+      emit_node(n.b, p);
+      size_t e = p.code.size();
+      p.code[s].x = l;
+      p.code[s].y = r;
+      p.code[j].x = e;
+      break;
+    }
+    case K::capture: {
+      size_t q = emit(p, O::save_begin);
+      p.code[q].aux = n.aux;
+    }
+      emit_node(n.a, p);
+      {
+        size_t q = emit(p, O::save_end);
+        p.code[q].aux = n.aux;
+      }
+      break;
+    case K::repeat: {
+      // Mandatory repetitions. Empty matches are legal while satisfying
+      // the minimum count.
+      for (size_t i = 0; i < n.min; ++i) {
+        emit_clear(n.a, p);
+        emit_node(n.a, p);
+      }
+
+      if (n.max == n.min)
+        break;
+
+      // Every optional repetition after min has been satisfied must make
+      // progress. Otherwise ECMAScript's RepeatMatcher rejects it.
+      size_t gs = p.guards++;
+
+      if (n.max == inf) {
+        size_t s = emit(p, O::split);
+        size_t body = p.code.size();
+
+        size_t g = emit(p, O::guard);
+        p.code[g].aux = gs;
+
+        emit_clear(n.a, p);
+        emit_node(n.a, p);
+
+        size_t pr = emit(p, O::progress);
+        p.code[pr].aux = gs;
+
+        size_t j = emit(p, O::jump);
+        p.code[j].x = s;
+
+        size_t e = p.code.size();
+
+        if (n.greedy) {
+          p.code[s].x = body;
+          p.code[s].y = e;
+        } else {
+          p.code[s].x = e;
+          p.code[s].y = body;
+        }
+      } else {
+        for (size_t i = n.min; i < n.max; ++i) {
+          size_t s = emit(p, O::split);
+          size_t body = p.code.size();
+
+          size_t g = emit(p, O::guard);
+          p.code[g].aux = gs;
+
+          emit_clear(n.a, p);
+          emit_node(n.a, p);
+
+          size_t pr = emit(p, O::progress);
+          p.code[pr].aux = gs;
+
+          size_t e = p.code.size();
+
+          if (n.greedy) {
+            p.code[s].x = body;
+            p.code[s].y = e;
+          } else {
+            p.code[s].x = e;
+            p.code[s].y = body;
+          }
+        }
+      }
+
+      break;
+    }
+    case K::bol:
+      emit(p, O::bol);
+      break;
+    case K::eol:
+      emit(p, O::eol);
+      break;
+    case K::word_boundary:
+      emit(p, O::word_boundary);
+      break;
+    case K::not_word_boundary:
+      emit(p, O::not_word_boundary);
+      break;
+    case K::backref: {
+      size_t q = emit(p, O::backref);
+      p.code[q].aux = n.aux;
+      break;
+    }
+    case K::look_pos:
+    case K::look_neg: {
+      rx_program<C, Tr> sub;
+      sub.classes = classes_;
+      sub.flags = flags_;
+      emit_node(n.a, sub);
+      emit(sub, O::accept);
+      size_t ai = p.assertions.size();
+      p.assertions.push_back(move(sub));
+      size_t q = emit(p, n.type == K::look_pos ? O::look_pos : O::look_neg);
+      p.code[q].aux = ai;
+      break;
+    }
+    }
+  }
+
+  const vector<node> &nodes_;
+  const vector<rx_class<C, Tr>> &classes_;
+  regex_constants::syntax_option_type flags_;
+};
+
+struct rx_cap {
+  size_t first = static_cast<size_t>(-1), second = static_cast<size_t>(-1);
+  bool matched = false;
+};
+struct rx_state {
+  size_t pc = 0, pos = 0;
+  vector<rx_cap> caps;
+  vector<size_t> guards;
+};
+struct rx_result {
+  bool ok = false;
+  size_t end = 0;
+  vector<rx_cap> caps;
+};
+
+template <class C, class Tr>
+bool rx_equal(C a, C b, const Tr &tr, regex_constants::syntax_option_type f) {
+  if (syntax_has(f, regex_constants::icase))
+    return tr.translate_nocase(a) == tr.translate_nocase(b);
+
+  if (syntax_has(f, regex_constants::collate))
+    return tr.translate(a) == tr.translate(b);
+
+  return a == b;
+}
+
+template <class C> bool rx_line_term(C c) {
+  return ascii_eq(c, '\n') || ascii_eq(c, '\r') ||
+         static_cast<unsigned long long>(c) == 0x2028ull ||
+         static_cast<unsigned long long>(c) == 0x2029ull;
+}
+
+template <class C, class Tr>
+bool rx_class_matches(const rx_class<C, Tr> &k, C c, const Tr &tr,
+                      regex_constants::syntax_option_type f) {
+  bool yes = false;
+  for (const auto &x : k.items) {
+    bool m = false;
+    if (x.named)
+      m = tr.isctype(c, x.mask);
+    else {
+      C v = c, lo = x.lo, hi = x.hi;
+      if (syntax_has(f, regex_constants::icase)) {
+        v = tr.translate_nocase(v);
+        lo = tr.translate_nocase(lo);
+        hi = tr.translate_nocase(hi);
+      }
+      m = v >= lo && v <= hi;
+    }
+    if (x.invert)
+      m = !m;
+    if (m) {
+      yes = true;
+      break;
+    }
+  }
+  return k.negate ? !yes : yes;
+}
+
+template <class C, class Tr>
+bool rx_posix(regex_constants::syntax_option_type f) {
+  return syntax_has(f, regex_constants::basic) ||
+         syntax_has(f, regex_constants::extended) ||
+         syntax_has(f, regex_constants::awk) ||
+         syntax_has(f, regex_constants::grep) ||
+         syntax_has(f, regex_constants::egrep);
+}
+
+template <class C, class Tr>
+rx_result
+rx_run(const rx_program<C, Tr> &p, const basic_string<C> &s, size_t start,
+       bool require_end, regex_constants::match_flag_type mf, const Tr &tr,
+       size_t capcount, size_t target_begin, bool prev_available, C prev_char,
+       const vector<rx_cap> *seed = nullptr, bool capture_zero = true) {
+  using O = typename rx_inst<C>::code;
+  const size_t npos = static_cast<size_t>(-1);
+
+  auto wordmask = [&] {
+    auto x = ascii_string<C>("word");
+    return tr.lookup_classname(
+        x.begin(),
+        x.end(),
+        syntax_has(p.flags, regex_constants::icase));
+  }();
+
+  rx_state init;
+  init.pos = start;
+  init.caps = seed ? *seed : vector<rx_cap>(capcount);
+
+  if (init.caps.size() < capcount)
+    init.caps.resize(capcount);
+
+  init.guards.assign(p.guards, npos);
+
+  vector<rx_state> stack;
+  stack.push_back(move(init));
+
+  rx_result best;
+
+  size_t budget =
+      (s.size() + 1) *
+          (p.code.size() + 1) *
+          512 +
+      100000;
+
+  while (!stack.empty()) {
+    rx_state st = move(stack.back());
+    stack.pop_back();
+
+    for (;;) {
+      if (!budget--)
+        regex_fail(regex_constants::error_complexity);
+
+      if (st.pc >= p.code.size())
+        break;
+
+      const auto &in = p.code[st.pc];
+
+      switch (in.op) {
+      case O::literal:
+        if (st.pos >= s.size() ||
+            !rx_equal(
+                s[st.pos],
+                in.ch,
+                tr,
+                p.flags))
+          goto fail;
+
+        ++st.pos;
+        ++st.pc;
+        break;
+
+      case O::any:
+        if (st.pos >= s.size())
+          goto fail;
+
+        // ECMAScript '.' excludes its line terminators.
+        // POSIX BRE/ERE '.' is not given that ECMAScript restriction.
+        if (syntax_has(
+                p.flags,
+                regex_constants::ECMAScript) &&
+            rx_line_term(s[st.pos]))
+          goto fail;
+
+        ++st.pos;
+        ++st.pc;
+        break;
+
+      case O::klass:
+        if (st.pos >= s.size() ||
+            in.aux >= p.classes.size() ||
+            !rx_class_matches(
+                p.classes[in.aux],
+                s[st.pos],
+                tr,
+                p.flags))
+          goto fail;
+
+        ++st.pos;
+        ++st.pc;
+        break;
+
+      case O::split: {
+        rx_state alt = st;
+        alt.pc = in.y;
+
+        if (stack.size() > 1000000)
+          regex_fail(regex_constants::error_stack);
+
+        stack.push_back(move(alt));
+        st.pc = in.x;
+        break;
+      }
+
+      case O::jump:
+        st.pc = in.x;
+        break;
+
+      case O::save_begin:
+        if (in.aux < st.caps.size()) {
+          st.caps[in.aux].first = st.pos;
+          st.caps[in.aux].matched = false;
+        }
+
+        ++st.pc;
+        break;
+
+      case O::save_end:
+        if (in.aux < st.caps.size()) {
+          st.caps[in.aux].second = st.pos;
+          st.caps[in.aux].matched = true;
+        }
+
+        ++st.pc;
+        break;
+
+      case O::clear_caps: {
+        if (in.aux < st.caps.size()) {
+          size_t last = in.x;
+
+          if (last >= st.caps.size())
+            last = st.caps.size() - 1;
+
+          for (size_t i = in.aux; i <= last; ++i) {
+            st.caps[i].first = npos;
+            st.caps[i].second = npos;
+            st.caps[i].matched = false;
+          }
+        }
+
+        ++st.pc;
+        break;
+      }
+
+      case O::bol: {
+        bool ok = false;
+
+        // multiline has specified anchor semantics only for ECMAScript.
+        bool multi =
+            syntax_has(
+                p.flags,
+                regex_constants::ECMAScript) &&
+            syntax_has(
+                p.flags,
+                regex_constants::multiline);
+
+        if (st.pos == target_begin) {
+          if (prev_available) {
+            C prev =
+                st.pos > 0
+                    ? s[st.pos - 1]
+                    : prev_char;
+
+            ok = multi && rx_line_term(prev);
+          } else {
+            ok = !match_has(
+                mf,
+                regex_constants::match_not_bol);
+          }
+        }
+
+        if (!ok &&
+            multi &&
+            st.pos != target_begin &&
+            st.pos > 0)
+          ok = rx_line_term(s[st.pos - 1]);
+
+        if (!ok)
+          goto fail;
+
+        ++st.pc;
+        break;
+      }
+
+      case O::eol: {
+        bool ok =
+            st.pos == s.size() &&
+            !match_has(
+                mf,
+                regex_constants::match_not_eol);
+
+        bool multi =
+            syntax_has(
+                p.flags,
+                regex_constants::ECMAScript) &&
+            syntax_has(
+                p.flags,
+                regex_constants::multiline);
+
+        if (!ok &&
+            multi &&
+            st.pos < s.size())
+          ok = rx_line_term(s[st.pos]);
+
+        if (!ok)
+          goto fail;
+
+        ++st.pc;
+        break;
+      }
+
+      case O::word_boundary:
+      case O::not_word_boundary: {
+        bool l = false;
+
+        if (st.pos == target_begin) {
+          if (prev_available) {
+            C prev =
+                st.pos > 0
+                    ? s[st.pos - 1]
+                    : prev_char;
+
+            l = tr.isctype(prev, wordmask);
+          }
+        } else if (st.pos > 0) {
+          l = tr.isctype(
+              s[st.pos - 1],
+              wordmask);
+        }
+
+        bool r =
+            st.pos < s.size() &&
+            tr.isctype(
+                s[st.pos],
+                wordmask);
+
+        bool bow = !l && r;
+        bool eow = l && !r;
+        bool b = bow || eow;
+
+        if (bow &&
+            st.pos == target_begin &&
+            !prev_available &&
+            match_has(
+                mf,
+                regex_constants::match_not_bow))
+          b = false;
+
+        if (eow &&
+            st.pos == s.size() &&
+            match_has(
+                mf,
+                regex_constants::match_not_eow))
+          b = false;
+
+        if (in.op == O::not_word_boundary)
+          b = !b;
+
+        if (!b)
+          goto fail;
+
+        ++st.pc;
+        break;
+      }
+
+      case O::backref: {
+        if (in.aux >= st.caps.size())
+          goto fail;
+
+        if (!st.caps[in.aux].matched) {
+          ++st.pc;
+          break;
+        }
+
+        size_t a = st.caps[in.aux].first;
+        size_t b = st.caps[in.aux].second;
+        size_t len = b - a;
+
+        if (st.pos + len > s.size())
+          goto fail;
+
+        for (size_t i = 0; i < len; ++i) {
+          if (!rx_equal(
+                  s[a + i],
+                  s[st.pos + i],
+                  tr,
+                  p.flags))
+            goto fail;
+        }
+
+        st.pos += len;
+        ++st.pc;
+        break;
+      }
+
+      case O::guard:
+        if (in.aux >= st.guards.size())
+          goto fail;
+
+        st.guards[in.aux] = st.pos;
+        ++st.pc;
+        break;
+
+      case O::progress:
+        if (in.aux >= st.guards.size() ||
+            st.guards[in.aux] == npos ||
+            st.guards[in.aux] == st.pos)
+          goto fail;
+
+        ++st.pc;
+        break;
+
+      case O::look_pos:
+      case O::look_neg: {
+        if (in.aux >= p.assertions.size())
+          goto fail;
+
+        auto r =
+            rx_run(
+                p.assertions[in.aux],
+                s,
+                st.pos,
+                false,
+                mf,
+                tr,
+                capcount,
+                target_begin,
+                prev_available,
+                prev_char,
+                &st.caps,
+                false);
+
+        if (in.op == O::look_pos) {
+          if (!r.ok)
+            goto fail;
+
+          st.caps = move(r.caps);
+        } else if (r.ok) {
+          goto fail;
+        }
+
+        ++st.pc;
+        break;
+      }
+
+      case O::accept:
+        if (require_end &&
+            st.pos != s.size())
+          goto fail;
+
+        if (match_has(
+                mf,
+                regex_constants::match_not_null) &&
+            st.pos == start)
+          goto fail;
+
+        if (capture_zero &&
+            !st.caps.empty()) {
+          st.caps[0].first = start;
+          st.caps[0].second = st.pos;
+          st.caps[0].matched = true;
+        }
+
+        // ECMAScript commits to the first successful ordered path.
+        if (!rx_posix<C, Tr>(p.flags))
+          return {
+              true,
+              st.pos,
+              move(st.caps)};
+
+        // POSIX: keep searching all paths at this leftmost starting
+        // position and retain the longest complete match.
+        if (!best.ok ||
+            st.pos > best.end)
+          best = {
+              true,
+              st.pos,
+              move(st.caps)};
+
+        goto fail;
+      }
+    }
+
+  fail:;
+  }
+
+  return best;
+}
+
+template <class C, class Tr> struct regex_access;
+template <class BI, class A> struct match_access;
+
+} // namespace detail
+
+template <class CharT, class Traits = regex_traits<CharT>> class basic_regex {
+public:
+  using value_type = CharT;
+  using traits_type = Traits;
+  using string_type = typename traits_type::string_type;
+  using flag_type = regex_constants::syntax_option_type;
+  using locale_type = typename traits_type::locale_type;
+
+  static constexpr flag_type icase = regex_constants::icase;
+  static constexpr flag_type nosubs = regex_constants::nosubs;
+  static constexpr flag_type optimize = regex_constants::optimize;
+  static constexpr flag_type collate = regex_constants::collate;
+  static constexpr flag_type ECMAScript = regex_constants::ECMAScript;
+  static constexpr flag_type basic = regex_constants::basic;
+  static constexpr flag_type extended = regex_constants::extended;
+  static constexpr flag_type awk = regex_constants::awk;
+  static constexpr flag_type grep = regex_constants::grep;
+  static constexpr flag_type egrep = regex_constants::egrep;
+  static constexpr flag_type multiline = regex_constants::multiline;
+
+  basic_regex() = default;
+  basic_regex(const basic_regex &) = default;
+  basic_regex(basic_regex &&) noexcept = default;
+  basic_regex &operator=(const basic_regex &) = default;
+  basic_regex &operator=(basic_regex &&) noexcept = default;
+
+  explicit basic_regex(const CharT *p, flag_type f = ECMAScript) {
+    assign(p, f);
+  }
+  basic_regex(const CharT *p, size_t n, flag_type f = ECMAScript) {
+    assign(p, n, f);
+  }
+
+  template <class ST, class SA>
+  explicit basic_regex(const basic_string<CharT, ST, SA> &s,
+                       flag_type f = ECMAScript) {
+    assign(s.begin(), s.end(), f);
+  }
+
+  template <class It> basic_regex(It first, It last, flag_type f = ECMAScript) {
+    assign(first, last, f);
+  }
+
+  basic_regex(initializer_list<CharT> il, flag_type f = ECMAScript) {
+    assign(il.begin(), il.end(), f);
+  }
+
+  basic_regex &operator=(const CharT *p) { return assign(p); }
+
+  template <class ST, class SA>
+  basic_regex &operator=(const basic_string<CharT, ST, SA> &s) {
+    return assign(s.begin(), s.end());
+  }
+
+  basic_regex &operator=(initializer_list<CharT> il) {
+    return assign(il.begin(), il.end());
+  }
+
+  basic_regex &assign(const basic_regex &r) {
+    *this = r;
+    return *this;
+  }
+
+  basic_regex &assign(const CharT *p, flag_type f = ECMAScript) {
+    return assign(p, traits_type::length(p), f);
+  }
+
+  basic_regex &assign(basic_regex &&r) noexcept { return *this = move(r); }
+
+  basic_regex &assign(const CharT *p, size_t n, flag_type f = ECMAScript) {
+    return assign(p, p + n, f);
+  }
+
+  template <class ST, class SA>
+  basic_regex &assign(const basic_string<CharT, ST, SA> &s,
+                      flag_type f = ECMAScript) {
+    return assign(s.begin(), s.end(), f);
+  }
+
+  template <class It>
+  basic_regex &assign(It first, It last, flag_type f = ECMAScript) {
+    string_type pat(first, last);
+    flag_type nf = detail::normalize_syntax(f);
+    detail::rx_parser<CharT, Traits> parser(pat.data(), pat.data() + pat.size(),
+                                            nf, traits_);
+    int root = parser.parse();
+    detail::rx_compiler<CharT, Traits> compiler(parser.nodes(),
+                                                parser.classes(), nf);
+    auto prog = compiler.compile(root);
+    pattern_ = move(pat);
+    flags_ = nf;
+    marks_ = parser.marks();
+    capture_count_ = parser.captures();
+    program_ = move(prog);
+    valid_ = true;
+    return *this;
+  }
+
+  basic_regex &assign(initializer_list<CharT> il, flag_type f = ECMAScript) {
+    return assign(il.begin(), il.end(), f);
+  }
+
+  unsigned mark_count() const noexcept { return static_cast<unsigned>(marks_); }
+  flag_type flags() const noexcept { return flags_; }
+
+  locale_type imbue(locale_type loc) {
+    locale_type old = traits_.imbue(loc);
+    program_ = {};
+    valid_ = false;
+    return old;
+  }
+  locale_type getloc() const { return traits_.getloc(); }
+
+  void swap(basic_regex &other) {
+    basic_regex tmp(move(other));
+    other = move(*this);
+    *this = move(tmp);
+  }
+
+private:
+  string_type pattern_;
+  flag_type flags_ = ECMAScript;
+  traits_type traits_{};
+  size_t marks_ = 0;
+  size_t capture_count_ = 0;
+  detail::rx_program<CharT, Traits> program_{};
+  bool valid_ = false;
+
+  friend struct detail::regex_access<CharT, Traits>;
+};
+
+template <class C, class T>
+void swap(basic_regex<C, T> &a, basic_regex<C, T> &b) {
+  a.swap(b);
+}
+
+template <class ForwardIterator>
+basic_regex(ForwardIterator, ForwardIterator,
+            regex_constants::syntax_option_type = regex_constants::ECMAScript)
+    -> basic_regex<typename iterator_traits<ForwardIterator>::value_type>;
+
+using regex = basic_regex<char>;
+using wregex = basic_regex<wchar_t>;
+
+template <class BidirectionalIterator,
+          class Allocator = allocator<sub_match<BidirectionalIterator>>>
+class match_results {
+public:
+  using value_type = sub_match<BidirectionalIterator>;
+  using const_reference = const value_type &;
+  using reference = value_type &;
+  using const_iterator = typename vector<value_type, Allocator>::const_iterator;
+  using iterator = const_iterator;
+  using difference_type =
+      typename iterator_traits<BidirectionalIterator>::difference_type;
+  using size_type = typename allocator_traits<Allocator>::size_type;
+  using allocator_type = Allocator;
+  using char_type = typename iterator_traits<BidirectionalIterator>::value_type;
+  using string_type = basic_string<char_type>;
+
+  match_results() : match_results(Allocator()) {}
+
+  explicit match_results(const Allocator &a) : subs_(a) {}
+
+  match_results(const match_results &) = default;
+
+  match_results(const match_results &m, const Allocator &a)
+      : subs_(m.subs_, a), prefix_(m.prefix_), suffix_(m.suffix_),
+        unmatched_(m.unmatched_), origin_(m.origin_), ready_(m.ready_) {}
+
+  match_results(match_results &&) noexcept = default;
+
+  match_results(match_results &&m, const Allocator &a)
+      : subs_(move(m.subs_), a), prefix_(m.prefix_), suffix_(m.suffix_),
+        unmatched_(m.unmatched_), origin_(m.origin_), ready_(m.ready_) {}
+
+  match_results &operator=(const match_results &) = default;
+  match_results &operator=(match_results &&) = default;
+
+  bool ready() const noexcept { return ready_; }
+  size_type size() const noexcept { return subs_.size(); }
+  size_type max_size() const noexcept { return subs_.max_size(); }
+  bool empty() const noexcept { return subs_.empty(); }
+
+  difference_type length(size_type n = 0) const { return (*this)[n].length(); }
+  difference_type position(size_type n = 0) const {
+    const auto &s = (*this)[n];
+    return s.matched ? distance(origin_, s.first) : difference_type(-1);
+  }
+  string_type str(size_type n = 0) const { return (*this)[n].str(); }
+
+  const_reference operator[](size_type n) const {
+    return n < subs_.size() ? subs_[n] : unmatched_;
+  }
+  const_reference prefix() const { return prefix_; }
+  const_reference suffix() const { return suffix_; }
+
+  const_iterator begin() const { return subs_.begin(); }
+  const_iterator end() const { return subs_.end(); }
+  const_iterator cbegin() const { return subs_.cbegin(); }
+  const_iterator cend() const { return subs_.cend(); }
+
+  template <class Out>
+  Out format(Out out, const char_type *ff, const char_type *fl,
+             regex_constants::match_flag_type flags =
+                 regex_constants::format_default) const {
+    using namespace regex_constants;
+    auto emit = [&](const value_type &s) {
+      if (s.matched)
+        for (auto i = s.first; i != s.second; ++i)
+          *out++ = *i;
+    };
+
+    if (detail::match_has(flags, format_sed)) {
+      for (auto p = ff; p != fl; ++p) {
+        if (detail::ascii_eq(*p, '&'))
+          emit((*this)[0]);
+        else if (detail::ascii_eq(*p, '\\') && p + 1 != fl) {
+          ++p;
+          if (detail::ascii_digit(*p))
+            emit(
+                (*this)[static_cast<size_t>(*p - static_cast<char_type>('0'))]);
+          else
+            *out++ = *p;
+        } else
+          *out++ = *p;
+      }
+      return out;
+    }
+
+    for (auto p = ff; p != fl; ++p) {
+      if (!detail::ascii_eq(*p, '$') || p + 1 == fl) {
+        *out++ = *p;
+        continue;
+      }
+      auto q = p + 1;
+      if (detail::ascii_eq(*q, '$')) {
+        *out++ = static_cast<char_type>('$');
+        p = q;
+        continue;
+      }
+      if (detail::ascii_eq(*q, '&')) {
+        emit((*this)[0]);
+        p = q;
+        continue;
+      }
+      if (detail::ascii_eq(*q, '`')) {
+        emit(prefix_);
+        p = q;
+        continue;
+      }
+      if (detail::ascii_eq(*q, '\'')) {
+        emit(suffix_);
+        p = q;
+        continue;
+      }
+      if (detail::ascii_digit(*q)) {
+        size_t n = static_cast<size_t>(*q - static_cast<char_type>('0'));
+        if (q + 1 != fl && detail::ascii_digit(*(q + 1))) {
+          size_t n2 = n * 10 + static_cast<size_t>(*(q + 1) -
+                                                   static_cast<char_type>('0'));
+          if (n2 < size()) {
+            n = n2;
+            ++q;
+          }
+        }
+        emit((*this)[n]);
+        p = q;
+        continue;
+      }
+      *out++ = *p;
+    }
+    return out;
+  }
+
+  string_type format(const char_type *fmt,
+                     regex_constants::match_flag_type flags =
+                         regex_constants::format_default) const {
+    string_type out;
+    format(back_inserter(out), fmt, fmt + char_traits<char_type>::length(fmt),
+           flags);
+    return out;
+  }
+
+  template <class Out, class ST, class SA>
+  Out format(Out out, const basic_string<char_type, ST, SA> &fmt,
+             regex_constants::match_flag_type flags =
+                 regex_constants::format_default) const {
+    return format(out, fmt.data(), fmt.data() + fmt.size(), flags);
+  }
+
+  template <class ST, class SA>
+  basic_string<char_type, ST, SA>
+  format(const basic_string<char_type, ST, SA> &fmt,
+         regex_constants::match_flag_type flags =
+             regex_constants::format_default) const {
+    basic_string<char_type, ST, SA> out;
+    format(back_inserter(out), fmt.data(), fmt.data() + fmt.size(), flags);
+    return out;
+  }
+
+  allocator_type get_allocator() const { return subs_.get_allocator(); }
+
+  void swap(match_results &x) {
+    subs_.swap(x.subs_);
+    auto p = prefix_;
+    prefix_ = x.prefix_;
+    x.prefix_ = p;
+    auto s = suffix_;
+    suffix_ = x.suffix_;
+    x.suffix_ = s;
+    auto u = unmatched_;
+    unmatched_ = x.unmatched_;
+    x.unmatched_ = u;
+    auto o = origin_;
+    origin_ = x.origin_;
+    x.origin_ = o;
+    bool r = ready_;
+    ready_ = x.ready_;
+    x.ready_ = r;
+  }
+
+private:
+  vector<value_type, Allocator> subs_;
+  value_type prefix_{}, suffix_{}, unmatched_{};
+  BidirectionalIterator origin_{};
+  bool ready_ = false;
+
+  friend struct detail::match_access<BidirectionalIterator, Allocator>;
+};
+
+template <class BI, class A>
+void swap(match_results<BI, A> &a, match_results<BI, A> &b) {
+  a.swap(b);
+}
+
+template <class BI, class A>
+bool operator==(const match_results<BI, A> &a, const match_results<BI, A> &b) {
+  if (!a.ready() && !b.ready())
+    return true;
+  if (a.ready() != b.ready())
+    return false;
+  if (a.empty() || b.empty())
+    return a.empty() && b.empty();
+  return a.prefix() == b.prefix() && a.size() == b.size() &&
+         equal(a.begin(), a.end(), b.begin()) && a.suffix() == b.suffix();
+}
+
+using cmatch = match_results<const char *>;
+using wcmatch = match_results<const wchar_t *>;
+using smatch = match_results<string::const_iterator>;
+using wsmatch = match_results<wstring::const_iterator>;
+
+namespace pmr {
+#ifdef FTL_REPLACE_STL
+template <class BI>
+using match_results =
+    std::match_results<BI, polymorphic_allocator<std::sub_match<BI>>>;
+#else
+template <class BI>
+using match_results =
+    ftl::match_results<BI, polymorphic_allocator<ftl::sub_match<BI>>>;
+#endif
+
+using cmatch = match_results<const char *>;
+using wcmatch = match_results<const wchar_t *>;
+using smatch = match_results<string::const_iterator>;
+using wsmatch = match_results<wstring::const_iterator>;
+} // namespace pmr
+
+namespace detail {
+
+template <class C, class T> struct regex_access {
+  static const rx_program<C, T> &program(const basic_regex<C, T> &r) {
+    return r.program_;
+  }
+  static const T &traits(const basic_regex<C, T> &r) { return r.traits_; }
+  static size_t marks(const basic_regex<C, T> &r) { return r.marks_; }
+  static bool valid(const basic_regex<C, T> &r) { return r.valid_; }
+  static size_t captures(const basic_regex<C, T> &r) {
+    return r.capture_count_;
+  }
+};
+
+template <class BI> BI iter_at(BI i, size_t n) {
+  while (n--)
+    ++i;
+  return i;
+}
+
+template <class BI, class A> struct match_access {
+  using M = match_results<BI, A>;
+
+  static void fail(M &m, BI origin, BI last) {
+    m.ready_ = true;
+    m.subs_.clear();
+    m.origin_ = origin;
+    m.unmatched_.first = m.unmatched_.second = last;
+    m.unmatched_.matched = false;
+    m.prefix_ = m.suffix_ = m.unmatched_;
+  }
+
+  static void assign(M &m, BI origin, BI search_first, BI last,
+                     const vector<rx_cap> &caps) {
+    m.ready_ = true;
+    m.origin_ = origin;
+    m.subs_.resize(caps.size());
+    m.unmatched_.first = m.unmatched_.second = last;
+    m.unmatched_.matched = false;
+
+    for (size_t i = 0; i < caps.size(); ++i) {
+      auto &d = m.subs_[i];
+      if (caps[i].matched) {
+        d.first = iter_at(origin, caps[i].first);
+        d.second = iter_at(origin, caps[i].second);
+        d.matched = true;
+      } else
+        d = m.unmatched_;
+    }
+
+    if (!m.subs_.empty() && m.subs_[0].matched) {
+      m.prefix_.first = search_first;
+      m.prefix_.second = m.subs_[0].first;
+      m.prefix_.matched = m.prefix_.first != m.prefix_.second;
+      m.suffix_.first = m.subs_[0].second;
+      m.suffix_.second = last;
+      m.suffix_.matched = m.suffix_.first != m.suffix_.second;
+    } else
+      m.prefix_ = m.suffix_ = m.unmatched_;
+  }
+
+  static void adjust_prefix_first(M &m, BI first) {
+    if (!m.ready_ || m.subs_.empty() || !m.subs_[0].matched)
+      return;
+    m.prefix_.first = first;
+    m.prefix_.matched = m.prefix_.first != m.prefix_.second;
+  }
+};
+
+template <class BI, class A, class C, class T>
+bool rx_search_impl(BI origin, BI first, BI last, match_results<BI, A> &m,
+                    const basic_regex<C, T> &re,
+                    regex_constants::match_flag_type flags, bool full = false) {
+  if (!regex_access<C, T>::valid(re)) {
+    match_access<BI, A>::fail(m, origin, last);
+    return false;
+  }
+
+  bool prev_available = match_has(flags, regex_constants::match_prev_avail);
+  C prev_char{};
+
+  if (prev_available) {
+    BI prev = first;
+    --prev;
+    prev_char = static_cast<C>(*prev);
+  }
+
+  basic_string<C> input;
+  size_t offset = 0;
+  for (auto i = origin; i != last; ++i) {
+    if (i == first)
+      offset = input.size();
+    input.push_back(static_cast<C>(*i));
+  }
+  if (first == last)
+    offset = input.size();
+
+  auto &p = regex_access<C, T>::program(re);
+  auto &tr = regex_access<C, T>::traits(re);
+  size_t caps = regex_access<C, T>::captures(re) + 1;
+
+  if (full) {
+    auto r = rx_run(p, input, offset, true, flags, tr, caps, offset,
+                    prev_available, prev_char);
+    if (r.ok) {
+      if (syntax_has(p.flags, regex_constants::nosubs) && r.caps.size() > 1)
+        r.caps.resize(1);
+      match_access<BI, A>::assign(m, origin, first, last, r.caps);
+      return true;
+    }
+    match_access<BI, A>::fail(m, origin, last);
+    return false;
+  }
+
+  bool continuous = match_has(flags, regex_constants::match_continuous);
+  for (size_t s = offset; s <= input.size(); ++s) {
+    auto r = rx_run(p, input, s, false, flags, tr, caps, offset, prev_available,
+                    prev_char);
+    if (r.ok) {
+      if (syntax_has(p.flags, regex_constants::nosubs) && r.caps.size() > 1)
+        r.caps.resize(1);
+      match_access<BI, A>::assign(m, origin, first, last, r.caps);
+      return true;
+    }
+    if (continuous)
+      break;
+  }
+  match_access<BI, A>::fail(m, origin, last);
+  return false;
+}
+
+} // namespace detail
+
+template <class BI, class A, class C, class T>
+bool regex_match(
+    BI first, BI last, match_results<BI, A> &m, const basic_regex<C, T> &re,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  return detail::rx_search_impl(first, first, last, m, re, flags, true);
+}
+
+template <class BI, class C, class T>
+bool regex_match(
+    BI first, BI last, const basic_regex<C, T> &re,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  match_results<BI> m;
+  return regex_match(first, last, m, re, flags);
+}
+
+template <class C, class A, class T>
+bool regex_match(
+    const C *s, match_results<const C *, A> &m, const basic_regex<C, T> &re,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  return regex_match(s, s + char_traits<C>::length(s), m, re, flags);
+}
+
+template <class C, class T>
+bool regex_match(
+    const C *s, const basic_regex<C, T> &re,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  return regex_match(s, s + char_traits<C>::length(s), re, flags);
+}
+
+template <class C, class ST, class SA, class A, class T>
+bool regex_match(
+    const basic_string<C, ST, SA> &s,
+    match_results<typename basic_string<C, ST, SA>::const_iterator, A> &m,
+    const basic_regex<C, T> &re,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  return regex_match(s.begin(), s.end(), m, re, flags);
+}
+
+template <class C, class ST, class SA, class T>
+bool regex_match(
+    const basic_string<C, ST, SA> &s, const basic_regex<C, T> &re,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  return regex_match(s.begin(), s.end(), re, flags);
+}
+
+template <class C, class ST, class SA, class A, class T>
+bool regex_match(
+    const basic_string<C, ST, SA> &&,
+    match_results<typename basic_string<C, ST, SA>::const_iterator, A> &,
+    const basic_regex<C, T> &,
+    regex_constants::match_flag_type = regex_constants::match_default) = delete;
+
+template <class BI, class A, class C, class T>
+bool regex_search(
+    BI first, BI last, match_results<BI, A> &m, const basic_regex<C, T> &re,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  return detail::rx_search_impl(first, first, last, m, re, flags, false);
+}
+
+template <class BI, class C, class T>
+bool regex_search(
+    BI first, BI last, const basic_regex<C, T> &re,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  match_results<BI> m;
+  return regex_search(first, last, m, re, flags);
+}
+
+template <class C, class A, class T>
+bool regex_search(
+    const C *s, match_results<const C *, A> &m, const basic_regex<C, T> &re,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  return regex_search(s, s + char_traits<C>::length(s), m, re, flags);
+}
+
+template <class C, class T>
+bool regex_search(
+    const C *s, const basic_regex<C, T> &re,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  return regex_search(s, s + char_traits<C>::length(s), re, flags);
+}
+
+template <class C, class ST, class SA, class A, class T>
+bool regex_search(
+    const basic_string<C, ST, SA> &s,
+    match_results<typename basic_string<C, ST, SA>::const_iterator, A> &m,
+    const basic_regex<C, T> &re,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  return regex_search(s.begin(), s.end(), m, re, flags);
+}
+
+template <class C, class ST, class SA, class T>
+bool regex_search(
+    const basic_string<C, ST, SA> &s, const basic_regex<C, T> &re,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  return regex_search(s.begin(), s.end(), re, flags);
+}
+
+template <class C, class ST, class SA, class A, class T>
+bool regex_search(
+    const basic_string<C, ST, SA> &&,
+    match_results<typename basic_string<C, ST, SA>::const_iterator, A> &,
+    const basic_regex<C, T> &,
+    regex_constants::match_flag_type = regex_constants::match_default) = delete;
+
+template <class BI, class C = typename iterator_traits<BI>::value_type,
+          class T = regex_traits<C>>
+class regex_iterator {
+public:
+  using regex_type = basic_regex<C, T>;
+  using value_type = match_results<BI>;
+  using difference_type = ptrdiff_t;
+  using pointer = const value_type *;
+  using reference = const value_type &;
+  using iterator_category = forward_iterator_tag;
+  using iterator_concept = input_iterator_tag;
+
+  regex_iterator() = default;
+
+  regex_iterator(
+      BI first, BI last, const regex_type &re,
+      regex_constants::match_flag_type flags = regex_constants::match_default)
+      : origin_(first), end_(last), re_(addressof(re)), flags_(flags) {
+    find(first, flags_);
+  }
+
+  regex_iterator(BI, BI, const regex_type &&,
+                 regex_constants::match_flag_type =
+                     regex_constants::match_default) = delete;
+
+  reference operator*() const { return match_; }
+  pointer operator->() const { return addressof(match_); }
+
+  regex_iterator &operator++() {
+    if (done_)
+      return *this;
+
+    BI previous_end = match_[0].second;
+    BI start = previous_end;
+    bool empty = match_[0].first == match_[0].second;
+
+    if (empty) {
+      if (start == end_) {
+        done_ = true;
+        return *this;
+      }
+
+      value_type nonempty;
+      auto f = flags_ | regex_constants::match_not_null |
+               regex_constants::match_continuous;
+
+      if (detail::rx_search_impl(origin_, start, end_, nonempty, *re_, f,
+                                 false)) {
+        match_ = move(nonempty);
+        return *this;
+      }
+
+      ++start;
+    }
+
+    flags_ |= regex_constants::match_prev_avail;
+
+    if (find(start, flags_)) {
+      detail::match_access<BI, typename value_type::allocator_type>::
+          adjust_prefix_first(match_, previous_end);
+    }
+
+    return *this;
+  }
+
+  regex_iterator operator++(int) {
+    auto t = *this;
+    ++*this;
+    return t;
+  }
+
+  bool operator==(const regex_iterator &x) const {
+    if (done_ && x.done_)
+      return true;
+    if (done_ != x.done_)
+      return false;
+
+    return origin_ == x.origin_ && end_ == x.end_ && re_ == x.re_ &&
+           flags_ == x.flags_ && match_[0] == x.match_[0];
+  }
+
+  bool operator==(default_sentinel_t) const {
+    return *this == regex_iterator();
+  }
+
+private:
+  bool find(BI first, regex_constants::match_flag_type f) {
+    if (!re_ ||
+        !detail::rx_search_impl(origin_, first, end_, match_, *re_, f, false)) {
+      done_ = true;
+      return false;
+    }
+
+    done_ = false;
+    return true;
+  }
+
+  BI origin_{}, end_{};
+  const regex_type *re_ = nullptr;
+  regex_constants::match_flag_type flags_ = regex_constants::match_default;
+  value_type match_{};
+  bool done_ = true;
+};
+
+using cregex_iterator = regex_iterator<const char *>;
+using wcregex_iterator = regex_iterator<const wchar_t *>;
+using sregex_iterator = regex_iterator<string::const_iterator>;
+using wsregex_iterator = regex_iterator<wstring::const_iterator>;
+
+template <class BI, class C = typename iterator_traits<BI>::value_type,
+          class T = regex_traits<C>>
+class regex_token_iterator {
+public:
+  using regex_type = basic_regex<C, T>;
+  using value_type = sub_match<BI>;
+  using difference_type = ptrdiff_t;
+  using pointer = const value_type *;
+  using reference = const value_type &;
+  using iterator_category = forward_iterator_tag;
+  using iterator_concept = input_iterator_tag;
+
+  regex_token_iterator() = default;
+
+  regex_token_iterator(
+      BI first, BI last, const regex_type &re, int submatch = 0,
+      regex_constants::match_flag_type flags = regex_constants::match_default)
+      : begin_(first), end_(last), re_(addressof(re)), flags_(flags),
+        pos_(first, last, re, flags), rend_(), last_end_(first) {
+    subs_.push_back(submatch);
+    init();
+  }
+
+  regex_token_iterator(
+      BI first, BI last, const regex_type &re, const vector<int> &subs,
+      regex_constants::match_flag_type flags = regex_constants::match_default)
+      : begin_(first), end_(last), re_(addressof(re)), flags_(flags),
+        pos_(first, last, re, flags), rend_(), subs_(subs), last_end_(first) {
+    init();
+  }
+
+  regex_token_iterator(
+      BI first, BI last, const regex_type &re, initializer_list<int> subs,
+      regex_constants::match_flag_type flags = regex_constants::match_default)
+      : begin_(first), end_(last), re_(addressof(re)), flags_(flags),
+        pos_(first, last, re, flags), rend_(), subs_(subs), last_end_(first) {
+    init();
+  }
+
+  template <size_t N>
+  regex_token_iterator(
+      BI first, BI last, const regex_type &re, const int (&subs)[N],
+      regex_constants::match_flag_type flags = regex_constants::match_default)
+      : begin_(first), end_(last), re_(addressof(re)), flags_(flags),
+        pos_(first, last, re, flags), rend_(), subs_(subs, subs + N),
+        last_end_(first) {
+    init();
+  }
+
+  regex_token_iterator(BI, BI, const regex_type &&, int = 0,
+                       regex_constants::match_flag_type =
+                           regex_constants::match_default) = delete;
+
+  regex_token_iterator(BI, BI, const regex_type &&, const vector<int> &,
+                       regex_constants::match_flag_type =
+                           regex_constants::match_default) = delete;
+
+  regex_token_iterator(BI, BI, const regex_type &&, initializer_list<int>,
+                       regex_constants::match_flag_type =
+                           regex_constants::match_default) = delete;
+
+  template <size_t N>
+  regex_token_iterator(BI, BI, const regex_type &&, const int (&)[N],
+                       regex_constants::match_flag_type =
+                           regex_constants::match_default) = delete;
+
+  reference operator*() const { return current_; }
+  pointer operator->() const { return addressof(current_); }
+
+  regex_token_iterator &operator++() {
+    if (done_)
+      return *this;
+    if (suffix_) {
+      done_ = true;
+      return *this;
+    }
+
+    if (++sub_index_ < subs_.size()) {
+      load();
+      return *this;
+    }
+
+    last_end_ = (*pos_)[0].second;
+    ++pos_;
+    sub_index_ = 0;
+
+    if (pos_ != rend_) {
+      load();
+      return *this;
+    }
+
+    if (has_minus_one() && last_end_ != end_) {
+      current_.first = last_end_;
+      current_.second = end_;
+      current_.matched = true;
+      suffix_ = true;
+      return *this;
+    }
+
+    done_ = true;
+    return *this;
+  }
+
+  regex_token_iterator operator++(int) {
+    auto t = *this;
+    ++*this;
+    return t;
+  }
+
+  bool operator==(const regex_token_iterator &x) const {
+    if (done_ && x.done_)
+      return true;
+    if (done_ != x.done_)
+      return false;
+
+    return begin_ == x.begin_ && end_ == x.end_ && re_ == x.re_ &&
+           flags_ == x.flags_ && subs_ == x.subs_ &&
+           sub_index_ == x.sub_index_ && suffix_ == x.suffix_ && pos_ == x.pos_;
+  }
+
+  bool operator==(default_sentinel_t) const {
+    return *this == regex_token_iterator();
+  }
+
+private:
+  bool has_minus_one() const {
+    for (int x : subs_)
+      if (x == -1)
+        return true;
+    return false;
+  }
+
+  void init() {
+    if (subs_.empty()) {
+      done_ = true;
+      return;
+    }
+
+    if (pos_ != rend_) {
+      done_ = false;
+      load();
+      return;
+    }
+
+    if (has_minus_one() && begin_ != end_) {
+      current_.first = begin_;
+      current_.second = end_;
+      current_.matched = true;
+      done_ = false;
+      suffix_ = true;
+    } else {
+      done_ = true;
+    }
+  }
+
+  void load() {
+    int s = subs_[sub_index_];
+
+    if (s == -1) {
+      current_.first = last_end_;
+      current_.second = (*pos_)[0].first;
+      current_.matched = true;
+    } else if (s >= 0 && static_cast<size_t>(s) < pos_->size()) {
+      current_ = (*pos_)[static_cast<size_t>(s)];
+    } else {
+      current_.first = current_.second = end_;
+      current_.matched = false;
+    }
+  }
+
+  BI begin_{}, end_{}, last_end_{};
+  const regex_type *re_ = nullptr;
+  regex_constants::match_flag_type flags_ = regex_constants::match_default;
+  regex_iterator<BI, C, T> pos_{}, rend_{};
+  vector<int> subs_;
+  size_t sub_index_ = 0;
+  value_type current_{};
+  bool done_ = true, suffix_ = false;
+};
+
+using cregex_token_iterator = regex_token_iterator<const char *>;
+using wcregex_token_iterator = regex_token_iterator<const wchar_t *>;
+using sregex_token_iterator = regex_token_iterator<string::const_iterator>;
+using wsregex_token_iterator = regex_token_iterator<wstring::const_iterator>;
+
+template <class Out, class BI, class C, class T, class FI>
+Out regex_replace(
+    Out out, BI first, BI last, const basic_regex<C, T> &re, FI ff, FI fl,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  using namespace regex_constants;
+  regex_iterator<BI, C, T> i(first, last, re, flags), e;
+  BI copied = first;
+  for (; i != e; ++i) {
+    const auto &m = *i;
+    if (!detail::match_has(flags, format_no_copy))
+      out = copy(copied, m[0].first, out);
+    out = m.format(out, ff, fl, flags);
+    copied = m[0].second;
+    if (detail::match_has(flags, format_first_only))
+      break;
+  }
+  if (!detail::match_has(flags, format_no_copy))
+    out = copy(copied, last, out);
+  return out;
+}
+
+template <class Out, class BI, class C, class T>
+Out regex_replace(
+    Out out, BI first, BI last, const basic_regex<C, T> &re, const C *fmt,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  return regex_replace(out, first, last, re, fmt,
+                       fmt + char_traits<C>::length(fmt), flags);
+}
+
+template <class Out, class BI, class C, class T, class ST, class SA>
+Out regex_replace(
+    Out out, BI first, BI last, const basic_regex<C, T> &re,
+    const basic_string<C, ST, SA> &fmt,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  return regex_replace(out, first, last, re, fmt.begin(), fmt.end(), flags);
+}
+
+template <class C, class ST, class SA, class T, class FT, class FA>
+basic_string<C, ST, SA> regex_replace(
+    const basic_string<C, ST, SA> &s, const basic_regex<C, T> &re,
+    const basic_string<C, FT, FA> &fmt,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  basic_string<C, ST, SA> out;
+  regex_replace(back_inserter(out), s.begin(), s.end(), re, fmt.begin(),
+                fmt.end(), flags);
+  return out;
+}
+
+template <class C, class ST, class SA, class T>
+basic_string<C, ST, SA> regex_replace(
+    const basic_string<C, ST, SA> &s, const basic_regex<C, T> &re, const C *fmt,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  basic_string<C, ST, SA> out;
+  regex_replace(back_inserter(out), s.begin(), s.end(), re, fmt,
+                fmt + char_traits<C>::length(fmt), flags);
+  return out;
+}
+
+template <class T, class C, class ST, class SA>
+basic_string<C> regex_replace(
+    const C *s, const basic_regex<C, T> &re, const basic_string<C, ST, SA> &fmt,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  basic_string<C> out;
+  const C *last = s + char_traits<C>::length(s);
+  regex_replace(back_inserter(out), s, last, re, fmt, flags);
+  return out;
+}
+
+template <class T, class C>
+basic_string<C> regex_replace(
+    const C *s, const basic_regex<C, T> &re, const C *fmt,
+    regex_constants::match_flag_type flags = regex_constants::match_default) {
+  basic_string<C> out;
+  const C *last = s + char_traits<C>::length(s);
+  regex_replace(back_inserter(out), s, last, re, fmt, flags);
+  return out;
+}
+
+FTL_END_NAMESPACE
+#endif // FTL_REGEX_HEADER
