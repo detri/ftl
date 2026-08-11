@@ -1,12 +1,18 @@
 #ifdef FTL_REPLACE_STL
+#include <array>
 #include <format>
 #include <limits>
+#include <tuple>
 #include <type_traits>
+#include <utility>
 namespace tested = std;
 #else
+#include <ftl/array>
 #include <ftl/format>
 #include <ftl/limits>
+#include <ftl/tuple>
 #include <ftl/type_traits>
+#include <ftl/utility>
 namespace tested = ftl;
 #endif
 
@@ -55,6 +61,146 @@ template <> struct ftl::formatter<handled_value, char> {
 #endif
 
 struct unavailable_format_type {};
+
+struct sequence_range {
+  int values[3]{1, 2, 3};
+
+  int *begin() noexcept { return values; }
+
+  int *end() noexcept { return values + 3; }
+
+  const int *begin() const noexcept { return values; }
+
+  const int *end() const noexcept { return values + 3; }
+};
+
+struct set_range {
+  using key_type = int;
+
+  int values[3]{1, 2, 3};
+
+  int *begin() noexcept { return values; }
+
+  int *end() noexcept { return values + 3; }
+
+  const int *begin() const noexcept { return values; }
+
+  const int *end() const noexcept { return values + 3; }
+};
+
+struct map_range {
+  using key_type = int;
+  using mapped_type = int;
+
+  tested::pair<int, int> values[2]{{1, 2}, {3, 4}};
+
+  tested::pair<int, int> *begin() noexcept { return values; }
+
+  tested::pair<int, int> *end() noexcept { return values + 2; }
+
+  const tested::pair<int, int> *begin() const noexcept { return values; }
+
+  const tested::pair<int, int> *end() const noexcept { return values + 2; }
+};
+
+struct pair_sequence_range {
+  tested::pair<int, int> values[2]{{1, 2}, {3, 4}};
+
+  tested::pair<int, int> *begin() noexcept { return values; }
+
+  tested::pair<int, int> *end() noexcept { return values + 2; }
+
+  const tested::pair<int, int> *begin() const noexcept { return values; }
+
+  const tested::pair<int, int> *end() const noexcept { return values + 2; }
+};
+
+struct char_sequence_range {
+  char values[3]{'H', 'i', '!'};
+
+  char *begin() noexcept { return values; }
+
+  char *end() noexcept { return values + 3; }
+
+  const char *begin() const noexcept { return values; }
+
+  const char *end() const noexcept { return values + 3; }
+};
+
+struct string_kind_range {
+  char values[2]{'o', 'k'};
+
+  char *begin() noexcept { return values; }
+
+  char *end() noexcept { return values + 2; }
+
+  const char *begin() const noexcept { return values; }
+
+  const char *end() const noexcept { return values + 2; }
+};
+
+struct debug_string_kind_range {
+  char values[2]{'a', '\n'};
+
+  char *begin() noexcept { return values; }
+
+  char *end() noexcept { return values + 2; }
+
+  const char *begin() const noexcept { return values; }
+
+  const char *end() const noexcept { return values + 2; }
+};
+
+#ifdef FTL_REPLACE_STL
+
+namespace std {
+
+template <>
+inline constexpr range_format format_kind<string_kind_range> =
+    range_format::string;
+
+template <>
+inline constexpr range_format format_kind<debug_string_kind_range> =
+    range_format::debug_string;
+
+} // namespace std
+
+#else
+
+namespace ftl {
+
+template <>
+inline constexpr range_format format_kind<string_kind_range> =
+    range_format::string;
+
+template <>
+inline constexpr range_format format_kind<debug_string_kind_range> =
+    range_format::debug_string;
+
+} // namespace ftl
+
+#endif
+
+static_assert(tested::format_kind<sequence_range> ==
+              tested::range_format::sequence);
+
+static_assert(tested::format_kind<set_range> == tested::range_format::set);
+
+static_assert(tested::format_kind<map_range> == tested::range_format::map);
+
+static_assert(tested::format_kind<string_kind_range> ==
+              tested::range_format::string);
+
+static_assert(tested::format_kind<debug_string_kind_range> ==
+              tested::range_format::debug_string);
+
+static_assert(tested::formattable<sequence_range, char>);
+
+static_assert(tested::formattable<map_range, char>);
+
+static_assert(tested::formattable<tested::pair<int, int>, char>);
+
+static_assert(tested::formattable<tested::tuple<int, int, int>, char>);
 
 static_assert(!tested::is_copy_constructible_v<tested::format_parse_context>);
 
@@ -701,6 +847,173 @@ bool format_string_get_works() {
   return view.size() == 8 && view[0] == 'v' && view[7] == '}';
 }
 
+bool range_formatting_works() {
+  sequence_range sequence;
+
+  const auto normal = tested::format("{}", sequence);
+
+  if (!equal_text(normal.c_str(), "[1, 2, 3]")) {
+    return false;
+  }
+
+  const auto no_brackets = tested::format("{:n}", sequence);
+
+  if (!equal_text(no_brackets.c_str(), "1, 2, 3")) {
+    return false;
+  }
+
+  const auto elements = tested::format("{::#x}", sequence);
+
+  if (!equal_text(elements.c_str(), "[0x1, 0x2, 0x3]")) {
+    return false;
+  }
+
+  const auto padded = tested::format("{:*^15}", sequence);
+
+  if (!equal_text(padded.c_str(), "***[1, 2, 3]***")) {
+    return false;
+  }
+
+  set_range set;
+
+  const auto set_text = tested::format("{}", set);
+
+  if (!equal_text(set_text.c_str(), "{1, 2, 3}")) {
+    return false;
+  }
+
+  map_range map;
+
+  const auto map_text = tested::format("{}", map);
+
+  if (!equal_text(map_text.c_str(), "{1: 2, 3: 4}")) {
+    return false;
+  }
+
+  const auto map_no_brackets = tested::format("{:n}", map);
+
+  if (!equal_text(map_no_brackets.c_str(), "1: 2, 3: 4")) {
+    return false;
+  }
+
+  pair_sequence_range pairs;
+
+  const auto explicit_map = tested::format("{:m}", pairs);
+
+  if (!equal_text(explicit_map.c_str(), "{1: 2, 3: 4}")) {
+    return false;
+  }
+
+  char_sequence_range characters;
+
+  const auto default_chars = tested::format("{}", characters);
+
+  if (!equal_text(default_chars.c_str(), "['H', 'i', '!']")) {
+    return false;
+  }
+
+  const auto as_string = tested::format("{:s}", characters);
+
+  if (!equal_text(as_string.c_str(), "Hi!")) {
+    return false;
+  }
+
+  const auto as_debug_string = tested::format("{:?s}", characters);
+
+  if (!equal_text(as_debug_string.c_str(), "\"Hi!\"")) {
+    return false;
+  }
+
+  string_kind_range string_kind;
+
+  const auto string_default = tested::format("{}", string_kind);
+
+  if (!equal_text(string_default.c_str(), "ok")) {
+    return false;
+  }
+
+  debug_string_kind_range debug_kind;
+
+  const auto debug_default = tested::format("{}", debug_kind);
+
+  if (!equal_text(debug_default.c_str(), "\"a\\n\"")) {
+    return false;
+  }
+
+  return true;
+}
+
+bool tuple_formatting_works() {
+  tested::pair<int, tested::string> pair_value{42, tested::string("hello")};
+
+  const auto normal_pair = tested::format("{}", pair_value);
+
+  if (!equal_text(normal_pair.c_str(), "(42, \"hello\")")) {
+    return false;
+  }
+
+  const auto map_pair = tested::format("{:m}", pair_value);
+
+  if (!equal_text(map_pair.c_str(), "42: \"hello\"")) {
+    return false;
+  }
+
+  const auto naked_pair = tested::format("{:n}", pair_value);
+
+  if (!equal_text(naked_pair.c_str(), "42, \"hello\"")) {
+    return false;
+  }
+
+  tested::pair<int, int> numeric_pair{1, 2};
+
+  const auto padded = tested::format("{:*^12}", numeric_pair);
+
+  if (!equal_text(padded.c_str(), "***(1, 2)***")) {
+    return false;
+  }
+
+  tested::tuple<int, tested::string, char> tuple_value{1, tested::string("x"),
+                                                       '\n'};
+
+  const auto tuple_text = tested::format("{}", tuple_value);
+
+  if (!equal_text(tuple_text.c_str(), "(1, \"x\", '\\n')")) {
+    return false;
+  }
+
+  return true;
+}
+
+bool range_tuple_runtime_errors_work() {
+  sequence_range sequence;
+
+  auto sequence_store = tested::make_format_args(sequence);
+
+  try {
+    (void)tested::vformat("{:s}", tested::format_args(sequence_store));
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  tested::tuple<int, int, int> triple{1, 2, 3};
+
+  auto tuple_store = tested::make_format_args(triple);
+
+  try {
+    (void)tested::vformat("{:m}", tested::format_args(tuple_store));
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  return true;
+}
+
 bool ftl_test() {
   if (!parse_context_works())
     return false;
@@ -745,6 +1058,15 @@ bool ftl_test() {
     return false;
 
   if (!format_string_get_works())
+    return false;
+
+  if (!range_formatting_works())
+    return false;
+
+  if (!tuple_formatting_works())
+    return false;
+
+  if (!range_tuple_runtime_errors_work())
     return false;
 
   return true;

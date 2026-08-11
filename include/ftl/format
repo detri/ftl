@@ -13,9 +13,11 @@
 #include <limits>
 #include <locale>
 #include <memory>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -29,9 +31,11 @@
 #include <ftl/limits>
 #include <ftl/locale>
 #include <ftl/memory>
+#include <ftl/ranges>
 #include <ftl/stdexcept>
 #include <ftl/string>
 #include <ftl/string_view>
+#include <ftl/tuple>
 #include <ftl/type_traits>
 #include <ftl/utility>
 #include <ftl/variant>
@@ -2151,14 +2155,1141 @@ using format_args = basic_format_args<format_context>;
 using wformat_args = basic_format_args<wformat_context>;
 
 template <class T, class charT>
-concept formattable = detail::formattable_with<
-    remove_reference_t<T>,
-    basic_format_context<back_insert_iterator<basic_string<charT>>, charT>>;
+concept formattable =
+    detail::formattable_with<
+        remove_reference_t<T>,
+        basic_format_context<
+            back_insert_iterator<
+                basic_string<
+                    charT>>,
+            charT>>;
+
+namespace detail {
+
+template <class>
+inline constexpr bool
+format_dependent_false_v = false;
+
+template <class T>
+struct format_pair_or_two_tuple
+    : false_type {};
+
+template <class First, class Second>
+struct format_pair_or_two_tuple<
+    pair<First, Second>>
+    : true_type {};
+
+template <class... Types>
+struct format_pair_or_two_tuple<
+    tuple<Types...>>
+    : bool_constant<
+          sizeof...(Types) == 2> {};
+
+template <class T>
+inline constexpr bool
+format_pair_or_two_tuple_v =
+    format_pair_or_two_tuple<
+        remove_cvref_t<T>>::value;
+
+template <
+    class charT,
+    size_t NarrowSize,
+    size_t WideSize>
+[[nodiscard]]
+constexpr basic_string_view<charT>
+format_static_view(
+    const char (&narrow)[NarrowSize],
+    const wchar_t (&wide)[WideSize]) noexcept {
+  if constexpr (
+      is_same_v<charT, char>) {
+    return basic_string_view<charT>(
+        narrow,
+        NarrowSize - 1);
+  } else {
+    return basic_string_view<charT>(
+        wide,
+        WideSize - 1);
+  }
+}
+
+template <class charT>
+void format_append_view(
+    basic_string<charT> &output,
+    basic_string_view<charT> value) {
+  for (charT character : value)
+    output.push_back(character);
+}
+
+template <class charT>
+constexpr typename
+    basic_format_parse_context<charT>::iterator
+format_parse_container_outer_spec(
+    basic_format_parse_context<charT> &context,
+    standard_format_spec<charT> &spec) {
+  auto current = context.begin();
+  const auto end = context.end();
+
+  if (current != end) {
+    auto next = current;
+    ++next;
+
+    if (next != end &&
+        format_is_align(*next)) {
+      if (*current ==
+              format_widen<charT>('{') ||
+          *current ==
+              format_widen<charT>('}') ||
+          *current ==
+              format_widen<charT>(':')) {
+        throw_format_error(
+            "invalid range or tuple fill character");
+      }
+
+      spec.fill = *current;
+
+      spec.alignment =
+          format_alignment_from_character(
+              *next);
+
+      spec.alignment_specified = true;
+
+      current = next;
+      ++current;
+    } else if (
+        format_is_align(*current)) {
+      spec.alignment =
+          format_alignment_from_character(
+              *current);
+
+      spec.alignment_specified = true;
+
+      ++current;
+    }
+  }
+
+  if (current != end &&
+      format_is_digit(*current)) {
+    size_t width = 0;
+
+    while (current != end &&
+           format_is_digit(*current)) {
+      const size_t digit =
+          static_cast<size_t>(
+              *current -
+              format_widen<charT>('0'));
+
+      if (width >
+          (numeric_limits<size_t>::max() -
+           digit) /
+              size_t{10}) {
+        throw_format_error(
+            "format width is too large");
+      }
+
+      width =
+          width * size_t{10} +
+          digit;
+
+      ++current;
+    }
+
+    if (width == 0) {
+      throw_format_error(
+          "format width must be positive");
+    }
+
+    spec.width = width;
+  } else if (
+      current != end &&
+      *current ==
+          format_widen<charT>('{')) {
+    ++current;
+
+    spec.dynamic_width = true;
+
+    spec.width_arg_id =
+        parse_dynamic_format_argument(
+            current,
+            end,
+            context,
+            "invalid dynamic format width",
+            "unterminated dynamic format width");
+  }
+
+  return current;
+}
+
+template <
+    class ParentContext,
+    class charT>
+class buffered_format_context {
+public:
+  using iterator =
+      back_insert_iterator<
+          basic_string<charT>>;
+
+  using char_type = charT;
+
+  template <class T>
+  using formatter_type =
+      formatter<T, charT>;
+
+  buffered_format_context(
+      ParentContext &parent,
+      basic_string<charT> &output)
+      : parent_(
+            addressof(parent)),
+        output_(
+            back_inserter(output)) {}
+
+  decltype(auto)
+  arg(size_t id) const noexcept {
+    return parent_->arg(id);
+  }
+
+  FTL_FORMAT_NS::locale locale() {
+    return parent_->locale();
+  }
+
+  iterator out() {
+    return move(output_);
+  }
+
+  void advance_to(iterator next) {
+    output_ = move(next);
+  }
+
+private:
+  ParentContext *parent_;
+  iterator output_;
+};
+
+template <
+    class TupleType,
+    class charT,
+    class... Types>
+class tuple_formatter_base {
+private:
+  static constexpr bool
+      all_const_formattable =
+          (formattable<
+               const Types,
+               charT> &&
+           ...);
+
+public:
+  constexpr
+  tuple_formatter_base() noexcept =
+      default;
+
+  constexpr void
+  set_separator(
+      basic_string_view<charT> separator) {
+    separator_ = separator;
+  }
+
+  constexpr void
+  set_brackets(
+      basic_string_view<charT> opening,
+      basic_string_view<charT> closing) {
+    opening_bracket_ = opening;
+    closing_bracket_ = closing;
+  }
+
+  template <class ParseContext>
+  constexpr typename
+      ParseContext::iterator
+  parse(ParseContext &context) {
+    auto current =
+        format_parse_container_outer_spec(
+            context,
+            outer_);
+
+    const auto end = context.end();
+
+    if (current != end &&
+        *current !=
+            format_widen<charT>('}')) {
+      if (*current ==
+          format_widen<charT>('m')) {
+        if constexpr (
+            sizeof...(Types) != 2) {
+          throw_format_error(
+              "tuple m presentation requires exactly two elements");
+        } else {
+          separator_ =
+              format_static_view<charT>(
+                  ": ",
+                  L": ");
+
+          opening_bracket_ = {};
+          closing_bracket_ = {};
+        }
+
+        ++current;
+      } else if (
+          *current ==
+          format_widen<charT>('n')) {
+        opening_bracket_ = {};
+        closing_bracket_ = {};
+
+        ++current;
+      } else {
+        throw_format_error(
+            "invalid tuple format presentation type");
+      }
+    }
+
+    if (current != end &&
+        *current !=
+            format_widen<charT>('}')) {
+      throw_format_error(
+          "invalid tuple format specification");
+    }
+
+    auto parse_one =
+        [&](auto &underlying) constexpr {
+          context.advance_to(
+              current);
+
+          const auto parsed =
+              underlying.parse(
+                  context);
+
+          if (parsed != current) {
+            throw_format_error(
+                "tuple element formatter did not accept an empty format specification");
+          }
+
+          if constexpr (
+              requires {
+                underlying
+                    .set_debug_format();
+              }) {
+            underlying
+                .set_debug_format();
+          }
+        };
+
+    apply(
+        [&](auto &...underlying) constexpr {
+          (parse_one(underlying), ...);
+        },
+        underlying_);
+
+    context.advance_to(current);
+
+    return current;
+  }
+
+  template <class FormatContext>
+    requires all_const_formattable
+  typename FormatContext::iterator
+  format(
+      const TupleType &value,
+      FormatContext &context) const {
+    return format_impl(
+        value,
+        context,
+        index_sequence_for<
+            Types...>{});
+  }
+
+  template <class FormatContext>
+    requires(!all_const_formattable)
+  typename FormatContext::iterator
+  format(
+      TupleType &value,
+      FormatContext &context) const {
+    return format_impl(
+        value,
+        context,
+        index_sequence_for<
+            Types...>{});
+  }
+
+private:
+  template <
+      class Value,
+      class FormatContext,
+      size_t... Index>
+  typename FormatContext::iterator
+  format_impl(
+      Value &value,
+      FormatContext &context,
+      index_sequence<Index...>) const {
+    basic_string<charT> content;
+
+    format_append_view(
+        content,
+        opening_bracket_);
+
+    buffered_format_context<
+        FormatContext,
+        charT>
+        buffered(
+            context,
+            content);
+
+    (
+        [&] {
+          if constexpr (
+              Index != 0) {
+            format_append_view(
+                content,
+                separator_);
+          }
+
+          auto next =
+              get<Index>(
+                  underlying_)
+                  .format(
+                      get<Index>(
+                          value),
+                      buffered);
+
+          buffered.advance_to(
+              move(next));
+        }(),
+        ...);
+
+    format_append_view(
+        content,
+        closing_bracket_);
+
+    return format_padded_text(
+        basic_string_view<charT>(
+            content.data(),
+            content.size()),
+        context,
+        outer_,
+        format_alignment::left);
+  }
+
+  tuple<
+      formatter<
+          remove_cvref_t<Types>,
+          charT>...>
+      underlying_{};
+
+  basic_string_view<charT>
+      separator_ =
+          format_static_view<charT>(
+              ", ",
+              L", ");
+
+  basic_string_view<charT>
+      opening_bracket_ =
+          format_static_view<charT>(
+              "(",
+              L"(");
+
+  basic_string_view<charT>
+      closing_bracket_ =
+          format_static_view<charT>(
+              ")",
+              L")");
+
+  standard_format_spec<charT>
+      outer_{};
+};
+
+} // namespace detail
+
+template <class R>
+inline constexpr range_format
+format_kind = [] {
+  static_assert(
+      detail::
+          format_dependent_false_v<R>,
+      "the primary format_kind template may not be instantiated");
+
+  return range_format::disabled;
+}();
+
+template <ranges::input_range R>
+  requires same_as<
+      R,
+      remove_cvref_t<R>>
+inline constexpr range_format
+format_kind<R> = [] {
+  using reference_type =
+      remove_cvref_t<
+          ranges::range_reference_t<
+              R>>;
+
+  if constexpr (
+      same_as<
+          reference_type,
+          R>) {
+    return range_format::disabled;
+  } else if constexpr (
+      requires {
+        typename R::key_type;
+      }) {
+    if constexpr (
+        requires {
+          typename R::mapped_type;
+        } &&
+        detail::
+            format_pair_or_two_tuple_v<
+                reference_type>) {
+      return range_format::map;
+    } else {
+      return range_format::set;
+    }
+  } else {
+    return range_format::sequence;
+  }
+}();
+
+template <
+    class First,
+    class Second,
+    class charT>
+  requires formattable<
+               First,
+               charT> &&
+           formattable<
+               Second,
+               charT>
+struct formatter<
+    pair<First, Second>,
+    charT>
+    : detail::
+          tuple_formatter_base<
+              pair<First, Second>,
+              charT,
+              First,
+              Second> {};
+
+template <
+    class charT,
+    class... Types>
+  requires(
+      formattable<
+          Types,
+          charT> &&
+      ...)
+struct formatter<
+    tuple<Types...>,
+    charT>
+    : detail::
+          tuple_formatter_base<
+              tuple<Types...>,
+              charT,
+              Types...> {};
+
+template <
+    class T,
+    class charT = char>
+  requires same_as<
+               remove_cvref_t<T>,
+               T> &&
+           formattable<
+               T,
+               charT>
+class range_formatter {
+public:
+  constexpr
+  range_formatter() noexcept =
+      default;
+
+  constexpr void
+  set_separator(
+      basic_string_view<charT> separator) {
+    separator_ = separator;
+  }
+
+  constexpr void
+  set_brackets(
+      basic_string_view<charT> opening,
+      basic_string_view<charT> closing) {
+    opening_bracket_ = opening;
+    closing_bracket_ = closing;
+  }
+
+  constexpr formatter<
+      T,
+      charT> &
+  underlying() {
+    return underlying_;
+  }
+
+  constexpr const formatter<
+      T,
+      charT> &
+  underlying() const {
+    return underlying_;
+  }
+
+  template <class ParseContext>
+  constexpr typename
+      ParseContext::iterator
+  parse(ParseContext &context) {
+    auto current =
+        detail::
+            format_parse_container_outer_spec(
+                context,
+                outer_);
+
+    const auto end =
+        context.end();
+
+    bool no_brackets = false;
+
+    if (current != end &&
+        *current ==
+            detail::
+                format_widen<charT>(
+                    'n')) {
+      no_brackets = true;
+
+      opening_bracket_ = {};
+      closing_bracket_ = {};
+
+      ++current;
+    }
+
+    if (current != end &&
+        *current !=
+            detail::
+                format_widen<charT>(
+                    '}') &&
+        *current !=
+            detail::
+                format_widen<charT>(
+                    ':')) {
+      if (*current ==
+          detail::
+              format_widen<charT>(
+                  'm')) {
+        if constexpr (
+            !detail::
+                format_pair_or_two_tuple_v<
+                    T>) {
+          detail::
+              throw_format_error(
+                  "range m presentation requires pair or two-element tuple elements");
+        } else {
+          if (!no_brackets) {
+            opening_bracket_ =
+                detail::
+                    format_static_view<
+                        charT>(
+                        "{",
+                        L"{");
+
+            closing_bracket_ =
+                detail::
+                    format_static_view<
+                        charT>(
+                        "}",
+                        L"}");
+          }
+
+          underlying_
+              .set_brackets(
+                  {},
+                  {});
+
+          underlying_
+              .set_separator(
+                  detail::
+                      format_static_view<
+                          charT>(
+                          ": ",
+                          L": "));
+        }
+
+        ++current;
+      } else if (
+          *current ==
+          detail::
+              format_widen<charT>(
+                  's')) {
+        if constexpr (
+            !same_as<T, charT>) {
+          detail::
+              throw_format_error(
+                  "range s presentation requires character elements");
+        } else {
+          if (no_brackets) {
+            detail::
+                throw_format_error(
+                    "range s presentation cannot be combined with n");
+          }
+
+          string_mode_ = true;
+        }
+
+        ++current;
+      } else if (
+          *current ==
+          detail::
+              format_widen<charT>(
+                  '?')) {
+        auto next = current;
+        ++next;
+
+        if (next == end ||
+            *next !=
+                detail::
+                    format_widen<charT>(
+                        's')) {
+          detail::
+              throw_format_error(
+                  "invalid range format presentation type");
+        }
+
+        if constexpr (
+            !same_as<T, charT>) {
+          detail::
+              throw_format_error(
+                  "range ?s presentation requires character elements");
+        } else {
+          if (no_brackets) {
+            detail::
+                throw_format_error(
+                    "range ?s presentation cannot be combined with n");
+          }
+
+          string_mode_ = true;
+          debug_string_mode_ = true;
+        }
+
+        current = next;
+        ++current;
+      } else {
+        detail::
+            throw_format_error(
+                "invalid range format presentation type");
+      }
+    }
+
+    if (current != end &&
+        *current ==
+            detail::
+                format_widen<charT>(
+                    ':')) {
+      if (string_mode_) {
+        detail::
+            throw_format_error(
+                "string range presentation cannot have an underlying format specification");
+      }
+
+      ++current;
+
+      context.advance_to(
+          current);
+
+      return underlying_.parse(
+          context);
+    }
+
+    if (current != end &&
+        *current !=
+            detail::
+                format_widen<charT>(
+                    '}')) {
+      detail::
+          throw_format_error(
+              "invalid range format specification");
+    }
+
+    context.advance_to(
+        current);
+
+    const auto parsed =
+        underlying_.parse(
+            context);
+
+    if constexpr (
+        requires {
+          underlying_
+              .set_debug_format();
+        }) {
+      underlying_
+          .set_debug_format();
+    }
+
+    return parsed;
+  }
+
+  template <
+      ranges::input_range R,
+      class FormatContext>
+    requires formattable<
+                 ranges::
+                     range_reference_t<
+                         R>,
+                 charT> &&
+             same_as<
+                 remove_cvref_t<
+                     ranges::
+                         range_reference_t<
+                             R>>,
+                 T>
+  typename FormatContext::iterator
+  format(
+      R &&range,
+      FormatContext &context) const {
+    if (string_mode_) {
+      if constexpr (
+          same_as<T, charT>) {
+        basic_string<charT> text;
+
+        for (auto &&character :
+             range) {
+          text.push_back(
+              static_cast<charT>(
+                  character));
+        }
+
+        if (debug_string_mode_) {
+          const auto escaped =
+              detail::
+                  format_escape_string(
+                      basic_string_view<
+                          charT>(
+                          text.data(),
+                          text.size()));
+
+          return detail::
+              format_padded_text(
+                  basic_string_view<
+                      charT>(
+                      escaped.data(),
+                      escaped.size()),
+                  context,
+                  outer_,
+                  detail::
+                      format_alignment::
+                          left);
+        }
+
+        return detail::
+            format_padded_text(
+                basic_string_view<
+                    charT>(
+                    text.data(),
+                    text.size()),
+                context,
+                outer_,
+                detail::
+                    format_alignment::
+                        left);
+      }
+    }
+
+    basic_string<charT> content;
+
+    detail::format_append_view(
+        content,
+        opening_bracket_);
+
+    detail::
+        buffered_format_context<
+            FormatContext,
+            charT>
+            buffered(
+                context,
+                content);
+
+    bool first = true;
+
+    for (auto &&element :
+         range) {
+      if (!first) {
+        detail::
+            format_append_view(
+                content,
+                separator_);
+      }
+
+      first = false;
+
+      auto next =
+          underlying_.format(
+              element,
+              buffered);
+
+      buffered.advance_to(
+          move(next));
+    }
+
+    detail::format_append_view(
+        content,
+        closing_bracket_);
+
+    return detail::
+        format_padded_text(
+            basic_string_view<charT>(
+                content.data(),
+                content.size()),
+            context,
+            outer_,
+            detail::
+                format_alignment::
+                    left);
+  }
+
+private:
+  formatter<T, charT>
+      underlying_{};
+
+  basic_string_view<charT>
+      separator_ =
+          detail::
+              format_static_view<
+                  charT>(
+                  ", ",
+                  L", ");
+
+  basic_string_view<charT>
+      opening_bracket_ =
+          detail::
+              format_static_view<
+                  charT>(
+                  "[",
+                  L"[");
+
+  basic_string_view<charT>
+      closing_bracket_ =
+          detail::
+              format_static_view<
+                  charT>(
+                  "]",
+                  L"]");
+
+  detail::
+      standard_format_spec<charT>
+      outer_{};
+
+  bool string_mode_ = false;
+  bool debug_string_mode_ = false;
+};
+
+namespace detail {
+
+template <
+    range_format Kind,
+    ranges::input_range R,
+    class charT>
+struct range_default_formatter;
+
+template <
+    ranges::input_range R,
+    class charT>
+struct range_default_formatter<
+    range_format::sequence,
+    R,
+    charT>
+    : range_formatter<
+          remove_cvref_t<
+              ranges::
+                  range_reference_t<R>>,
+          charT> {};
+
+template <
+    ranges::input_range R,
+    class charT>
+struct range_default_formatter<
+    range_format::set,
+    R,
+    charT>
+    : range_formatter<
+          remove_cvref_t<
+              ranges::
+                  range_reference_t<R>>,
+          charT> {
+private:
+  using base =
+      range_formatter<
+          remove_cvref_t<
+              ranges::
+                  range_reference_t<R>>,
+          charT>;
+
+public:
+  constexpr
+  range_default_formatter() {
+    this->set_brackets(
+        format_static_view<charT>(
+            "{",
+            L"{"),
+        format_static_view<charT>(
+            "}",
+            L"}"));
+  }
+};
+
+template <
+    ranges::input_range R,
+    class charT>
+struct range_default_formatter<
+    range_format::map,
+    R,
+    charT>
+    : range_formatter<
+          remove_cvref_t<
+              ranges::
+                  range_reference_t<R>>,
+          charT> {
+private:
+  using element_type =
+      remove_cvref_t<
+          ranges::
+              range_reference_t<R>>;
+
+  static_assert(
+      format_pair_or_two_tuple_v<
+          element_type>,
+      "map range formatting requires pair or two-element tuple elements");
+
+public:
+  constexpr
+  range_default_formatter() {
+    this->set_brackets(
+        format_static_view<charT>(
+            "{",
+            L"{"),
+        format_static_view<charT>(
+            "}",
+            L"}"));
+
+    this->underlying()
+        .set_brackets(
+            {},
+            {});
+
+    this->underlying()
+        .set_separator(
+            format_static_view<charT>(
+                ": ",
+                L": "));
+  }
+};
+
+template <
+    range_format Kind,
+    ranges::input_range R,
+    class charT>
+  requires(
+      Kind ==
+          range_format::string ||
+      Kind ==
+          range_format::debug_string)
+struct range_default_formatter<
+    Kind,
+    R,
+    charT> {
+private:
+  using element_type =
+      remove_cvref_t<
+          ranges::
+              range_reference_t<R>>;
+
+  static_assert(
+      same_as<
+          element_type,
+          charT>,
+      "string range formatting requires matching character elements");
+
+public:
+  template <class ParseContext>
+  constexpr typename
+      ParseContext::iterator
+  parse(ParseContext &context) {
+    const auto result =
+        underlying_.parse(
+            context);
+
+    if constexpr (
+        Kind ==
+        range_format::
+            debug_string) {
+      underlying_
+          .set_debug_format();
+    }
+
+    return result;
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator
+  format(
+      R &range,
+      FormatContext &context) const {
+    return format_impl(
+        range,
+        context);
+  }
+
+  template <class FormatContext>
+    requires ranges::
+        input_range<const R>
+  typename FormatContext::iterator
+  format(
+      const R &range,
+      FormatContext &context) const {
+    return format_impl(
+        range,
+        context);
+  }
+
+private:
+  template <
+      class Range,
+      class FormatContext>
+  typename FormatContext::iterator
+  format_impl(
+      Range &range,
+      FormatContext &context) const {
+    basic_string<charT> text;
+
+    for (auto &&character :
+         range) {
+      text.push_back(
+          static_cast<charT>(
+              character));
+    }
+
+    return underlying_.format(
+        text,
+        context);
+  }
+
+  formatter<
+      basic_string<charT>,
+      charT>
+      underlying_{};
+};
+
+} // namespace detail
+
+template <
+    ranges::input_range R,
+    class charT>
+  requires(
+      format_kind<R> !=
+          range_format::disabled) &&
+           formattable<
+               ranges::
+                   range_reference_t<R>,
+               charT>
+struct formatter<R, charT>
+    : detail::
+          range_default_formatter<
+              format_kind<R>,
+              R,
+              charT> {};
 
 namespace detail {
 
 template <class charT>
-constexpr size_t format_parse_replacement_arg_id(
+constexpr size_t
+format_parse_replacement_arg_id(
     typename basic_format_parse_context<charT>::iterator &current,
     typename basic_format_parse_context<charT>::iterator end,
     basic_format_parse_context<charT> &context) {
