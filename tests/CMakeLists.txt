@@ -55,7 +55,7 @@ function(add_ftl_test header)
 
         if (mode STREQUAL replace AND
                 header MATCHES
-                "^(string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|locale(_.*)?|codecvt)$")
+                "^(string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|locale(_.*)?|codecvt|format)$")
             set(ftl_standalone_replace TRUE)
         endif ()
 

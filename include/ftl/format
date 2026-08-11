@@ -4,21 +4,43 @@
 #define FTL_FORMAT_HEADER
 
 #ifdef FTL_REPLACE_STL
+#include <array>
 #include <charconv>
+#include <concepts>
 #include <cstddef>
+#include <cstdint>
+#include <iterator>
 #include <limits>
+#include <locale>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
+#include <variant>
 #else
+#include <ftl/array>
 #include <ftl/charconv>
+#include <ftl/concepts>
 #include <ftl/cstddef>
+#include <ftl/cstdint>
+#include <ftl/iterator>
 #include <ftl/limits>
+#include <ftl/locale>
+#include <ftl/memory>
 #include <ftl/stdexcept>
 #include <ftl/string>
 #include <ftl/string_view>
 #include <ftl/type_traits>
+#include <ftl/utility>
+#include <ftl/variant>
+#endif
+
+#ifdef FTL_REPLACE_STL
+#define FTL_FORMAT_NS std
+#else
+#define FTL_FORMAT_NS ftl
 #endif
 
 FTL_BEGIN_NAMESPACE
@@ -73,35 +95,35 @@ public:
   constexpr void advance_to(const_iterator it) { begin_ = it; }
 
   constexpr size_t next_arg_id() {
-    if (indexing_ == indexing::manual)
+    if (indexing_ == indexing::manual) {
       detail::throw_format_error(
           "cannot mix automatic and manual argument indexing");
+    }
 
     if (indexing_ == indexing::unknown)
       indexing_ = indexing::automatic;
 
     const size_t result = next_arg_id_++;
 
-    /*
-     * N4950 specifies an out-of-range call as not being a core constant
-     * expression. At runtime the parse context still tracks the index.
-     */
-    if (is_constant_evaluated() && result >= num_args_)
+    if (is_constant_evaluated() && result >= num_args_) {
       detail::throw_format_error("format argument index out of range");
+    }
 
     return result;
   }
 
   constexpr void check_arg_id(size_t id) {
-    if (indexing_ == indexing::automatic)
+    if (indexing_ == indexing::automatic) {
       detail::throw_format_error(
           "cannot mix automatic and manual argument indexing");
+    }
 
     if (indexing_ == indexing::unknown)
       indexing_ = indexing::manual;
 
-    if (is_constant_evaluated() && id >= num_args_)
+    if (is_constant_evaluated() && id >= num_args_) {
       detail::throw_format_error("format argument index out of range");
+    }
   }
 
 private:
@@ -115,7 +137,18 @@ private:
 };
 
 using format_parse_context = basic_format_parse_context<char>;
+
 using wformat_parse_context = basic_format_parse_context<wchar_t>;
+
+template <class Out, class charT> class basic_format_context;
+
+template <class Context> class basic_format_arg;
+
+template <class Context> class basic_format_args;
+
+template <class Visitor, class Context>
+decltype(auto) visit_format_arg(Visitor &&visitor,
+                                basic_format_arg<Context> argument);
 
 template <class T, class charT = char> struct formatter {
   formatter() = delete;
@@ -123,6 +156,7 @@ template <class T, class charT = char> struct formatter {
   formatter(formatter &&) = delete;
 
   formatter &operator=(const formatter &) = delete;
+
   formatter &operator=(formatter &&) = delete;
 };
 
@@ -133,6 +167,10 @@ namespace detail {
 enum class format_alignment { none, left, right, center };
 
 enum class format_sign { minus, plus, space };
+
+template <class charT>
+inline constexpr bool format_character_type_v =
+    is_same_v<charT, char> || is_same_v<charT, wchar_t>;
 
 template <class T>
 inline constexpr bool is_numeric_format_integer_v =
@@ -186,386 +224,1960 @@ format_alignment_from_character(charT value) noexcept {
   return format_alignment::center;
 }
 
+template <class charT> struct standard_format_spec {
+  charT fill = format_widen<charT>(' ');
+
+  format_alignment alignment = format_alignment::none;
+
+  format_sign sign = format_sign::minus;
+
+  bool alignment_specified = false;
+  bool sign_specified = false;
+  bool alternate = false;
+  bool zero_padding = false;
+
+  bool dynamic_width = false;
+  size_t width = 0;
+  size_t width_arg_id = 0;
+
+  bool has_precision = false;
+  bool dynamic_precision = false;
+  size_t precision = 0;
+  size_t precision_arg_id = 0;
+
+  bool localized = false;
+
+  char presentation = '\0';
+};
+
+template <class charT>
+constexpr size_t parse_dynamic_format_argument(
+    typename basic_format_parse_context<charT>::iterator &current,
+    typename basic_format_parse_context<charT>::iterator end,
+    basic_format_parse_context<charT> &context, const char *invalid_message,
+    const char *unterminated_message) {
+  if (current == end)
+    throw_format_error(unterminated_message);
+
+  if (*current == format_widen<charT>('}')) {
+    const size_t id = context.next_arg_id();
+
+    ++current;
+
+    return id;
+  }
+
+  if (!format_is_digit(*current))
+    throw_format_error(invalid_message);
+
+  size_t id = 0;
+
+  while (current != end && format_is_digit(*current)) {
+    const size_t digit =
+        static_cast<size_t>(*current - format_widen<charT>('0'));
+
+    if (id > (numeric_limits<size_t>::max() - digit) / size_t{10}) {
+      throw_format_error("format argument index is too large");
+    }
+
+    id = id * size_t{10} + digit;
+    ++current;
+  }
+
+  if (current == end || *current != format_widen<charT>('}')) {
+    throw_format_error(unterminated_message);
+  }
+
+  context.check_arg_id(id);
+  ++current;
+
+  return id;
+}
+
+template <class charT>
+constexpr typename basic_format_parse_context<charT>::iterator
+parse_standard_format_spec(basic_format_parse_context<charT> &context,
+                           standard_format_spec<charT> &spec) {
+  auto current = context.begin();
+  const auto end = context.end();
+
+  if (current != end) {
+    auto next = current;
+    ++next;
+
+    if (next != end && format_is_align(*next)) {
+      if (*current == format_widen<charT>('{') ||
+          *current == format_widen<charT>('}')) {
+        throw_format_error("invalid format fill character");
+      }
+
+      spec.fill = *current;
+      spec.alignment = format_alignment_from_character(*next);
+
+      spec.alignment_specified = true;
+
+      current = next;
+      ++current;
+    } else if (format_is_align(*current)) {
+      spec.alignment = format_alignment_from_character(*current);
+
+      spec.alignment_specified = true;
+
+      ++current;
+    }
+  }
+
+  if (current != end) {
+    if (*current == format_widen<charT>('+')) {
+      spec.sign = format_sign::plus;
+      spec.sign_specified = true;
+      ++current;
+    } else if (*current == format_widen<charT>('-')) {
+      spec.sign = format_sign::minus;
+      spec.sign_specified = true;
+      ++current;
+    } else if (*current == format_widen<charT>(' ')) {
+      spec.sign = format_sign::space;
+      spec.sign_specified = true;
+      ++current;
+    }
+  }
+
+  if (current != end && *current == format_widen<charT>('#')) {
+    spec.alternate = true;
+    ++current;
+  }
+
+  if (current != end && *current == format_widen<charT>('0')) {
+    spec.zero_padding = true;
+    ++current;
+  }
+
+  if (current != end && format_is_digit(*current)) {
+    size_t width = 0;
+
+    while (current != end && format_is_digit(*current)) {
+      const size_t digit =
+          static_cast<size_t>(*current - format_widen<charT>('0'));
+
+      if (width > (numeric_limits<size_t>::max() - digit) / size_t{10}) {
+        throw_format_error("format width is too large");
+      }
+
+      width = width * size_t{10} + digit;
+
+      ++current;
+    }
+
+    if (width == 0) {
+      throw_format_error("format width must be positive");
+    }
+
+    spec.width = width;
+  } else if (current != end && *current == format_widen<charT>('{')) {
+    ++current;
+
+    spec.dynamic_width = true;
+
+    spec.width_arg_id = parse_dynamic_format_argument(
+        current, end, context, "invalid dynamic format width",
+        "unterminated dynamic format width");
+  }
+
+  if (current != end && *current == format_widen<charT>('.')) {
+    ++current;
+
+    spec.has_precision = true;
+
+    if (current != end && format_is_digit(*current)) {
+      size_t precision = 0;
+
+      while (current != end && format_is_digit(*current)) {
+        const size_t digit =
+            static_cast<size_t>(*current - format_widen<charT>('0'));
+
+        if (precision > (numeric_limits<size_t>::max() - digit) / size_t{10}) {
+          throw_format_error("format precision is too large");
+        }
+
+        precision = precision * size_t{10} + digit;
+
+        ++current;
+      }
+
+      spec.precision = precision;
+    } else if (current != end && *current == format_widen<charT>('{')) {
+      ++current;
+
+      spec.dynamic_precision = true;
+
+      spec.precision_arg_id = parse_dynamic_format_argument(
+          current, end, context, "invalid dynamic format precision",
+          "unterminated dynamic format precision");
+    } else {
+      throw_format_error("invalid format precision");
+    }
+  }
+
+  if (current != end && *current == format_widen<charT>('L')) {
+    spec.localized = true;
+    ++current;
+  }
+
+  if (current != end && *current != format_widen<charT>('}')) {
+    spec.presentation = static_cast<char>(*current);
+
+    ++current;
+  }
+
+  if (current != end && *current != format_widen<charT>('}')) {
+    throw_format_error("invalid format specification");
+  }
+
+  return current;
+}
+
+template <class FormatContext>
+size_t format_dynamic_size(FormatContext &context, size_t argument_id,
+                           const char *negative_message,
+                           const char *type_message,
+                           const char *large_message) {
+  return visit_format_arg(
+      [&](auto value) -> size_t {
+        using value_type = remove_cvref_t<decltype(value)>;
+
+        if constexpr (is_same_v<value_type, int> ||
+                      is_same_v<value_type, long long>) {
+          if (value < 0)
+            throw_format_error(negative_message);
+
+          if constexpr (sizeof(value_type) > sizeof(size_t)) {
+            using unsigned_type = make_unsigned_t<value_type>;
+
+            if (static_cast<unsigned_type>(value) >
+                static_cast<unsigned_type>(numeric_limits<size_t>::max())) {
+              throw_format_error(large_message);
+            }
+          }
+
+          return static_cast<size_t>(value);
+        } else if constexpr (is_same_v<value_type, unsigned int> ||
+                             is_same_v<value_type, unsigned long long>) {
+          if constexpr (sizeof(value_type) > sizeof(size_t)) {
+            if (value >
+                static_cast<value_type>(numeric_limits<size_t>::max())) {
+              throw_format_error(large_message);
+            }
+          }
+
+          return static_cast<size_t>(value);
+        } else {
+          throw_format_error(type_message);
+        }
+      },
+      context.arg(argument_id));
+}
+
+template <class FormatContext, class charT>
+size_t format_resolve_width(FormatContext &context,
+                            const standard_format_spec<charT> &spec) {
+  if (!spec.dynamic_width)
+    return spec.width;
+
+  return format_dynamic_size(context, spec.width_arg_id,
+                             "format width argument is negative",
+                             "format width argument is not an integer",
+                             "format width argument is too large");
+}
+
+template <class FormatContext, class charT>
+size_t format_resolve_precision(FormatContext &context,
+                                const standard_format_spec<charT> &spec) {
+  if (!spec.dynamic_precision)
+    return spec.precision;
+
+  return format_dynamic_size(context, spec.precision_arg_id,
+                             "format precision argument is negative",
+                             "format precision argument is not an integer",
+                             "format precision argument is too large");
+}
+
+template <class charT, class FormatContext>
+typename FormatContext::iterator
+format_padded_text(basic_string_view<charT> text, FormatContext &context,
+                   const standard_format_spec<charT> &spec,
+                   format_alignment default_alignment) {
+  const size_t width = format_resolve_width(context, spec);
+
+  const size_t padding = width > text.size() ? width - text.size() : size_t{0};
+
+  const format_alignment alignment = spec.alignment == format_alignment::none
+                                         ? default_alignment
+                                         : spec.alignment;
+
+  size_t leading = 0;
+  size_t trailing = 0;
+
+  switch (alignment) {
+  case format_alignment::left:
+    trailing = padding;
+    break;
+
+  case format_alignment::right:
+    leading = padding;
+    break;
+
+  case format_alignment::center:
+    leading = padding / 2;
+    trailing = padding - leading;
+    break;
+
+  case format_alignment::none:
+    break;
+  }
+
+  auto output = context.out();
+
+  format_fill(output, spec.fill, leading);
+
+  for (charT value : text)
+    format_put(output, value);
+
+  format_fill(output, spec.fill, trailing);
+
+  return output;
+}
+
+template <class charT>
+void format_append_hex_escape(basic_string<charT> &output,
+                              unsigned long long value) {
+  output.push_back(format_widen<charT>('\\'));
+
+  output.push_back(format_widen<charT>('u'));
+
+  output.push_back(format_widen<charT>('{'));
+
+  char reversed[numeric_limits<unsigned long long>::digits / 4 + 1];
+
+  size_t count = 0;
+
+  do {
+    const unsigned digit = static_cast<unsigned>(value & 0xfu);
+
+    reversed[count++] = digit < 10 ? static_cast<char>('0' + digit)
+                                   : static_cast<char>('a' + digit - 10);
+
+    value >>= 4u;
+  } while (value != 0);
+
+  while (count != 0) {
+    output.push_back(format_widen<charT>(reversed[--count]));
+  }
+
+  output.push_back(format_widen<charT>('}'));
+}
+
+template <class charT>
+void format_append_escaped_unit(basic_string<charT> &output, charT value,
+                                bool character_mode) {
+  if (value == format_widen<charT>('\t')) {
+    output.push_back(format_widen<charT>('\\'));
+    output.push_back(format_widen<charT>('t'));
+    return;
+  }
+
+  if (value == format_widen<charT>('\n')) {
+    output.push_back(format_widen<charT>('\\'));
+    output.push_back(format_widen<charT>('n'));
+    return;
+  }
+
+  if (value == format_widen<charT>('\r')) {
+    output.push_back(format_widen<charT>('\\'));
+    output.push_back(format_widen<charT>('r'));
+    return;
+  }
+
+  if (value == format_widen<charT>('\\')) {
+    output.push_back(format_widen<charT>('\\'));
+    output.push_back(format_widen<charT>('\\'));
+    return;
+  }
+
+  if (!character_mode && value == format_widen<charT>('"')) {
+    output.push_back(format_widen<charT>('\\'));
+    output.push_back(format_widen<charT>('"'));
+    return;
+  }
+
+  if (character_mode && value == format_widen<charT>('\'')) {
+    output.push_back(format_widen<charT>('\\'));
+    output.push_back(format_widen<charT>('\''));
+    return;
+  }
+
+  using unsigned_character = make_unsigned_t<charT>;
+
+  const unsigned long long code =
+      static_cast<unsigned long long>(static_cast<unsigned_character>(value));
+
+  if (code < 0x20u || code == 0x7fu) {
+    format_append_hex_escape(output, code);
+
+    return;
+  }
+
+  output.push_back(value);
+}
+
+template <class charT>
+basic_string<charT> format_escape_string(basic_string_view<charT> value) {
+  basic_string<charT> result;
+
+  result.push_back(format_widen<charT>('"'));
+
+  for (charT character : value) {
+    format_append_escaped_unit(result, character, false);
+  }
+
+  result.push_back(format_widen<charT>('"'));
+
+  return result;
+}
+
+template <class charT>
+basic_string<charT> format_escape_character(charT value) {
+  basic_string<charT> result;
+
+  result.push_back(format_widen<charT>('\''));
+
+  format_append_escaped_unit(result, value, true);
+
+  result.push_back(format_widen<charT>('\''));
+
+  return result;
+}
+
+template <class charT>
+basic_string<charT> format_ascii_string(const char *value) {
+  basic_string<charT> result;
+
+  while (*value != '\0') {
+    result.push_back(format_widen<charT>(*value++));
+  }
+
+  return result;
+}
+
+template <class charT, class FormatContext>
+basic_string<charT> format_localized_integer_digits(FormatContext &context,
+                                                    const char *digits,
+                                                    size_t digit_count) {
+  auto current_locale = context.locale();
+
+  const auto &punctuation = use_facet<numpunct<charT>>(current_locale);
+
+  const string grouping = punctuation.grouping();
+
+  basic_string<charT> result;
+
+  if (grouping.empty()) {
+    result.reserve(digit_count);
+
+    for (size_t index = 0; index < digit_count; ++index) {
+      result.push_back(format_widen<charT>(digits[index]));
+    }
+
+    return result;
+  }
+
+  const charT separator = punctuation.thousands_sep();
+
+  basic_string<charT> reversed;
+
+  reversed.reserve(digit_count * 2);
+
+  size_t remaining = digit_count;
+
+  size_t grouping_index = 0;
+
+  while (remaining != 0) {
+    const char raw_group = grouping[grouping_index];
+
+    if (raw_group <= 0 || raw_group == numeric_limits<char>::max()) {
+      while (remaining != 0) {
+        reversed.push_back(format_widen<charT>(digits[--remaining]));
+      }
+
+      break;
+    }
+
+    const size_t group_size = static_cast<unsigned char>(raw_group);
+
+    const size_t take = group_size < remaining ? group_size : remaining;
+
+    for (size_t index = 0; index < take; ++index) {
+      reversed.push_back(format_widen<charT>(digits[--remaining]));
+    }
+
+    if (remaining == 0)
+      break;
+
+    reversed.push_back(separator);
+
+    if (grouping_index + 1 < grouping.size()) {
+      ++grouping_index;
+    }
+  }
+
+  result.reserve(reversed.size());
+
+  for (size_t index = reversed.size(); index != 0; --index) {
+    result.push_back(reversed[index - 1]);
+  }
+
+  return result;
+}
+
+template <class Integer, class charT>
+constexpr bool format_integer_fits_character(Integer value) noexcept {
+  if constexpr (is_signed_v<Integer>) {
+    const long long converted = static_cast<long long>(value);
+
+    if constexpr (is_signed_v<charT>) {
+      return converted >=
+                 static_cast<long long>(numeric_limits<charT>::min()) &&
+             converted <= static_cast<long long>(numeric_limits<charT>::max());
+    } else {
+      if (converted < 0)
+        return false;
+
+      return static_cast<unsigned long long>(converted) <=
+             static_cast<unsigned long long>(numeric_limits<charT>::max());
+    }
+  } else {
+    const unsigned long long converted = static_cast<unsigned long long>(value);
+
+    return converted <=
+           static_cast<unsigned long long>(numeric_limits<charT>::max());
+  }
+}
+
+template <class Integer, class charT, class FormatContext>
+typename FormatContext::iterator
+format_integer_value(Integer value, FormatContext &context,
+                     const standard_format_spec<charT> &spec) {
+  if (spec.presentation == 'c') {
+    if (!format_integer_fits_character<Integer, charT>(value)) {
+      throw_format_error(
+          "integer value is not representable as format character");
+    }
+
+    const charT character = static_cast<charT>(value);
+
+    return format_padded_text(basic_string_view<charT>(&character, 1), context,
+                              spec, format_alignment::right);
+  }
+
+  int base = 10;
+
+  switch (spec.presentation) {
+  case 'b':
+  case 'B':
+    base = 2;
+    break;
+
+  case 'o':
+    base = 8;
+    break;
+
+  case 'x':
+  case 'X':
+    base = 16;
+    break;
+
+  default:
+    base = 10;
+    break;
+  }
+
+  using unsigned_type = make_unsigned_t<Integer>;
+
+  char buffer[numeric_limits<unsigned_type>::digits + 2];
+
+  const to_chars_result converted =
+      to_chars(buffer, buffer + sizeof(buffer), value, base);
+
+  if (converted.ec != errc{}) {
+    throw_format_error("integer formatting conversion failed");
+  }
+
+  char *digits = buffer;
+
+  size_t digits_size = static_cast<size_t>(converted.ptr - buffer);
+
+  char sign_character = '\0';
+
+  if (digits_size != 0 && *digits == '-') {
+    sign_character = '-';
+
+    ++digits;
+    --digits_size;
+  } else if (spec.sign == format_sign::plus) {
+    sign_character = '+';
+  } else if (spec.sign == format_sign::space) {
+    sign_character = ' ';
+  }
+
+  if (spec.presentation == 'X') {
+    for (size_t index = 0; index < digits_size; ++index) {
+      if (digits[index] >= 'a' && digits[index] <= 'f') {
+        digits[index] = static_cast<char>('A' + digits[index] - 'a');
+      }
+    }
+  }
+
+  basic_string<charT> localized_digits;
+
+  if (spec.localized) {
+    localized_digits =
+        format_localized_integer_digits<charT>(context, digits, digits_size);
+  }
+
+  const size_t rendered_digits_size =
+      spec.localized ? localized_digits.size() : digits_size;
+
+  char prefix[2]{};
+  size_t prefix_size = 0;
+
+  if (spec.alternate) {
+    switch (spec.presentation) {
+    case 'b':
+      prefix[0] = '0';
+      prefix[1] = 'b';
+      prefix_size = 2;
+      break;
+
+    case 'B':
+      prefix[0] = '0';
+      prefix[1] = 'B';
+      prefix_size = 2;
+      break;
+
+    case 'o':
+      if (value != Integer{}) {
+        prefix[0] = '0';
+        prefix_size = 1;
+      }
+      break;
+
+    case 'x':
+      prefix[0] = '0';
+      prefix[1] = 'x';
+      prefix_size = 2;
+      break;
+
+    case 'X':
+      prefix[0] = '0';
+      prefix[1] = 'X';
+      prefix_size = 2;
+      break;
+
+    default:
+      break;
+    }
+  }
+
+  const size_t sign_size = sign_character == '\0' ? size_t{0} : size_t{1};
+
+  const size_t content_size = sign_size + prefix_size + rendered_digits_size;
+
+  const size_t width = format_resolve_width(context, spec);
+
+  const size_t padding =
+      width > content_size ? width - content_size : size_t{0};
+
+  auto output = context.out();
+
+  auto write_digits = [&]() {
+    if (spec.localized) {
+      for (charT character : localized_digits) {
+        format_put(output, character);
+      }
+    } else {
+      for (size_t index = 0; index < digits_size; ++index) {
+        format_put(output, format_widen<charT>(digits[index]));
+      }
+    }
+  };
+
+  if (spec.zero_padding && spec.alignment == format_alignment::none &&
+      padding != 0) {
+    if (sign_character != '\0') {
+      format_put(output, format_widen<charT>(sign_character));
+    }
+
+    for (size_t index = 0; index < prefix_size; ++index) {
+      format_put(output, format_widen<charT>(prefix[index]));
+    }
+
+    format_fill(output, format_widen<charT>('0'), padding);
+
+    write_digits();
+
+    return output;
+  }
+
+  const format_alignment effective_alignment =
+      spec.alignment == format_alignment::none ? format_alignment::right
+                                               : spec.alignment;
+
+  size_t leading = 0;
+  size_t trailing = 0;
+
+  switch (effective_alignment) {
+  case format_alignment::left:
+    trailing = padding;
+    break;
+
+  case format_alignment::right:
+    leading = padding;
+    break;
+
+  case format_alignment::center:
+    leading = padding / 2;
+    trailing = padding - leading;
+    break;
+
+  case format_alignment::none:
+    break;
+  }
+
+  format_fill(output, spec.fill, leading);
+
+  if (sign_character != '\0') {
+    format_put(output, format_widen<charT>(sign_character));
+  }
+
+  for (size_t index = 0; index < prefix_size; ++index) {
+    format_put(output, format_widen<charT>(prefix[index]));
+  }
+
+  write_digits();
+
+  format_fill(output, spec.fill, trailing);
+
+  return output;
+}
+
+/*
+ * Floating conversion is deliberately expressed in
+ * terms of FTL's own to_chars implementation.
+ */
+[[nodiscard]]
+inline bool format_floating_is_special(basic_string_view<char> text) noexcept {
+  size_t index = 0;
+
+  if (index < text.size() &&
+      (text[index] == '-' || text[index] == '+' || text[index] == ' ')) {
+    ++index;
+  }
+
+  if (index == text.size())
+    return false;
+
+  const char first = text[index];
+
+  return first == 'i' || first == 'I' || first == 'n' || first == 'N';
+}
+
+[[nodiscard]]
+inline size_t
+format_floating_exponent_position(basic_string_view<char> text) noexcept {
+  for (size_t index = 0; index < text.size(); ++index) {
+    switch (text[index]) {
+    case 'e':
+    case 'E':
+    case 'p':
+    case 'P':
+      return index;
+
+    default:
+      break;
+    }
+  }
+
+  return text.size();
+}
+
+[[nodiscard]]
+inline size_t format_floating_point_position(basic_string_view<char> text,
+                                             size_t exponent) noexcept {
+  for (size_t index = 0; index < exponent; ++index) {
+    if (text[index] == '.')
+      return index;
+  }
+
+  return exponent;
+}
+
+inline void format_append_ascii_range(string &output,
+                                      basic_string_view<char> input,
+                                      size_t first, size_t last) {
+  for (size_t index = first; index < last; ++index) {
+    output.push_back(input[index]);
+  }
+}
+
+inline size_t format_floating_significant_digits(basic_string_view<char> text,
+                                                 size_t exponent) noexcept {
+  size_t index = 0;
+
+  if (index < exponent &&
+      (text[index] == '-' || text[index] == '+' || text[index] == ' ')) {
+    ++index;
+  }
+
+  bool seen_nonzero = false;
+  size_t count = 0;
+
+  for (; index < exponent; ++index) {
+    const char character = text[index];
+
+    if (character == '.')
+      continue;
+
+    if (character < '0' || character > '9')
+      continue;
+
+    if (!seen_nonzero) {
+      if (character == '0')
+        continue;
+
+      seen_nonzero = true;
+      count = 1;
+      continue;
+    }
+
+    ++count;
+  }
+
+  /*
+   * Zero has one significant digit.
+   */
+  return seen_nonzero ? count : size_t{1};
+}
+
+inline void format_apply_floating_alternate(string &text, char presentation,
+                                            size_t precision) {
+  if (format_floating_is_special(
+          basic_string_view<char>(text.data(), text.size()))) {
+    return;
+  }
+
+  const basic_string_view<char> view(text.data(), text.size());
+
+  const size_t exponent = format_floating_exponent_position(view);
+
+  const size_t point = format_floating_point_position(view, exponent);
+
+  size_t trailing_zeroes = 0;
+
+  if (presentation == 'g' || presentation == 'G') {
+    const size_t significant_target = precision == 0 ? size_t{1} : precision;
+
+    const size_t present = format_floating_significant_digits(view, exponent);
+
+    if (significant_target > present) {
+      trailing_zeroes = significant_target - present;
+    }
+  }
+
+  const bool need_point = point == exponent;
+
+  if (!need_point && trailing_zeroes == 0) {
+    return;
+  }
+
+  string replacement;
+
+  replacement.reserve(text.size() + trailing_zeroes +
+                      static_cast<size_t>(need_point));
+
+  format_append_ascii_range(replacement, view, 0, exponent);
+
+  if (need_point)
+    replacement.push_back('.');
+
+  for (size_t index = 0; index < trailing_zeroes; ++index) {
+    replacement.push_back('0');
+  }
+
+  format_append_ascii_range(replacement, view, exponent, view.size());
+
+  text = move(replacement);
+}
+
+inline void format_uppercase_floating(string &text) noexcept {
+  for (size_t index = 0; index < text.size(); ++index) {
+    char &character = text[index];
+
+    if (character >= 'a' && character <= 'z') {
+      character = static_cast<char>(character - 'a' + 'A');
+    }
+  }
+}
+
+inline void format_apply_positive_sign(string &text, format_sign sign) {
+  if (text.empty() || text[0] == '-')
+    return;
+
+  char sign_character = '\0';
+
+  if (sign == format_sign::plus)
+    sign_character = '+';
+  else if (sign == format_sign::space)
+    sign_character = ' ';
+
+  if (sign_character == '\0')
+    return;
+
+  string replacement;
+
+  replacement.reserve(text.size() + 1);
+
+  replacement.push_back(sign_character);
+
+  for (char character : text)
+    replacement.push_back(character);
+
+  text = move(replacement);
+}
+
+template <class Float>
+[[nodiscard]]
+size_t format_floating_buffer_capacity(size_t precision) {
+  constexpr int exponent10 = numeric_limits<Float>::max_exponent10;
+
+  constexpr int digits10 = numeric_limits<Float>::max_digits10;
+
+  const size_t exponent =
+      exponent10 > 0 ? static_cast<size_t>(exponent10) : size_t{0};
+
+  const size_t digits =
+      digits10 > 0 ? static_cast<size_t>(digits10) : size_t{0};
+
+  constexpr size_t overhead = 256;
+
+  if (precision >
+      numeric_limits<size_t>::max() - exponent - digits - overhead) {
+    throw_format_error("floating format precision is too large");
+  }
+
+  return precision + exponent + digits + overhead;
+}
+
+template <class Float, class FormatContext, class charT>
+string format_convert_floating(Float value, FormatContext &context,
+                               const standard_format_spec<charT> &spec,
+                               size_t &conversion_precision) {
+  bool use_precision = false;
+  chars_format conversion_format = chars_format::general;
+
+  conversion_precision = 0;
+
+  switch (spec.presentation) {
+  case 'a':
+  case 'A':
+    conversion_format = chars_format::hex;
+
+    if (spec.has_precision) {
+      use_precision = true;
+
+      conversion_precision = format_resolve_precision(context, spec);
+    }
+
+    break;
+
+  case 'e':
+  case 'E':
+    conversion_format = chars_format::scientific;
+
+    use_precision = true;
+
+    conversion_precision = spec.has_precision
+                               ? format_resolve_precision(context, spec)
+                               : size_t{6};
+
+    break;
+
+  case 'f':
+  case 'F':
+    conversion_format = chars_format::fixed;
+
+    use_precision = true;
+
+    conversion_precision = spec.has_precision
+                               ? format_resolve_precision(context, spec)
+                               : size_t{6};
+
+    break;
+
+  case 'g':
+  case 'G':
+    conversion_format = chars_format::general;
+
+    use_precision = true;
+
+    conversion_precision = spec.has_precision
+                               ? format_resolve_precision(context, spec)
+                               : size_t{6};
+
+    break;
+
+  case '\0':
+    if (spec.has_precision) {
+      conversion_format = chars_format::general;
+
+      use_precision = true;
+
+      conversion_precision = format_resolve_precision(context, spec);
+    }
+
+    break;
+
+  default:
+    throw_format_error("invalid floating format presentation type");
+  }
+
+  if (use_precision &&
+      conversion_precision > static_cast<size_t>(numeric_limits<int>::max())) {
+    throw_format_error("floating format precision is too large");
+  }
+
+  const size_t capacity = format_floating_buffer_capacity<Float>(
+      use_precision ? conversion_precision : size_t{0});
+
+  string buffer(capacity, '\0');
+
+  to_chars_result converted{};
+
+  if (spec.presentation == '\0' && !use_precision) {
+    converted = to_chars(buffer.data(), buffer.data() + buffer.size(), value);
+  } else if (!use_precision) {
+    converted = to_chars(buffer.data(), buffer.data() + buffer.size(), value,
+                         conversion_format);
+  } else {
+    converted =
+        to_chars(buffer.data(), buffer.data() + buffer.size(), value,
+                 conversion_format, static_cast<int>(conversion_precision));
+  }
+
+  if (converted.ec != errc{}) {
+    throw_format_error("floating formatting conversion failed");
+  }
+
+  buffer.resize(static_cast<size_t>(converted.ptr - buffer.data()));
+
+  return buffer;
+}
+
+template <class charT, class FormatContext>
+basic_string<charT>
+format_localized_floating_text(FormatContext &context,
+                               basic_string_view<char> text) {
+  basic_string<charT> result;
+
+  if (format_floating_is_special(text)) {
+    result.reserve(text.size());
+
+    for (char character : text) {
+      result.push_back(format_widen<charT>(character));
+    }
+
+    return result;
+  }
+
+  auto current_locale = context.locale();
+
+  const auto &punctuation = use_facet<numpunct<charT>>(current_locale);
+
+  size_t first_digit = 0;
+
+  if (first_digit < text.size() &&
+      (text[first_digit] == '-' || text[first_digit] == '+' ||
+       text[first_digit] == ' ')) {
+    result.push_back(format_widen<charT>(text[first_digit]));
+
+    ++first_digit;
+  }
+
+  const size_t exponent = format_floating_exponent_position(text);
+
+  const size_t point = format_floating_point_position(text, exponent);
+
+  const size_t integer_end = point < exponent ? point : exponent;
+
+  if (integer_end > first_digit) {
+    const auto grouped = format_localized_integer_digits<charT>(
+        context, text.data() + first_digit, integer_end - first_digit);
+
+    for (charT character : grouped) {
+      result.push_back(character);
+    }
+  }
+
+  if (point < exponent) {
+    result.push_back(punctuation.decimal_point());
+
+    for (size_t index = point + 1; index < exponent; ++index) {
+      result.push_back(format_widen<charT>(text[index]));
+    }
+  }
+
+  for (size_t index = exponent; index < text.size(); ++index) {
+    result.push_back(format_widen<charT>(text[index]));
+  }
+
+  return result;
+}
+
+template <class charT, class FormatContext>
+typename FormatContext::iterator
+format_floating_text(basic_string_view<charT> text, bool special,
+                     FormatContext &context,
+                     const standard_format_spec<charT> &spec) {
+  const size_t width = format_resolve_width(context, spec);
+
+  const size_t padding = width > text.size() ? width - text.size() : size_t{0};
+
+  if (spec.zero_padding && spec.alignment == format_alignment::none &&
+      !special && padding != 0) {
+    auto output = context.out();
+
+    size_t first = 0;
+
+    if (!text.empty() && (text[0] == format_widen<charT>('-') ||
+                          text[0] == format_widen<charT>('+') ||
+                          text[0] == format_widen<charT>(' '))) {
+      format_put(output, text[0]);
+
+      first = 1;
+    }
+
+    format_fill(output, format_widen<charT>('0'), padding);
+
+    for (size_t index = first; index < text.size(); ++index) {
+      format_put(output, text[index]);
+    }
+
+    return output;
+  }
+
+  return format_padded_text(text, context, spec, format_alignment::right);
+}
+
+template <class Float, class charT> class floating_formatter {
+public:
+  constexpr floating_formatter() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    const auto result = parse_standard_format_spec(context, spec_);
+
+    switch (spec_.presentation) {
+    case '\0':
+    case 'a':
+    case 'A':
+    case 'e':
+    case 'E':
+    case 'f':
+    case 'F':
+    case 'g':
+    case 'G':
+      break;
+
+    default:
+      throw_format_error("invalid floating format presentation type");
+    }
+
+    return result;
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator format(Float value,
+                                          FormatContext &context) const {
+    size_t conversion_precision = 0;
+
+    string converted = format_convert_floating<Float>(value, context, spec_,
+                                                      conversion_precision);
+
+    const bool special = format_floating_is_special(
+        basic_string_view<char>(converted.data(), converted.size()));
+
+    if (spec_.alternate) {
+      size_t alternate_precision = conversion_precision;
+
+      if ((spec_.presentation == 'g' || spec_.presentation == 'G') &&
+          !spec_.has_precision) {
+        alternate_precision = 6;
+      }
+
+      format_apply_floating_alternate(converted, spec_.presentation,
+                                      alternate_precision);
+    }
+
+    switch (spec_.presentation) {
+    case 'A':
+    case 'E':
+    case 'F':
+    case 'G':
+      format_uppercase_floating(converted);
+      break;
+
+    default:
+      break;
+    }
+
+    format_apply_positive_sign(converted, spec_.sign);
+
+    basic_string<charT> rendered;
+
+    if (spec_.localized) {
+      rendered = format_localized_floating_text<charT>(
+          context, basic_string_view<char>(converted.data(), converted.size()));
+    } else {
+      rendered.reserve(converted.size());
+
+      for (char character : converted) {
+        rendered.push_back(format_widen<charT>(character));
+      }
+    }
+
+    return format_floating_text(
+        basic_string_view<charT>(rendered.data(), rendered.size()), special,
+        context, spec_);
+  }
+
+private:
+  standard_format_spec<charT> spec_{};
+};
+
 template <class T, class charT> class numeric_integer_formatter {
 public:
   constexpr numeric_integer_formatter() noexcept = default;
 
   constexpr typename basic_format_parse_context<charT>::iterator
   parse(basic_format_parse_context<charT> &context) {
-    auto current = context.begin();
-    const auto end = context.end();
+    const auto result = parse_standard_format_spec(context, spec_);
 
-    /*
-     * fill-and-align
-     */
-    if (current != end) {
-      auto next = current;
-      ++next;
-
-      if (next != end && format_is_align(*next)) {
-        if (*current == format_widen<charT>('{') ||
-            *current == format_widen<charT>('}')) {
-          detail::throw_format_error("invalid format fill character");
-        }
-
-        fill_ = *current;
-        alignment_ = format_alignment_from_character(*next);
-
-        current = next;
-        ++current;
-      } else if (format_is_align(*current)) {
-        alignment_ = format_alignment_from_character(*current);
-        ++current;
-      }
+    if (spec_.has_precision) {
+      throw_format_error("precision is not valid for integer formatting");
     }
 
-    /*
-     * sign
-     */
-    if (current != end) {
-      if (*current == format_widen<charT>('+')) {
-        sign_ = format_sign::plus;
-        ++current;
-      } else if (*current == format_widen<charT>('-')) {
-        sign_ = format_sign::minus;
-        ++current;
-      } else if (*current == format_widen<charT>(' ')) {
-        sign_ = format_sign::space;
-        ++current;
-      }
+    switch (spec_.presentation) {
+    case '\0':
+    case 'b':
+    case 'B':
+    case 'c':
+    case 'd':
+    case 'o':
+    case 'x':
+    case 'X':
+      break;
+
+    default:
+      throw_format_error("invalid integer format presentation type");
     }
 
-    /*
-     * alternate form
-     */
-    if (current != end && *current == format_widen<charT>('#')) {
-      alternate_ = true;
-      ++current;
+    if (spec_.presentation == 'c' && (spec_.sign_specified || spec_.alternate ||
+                                      spec_.zero_padding || spec_.localized)) {
+      throw_format_error("invalid option for character integer presentation");
     }
 
-    /*
-     * zero padding
-     */
-    if (current != end && *current == format_widen<charT>('0')) {
-      zero_padding_ = true;
-      ++current;
-    }
-
-    /*
-     * width
-     */
-    if (current != end && format_is_digit(*current)) {
-      if (*current == format_widen<charT>('0'))
-        detail::throw_format_error("format width must be positive");
-
-      size_t width = 0;
-
-      while (current != end && format_is_digit(*current)) {
-        const size_t digit =
-            static_cast<size_t>(*current - format_widen<charT>('0'));
-
-        if (width > (numeric_limits<size_t>::max() - digit) / size_t{10}) {
-          detail::throw_format_error("format width is too large");
-        }
-
-        width = width * size_t{10} + digit;
-        ++current;
-      }
-
-      width_ = width;
-    } else if (current != end && *current == format_widen<charT>('{')) {
-      ++current;
-
-      dynamic_width_ = true;
-
-      if (current == end)
-        detail::throw_format_error("unterminated dynamic format width");
-
-      if (*current == format_widen<charT>('}')) {
-        width_arg_id_ = context.next_arg_id();
-        ++current;
-      } else {
-        if (!format_is_digit(*current))
-          detail::throw_format_error("invalid dynamic format width");
-
-        size_t id = 0;
-
-        while (current != end && format_is_digit(*current)) {
-          const size_t digit =
-              static_cast<size_t>(*current - format_widen<charT>('0'));
-
-          if (id > (numeric_limits<size_t>::max() - digit) / size_t{10}) {
-            detail::throw_format_error("format argument index is too large");
-          }
-
-          id = id * size_t{10} + digit;
-          ++current;
-        }
-
-        if (current == end || *current != format_widen<charT>('}')) {
-          detail::throw_format_error("unterminated dynamic format width");
-        }
-
-        context.check_arg_id(id);
-        width_arg_id_ = id;
-
-        ++current;
-      }
-    }
-
-    /*
-     * Precision is never valid for an integral presentation.
-     */
-    if (current != end && *current == format_widen<charT>('.'))
-      detail::throw_format_error(
-          "precision is not valid for integer formatting");
-
-    /*
-     * Locale-specific form is syntactically valid here. Its actual
-     * grouping behavior lands with the locale/dynamic-width integration
-     * slice.
-     */
-    if (current != end && *current == format_widen<charT>('L')) {
-      localized_ = true;
-      ++current;
-    }
-
-    /*
-     * Numeric integer presentation type.
-     *
-     * The character presentation 'c' deliberately lands with the
-     * char/bool formatter slice so its cross-character and range
-     * semantics are implemented once rather than bolted on here.
-     */
-    if (current != end && *current != format_widen<charT>('}')) {
-      const char type = static_cast<char>(*current);
-
-      switch (type) {
-      case 'b':
-      case 'B':
-      case 'd':
-      case 'o':
-      case 'x':
-      case 'X':
-        presentation_ = type;
-        ++current;
-        break;
-
-      case 'c':
-        detail::throw_format_error(
-            "character integer presentation is not available yet");
-
-      default:
-        detail::throw_format_error("invalid integer format presentation type");
-      }
-    }
-
-    if (current != end && *current != format_widen<charT>('}')) {
-      detail::throw_format_error("invalid integer format specification");
-    }
-
-    return current;
+    return result;
   }
 
   template <class FormatContext>
   typename FormatContext::iterator format(T value,
                                           FormatContext &context) const {
-    if (dynamic_width_)
-      detail::throw_format_error("dynamic format width is not available yet");
-
-    if (localized_)
-      detail::throw_format_error(
-          "localized integer formatting is not available yet");
-
-    int base = 10;
-
-    switch (presentation_) {
-    case 'b':
-    case 'B':
-      base = 2;
-      break;
-
-    case 'o':
-      base = 8;
-      break;
-
-    case 'x':
-    case 'X':
-      base = 16;
-      break;
-
-    default:
-      base = 10;
-      break;
-    }
-
-    using unsigned_type = make_unsigned_t<T>;
-
-    /*
-     * Full binary representation plus a possible sign.
-     */
-    char buffer[numeric_limits<unsigned_type>::digits + 2];
-
-    const to_chars_result converted =
-        to_chars(buffer, buffer + sizeof(buffer), value, base);
-
-    if (converted.ec != errc{})
-      detail::throw_format_error("integer formatting conversion failed");
-
-    char *digits = buffer;
-    size_t digits_size = static_cast<size_t>(converted.ptr - buffer);
-
-    char sign_character = '\0';
-
-    if (digits_size != 0 && *digits == '-') {
-      sign_character = '-';
-      ++digits;
-      --digits_size;
-    } else if (sign_ == format_sign::plus) {
-      sign_character = '+';
-    } else if (sign_ == format_sign::space) {
-      sign_character = ' ';
-    }
-
-    if (presentation_ == 'X') {
-      for (size_t index = 0; index < digits_size; ++index) {
-        if (digits[index] >= 'a' && digits[index] <= 'f')
-          digits[index] = static_cast<char>('A' + (digits[index] - 'a'));
-      }
-    }
-
-    char prefix[2]{};
-    size_t prefix_size = 0;
-
-    if (alternate_) {
-      switch (presentation_) {
-      case 'b':
-        prefix[0] = '0';
-        prefix[1] = 'b';
-        prefix_size = 2;
-        break;
-
-      case 'B':
-        prefix[0] = '0';
-        prefix[1] = 'B';
-        prefix_size = 2;
-        break;
-
-      case 'o':
-        if (value != T{}) {
-          prefix[0] = '0';
-          prefix_size = 1;
-        }
-        break;
-
-      case 'x':
-        prefix[0] = '0';
-        prefix[1] = 'x';
-        prefix_size = 2;
-        break;
-
-      case 'X':
-        prefix[0] = '0';
-        prefix[1] = 'X';
-        prefix_size = 2;
-        break;
-
-      default:
-        break;
-      }
-    }
-
-    const size_t sign_size = sign_character == '\0' ? size_t{0} : size_t{1};
-
-    const size_t content_size = sign_size + prefix_size + digits_size;
-
-    const size_t padding =
-        width_ > content_size ? width_ - content_size : size_t{0};
-
-    auto output = context.out();
-
-    /*
-     * N4950: explicit alignment disables the special meaning of 0.
-     */
-    if (zero_padding_ && alignment_ == format_alignment::none && padding != 0) {
-      if (sign_character != '\0')
-        format_put(output, format_widen<charT>(sign_character));
-
-      for (size_t index = 0; index < prefix_size; ++index)
-        format_put(output, format_widen<charT>(prefix[index]));
-
-      format_fill(output, format_widen<charT>('0'), padding);
-
-      for (size_t index = 0; index < digits_size; ++index)
-        format_put(output, format_widen<charT>(digits[index]));
-
-      return output;
-    }
-
-    const format_alignment effective_alignment =
-        alignment_ == format_alignment::none ? format_alignment::right
-                                             : alignment_;
-
-    size_t leading_padding = 0;
-    size_t trailing_padding = 0;
-
-    switch (effective_alignment) {
-    case format_alignment::left:
-      trailing_padding = padding;
-      break;
-
-    case format_alignment::right:
-      leading_padding = padding;
-      break;
-
-    case format_alignment::center:
-      leading_padding = padding / 2;
-      trailing_padding = padding - leading_padding;
-      break;
-
-    case format_alignment::none:
-      break;
-    }
-
-    format_fill(output, fill_, leading_padding);
-
-    if (sign_character != '\0')
-      format_put(output, format_widen<charT>(sign_character));
-
-    for (size_t index = 0; index < prefix_size; ++index)
-      format_put(output, format_widen<charT>(prefix[index]));
-
-    for (size_t index = 0; index < digits_size; ++index)
-      format_put(output, format_widen<charT>(digits[index]));
-
-    format_fill(output, fill_, trailing_padding);
-
-    return output;
+    return format_integer_value<T, charT>(value, context, spec_);
   }
 
 private:
-  charT fill_ = format_widen<charT>(' ');
-
-  format_alignment alignment_ = format_alignment::none;
-  format_sign sign_ = format_sign::minus;
-
-  bool alternate_ = false;
-  bool zero_padding_ = false;
-  bool localized_ = false;
-  bool dynamic_width_ = false;
-
-  size_t width_ = 0;
-  size_t width_arg_id_ = 0;
-
-  char presentation_ = '\0';
+  standard_format_spec<charT> spec_{};
 };
+
+template <class Character, class charT> class character_formatter {
+public:
+  constexpr character_formatter() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    const auto result = parse_standard_format_spec(context, spec_);
+
+    if (spec_.has_precision) {
+      throw_format_error("precision is not valid for character formatting");
+    }
+
+    switch (spec_.presentation) {
+    case '\0':
+    case 'c':
+    case '?':
+    case 'b':
+    case 'B':
+    case 'd':
+    case 'o':
+    case 'x':
+    case 'X':
+      break;
+
+    default:
+      throw_format_error("invalid character format presentation type");
+    }
+
+    if (!numeric_presentation() && (spec_.sign_specified || spec_.alternate ||
+                                    spec_.zero_padding || spec_.localized)) {
+      throw_format_error("invalid option for textual character presentation");
+    }
+
+    return result;
+  }
+
+  constexpr void set_debug_format() { spec_.presentation = '?'; }
+
+  template <class FormatContext>
+  typename FormatContext::iterator format(Character value,
+                                          FormatContext &context) const {
+    if (numeric_presentation()) {
+      using unsigned_character = make_unsigned_t<Character>;
+
+      return format_integer_value<unsigned_character, charT>(
+          static_cast<unsigned_character>(value), context, spec_);
+    }
+
+    const charT widened = static_cast<charT>(value);
+
+    if (spec_.presentation == '?') {
+      const auto escaped = format_escape_character(widened);
+
+      return format_padded_text(
+          basic_string_view<charT>(escaped.data(), escaped.size()), context,
+          spec_, format_alignment::left);
+    }
+
+    return format_padded_text(basic_string_view<charT>(&widened, 1), context,
+                              spec_, format_alignment::left);
+  }
+
+private:
+  [[nodiscard]]
+  constexpr bool numeric_presentation() const noexcept {
+    switch (spec_.presentation) {
+    case 'b':
+    case 'B':
+    case 'd':
+    case 'o':
+    case 'x':
+    case 'X':
+      return true;
+
+    default:
+      return false;
+    }
+  }
+
+  standard_format_spec<charT> spec_{};
+};
+
+template <class charT> class boolean_formatter {
+public:
+  constexpr boolean_formatter() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    const auto result = parse_standard_format_spec(context, spec_);
+
+    if (spec_.has_precision) {
+      throw_format_error("precision is not valid for bool formatting");
+    }
+
+    switch (spec_.presentation) {
+    case '\0':
+    case 's':
+    case 'b':
+    case 'B':
+    case 'd':
+    case 'o':
+    case 'x':
+    case 'X':
+      break;
+
+    default:
+      throw_format_error("invalid bool format presentation type");
+    }
+
+    if (!numeric_presentation() &&
+        (spec_.sign_specified || spec_.alternate || spec_.zero_padding)) {
+      throw_format_error("invalid option for textual bool presentation");
+    }
+
+    return result;
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator format(bool value,
+                                          FormatContext &context) const {
+    if (numeric_presentation()) {
+      return format_integer_value<unsigned char, charT>(
+          static_cast<unsigned char>(value), context, spec_);
+    }
+
+    basic_string<charT> text;
+
+    if (spec_.localized) {
+      auto current_locale = context.locale();
+
+      const auto &punctuation = use_facet<numpunct<charT>>(current_locale);
+
+      text = value ? punctuation.truename() : punctuation.falsename();
+    } else {
+      text = value ? format_ascii_string<charT>("true")
+                   : format_ascii_string<charT>("false");
+    }
+
+    return format_padded_text(
+        basic_string_view<charT>(text.data(), text.size()), context, spec_,
+        format_alignment::left);
+  }
+
+private:
+  [[nodiscard]]
+  constexpr bool numeric_presentation() const noexcept {
+    switch (spec_.presentation) {
+    case 'b':
+    case 'B':
+    case 'd':
+    case 'o':
+    case 'x':
+    case 'X':
+      return true;
+
+    default:
+      return false;
+    }
+  }
+
+  standard_format_spec<charT> spec_{};
+};
+
+template <class charT> class string_formatter_base {
+public:
+  constexpr string_formatter_base() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    const auto result = parse_standard_format_spec(context, spec_);
+
+    switch (spec_.presentation) {
+    case '\0':
+    case 's':
+    case '?':
+      break;
+
+    default:
+      throw_format_error("invalid string format presentation type");
+    }
+
+    if (spec_.sign_specified || spec_.alternate || spec_.zero_padding ||
+        spec_.localized) {
+      throw_format_error("invalid option for string formatting");
+    }
+
+    return result;
+  }
+
+  constexpr void set_debug_format() { spec_.presentation = '?'; }
+
+protected:
+  template <class FormatContext>
+  typename FormatContext::iterator format_view(basic_string_view<charT> value,
+                                               FormatContext &context) const {
+    size_t count = value.size();
+
+    if (spec_.has_precision) {
+      const size_t precision = format_resolve_precision(context, spec_);
+
+      if (precision < count)
+        count = precision;
+    }
+
+    const basic_string_view<charT> selected(value.data(), count);
+
+    if (spec_.presentation == '?') {
+      const auto escaped = format_escape_string(selected);
+
+      return format_padded_text(
+          basic_string_view<charT>(escaped.data(), escaped.size()), context,
+          spec_, format_alignment::left);
+    }
+
+    return format_padded_text(selected, context, spec_, format_alignment::left);
+  }
+
+private:
+  standard_format_spec<charT> spec_{};
+};
+
+template <class charT> class pointer_formatter_base {
+public:
+  constexpr pointer_formatter_base() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    const auto result = parse_standard_format_spec(context, spec_);
+
+    if (spec_.presentation != '\0' && spec_.presentation != 'p') {
+      throw_format_error("invalid pointer format presentation type");
+    }
+
+    if (spec_.sign_specified || spec_.alternate || spec_.zero_padding ||
+        spec_.has_precision || spec_.localized) {
+      throw_format_error("invalid option for pointer formatting");
+    }
+
+    return result;
+  }
+
+protected:
+  template <class FormatContext>
+  typename FormatContext::iterator
+  format_pointer(const void *value, FormatContext &context) const {
+    const uintptr_t address = reinterpret_cast<uintptr_t>(value);
+
+    char digits[numeric_limits<uintptr_t>::digits / 4 + 1];
+
+    const to_chars_result converted =
+        to_chars(digits, digits + sizeof(digits), address, 16);
+
+    if (converted.ec != errc{}) {
+      throw_format_error("pointer formatting conversion failed");
+    }
+
+    basic_string<charT> text;
+
+    text.reserve(static_cast<size_t>(converted.ptr - digits) + 2);
+
+    text.push_back(format_widen<charT>('0'));
+
+    text.push_back(format_widen<charT>('x'));
+
+    for (char *current = digits; current != converted.ptr; ++current) {
+      text.push_back(format_widen<charT>(*current));
+    }
+
+    return format_padded_text(
+        basic_string_view<charT>(text.data(), text.size()), context, spec_,
+        format_alignment::right);
+  }
+
+private:
+  standard_format_spec<charT> spec_{};
+};
+
+template <class T, class Context,
+          class Formatter =
+              typename Context::template formatter_type<remove_const_t<T>>>
+concept formattable_with =
+    semiregular<Formatter> &&
+    requires(
+        Formatter &formatter_value, const Formatter &const_formatter, T &&value,
+        Context format_context,
+        basic_format_parse_context<typename Context::char_type> parse_context) {
+      {
+        formatter_value.parse(parse_context)
+      } -> same_as<typename decltype(parse_context)::iterator>;
+
+      {
+        const_formatter.format(static_cast<T &&>(value), format_context)
+      } -> same_as<typename Context::iterator>;
+    };
+
+template <class T> struct format_string_like {
+  static constexpr bool value = false;
+
+  using char_type = void;
+};
+
+template <class Character, class Traits>
+struct format_string_like<basic_string_view<Character, Traits>> {
+  static constexpr bool value = true;
+
+  using char_type = Character;
+};
+
+template <class Character, class Traits, class Allocator>
+struct format_string_like<basic_string<Character, Traits, Allocator>> {
+  static constexpr bool value = true;
+
+  using char_type = Character;
+};
+
+template <class Context, class... Args> class format_arg_store;
 
 } // namespace detail
 
 template <class T, class charT>
-  requires detail::is_numeric_format_integer_v<T>
+  requires detail::is_numeric_format_integer_v<T> &&
+           detail::format_character_type_v<charT>
 struct formatter<T, charT> : detail::numeric_integer_formatter<T, charT> {};
 
+template <class T, class charT>
+  requires is_floating_point_v<T> && is_same_v<T, remove_cv_t<T>> &&
+           detail::format_character_type_v<charT>
+struct formatter<T, charT> : detail::floating_formatter<T, charT> {};
+
+template <class Character, class charT>
+  requires(detail::format_character_type_v<charT> &&
+           ((is_same_v<Character, charT>) ||
+            (is_same_v<Character, char> && is_same_v<charT, wchar_t>)))
+struct formatter<Character, charT>
+    : detail::character_formatter<Character, charT> {};
+
+template <class charT>
+  requires detail::format_character_type_v<charT>
+struct formatter<bool, charT> : detail::boolean_formatter<charT> {};
+
+template <class charT>
+  requires detail::format_character_type_v<charT>
+struct formatter<charT *, charT> : detail::string_formatter_base<charT> {
+  template <class FormatContext>
+  typename FormatContext::iterator format(charT *value,
+                                          FormatContext &context) const {
+    return this->format_view(
+        basic_string_view<charT>(value, char_traits<charT>::length(value)),
+        context);
+  }
+};
+
+template <class charT>
+  requires detail::format_character_type_v<charT>
+struct formatter<const charT *, charT> : detail::string_formatter_base<charT> {
+  template <class FormatContext>
+  typename FormatContext::iterator format(const charT *value,
+                                          FormatContext &context) const {
+    return this->format_view(
+        basic_string_view<charT>(value, char_traits<charT>::length(value)),
+        context);
+  }
+};
+
+template <size_t N, class charT>
+  requires detail::format_character_type_v<charT>
+struct formatter<charT[N], charT> : detail::string_formatter_base<charT> {
+  template <class FormatContext>
+  typename FormatContext::iterator format(const charT (&value)[N],
+                                          FormatContext &context) const {
+    return this->format_view(
+        basic_string_view<charT>(value, char_traits<charT>::length(value)),
+        context);
+  }
+};
+
+template <class charT, class Traits, class Allocator>
+  requires detail::format_character_type_v<charT>
+struct formatter<basic_string<charT, Traits, Allocator>, charT>
+    : detail::string_formatter_base<charT> {
+  template <class FormatContext>
+  typename FormatContext::iterator
+  format(const basic_string<charT, Traits, Allocator> &value,
+         FormatContext &context) const {
+    return this->format_view(
+        basic_string_view<charT>(value.data(), value.size()), context);
+  }
+};
+
+template <class charT, class Traits>
+  requires detail::format_character_type_v<charT>
+struct formatter<basic_string_view<charT, Traits>, charT>
+    : detail::string_formatter_base<charT> {
+  template <class FormatContext>
+  typename FormatContext::iterator
+  format(basic_string_view<charT, Traits> value, FormatContext &context) const {
+    return this->format_view(
+        basic_string_view<charT>(value.data(), value.size()), context);
+  }
+};
+
+template <class charT>
+  requires detail::format_character_type_v<charT>
+struct formatter<void *, charT> : detail::pointer_formatter_base<charT> {
+  template <class FormatContext>
+  typename FormatContext::iterator format(void *value,
+                                          FormatContext &context) const {
+    return this->format_pointer(value, context);
+  }
+};
+
+template <class charT>
+  requires detail::format_character_type_v<charT>
+struct formatter<const void *, charT> : detail::pointer_formatter_base<charT> {
+  template <class FormatContext>
+  typename FormatContext::iterator format(const void *value,
+                                          FormatContext &context) const {
+    return this->format_pointer(value, context);
+  }
+};
+
+template <class charT>
+  requires detail::format_character_type_v<charT>
+struct formatter<nullptr_t, charT> : detail::pointer_formatter_base<charT> {
+  template <class FormatContext>
+  typename FormatContext::iterator format(nullptr_t,
+                                          FormatContext &context) const {
+    return this->format_pointer(nullptr, context);
+  }
+};
+
+template <class Context> class basic_format_arg {
+private:
+  using char_type = typename Context::char_type;
+
+public:
+  class handle {
+  private:
+    const void *ptr_ = nullptr;
+
+    void (*format_)(basic_format_parse_context<char_type> &, Context &,
+                    const void *) = nullptr;
+
+    template <class T>
+    static void
+    format_value(basic_format_parse_context<char_type> &parse_context,
+                 Context &format_context, const void *pointer) {
+      using unqualified_type = remove_const_t<T>;
+
+      typename Context::template formatter_type<unqualified_type>
+          formatter_value;
+
+      parse_context.advance_to(formatter_value.parse(parse_context));
+
+      if constexpr (detail::formattable_with<const unqualified_type, Context>) {
+        const auto *typed = static_cast<const unqualified_type *>(pointer);
+
+        format_context.advance_to(
+            formatter_value.format(*typed, format_context));
+      } else {
+        auto *typed = const_cast<unqualified_type *>(
+            static_cast<const unqualified_type *>(pointer));
+
+        format_context.advance_to(
+            formatter_value.format(*typed, format_context));
+      }
+    }
+
+    template <class T>
+    explicit handle(T &value) noexcept
+        : ptr_(addressof(value)), format_(&format_value<T>) {}
+
+    friend class basic_format_arg;
+
+  public:
+    void format(basic_format_parse_context<char_type> &parse_context,
+                Context &format_context) const {
+      format_(parse_context, format_context, ptr_);
+    }
+  };
+
+private:
+  using value_type =
+      variant<monostate, bool, char_type, int, unsigned int, long long int,
+              unsigned long long int, float, double, long double,
+              const char_type *, basic_string_view<char_type>, const void *,
+              handle>;
+
+  value_type value_{};
+
+  template <class T>
+  [[nodiscard]]
+  static value_type make_value(T &value) noexcept {
+    using argument_type = remove_const_t<T>;
+
+    if constexpr (is_same_v<argument_type, bool> ||
+                  is_same_v<argument_type, char_type>) {
+      return value_type(value);
+    } else if constexpr (is_same_v<argument_type, char> &&
+                         is_same_v<char_type, wchar_t>) {
+      return value_type(static_cast<wchar_t>(value));
+    } else if constexpr (is_integral_v<argument_type> &&
+                         is_signed_v<argument_type> &&
+                         sizeof(argument_type) <= sizeof(int)) {
+      return value_type(static_cast<int>(value));
+    } else if constexpr (is_integral_v<argument_type> &&
+                         is_unsigned_v<argument_type> &&
+                         sizeof(argument_type) <= sizeof(unsigned int)) {
+      return value_type(static_cast<unsigned int>(value));
+    } else if constexpr (is_integral_v<argument_type> &&
+                         is_signed_v<argument_type> &&
+                         sizeof(argument_type) <= sizeof(long long int)) {
+      return value_type(static_cast<long long int>(value));
+    } else if constexpr (is_integral_v<argument_type> &&
+                         is_unsigned_v<argument_type> &&
+                         sizeof(argument_type) <=
+                             sizeof(unsigned long long int)) {
+      return value_type(static_cast<unsigned long long int>(value));
+    } else if constexpr (is_same_v<argument_type, float> ||
+                         is_same_v<argument_type, double> ||
+                         is_same_v<argument_type, long double>) {
+      return value_type(value);
+    } else if constexpr (detail::format_string_like<argument_type>::value &&
+                         is_same_v<typename detail::format_string_like<
+                                       argument_type>::char_type,
+                                   char_type>) {
+      return value_type(
+          basic_string_view<char_type>(value.data(), value.size()));
+    } else if constexpr (is_same_v<decay_t<argument_type>, char_type *> ||
+                         is_same_v<decay_t<argument_type>, const char_type *>) {
+      return value_type(static_cast<const char_type *>(value));
+    } else if constexpr (is_null_pointer_v<argument_type>) {
+      return value_type(static_cast<const void *>(nullptr));
+    } else if constexpr (is_pointer_v<argument_type> &&
+                         is_void_v<remove_pointer_t<argument_type>>) {
+      return value_type(static_cast<const void *>(value));
+    } else {
+      return value_type(handle(value));
+    }
+  }
+
+  template <class T>
+    requires detail::formattable_with<T, Context>
+  explicit basic_format_arg(T &value) noexcept : value_(make_value(value)) {}
+
+  template <class, class...> friend class detail::format_arg_store;
+
+  template <class Visitor, class OtherContext>
+  friend decltype(auto) visit_format_arg(Visitor &&,
+                                         basic_format_arg<OtherContext>);
+
+public:
+  basic_format_arg() noexcept = default;
+
+  explicit operator bool() const noexcept {
+    return !holds_alternative<monostate>(value_);
+  }
+};
+
+template <class Visitor, class Context>
+decltype(auto) visit_format_arg(Visitor &&visitor,
+                                basic_format_arg<Context> argument) {
+  return visit(forward<Visitor>(visitor), argument.value_);
+}
+
+namespace detail {
+
+template <class Context, class... Args> class format_arg_store {
+public:
+  explicit format_arg_store(Args &&...arguments) noexcept
+      : arguments_{basic_format_arg<Context>(arguments)...} {}
+
+  [[nodiscard]]
+  const basic_format_arg<Context> *data() const noexcept {
+    return arguments_.data();
+  }
+
+private:
+  array<basic_format_arg<Context>, sizeof...(Args)> arguments_;
+};
+
+} // namespace detail
+
+template <class Context> class basic_format_args {
+public:
+  basic_format_args() noexcept = default;
+
+  template <class... Args>
+  basic_format_args(
+      const detail::format_arg_store<Context, Args...> &store) noexcept
+      : size_(sizeof...(Args)), data_(store.data()) {}
+
+  [[nodiscard]]
+  basic_format_arg<Context> get(size_t index) const noexcept {
+    return index < size_ ? data_[index] : basic_format_arg<Context>();
+  }
+
+private:
+  size_t size_ = 0;
+
+  const basic_format_arg<Context> *data_ = nullptr;
+};
+
+template <class Context, class... Args>
+basic_format_args(detail::format_arg_store<Context, Args...>)
+    -> basic_format_args<Context>;
+
+template <class Out, class charT> class basic_format_context {
+public:
+  using iterator = Out;
+  using char_type = charT;
+
+  template <class T> using formatter_type = formatter<T, charT>;
+
+  basic_format_context(Out output,
+                       basic_format_args<basic_format_context> arguments,
+                       const FTL_FORMAT_NS::locale *loc = nullptr)
+      : arguments_(arguments), output_(move(output)), locale_(loc) {}
+
+  [[nodiscard]]
+  basic_format_arg<basic_format_context> arg(size_t id) const noexcept {
+    return arguments_.get(id);
+  }
+
+  FTL_FORMAT_NS::locale locale() {
+    return locale_ != nullptr ? *locale_ : FTL_FORMAT_NS::locale();
+  }
+
+  iterator out() { return move(output_); }
+
+  void advance_to(iterator iterator_value) { output_ = move(iterator_value); }
+
+private:
+  basic_format_args<basic_format_context> arguments_;
+
+  Out output_;
+
+  const FTL_FORMAT_NS::locale *locale_ = nullptr;
+};
+
+using format_context = basic_format_context<back_insert_iterator<string>, char>;
+
+using wformat_context =
+    basic_format_context<back_insert_iterator<wstring>, wchar_t>;
+
+using format_args = basic_format_args<format_context>;
+
+using wformat_args = basic_format_args<wformat_context>;
+
+template <class T, class charT>
+concept formattable = detail::formattable_with<
+    remove_reference_t<T>,
+    basic_format_context<back_insert_iterator<basic_string<charT>>, charT>>;
+
+template <class Context = format_context, class... Args>
+detail::format_arg_store<Context, Args...>
+make_format_args(Args &&...arguments) {
+  return detail::format_arg_store<Context, Args...>(
+      forward<Args>(arguments)...);
+}
+
+template <class... Args>
+detail::format_arg_store<wformat_context, Args...>
+make_wformat_args(Args &&...arguments) {
+  return detail::format_arg_store<wformat_context, Args...>(
+      forward<Args>(arguments)...);
+}
+
 FTL_END_NAMESPACE
+
+#undef FTL_FORMAT_NS
 
 #endif // FTL_FORMAT_HEADER
