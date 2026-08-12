@@ -870,4 +870,26 @@ FTL_END_NAMESPACE
 #define __cpp_lib_make_from_tuple 201606L
 #endif
 
+#if !defined(__cpp_lib_ranges_zip) || __cpp_lib_ranges_zip < 202110L
+#undef __cpp_lib_ranges_zip
+#define __cpp_lib_ranges_zip 202110L
+#endif
+
+#if !defined(__cpp_lib_tuple_element_t) || \
+    __cpp_lib_tuple_element_t < 201402L
+#undef __cpp_lib_tuple_element_t
+#define __cpp_lib_tuple_element_t 201402L
+#endif
+
+#if !defined(__cpp_lib_tuple_like) || __cpp_lib_tuple_like < 202207L
+#undef __cpp_lib_tuple_like
+#define __cpp_lib_tuple_like 202207L
+#endif
+
+#if !defined(__cpp_lib_tuples_by_type) || \
+    __cpp_lib_tuples_by_type < 201304L
+#undef __cpp_lib_tuples_by_type
+#define __cpp_lib_tuples_by_type 201304L
+#endif
+
 #endif

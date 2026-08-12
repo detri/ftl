@@ -3,17 +3,6 @@
 #ifndef FTL_SHARED_MUTEX_HEADER
 #define FTL_SHARED_MUTEX_HEADER
 
-#if !defined(__cpp_lib_shared_timed_mutex) ||                                  \
-    __cpp_lib_shared_timed_mutex < 201402L
-#undef __cpp_lib_shared_timed_mutex
-#define __cpp_lib_shared_timed_mutex 201402L
-#endif
-
-#if !defined(__cpp_lib_shared_mutex) || __cpp_lib_shared_mutex < 201505L
-#undef __cpp_lib_shared_mutex
-#define __cpp_lib_shared_mutex 201505L
-#endif
-
 #ifdef FTL_REPLACE_STL
 #include <chrono>
 #include <detail/shared_mutex.hpp>
@@ -276,5 +265,16 @@ FTL_SHARED_MUTEX_END_NAMESPACE
 
 #undef FTL_SHARED_MUTEX_BEGIN_NAMESPACE
 #undef FTL_SHARED_MUTEX_END_NAMESPACE
+
+#if !defined(__cpp_lib_shared_timed_mutex) ||                                  \
+    __cpp_lib_shared_timed_mutex < 201402L
+#undef __cpp_lib_shared_timed_mutex
+#define __cpp_lib_shared_timed_mutex 201402L
+#endif
+
+#if !defined(__cpp_lib_shared_mutex) || __cpp_lib_shared_mutex < 201505L
+#undef __cpp_lib_shared_mutex
+#define __cpp_lib_shared_mutex 201505L
+#endif
 
 #endif // FTL_SHARED_MUTEX_HEADER

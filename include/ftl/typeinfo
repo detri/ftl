@@ -38,8 +38,11 @@ public:
     [[nodiscard]] decltype(sizeof(0)) hash_code() const noexcept {
         return __std_type_info_hash(&data_);
     }
-    [[nodiscard]] constexpr bool operator==(const type_info& other) const noexcept {
-        if (__builtin_is_constant_evaluated()) return &data_ == &other.data_;
+    [[nodiscard]] constexpr bool
+    operator==(const type_info& other) const noexcept {
+        if (__builtin_is_constant_evaluated())
+            return this == &other;
+
         return __std_type_info_compare(&data_, &other.data_) == 0;
     }
     [[nodiscard]] bool before(const type_info& other) const noexcept {
@@ -62,8 +65,13 @@ using ::type_info;
 class type_info {
 public:
     virtual ~type_info();
-    [[nodiscard]] bool operator==(const type_info& other) const noexcept {
-        return name_ == other.name_ || __builtin_strcmp(name(), other.name()) == 0;
+    [[nodiscard]] constexpr bool
+    operator==(const type_info& other) const noexcept {
+        if (__builtin_is_constant_evaluated())
+            return this == &other;
+
+        return name_ == other.name_ ||
+               __builtin_strcmp(name(), other.name()) == 0;
     }
     [[nodiscard]] bool before(const type_info& other) const noexcept {
         return __builtin_strcmp(name(), other.name()) < 0;
@@ -121,4 +129,11 @@ using bad_typeid = ::std::bad_typeid;
 #endif
 }
 #endif
+
+#if !defined(__cpp_lib_constexpr_typeinfo) || \
+    __cpp_lib_constexpr_typeinfo < 202106L
+#undef __cpp_lib_constexpr_typeinfo
+#define __cpp_lib_constexpr_typeinfo 202106L
+#endif
+
 #endif

@@ -13,11 +13,6 @@
 #define FTL_SPANSTREAM_NAMESPACE ftl
 #endif
 
-#if !defined(__cpp_lib_spanstream) || __cpp_lib_spanstream < 202106L
-#undef __cpp_lib_spanstream
-#define __cpp_lib_spanstream 202106L
-#endif
-
 FTL_BEGIN_NAMESPACE
 
 template <class Character, class Traits>
@@ -310,4 +305,10 @@ void swap(basic_spanstream<C, T> &l, basic_spanstream<C, T> &r) {
 
 FTL_END_NAMESPACE
 #undef FTL_SPANSTREAM_NAMESPACE
+
+#if !defined(__cpp_lib_spanstream) || __cpp_lib_spanstream < 202106L
+#undef __cpp_lib_spanstream
+#define __cpp_lib_spanstream 202106L
+#endif
+
 #endif

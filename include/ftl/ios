@@ -3,11 +3,6 @@
 #ifndef FTL_IOS_HEADER
 #define FTL_IOS_HEADER
 
-#if !defined(__cpp_lib_ios_noreplace) || __cpp_lib_ios_noreplace < 202207L
-#undef __cpp_lib_ios_noreplace
-#define __cpp_lib_ios_noreplace 202207L
-#endif
-
 #ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <exception>
@@ -610,6 +605,11 @@ FTL_END_NAMESPACE
 #else
 #include <ftl/streambuf>
 #endif
+#endif
+
+#if !defined(__cpp_lib_ios_noreplace) || __cpp_lib_ios_noreplace < 202207L
+#undef __cpp_lib_ios_noreplace
+#define __cpp_lib_ios_noreplace 202207L
 #endif
 
 #endif // FTL_IOS_HEADER

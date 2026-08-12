@@ -537,6 +537,11 @@ void swap(unique_lock<Mutex> &left, unique_lock<Mutex> &right) noexcept {
 
 FTL_MUTEX_END_NAMESPACE
 
+#if !defined(__cpp_lib_scoped_lock) || __cpp_lib_scoped_lock < 201703L
+#undef __cpp_lib_scoped_lock
+#define __cpp_lib_scoped_lock 201703L
+#endif
+
 #undef FTL_MUTEX_BEGIN_NAMESPACE
 #undef FTL_MUTEX_END_NAMESPACE
 

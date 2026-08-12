@@ -28,9 +28,9 @@
 #define __cpp_lib_math_constants 201907L
 #endif
 
-#if !defined(__cpp_lib_chrono) || __cpp_lib_chrono < 201611L
+#if !defined(__cpp_lib_chrono) || __cpp_lib_chrono < 201907L
 #undef __cpp_lib_chrono
-#define __cpp_lib_chrono 201611L
+#define __cpp_lib_chrono 201907L
 #endif
 
 #if !defined(__cpp_lib_chrono_udls) || __cpp_lib_chrono_udls < 201304L
@@ -169,11 +169,6 @@
 #define __cpp_lib_type_identity 201806L
 #endif
 
-#if !defined(__cpp_lib_const_iterator) || __cpp_lib_const_iterator < 202207L
-#undef __cpp_lib_const_iterator
-#define __cpp_lib_const_iterator 202207L
-#endif
-
 #if !defined(__cpp_lib_move_iterator_concept) ||                               \
     __cpp_lib_move_iterator_concept < 202207L
 #undef __cpp_lib_move_iterator_concept
@@ -263,9 +258,9 @@
 #define __cpp_lib_forward_like 202207L
 #endif
 
-#if !defined(__cpp_lib_concepts) || __cpp_lib_concepts < 202002L
+#if !defined(__cpp_lib_concepts) || __cpp_lib_concepts < 202207L
 #undef __cpp_lib_concepts
-#define __cpp_lib_concepts 202002L
+#define __cpp_lib_concepts 202207L
 #endif
 
 #if !defined(__cpp_lib_three_way_comparison) ||                                \
@@ -548,9 +543,9 @@
 #define __cpp_lib_span 202002L
 #endif
 
-#if !defined(__cpp_lib_ranges) || __cpp_lib_ranges < 202110L
+#if !defined(__cpp_lib_ranges) || __cpp_lib_ranges < 202302L
 #undef __cpp_lib_ranges
-#define __cpp_lib_ranges 202110L
+#define __cpp_lib_ranges 202302L
 #endif
 
 #if !defined(__cpp_lib_ranges_zip) || __cpp_lib_ranges_zip < 202110L
@@ -821,6 +816,190 @@
 #if !defined(__cpp_lib_syncbuf) || __cpp_lib_syncbuf < 201803L
 #undef __cpp_lib_syncbuf
 #define __cpp_lib_syncbuf 201803L
+#endif
+
+#if !defined(__cpp_lib_adaptor_iterator_pair_constructor) || \
+    __cpp_lib_adaptor_iterator_pair_constructor < 202106L
+#undef __cpp_lib_adaptor_iterator_pair_constructor
+#define __cpp_lib_adaptor_iterator_pair_constructor 202106L
+#endif
+
+#if !defined(__cpp_lib_addressof_constexpr) || \
+    __cpp_lib_addressof_constexpr < 201603L
+#undef __cpp_lib_addressof_constexpr
+#define __cpp_lib_addressof_constexpr 201603L
+#endif
+
+#if !defined(__cpp_lib_allocator_traits_is_always_equal) || \
+    __cpp_lib_allocator_traits_is_always_equal < 201411L
+#undef __cpp_lib_allocator_traits_is_always_equal
+#define __cpp_lib_allocator_traits_is_always_equal 201411L
+#endif
+
+#if !defined(__cpp_lib_associative_heterogeneous_erasure) || \
+    __cpp_lib_associative_heterogeneous_erasure < 202110L
+#undef __cpp_lib_associative_heterogeneous_erasure
+#define __cpp_lib_associative_heterogeneous_erasure 202110L
+#endif
+
+#if !defined(__cpp_lib_atomic_flag_test) || \
+    __cpp_lib_atomic_flag_test < 201907L
+#undef __cpp_lib_atomic_flag_test
+#define __cpp_lib_atomic_flag_test 201907L
+#endif
+
+#if !defined(__cpp_lib_atomic_ref) || \
+    __cpp_lib_atomic_ref < 201806L
+#undef __cpp_lib_atomic_ref
+#define __cpp_lib_atomic_ref 201806L
+#endif
+
+#if !defined(__cpp_lib_atomic_value_initialization) || \
+    __cpp_lib_atomic_value_initialization < 201911L
+#undef __cpp_lib_atomic_value_initialization
+#define __cpp_lib_atomic_value_initialization 201911L
+#endif
+
+#if !defined(__cpp_lib_atomic_wait) || \
+    __cpp_lib_atomic_wait < 201907L
+#undef __cpp_lib_atomic_wait
+#define __cpp_lib_atomic_wait 201907L
+#endif
+
+#if !defined(__cpp_lib_char8_t) || __cpp_lib_char8_t < 201907L
+#undef __cpp_lib_char8_t
+#define __cpp_lib_char8_t 201907L
+#endif
+
+#if !defined(__cpp_lib_common_reference_wrapper) || \
+    __cpp_lib_common_reference_wrapper < 202302L
+#undef __cpp_lib_common_reference_wrapper
+#define __cpp_lib_common_reference_wrapper 202302L
+#endif
+
+#if !defined(__cpp_lib_constexpr_iterator) || \
+    __cpp_lib_constexpr_iterator < 201811L
+#undef __cpp_lib_constexpr_iterator
+#define __cpp_lib_constexpr_iterator 201811L
+#endif
+
+#if !defined(__cpp_lib_constexpr_typeinfo) || \
+    __cpp_lib_constexpr_typeinfo < 202106L
+#undef __cpp_lib_constexpr_typeinfo
+#define __cpp_lib_constexpr_typeinfo 202106L
+#endif
+
+#if !defined(__cpp_lib_destroying_delete) || \
+    __cpp_lib_destroying_delete < 201806L
+#undef __cpp_lib_destroying_delete
+#define __cpp_lib_destroying_delete 201806L
+#endif
+
+#if !defined(__cpp_lib_erase_if) || __cpp_lib_erase_if < 202002L
+#undef __cpp_lib_erase_if
+#define __cpp_lib_erase_if 202002L
+#endif
+
+#if !defined(__cpp_lib_format) || __cpp_lib_format < 202207L
+#undef __cpp_lib_format
+#define __cpp_lib_format 202207L
+#endif
+
+#if !defined(__cpp_lib_format_ranges) || \
+    __cpp_lib_format_ranges < 202207L
+#undef __cpp_lib_format_ranges
+#define __cpp_lib_format_ranges 202207L
+#endif
+
+#if !defined(__cpp_lib_generic_associative_lookup) || \
+    __cpp_lib_generic_associative_lookup < 201304L
+#undef __cpp_lib_generic_associative_lookup
+#define __cpp_lib_generic_associative_lookup 201304L
+#endif
+
+#if !defined(__cpp_lib_generic_unordered_lookup) || \
+    __cpp_lib_generic_unordered_lookup < 201811L
+#undef __cpp_lib_generic_unordered_lookup
+#define __cpp_lib_generic_unordered_lookup 201811L
+#endif
+
+#if !defined(__cpp_lib_list_remove_return_type) || \
+    __cpp_lib_list_remove_return_type < 201806L
+#undef __cpp_lib_list_remove_return_type
+#define __cpp_lib_list_remove_return_type 201806L
+#endif
+
+#if !defined(__cpp_lib_make_reverse_iterator) || \
+    __cpp_lib_make_reverse_iterator < 201402L
+#undef __cpp_lib_make_reverse_iterator
+#define __cpp_lib_make_reverse_iterator 201402L
+#endif
+
+#if !defined(__cpp_lib_map_try_emplace) || \
+    __cpp_lib_map_try_emplace < 201411L
+#undef __cpp_lib_map_try_emplace
+#define __cpp_lib_map_try_emplace 201411L
+#endif
+
+#if !defined(__cpp_lib_node_extract) || __cpp_lib_node_extract < 201606L
+#undef __cpp_lib_node_extract
+#define __cpp_lib_node_extract 201606L
+#endif
+
+#if !defined(__cpp_lib_nonmember_container_access) || \
+    __cpp_lib_nonmember_container_access < 201411L
+#undef __cpp_lib_nonmember_container_access
+#define __cpp_lib_nonmember_container_access 201411L
+#endif
+
+#if !defined(__cpp_lib_null_iterators) || \
+    __cpp_lib_null_iterators < 201304L
+#undef __cpp_lib_null_iterators
+#define __cpp_lib_null_iterators 201304L
+#endif
+
+#if !defined(__cpp_lib_polymorphic_allocator) || \
+    __cpp_lib_polymorphic_allocator < 201902L
+#undef __cpp_lib_polymorphic_allocator
+#define __cpp_lib_polymorphic_allocator 201902L
+#endif
+
+#if !defined(__cpp_lib_quoted_string_io) || \
+    __cpp_lib_quoted_string_io < 201304L
+#undef __cpp_lib_quoted_string_io
+#define __cpp_lib_quoted_string_io 201304L
+#endif
+
+#if !defined(__cpp_lib_result_of_sfinae) || \
+    __cpp_lib_result_of_sfinae < 201210L
+#undef __cpp_lib_result_of_sfinae
+#define __cpp_lib_result_of_sfinae 201210L
+#endif
+
+#if !defined(__cpp_lib_scoped_lock) || __cpp_lib_scoped_lock < 201703L
+#undef __cpp_lib_scoped_lock
+#define __cpp_lib_scoped_lock 201703L
+#endif
+
+#if !defined(__cpp_lib_ssize) || __cpp_lib_ssize < 201902L
+#undef __cpp_lib_ssize
+#define __cpp_lib_ssize 201902L
+#endif
+
+#if !defined(__cpp_lib_string_udls) || __cpp_lib_string_udls < 201304L
+#undef __cpp_lib_string_udls
+#define __cpp_lib_string_udls 201304L
+#endif
+
+#if !defined(__cpp_lib_tuple_like) || __cpp_lib_tuple_like < 202207L
+#undef __cpp_lib_tuple_like
+#define __cpp_lib_tuple_like 202207L
+#endif
+
+#if !defined(__cpp_lib_unordered_map_try_emplace) || \
+    __cpp_lib_unordered_map_try_emplace < 201411L
+#undef __cpp_lib_unordered_map_try_emplace
+#define __cpp_lib_unordered_map_try_emplace 201411L
 #endif
 
 #endif

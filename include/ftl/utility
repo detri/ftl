@@ -786,6 +786,22 @@ constexpr bool in_range(T value) noexcept {
 #define __cpp_lib_forward_like 202207L
 #endif
 
+#if !defined(__cpp_lib_constexpr_algorithms) || \
+    __cpp_lib_constexpr_algorithms < 201806L
+#undef __cpp_lib_constexpr_algorithms
+#define __cpp_lib_constexpr_algorithms 201806L
+#endif
+
+#if !defined(__cpp_lib_ranges_zip) || __cpp_lib_ranges_zip < 202110L
+#undef __cpp_lib_ranges_zip
+#define __cpp_lib_ranges_zip 202110L
+#endif
+
+#if !defined(__cpp_lib_tuple_like) || __cpp_lib_tuple_like < 202207L
+#undef __cpp_lib_tuple_like
+#define __cpp_lib_tuple_like 202207L
+#endif
+
 FTL_END_NAMESPACE
 
 #endif // FTL_UTILITY_HEADER

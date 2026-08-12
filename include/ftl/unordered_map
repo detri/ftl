@@ -189,6 +189,58 @@ using unordered_multimap = FTL_ASSOCIATIVE_NAMESPACE::unordered_multimap<
     Key, T, Hash, Predicate, polymorphic_allocator<pair<const Key, T>>>;
 } // namespace pmr
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_allocator_traits_is_always_equal) || \
+    __cpp_lib_allocator_traits_is_always_equal < 201411L
+#undef __cpp_lib_allocator_traits_is_always_equal
+#define __cpp_lib_allocator_traits_is_always_equal 201411L
+#endif
+
+#if !defined(__cpp_lib_associative_heterogeneous_erasure) || \
+    __cpp_lib_associative_heterogeneous_erasure < 202110L
+#undef __cpp_lib_associative_heterogeneous_erasure
+#define __cpp_lib_associative_heterogeneous_erasure 202110L
+#endif
+
+#if !defined(__cpp_lib_containers_ranges) || \
+    __cpp_lib_containers_ranges < 202202L
+#undef __cpp_lib_containers_ranges
+#define __cpp_lib_containers_ranges 202202L
+#endif
+
+#if !defined(__cpp_lib_erase_if) || __cpp_lib_erase_if < 202002L
+#undef __cpp_lib_erase_if
+#define __cpp_lib_erase_if 202002L
+#endif
+
+#if !defined(__cpp_lib_generic_unordered_lookup) || \
+    __cpp_lib_generic_unordered_lookup < 201811L
+#undef __cpp_lib_generic_unordered_lookup
+#define __cpp_lib_generic_unordered_lookup 201811L
+#endif
+
+#if !defined(__cpp_lib_node_extract) || __cpp_lib_node_extract < 201606L
+#undef __cpp_lib_node_extract
+#define __cpp_lib_node_extract 201606L
+#endif
+
+#if !defined(__cpp_lib_nonmember_container_access) || \
+    __cpp_lib_nonmember_container_access < 201411L
+#undef __cpp_lib_nonmember_container_access
+#define __cpp_lib_nonmember_container_access 201411L
+#endif
+
+#if !defined(__cpp_lib_tuple_like) || __cpp_lib_tuple_like < 202207L
+#undef __cpp_lib_tuple_like
+#define __cpp_lib_tuple_like 202207L
+#endif
+
+#if !defined(__cpp_lib_unordered_map_try_emplace) || \
+    __cpp_lib_unordered_map_try_emplace < 201411L
+#undef __cpp_lib_unordered_map_try_emplace
+#define __cpp_lib_unordered_map_try_emplace 201411L
+#endif
+
 #undef FTL_ASSOCIATIVE_NAMESPACE
 #undef FTL_UNORDERED_MAP_TRAP
 #endif

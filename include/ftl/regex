@@ -3543,4 +3543,11 @@ basic_string<C> regex_replace(
 }
 
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_nonmember_container_access) || \
+    __cpp_lib_nonmember_container_access < 201411L
+#undef __cpp_lib_nonmember_container_access
+#define __cpp_lib_nonmember_container_access 201411L
+#endif
+
 #endif // FTL_REGEX_HEADER

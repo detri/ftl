@@ -347,6 +347,30 @@ template<class T, class A, class P> typename deque<T, A>::size_type erase_if(deq
 namespace pmr { template<class T> using deque = FTL_DEQUE_NAMESPACE::deque<T, polymorphic_allocator<T>>; }
 
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_allocator_traits_is_always_equal) || \
+    __cpp_lib_allocator_traits_is_always_equal < 201411L
+#undef __cpp_lib_allocator_traits_is_always_equal
+#define __cpp_lib_allocator_traits_is_always_equal 201411L
+#endif
+
+#if !defined(__cpp_lib_containers_ranges) || \
+    __cpp_lib_containers_ranges < 202202L
+#undef __cpp_lib_containers_ranges
+#define __cpp_lib_containers_ranges 202202L
+#endif
+
+#if !defined(__cpp_lib_erase_if) || __cpp_lib_erase_if < 202002L
+#undef __cpp_lib_erase_if
+#define __cpp_lib_erase_if 202002L
+#endif
+
+#if !defined(__cpp_lib_nonmember_container_access) || \
+    __cpp_lib_nonmember_container_access < 201411L
+#undef __cpp_lib_nonmember_container_access
+#define __cpp_lib_nonmember_container_access 201411L
+#endif
+
 #undef FTL_DEQUE_NAMESPACE
 #undef FTL_DEQUE_TRAP
 #endif

@@ -345,4 +345,10 @@ FTL_END_NAMESPACE
 #define __cpp_lib_memory_resource 201603L
 #endif
 
+#if !defined(__cpp_lib_polymorphic_allocator) || \
+    __cpp_lib_polymorphic_allocator < 201902L
+#undef __cpp_lib_polymorphic_allocator
+#define __cpp_lib_polymorphic_allocator 201902L
+#endif
+
 #endif

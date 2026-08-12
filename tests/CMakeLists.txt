@@ -56,7 +56,7 @@ function(add_ftl_test header)
 
         if (mode STREQUAL replace AND
                 header MATCHES
-                "^(regex|string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|locale(_.*)?|codecvt|format|chrono|print|exception|iosfwd|streambuf|ios|istream|istream_view|ostream|complex|random|thread|stacktrace|iostream|fstream|sstream|spanstream|syncstream|iomanip|cstdio|strstream|filesystem)$")
+                "^(regex|string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|locale(_.*)?|codecvt|format|chrono|print|exception|iosfwd|streambuf|ios|istream|istream_view|ostream|complex|random|thread|stacktrace|iostream|fstream|sstream|spanstream|syncstream|iomanip|cstdio|strstream|filesystem|feature_macro_semantics)$")
             set(ftl_standalone_replace TRUE)
         endif ()
 
@@ -249,6 +249,15 @@ add_ftl_compile_fail_check(flat_set_rejects_mismatched_container
 add_ftl_compile_fail_check(semaphore_rejects_negative_least_max checks/semaphore_negative_least_max_compile_fail.cpp)
 add_ftl_compile_fail_check(barrier_rejects_throwing_completion checks/barrier_throwing_completion_compile_fail.cpp)
 add_ftl_standalone_check(feature_macros checks/feature_macros.cpp)
+add_ftl_test(feature_macro_semantics)
+add_test(
+        NAME check.feature_macro_exports
+        COMMAND
+        ${CMAKE_COMMAND}
+        "-DFTL_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+        -P
+        "${CMAKE_CURRENT_SOURCE_DIR}/checks/feature_macro_exports.cmake"
+)
 add_ftl_standalone_check(no_allocation checks/no_allocation.cpp)
 add_ftl_freestanding_link_check(freestanding_link checks/freestanding_link.cpp)
 add_ftl_freestanding_link_check(

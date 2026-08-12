@@ -15,11 +15,6 @@
 #include <ftl/vector>
 #endif
 
-#if !defined(__cpp_lib_syncbuf) || __cpp_lib_syncbuf < 201803L
-#undef __cpp_lib_syncbuf
-#define __cpp_lib_syncbuf 201803L
-#endif
-
 FTL_BEGIN_NAMESPACE
 namespace detail {
 template <class C, class T> struct syncbuf_lock_entry {
@@ -217,4 +212,10 @@ private:
 };
 
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_syncbuf) || __cpp_lib_syncbuf < 201803L
+#undef __cpp_lib_syncbuf
+#define __cpp_lib_syncbuf 201803L
+#endif
+
 #endif

@@ -1121,4 +1121,21 @@ FTL_END_NAMESPACE
 #define __cpp_lib_transparent_operators 201510L
 #endif
 
+#if !defined(__cpp_lib_common_reference_wrapper) || \
+    __cpp_lib_common_reference_wrapper < 202302L
+#undef __cpp_lib_common_reference_wrapper
+#define __cpp_lib_common_reference_wrapper 202302L
+#endif
+
+#if !defined(__cpp_lib_ranges) || __cpp_lib_ranges < 202302L
+#undef __cpp_lib_ranges
+#define __cpp_lib_ranges 202302L
+#endif
+
+#if !defined(__cpp_lib_result_of_sfinae) || \
+    __cpp_lib_result_of_sfinae < 201210L
+#undef __cpp_lib_result_of_sfinae
+#define __cpp_lib_result_of_sfinae 201210L
+#endif
+
 #endif // FTL_FUNCTIONAL_HEADER

@@ -122,4 +122,9 @@
 #define __cpp_lib_algorithm_iterator_requirements 202207L
 #endif
 
+#if !defined(__cpp_lib_ranges) || __cpp_lib_ranges < 202302L
+#undef __cpp_lib_ranges
+#define __cpp_lib_ranges 202302L
+#endif
+
 #endif // FTL_ALGORITHMS_HEADER

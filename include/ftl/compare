@@ -661,4 +661,9 @@ FTL_COMPARE_END_NAMESPACE
 #define __cpp_lib_three_way_comparison 201907L
 #endif
 
+#if !defined(__cpp_lib_concepts) || __cpp_lib_concepts < 202207L
+#undef __cpp_lib_concepts
+#define __cpp_lib_concepts 202207L
+#endif
+
 #endif // FTL_COMPARE_HEADER

@@ -283,4 +283,10 @@ FTL_END_NAMESPACE
 #define __cpp_lib_to_array 201907L
 #endif
 
+#if !defined(__cpp_lib_nonmember_container_access) || \
+    __cpp_lib_nonmember_container_access < 201411L
+#undef __cpp_lib_nonmember_container_access
+#define __cpp_lib_nonmember_container_access 201411L
+#endif
+
 #endif // FTL_ARRAY_HEADER

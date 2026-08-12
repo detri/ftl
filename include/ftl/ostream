@@ -331,6 +331,16 @@ Stream &&operator<<(Stream &&stream, const Value &value) {
 
 FTL_END_NAMESPACE
 
+#if !defined(__cpp_lib_char8_t) || __cpp_lib_char8_t < 201907L
+#undef __cpp_lib_char8_t
+#define __cpp_lib_char8_t 201907L
+#endif
+
+#if !defined(__cpp_lib_print) || __cpp_lib_print < 202207L
+#undef __cpp_lib_print
+#define __cpp_lib_print 202207L
+#endif
+
 #undef FTL_OSTREAM_NAMESPACE
 
 #endif // FTL_OSTREAM_HEADER

@@ -156,5 +156,11 @@ bool operator==(const scoped_allocator_adaptor<O1, I1...>& left,
         return false;
 }
 
+#if !defined(__cpp_lib_allocator_traits_is_always_equal) || \
+    __cpp_lib_allocator_traits_is_always_equal < 201411L
+#undef __cpp_lib_allocator_traits_is_always_equal
+#define __cpp_lib_allocator_traits_is_always_equal 201411L
+#endif
+
 FTL_END_NAMESPACE
 #endif

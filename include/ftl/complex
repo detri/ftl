@@ -19,16 +19,6 @@
 #define FTL_COMPLEX_END }
 #endif
 
-#if !defined(__cpp_lib_complex_udls) || __cpp_lib_complex_udls < 201309L
-#undef __cpp_lib_complex_udls
-#define __cpp_lib_complex_udls 201309L
-#endif
-#if !defined(__cpp_lib_constexpr_complex) ||                             \
-    __cpp_lib_constexpr_complex < 201711L
-#undef __cpp_lib_constexpr_complex
-#define __cpp_lib_constexpr_complex 201711L
-#endif
-
 FTL_COMPLEX_BEGIN
 
 namespace detail {
@@ -441,4 +431,15 @@ FTL_COMPLEX_END
 
 #undef FTL_COMPLEX_BEGIN
 #undef FTL_COMPLEX_END
+
+#if !defined(__cpp_lib_complex_udls) || __cpp_lib_complex_udls < 201309L
+#undef __cpp_lib_complex_udls
+#define __cpp_lib_complex_udls 201309L
+#endif
+#if !defined(__cpp_lib_constexpr_complex) ||                             \
+    __cpp_lib_constexpr_complex < 201711L
+#undef __cpp_lib_constexpr_complex
+#define __cpp_lib_constexpr_complex 201711L
+#endif
+
 #endif

@@ -160,5 +160,18 @@ template<class T, class C, class Compare, class A> struct uses_allocator<priorit
 template<class T, class C, class Compare> void swap(priority_queue<T, C, Compare>& x, priority_queue<T, C, Compare>& y) noexcept(noexcept(x.swap(y))) { x.swap(y); }
 
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_adaptor_iterator_pair_constructor) || \
+    __cpp_lib_adaptor_iterator_pair_constructor < 202106L
+#undef __cpp_lib_adaptor_iterator_pair_constructor
+#define __cpp_lib_adaptor_iterator_pair_constructor 202106L
+#endif
+
+#if !defined(__cpp_lib_containers_ranges) || \
+    __cpp_lib_containers_ranges < 202202L
+#undef __cpp_lib_containers_ranges
+#define __cpp_lib_containers_ranges 202202L
+#endif
+
 #undef FTL_ADAPTOR_NAMESPACE
 #endif
