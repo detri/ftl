@@ -3,11 +3,17 @@
 #include "model.hpp"
 
 #include <filesystem>
+#include <string>
+#include <vector>
 
 namespace ftl_tzdb_tool {
 
-void emit_windows_zones(const database &db,
-                        const std::filesystem::path &input_path,
-                        const std::filesystem::path &output_path);
+struct windows_mapping {
+  std::string windows_name;
+  std::string iana_name;
+};
+
+std::vector<windows_mapping>
+parse_windows_zones(const database &db, const std::filesystem::path &path);
 
 } // namespace ftl_tzdb_tool

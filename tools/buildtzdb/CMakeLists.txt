@@ -1,4 +1,5 @@
-add_executable(ftl-buildtzdb
+add_executable(
+        ftl-buildtzdb
         main.cpp
         parser.cpp
         transitions.cpp
@@ -12,37 +13,62 @@ target_compile_features(
         cxx_std_23
 )
 
-set(FTL_TZDATA_DIR
+target_include_directories(
+        ftl-buildtzdb
+        PRIVATE
+        "${PROJECT_SOURCE_DIR}/include"
+)
+
+set(
+        FTL_TZDATA_DIR
         "${PROJECT_SOURCE_DIR}/external/tzdata"
 )
 
-set(FTL_CLDR_WINDOWS_ZONES
+set(
+        FTL_CLDR_WINDOWS_ZONES
         "${PROJECT_SOURCE_DIR}/external/cldr/windowsZones.xml"
 )
 
-set(FTL_TZDB_HEADER
-        "${PROJECT_SOURCE_DIR}/include/ftl/detail/tzdb_data.hpp"
+set(
+        FTL_TZDB_BLOB
+        "${PROJECT_SOURCE_DIR}/generated/tzdb.bin"
 )
 
-set(FTL_WINDOWS_TZ_HEADER
-        "${PROJECT_SOURCE_DIR}/include/ftl/detail/windows_tz_data.hpp"
+set(
+        FTL_TZDB_SOURCE
+        "${PROJECT_SOURCE_DIR}/runtime/tzdb_blob.cpp"
 )
 
-add_custom_target(ftl-tzdb-data
+file(
+        GLOB
+        FTL_TZDATA_FILES
+        CONFIGURE_DEPENDS
+        "${FTL_TZDATA_DIR}/*"
+)
+
+add_custom_command(
+        OUTPUT
+        "${FTL_TZDB_BLOB}"
+        "${FTL_TZDB_SOURCE}"
+
         COMMAND
         $<TARGET_FILE:ftl-buildtzdb>
         "${FTL_TZDATA_DIR}"
         "${FTL_CLDR_WINDOWS_ZONES}"
-        "${FTL_TZDB_HEADER}"
-        "${FTL_WINDOWS_TZ_HEADER}"
+        "${FTL_TZDB_BLOB}"
+        "${FTL_TZDB_SOURCE}"
 
         DEPENDS
         ftl-buildtzdb
+        ${FTL_TZDATA_FILES}
         "${FTL_CLDR_WINDOWS_ZONES}"
 
-        BYPRODUCTS
-        "${FTL_TZDB_HEADER}"
-        "${FTL_WINDOWS_TZ_HEADER}"
-
         VERBATIM
+)
+
+add_custom_target(
+        ftl-tzdb-data
+        DEPENDS
+        "${FTL_TZDB_BLOB}"
+        "${FTL_TZDB_SOURCE}"
 )

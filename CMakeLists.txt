@@ -20,10 +20,23 @@ target_link_libraries(ftl INTERFACE ftl_math_runtime)
 
 # Chrono
 
+set(
+        FTL_TZDB_GENERATED_SOURCE
+        "${CMAKE_CURRENT_SOURCE_DIR}/runtime/tzdb_blob.cpp"
+)
+
+set_source_files_properties(
+        "${FTL_TZDB_GENERATED_SOURCE}"
+        PROPERTIES
+        GENERATED TRUE
+)
+
 add_library(
         ftl_chrono_runtime
         STATIC
         runtime/current_zone.cpp
+        runtime/tzdb_runtime.cpp
+        "${FTL_TZDB_GENERATED_SOURCE}"
 )
 
 target_include_directories(
@@ -64,6 +77,13 @@ if (APPLE)
             ftl_chrono_runtime
             PUBLIC
             "${FTL_COREFOUNDATION_FRAMEWORK}"
+    )
+endif ()
+
+if (TARGET ftl-tzdb-data)
+    add_dependencies(
+            ftl_chrono_runtime
+            ftl-tzdb-data
     )
 endif ()
 

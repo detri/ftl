@@ -12,8 +12,8 @@ int main(int argc, char **argv) {
     std::cerr << "usage: buildtzdb "
                  "<tzdata-directory> "
                  "<windowsZones.xml> "
-                 "<output-header> "
-                 "<windows-output-header>\n";
+                 "<output-blob> "
+                 "<output-source>\n";
 
     return 2;
   }
@@ -23,13 +23,16 @@ int main(int argc, char **argv) {
 
     const std::filesystem::path windows_input = argv[2];
 
-    const std::filesystem::path output = argv[3];
+    const std::filesystem::path blob_output = argv[3];
 
-    const std::filesystem::path windows_output = argv[4];
+    const std::filesystem::path source_output = argv[4];
 
     const auto db = ftl_tzdb_tool::parse_database(input);
 
     const auto compiled = ftl_tzdb_tool::compile_transitions(db, 2500);
+
+    const auto windows_mappings =
+        ftl_tzdb_tool::parse_windows_zones(db, windows_input);
 
     std::size_t transition_count = 0;
     std::size_t largest_count = 0;
@@ -45,13 +48,13 @@ int main(int argc, char **argv) {
       }
     }
 
-    ftl_tzdb_tool::emit_database(db, compiled, output);
-
-    ftl_tzdb_tool::emit_windows_zones(db, windows_input, windows_output);
+    ftl_tzdb_tool::emit_database(db, compiled, windows_mappings, blob_output,
+                                 source_output);
 
     std::cout << "tzdb " << db.version << ": " << db.zones.size() << " zones, "
               << db.links.size() << " links, " << db.rules.size() << " rules, "
-              << db.leaps.size() << " leap seconds\n";
+              << db.leaps.size() << " leap seconds, " << windows_mappings.size()
+              << " Windows mappings\n";
 
     std::cout << "precomputed through 2500: " << transition_count
               << " transitions; largest zone " << largest_zone << " has "
@@ -59,8 +62,8 @@ int main(int argc, char **argv) {
 
     return 0;
 
-  } catch (const std::exception &e) {
-    std::cerr << "buildtzdb: " << e.what() << '\n';
+  } catch (const std::exception &error) {
+    std::cerr << "buildtzdb: " << error.what() << '\n';
 
     return 1;
   }

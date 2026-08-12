@@ -1229,7 +1229,7 @@ constexpr auto operator<=>(const leap_second &left,
 namespace chrono_detail {
 
 struct leap_second_factory {
-  static constexpr leap_second make(unsigned index) noexcept {
+  static leap_second make(unsigned index) noexcept {
     return leap_second{
         sys_seconds{
             seconds{
@@ -1243,7 +1243,7 @@ struct leap_second_factory {
   }
 };
 
-constexpr int leaps_before(long long unix_seconds) noexcept {
+inline int leaps_before(long long unix_seconds) noexcept {
   return detail::tzdb_runtime::leap_elapsed_at_sys(unix_seconds);
 }
 
@@ -1253,27 +1253,44 @@ struct utc_clock {
   using period = nano;
   using duration = nanoseconds;
   using time_point = utc_time<duration>;
+
   static constexpr bool is_steady = false;
-  template <class D> static constexpr auto from_sys(const sys_time<D> &t) {
-    auto whole = duration_cast<seconds>(t.time_since_epoch()).count();
+
+  template <class D> static auto from_sys(const sys_time<D> &t) {
+    const auto whole = duration_cast<seconds>(t.time_since_epoch()).count();
+
     using C = common_type_t<D, seconds>;
-    return utc_time<C>{C(t.time_since_epoch()) +
-                       seconds{chrono_detail::leaps_before(whole)}};
+
+    return utc_time<C>{
+        C(t.time_since_epoch()) +
+            seconds{
+                chrono_detail::leaps_before(whole),
+            },
+    };
   }
-  template <class D> static constexpr auto to_sys(const utc_time<D> &t) {
+
+  template <class D> static auto to_sys(const utc_time<D> &t) {
     auto guess = duration_cast<seconds>(t.time_since_epoch()).count();
-    for (int i = 0; i < 2; ++i)
+
+    for (int iteration = 0; iteration < 2; ++iteration) {
       guess = duration_cast<seconds>(t.time_since_epoch()).count() -
               chrono_detail::leaps_before(guess);
+    }
+
     using C = common_type_t<D, seconds>;
-    return sys_time<C>{C(t.time_since_epoch()) -
-                       seconds{chrono_detail::leaps_before(guess)}};
+
+    return sys_time<C>{
+        C(t.time_since_epoch()) -
+            seconds{
+                chrono_detail::leaps_before(guess),
+            },
+    };
   }
+
   static time_point now() { return from_sys(system_clock::now()); }
 };
 
-template <class D>
-constexpr leap_second_info get_leap_second_info(const utc_time<D> &t) {
+template <class D> leap_second_info get_leap_second_info(const utc_time<D> &t) {
   using common_duration = common_type_t<D, seconds>;
 
   const common_duration utc{
@@ -2004,6 +2021,11 @@ struct tzdb_factory {
   }
 
   static tzdb make() {
+    if (!detail::tzdb_runtime::valid()) {
+      throw runtime_error("chrono::tzdb: invalid built-in "
+                          "timezone database");
+    }
+
     tzdb result;
 
     result.version = detail::tzdb_runtime::version();

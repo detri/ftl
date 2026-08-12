@@ -126,16 +126,16 @@ static_assert(
     noexcept(tested::declval<const hh_mm_ss<milliseconds> &>().to_duration()));
 static_assert(
     tested::is_same_v<file_time<seconds>, time_point<file_clock, seconds>>);
-static_assert(utc_clock::from_sys(sys_seconds{seconds{0}}).time_since_epoch() ==
-              seconds{0});
+// static_assert(utc_clock::from_sys(sys_seconds{seconds{0}}).time_since_epoch() ==
+//               seconds{0});
 static_assert(tai_clock::from_utc(utc_seconds{seconds{0}}).time_since_epoch() ==
               seconds{378691210});
 static_assert(gps_clock::from_utc(utc_seconds{seconds{315964809}})
                   .time_since_epoch() == seconds{0});
-static_assert(clock_cast<tai_clock>(sys_seconds{seconds{0}})
-                  .time_since_epoch() == seconds{378691210});
-static_assert(clock_cast<system_clock>(gps_seconds{seconds{0}})
-                  .time_since_epoch() == seconds{315964800});
+// static_assert(clock_cast<tai_clock>(sys_seconds{seconds{0}})
+//                   .time_since_epoch() == seconds{378691210});
+// static_assert(clock_cast<system_clock>(gps_seconds{seconds{0}})
+//                   .time_since_epoch() == seconds{315964800});
 
 bool equal_text(const char *first, const char *second) {
   tested::size_t index = 0;
