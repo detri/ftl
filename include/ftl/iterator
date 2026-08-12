@@ -116,14 +116,6 @@ template <class T>
 using iter_reference_t = decltype(*declval<T &>());
 
 namespace detail {
-template <class T, class U>
-concept weakly_equality_comparable_with = requires(
-    const remove_reference_t<T> &left, const remove_reference_t<U> &right) {
-  { left == right } -> convertible_to<bool>;
-  { left != right } -> convertible_to<bool>;
-  { right == left } -> convertible_to<bool>;
-  { right != left } -> convertible_to<bool>;
-};
 
 template <class T> using with_reference = T &;
 
