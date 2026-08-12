@@ -676,31 +676,10 @@ inline constexpr bool
 
 template <class Character, class Traits>
 [[nodiscard]]
-constexpr bool operator==(basic_string_view<Character, Traits> left,
-                          basic_string_view<Character, Traits> right) noexcept {
-  return left.compare(right) == 0;
-}
-
-template <class Character, class Traits>
-[[nodiscard]]
 constexpr bool operator==(
     basic_string_view<Character, Traits> left,
     type_identity_t<basic_string_view<Character, Traits>> right) noexcept {
   return left.compare(right) == 0;
-}
-
-template <class Character, class Traits>
-[[nodiscard]]
-constexpr auto
-operator<=>(basic_string_view<Character, Traits> left,
-            basic_string_view<Character, Traits> right) noexcept {
-  using category = detail::string_view_comparison_category_t<Traits>;
-
-  static_assert(is_same_v<category, strong_ordering> ||
-                is_same_v<category, weak_ordering> ||
-                is_same_v<category, partial_ordering>);
-
-  return detail::string_view_ordering<category>(left.compare(right));
 }
 
 template <class Character, class Traits>

@@ -66,6 +66,18 @@ static_assert(noexcept(tested::declval<const leap_second &>().date()));
 
 static_assert(noexcept(tested::declval<const leap_second &>().value()));
 
+static_assert(tested::is_same_v<
+              decltype(tested::declval<const time_zone_link &>().name()),
+              tested::string_view>);
+
+static_assert(tested::is_same_v<
+              decltype(tested::declval<const time_zone_link &>().target()),
+              tested::string_view>);
+
+static_assert(noexcept(tested::declval<const time_zone_link &>().name()));
+
+static_assert(noexcept(tested::declval<const time_zone_link &>().target()));
+
 static_assert(duration_cast<seconds>(1500ms).count() == 1);
 static_assert(is_clock_v<system_clock> && is_clock_v<steady_clock>);
 static_assert(!is_clock_v<int>);
@@ -1319,6 +1331,142 @@ bool chrono_leap_second_works() {
   return true;
 }
 
+bool chrono_tzdb_public_works() {
+  namespace runtime = tested::detail::tzdb_runtime;
+
+  const tzdb &database = get_tzdb();
+
+  /*
+   * get_tzdb() exposes one stable initialized database.
+   */
+  if (&get_tzdb() != &database)
+    return false;
+
+  if (database.version != "2026c")
+    return false;
+
+  if (database.zones.size() != runtime::zone_count())
+    return false;
+
+  if (database.links.size() != runtime::link_count())
+    return false;
+
+  if (database.leap_seconds.size() != runtime::leap_count())
+    return false;
+
+  /*
+   * N4950 requires every vector in tzdb to be sorted.
+   */
+  for (tested::size_t index = 1; index < database.zones.size(); ++index) {
+    if (!(database.zones[index - 1].name() < database.zones[index].name())) {
+      return false;
+    }
+  }
+
+  for (tested::size_t index = 1; index < database.links.size(); ++index) {
+    if (!(database.links[index - 1].name() < database.links[index].name())) {
+      return false;
+    }
+  }
+
+  for (tested::size_t index = 1; index < database.leap_seconds.size();
+       ++index) {
+    if (!(database.leap_seconds[index - 1] < database.leap_seconds[index])) {
+      return false;
+    }
+  }
+
+  /*
+   * Canonical lookup returns a pointer into tzdb::zones.
+   */
+  const auto *new_york = database.locate_zone("America/New_York");
+
+  if (new_york == nullptr)
+    return false;
+
+  if (new_york->name() != "America/New_York")
+    return false;
+
+  bool new_york_is_database_element = false;
+
+  for (const auto &zone : database.zones) {
+    if (&zone == new_york) {
+      new_york_is_database_element = true;
+      break;
+    }
+  }
+
+  if (!new_york_is_database_element)
+    return false;
+
+  /*
+   * Public namespace lookup delegates to the same tzdb object.
+   */
+  if (locate_zone("America/New_York") != new_york)
+    return false;
+
+  /*
+   * Find the actual US/Eastern time_zone_link object.
+   */
+  const time_zone_link *eastern_link = nullptr;
+
+  for (const auto &link : database.links) {
+    if (link.name() == "US/Eastern") {
+      eastern_link = &link;
+      break;
+    }
+  }
+
+  if (eastern_link == nullptr)
+    return false;
+
+  if (eastern_link->name() != "US/Eastern")
+    return false;
+
+  if (eastern_link->target() != "America/New_York")
+    return false;
+
+  /*
+   * An alias resolves to the canonical object in tzdb::zones.
+   */
+  const auto *eastern = database.locate_zone("US/Eastern");
+
+  if (eastern != new_york)
+    return false;
+
+  if (locate_zone("US/Eastern") != new_york)
+    return false;
+
+  /*
+   * The leap_second objects exposed by tzdb are the generated IANA data.
+   */
+  if (database.leap_seconds.empty())
+    return false;
+
+  if (database.leap_seconds.front().date() != sys_seconds{seconds{78796800LL}})
+    return false;
+
+  if (database.leap_seconds.front().value() != seconds{1})
+    return false;
+
+  if (database.leap_seconds.back().date() != sys_seconds{seconds{1483228800LL}})
+    return false;
+
+  /*
+   * Unknown names fail through tzdb::locate_zone as well as the namespace
+   * convenience function.
+   */
+  try {
+    (void)database.locate_zone("Definitely/Not_A_Zone");
+    return false;
+  } catch (const tested::runtime_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  return true;
+}
+
 bool ftl_test() {
   if (!(system_clock::now().time_since_epoch() > seconds{0})) {
     return false;
@@ -1356,6 +1504,9 @@ bool ftl_test() {
     return false;
 
   if (!chrono_leap_second_works())
+    return false;
+
+  if (!chrono_tzdb_public_works())
     return false;
 
   return true;

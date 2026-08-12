@@ -16,6 +16,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <vector>
 #else
 #include <ftl/compare>
 #include <ftl/cstdint>
@@ -29,6 +30,7 @@
 #include <ftl/string>
 #include <ftl/string_view>
 #include <ftl/type_traits>
+#include <ftl/vector>
 #endif
 
 FTL_BEGIN_NAMESPACE
@@ -1515,7 +1517,7 @@ public:
 };
 
 namespace chrono_detail {
-struct time_zone_storage;
+struct tzdb_factory;
 }
 
 class time_zone {
@@ -1677,52 +1679,217 @@ private:
 
   unsigned index_ = 0;
 
-  friend struct chrono_detail::time_zone_storage;
+  friend struct chrono_detail::tzdb_factory;
 };
 
-namespace chrono_detail {
-
-/*
- * The generated tzdb owns the canonical zone ordering. Mirror that ordering
- * with one stable public time_zone object per generated canonical Zone.
- *
- * Links never receive their own time_zone object: locate_zone(alias) returns
- * the canonical target object, matching tzdb::locate_zone semantics.
- */
-struct time_zone_storage {
-  time_zone zones[detail::tzdb_runtime::zone_count()];
-
-  constexpr time_zone_storage() noexcept {
-    for (unsigned index = 0; index < detail::tzdb_runtime::zone_count();
-         ++index) {
-      zones[index].index_ = index;
-    }
-  }
-};
-
-inline const time_zone_storage &time_zone_objects() noexcept {
-  static constexpr time_zone_storage storage{};
-  return storage;
-}
-
-} // namespace chrono_detail
-
-inline const time_zone *locate_zone(string_view name) {
-  const auto zone = detail::tzdb_runtime::locate_zone(name.data(), name.size());
-
-  if (!zone)
-    throw runtime_error("chrono::locate_zone: time zone not found");
-
-  return &chrono_detail::time_zone_objects().zones[zone.index];
-}
-
-inline bool operator==(const time_zone &left, const time_zone &right) noexcept {
+inline bool operator==(const time_zone &left,
+                       const time_zone &right) noexcept {
   return left.name() == right.name();
 }
 
 inline strong_ordering operator<=>(const time_zone &left,
                                    const time_zone &right) noexcept {
   return left.name() <=> right.name();
+}
+
+class time_zone_link {
+public:
+  time_zone_link(time_zone_link &&) = default;
+  time_zone_link &operator=(time_zone_link &&) = default;
+
+  string_view name() const noexcept {
+    return detail::tzdb_runtime::link_name(
+        detail::tzdb_runtime::link_ref{index_});
+  }
+
+  string_view target() const noexcept {
+    const auto target = detail::tzdb_runtime::link_target(
+        detail::tzdb_runtime::link_ref{index_});
+
+    if (!target)
+      return {};
+
+    return detail::tzdb_runtime::zone_name(target);
+  }
+
+private:
+  constexpr time_zone_link() noexcept = default;
+
+  unsigned index_ = 0;
+
+  friend struct chrono_detail::tzdb_factory;
+};
+
+inline bool operator==(const time_zone_link &left,
+                       const time_zone_link &right) noexcept {
+  return left.name() == right.name();
+}
+
+inline strong_ordering operator<=>(const time_zone_link &left,
+                                   const time_zone_link &right) noexcept {
+  return left.name() <=> right.name();
+}
+
+struct tzdb {
+  string version;
+  vector<time_zone> zones;
+  vector<time_zone_link> links;
+  vector<leap_second> leap_seconds;
+
+  const time_zone *locate_zone(string_view tz_name) const {
+    /*
+     * The standard requires each public vector to be sorted specifically
+     * so lookup can be efficient. Search the public database representation
+     * itself rather than reaching around it into generated tables.
+     */
+    size_t first = 0;
+    size_t last = zones.size();
+
+    while (first < last) {
+      const size_t middle = first + (last - first) / 2;
+
+      if (zones[middle].name() < tz_name)
+        first = middle + 1;
+      else
+        last = middle;
+    }
+
+    if (first < zones.size() &&
+        zones[first].name() == tz_name) {
+      return &zones[first];
+    }
+
+    first = 0;
+    last = links.size();
+
+    while (first < last) {
+      const size_t middle = first + (last - first) / 2;
+
+      if (links[middle].name() < tz_name)
+        first = middle + 1;
+      else
+        last = middle;
+    }
+
+    if (first == links.size() ||
+        links[first].name() != tz_name) {
+      throw runtime_error(
+          "chrono::tzdb::locate_zone: time zone not found");
+    }
+
+    const string_view target = links[first].target();
+
+    first = 0;
+    last = zones.size();
+
+    while (first < last) {
+      const size_t middle = first + (last - first) / 2;
+
+      if (zones[middle].name() < target)
+        first = middle + 1;
+      else
+        last = middle;
+    }
+
+    if (first < zones.size() &&
+        zones[first].name() == target) {
+      return &zones[first];
+    }
+
+    /*
+     * A valid initialized tzdb must not contain a link whose canonical
+     * target is missing.
+     */
+    throw runtime_error(
+        "chrono::tzdb::locate_zone: invalid time zone link");
+  }
+
+  const time_zone *current_zone() const {
+    /*
+     * Platform discovery is the next slice.
+     *
+     * Do not silently claim Etc/UTC: that would return a valid pointer
+     * containing incorrect information on most machines.
+     */
+    throw runtime_error(
+        "chrono::tzdb::current_zone: platform current zone unavailable");
+  }
+};
+
+namespace chrono_detail {
+
+struct tzdb_factory {
+  static time_zone make_zone(unsigned index) {
+    time_zone zone;
+    zone.index_ = index;
+    return zone;
+  }
+
+  static time_zone_link make_link(unsigned index) {
+    time_zone_link link;
+    link.index_ = index;
+    return link;
+  }
+
+  static tzdb make() {
+    tzdb result;
+
+    result.version = detail::tzdb_runtime::version();
+
+    result.zones.reserve(
+        detail::tzdb_runtime::zone_count());
+
+    for (unsigned index = 0;
+         index < detail::tzdb_runtime::zone_count();
+         ++index) {
+      result.zones.push_back(make_zone(index));
+    }
+
+    result.links.reserve(
+        detail::tzdb_runtime::link_count());
+
+    for (unsigned index = 0;
+         index < detail::tzdb_runtime::link_count();
+         ++index) {
+      result.links.push_back(make_link(index));
+    }
+
+    result.leap_seconds.reserve(
+        detail::tzdb_runtime::leap_count());
+
+    for (unsigned index = 0;
+         index < detail::tzdb_runtime::leap_count();
+         ++index) {
+      result.leap_seconds.push_back(
+          leap_second_factory::make(index));
+    }
+
+    return result;
+  }
+};
+
+} // namespace chrono_detail
+
+inline const tzdb &get_tzdb() {
+  /*
+   * This is the immutable initial database.
+   *
+   * get_tzdb_list() will become the owning layer when the update/list
+   * surface lands; get_tzdb() can then become get_tzdb_list().front()
+   * without changing callers.
+   */
+  static const tzdb database =
+      chrono_detail::tzdb_factory::make();
+
+  return database;
+}
+
+inline const time_zone *locate_zone(string_view name) {
+  return get_tzdb().locate_zone(name);
+}
+
+inline const time_zone *current_zone() {
+  return get_tzdb().current_zone();
 }
 
 namespace literals {
