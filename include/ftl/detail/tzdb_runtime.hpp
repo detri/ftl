@@ -20,8 +20,18 @@ namespace detail::tzdb_runtime {
 using ::ftl_tzdb_runtime_core::invalid_index;
 
 using ::ftl_tzdb_runtime_core::link_ref;
-using ::ftl_tzdb_runtime_core::zone_interval;
 using ::ftl_tzdb_runtime_core::zone_ref;
+
+using ::ftl_tzdb_runtime_core::day_kind;
+using ::ftl_tzdb_runtime_core::day_spec;
+using ::ftl_tzdb_runtime_core::rules_kind;
+using ::ftl_tzdb_runtime_core::time_basis;
+
+using ::ftl_tzdb_runtime_core::era_definition;
+using ::ftl_tzdb_runtime_core::rule_definition;
+using ::ftl_tzdb_runtime_core::rule_set_definition;
+
+using ::ftl_tzdb_runtime_core::zone_interval;
 
 using ::ftl_tzdb_runtime_core::local_lookup_result;
 using ::ftl_tzdb_runtime_core::local_result_kind;
@@ -31,6 +41,19 @@ using ::ftl_tzdb_runtime_core::valid;
 using ::ftl_tzdb_runtime_core::leap_count;
 using ::ftl_tzdb_runtime_core::link_count;
 using ::ftl_tzdb_runtime_core::zone_count;
+
+using ::ftl_tzdb_runtime_core::era_count;
+using ::ftl_tzdb_runtime_core::rule_count;
+using ::ftl_tzdb_runtime_core::rule_set_count;
+
+using ::ftl_tzdb_runtime_core::era_at;
+using ::ftl_tzdb_runtime_core::rule_at;
+using ::ftl_tzdb_runtime_core::rule_set_at;
+using ::ftl_tzdb_runtime_core::rule_set_rule_at;
+
+using ::ftl_tzdb_runtime_core::zone_era_at;
+using ::ftl_tzdb_runtime_core::zone_era_count;
+using ::ftl_tzdb_runtime_core::zone_final_era;
 
 using ::ftl_tzdb_runtime_core::leap_date_seconds;
 using ::ftl_tzdb_runtime_core::leap_elapsed_at_sys;

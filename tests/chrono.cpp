@@ -126,7 +126,8 @@ static_assert(
     noexcept(tested::declval<const hh_mm_ss<milliseconds> &>().to_duration()));
 static_assert(
     tested::is_same_v<file_time<seconds>, time_point<file_clock, seconds>>);
-// static_assert(utc_clock::from_sys(sys_seconds{seconds{0}}).time_since_epoch() ==
+// static_assert(utc_clock::from_sys(sys_seconds{seconds{0}}).time_since_epoch()
+// ==
 //               seconds{0});
 static_assert(tai_clock::from_utc(utc_seconds{seconds{0}}).time_since_epoch() ==
               seconds{378691210});
@@ -1672,56 +1673,378 @@ bool chrono_current_zone_works() {
   return true;
 }
 
-bool ftl_test() {
-  if (!(system_clock::now().time_since_epoch() > seconds{0})) {
+bool chrono_tzdb_raw_rules_work() {
+  namespace runtime = tested::detail::tzdb_runtime;
+
+  if (!runtime::valid())
+    return false;
+
+  if (runtime::rule_count() == 0)
+    return false;
+
+  if (runtime::rule_set_count() == 0)
+    return false;
+
+  if (runtime::era_count() == 0)
+    return false;
+
+  const auto new_york = runtime::locate_zone("America/New_York");
+
+  if (!new_york)
+    return false;
+
+  /*
+   * The vendored 2026c source has several historical
+   * America/New_York eras and ends with:
+   *
+   *   -5:00 US E%sT
+   *
+   * with no UNTIL boundary.
+   */
+  if (runtime::zone_era_count(new_york) < 2) {
     return false;
   }
 
-  if (!(steady_clock::now().time_since_epoch() > nanoseconds{0})) {
+  const auto first = runtime::zone_era_at(new_york, 0);
+
+  if (!first)
+    return false;
+
+  if (!first.has_until)
+    return false;
+
+  const auto final = runtime::zone_final_era(new_york);
+
+  if (!final)
+    return false;
+
+  if (final.has_until)
+    return false;
+
+  if (final.standard_offset_seconds != -5 * 60 * 60) {
     return false;
   }
+
+  if (final.rules != runtime::rules_kind::named) {
+    return false;
+  }
+
+  if (final.rule_set == runtime::invalid_index) {
+    return false;
+  }
+
+  if (tested::string_view{final.format} != "E%sT") {
+    return false;
+  }
+
+  const auto us = runtime::rule_set_at(final.rule_set);
+
+  if (!us)
+    return false;
+
+  if (tested::string_view{us.name} != "US") {
+    return false;
+  }
+
+  if (us.rule_count == 0)
+    return false;
+
+  bool saw_open_ended_rule = false;
+  bool saw_positive_save = false;
+  bool saw_zero_save = false;
+
+  for (unsigned index = 0; index < us.rule_count; ++index) {
+    const auto rule = runtime::rule_set_rule_at(final.rule_set, index);
+
+    if (!rule)
+      return false;
+
+    if (rule.month < 1 || rule.month > 12) {
+      return false;
+    }
+
+    if (rule.on.weekday < 0 || rule.on.weekday > 6) {
+      return false;
+    }
+
+    if (rule.letters == nullptr)
+      return false;
+
+    if (rule.to_max)
+      saw_open_ended_rule = true;
+
+    if (rule.save_seconds > 0)
+      saw_positive_save = true;
+
+    if (rule.save_seconds == 0)
+      saw_zero_save = true;
+  }
+
+  /*
+   * US rules exercise exactly what the tail evaluator
+   * needs: recurring max-year rules and transitions
+   * both into and out of daylight saving time.
+   */
+  if (!saw_open_ended_rule)
+    return false;
+
+  if (!saw_positive_save)
+    return false;
+
+  if (!saw_zero_save)
+    return false;
+
+  return true;
+}
+
+int chrono_tzdb_tail_works() {
+  namespace runtime = tested::detail::tzdb_runtime;
+
+  int stage = 100;
+
+  try {
+    stage = 101;
+    const time_zone *const new_york = locate_zone("America/New_York");
+
+    if (new_york == nullptr)
+      return 101;
+
+    stage = 102;
+    const auto before_horizon =
+        sys_days{year{2500} / December / 31} + hours{12};
+
+    const auto horizon_info = new_york->get_info(before_horizon);
+
+    if (horizon_info.end ==
+        sys_seconds{seconds{runtime::precomputed_until()}}) {
+      return 102;
+    }
+
+    stage = 103;
+    const auto winter_2600 =
+        new_york->get_info(sys_days{year{2600} / January / 15} + hours{12});
+
+    if (winter_2600.offset != hours{-5}) {
+      return 103;
+    }
+
+    if (winter_2600.save != minutes{0}) {
+      return 104;
+    }
+
+    if (winter_2600.abbrev != "EST")
+      return 105;
+
+    stage = 106;
+    const auto summer_2600 =
+        new_york->get_info(sys_days{year{2600} / July / 15} + hours{12});
+
+    if (summer_2600.offset != hours{-4}) {
+      return 106;
+    }
+
+    if (summer_2600.save != minutes{60}) {
+      return 107;
+    }
+
+    if (summer_2600.abbrev != "EDT")
+      return 108;
+
+    stage = 109;
+    const auto spring = sys_days{year{2600} / March / 9} + hours{7};
+
+    const auto spring_before = new_york->get_info(spring - seconds{1});
+
+    if (spring_before.offset != hours{-5}) {
+      return 109;
+    }
+
+    stage = 110;
+    const auto spring_at = new_york->get_info(spring);
+
+    if (spring_at.offset != hours{-4}) {
+      return 110;
+    }
+
+    if (spring_before.end != floor<seconds>(spring)) {
+      return 111;
+    }
+
+    if (spring_at.begin != floor<seconds>(spring)) {
+      return 112;
+    }
+
+    stage = 113;
+    const auto autumn = sys_days{year{2600} / November / 2} + hours{6};
+
+    const auto autumn_before = new_york->get_info(autumn - seconds{1});
+
+    if (autumn_before.offset != hours{-4}) {
+      return 113;
+    }
+
+    stage = 114;
+    const auto autumn_at = new_york->get_info(autumn);
+
+    if (autumn_at.offset != hours{-5}) {
+      return 114;
+    }
+
+    stage = 115;
+    const auto gap =
+        local_days{year{2600} / March / 9} + hours{2} + minutes{30};
+
+    const auto gap_info = new_york->get_info(gap);
+
+    if (gap_info.result != local_info::nonexistent) {
+      return 115;
+    }
+
+    if (gap_info.first.offset != hours{-5}) {
+      return 116;
+    }
+
+    if (gap_info.second.offset != hours{-4}) {
+      return 117;
+    }
+
+    stage = 118;
+    const auto overlap =
+        local_days{year{2600} / November / 2} + hours{1} + minutes{30};
+
+    const auto overlap_info = new_york->get_info(overlap);
+
+    if (overlap_info.result != local_info::ambiguous) {
+      return 118;
+    }
+
+    if (overlap_info.first.offset != hours{-4}) {
+      return 119;
+    }
+
+    if (overlap_info.second.offset != hours{-5}) {
+      return 120;
+    }
+
+    stage = 121;
+    const time_zone *const sydney = locate_zone("Australia/Sydney");
+
+    if (sydney == nullptr)
+      return 121;
+
+    stage = 122;
+    const auto sydney_january =
+        sydney->get_info(sys_days{year{2600} / January / 15} + hours{12});
+
+    if (sydney_january.offset != hours{11}) {
+      return 122;
+    }
+
+    stage = 123;
+    const auto sydney_july =
+        sydney->get_info(sys_days{year{2600} / July / 15} + hours{12});
+
+    if (sydney_july.offset != hours{10}) {
+      return 123;
+    }
+
+    stage = 124;
+    const auto winter_30000 =
+        new_york->get_info(sys_days{year{30000} / January / 15} + hours{12});
+
+    if (winter_30000.offset != hours{-5}) {
+      return 124;
+    }
+
+    stage = 125;
+    const auto summer_30000 =
+        new_york->get_info(sys_days{year{30000} / July / 15} + hours{12});
+
+    if (summer_30000.offset != hours{-4}) {
+      return 125;
+    }
+
+    stage = 126;
+    const time_zone *const utc = locate_zone("Etc/UTC");
+
+    if (utc == nullptr)
+      return 126;
+
+    stage = 127;
+    const auto utc_future = utc->get_info(sys_days{year{30000} / June / 1});
+
+    if (utc_future.offset != seconds{0}) {
+      return 127;
+    }
+
+    if (utc_future.save != minutes{0}) {
+      return 128;
+    }
+
+    return 0;
+  } catch (...) {
+    return -stage;
+  }
+}
+
+bool ftl_test() {
+  if (!(system_clock::now().time_since_epoch() > seconds{0}))
+    throw tested::runtime_error("chrono: system_clock");
+
+  if (!(steady_clock::now().time_since_epoch() > nanoseconds{0}))
+    throw tested::runtime_error("chrono: steady_clock");
 
   if (!chrono_duration_formatting_works())
-    return false;
+    throw tested::runtime_error("chrono: duration formatting");
 
   if (!chrono_hms_formatting_works())
-    return false;
+    throw tested::runtime_error("chrono: hms formatting");
 
   if (!chrono_format_errors_work())
-    return false;
+    throw tested::runtime_error("chrono: format errors");
 
   if (!chrono_calendar_formatting_works())
-    return false;
+    throw tested::runtime_error("chrono: calendar formatting");
 
   if (!chrono_clock_formatting_works())
-    return false;
+    throw tested::runtime_error("chrono: clock formatting");
 
   if (!chrono_tzdb_runtime_works())
-    return false;
+    throw tested::runtime_error("chrono: tzdb runtime");
+
+  if (!chrono_tzdb_raw_rules_work())
+    throw tested::runtime_error("chrono: tzdb raw rules");
+
+  /*
+   * This function currently contains its own detailed
+   * exceptions, so don't collapse it to a generic label.
+   */
+  if (!chrono_tzdb_tail_works())
+    throw tested::runtime_error("chrono: tzdb tail returned false");
 
   if (!chrono_time_zone_public_works())
-    return false;
+    throw tested::runtime_error("chrono: time_zone public");
 
   if (!chrono_local_info_works())
-    return false;
+    throw tested::runtime_error("chrono: local_info");
 
   if (!chrono_time_zone_conversion_works())
-    return false;
+    throw tested::runtime_error("chrono: time_zone conversion");
 
   if (!chrono_leap_second_works())
-    return false;
+    throw tested::runtime_error("chrono: leap seconds");
 
   if (!chrono_tzdb_public_works())
-    return false;
+    throw tested::runtime_error("chrono: tzdb public");
 
   if (!chrono_tzdb_list_works())
-    return false;
+    throw tested::runtime_error("chrono: tzdb list");
 
   if (!chrono_tzdb_remote_works())
-    return false;
+    throw tested::runtime_error("chrono: tzdb remote");
 
   if (!chrono_current_zone_works())
-    return false;
+    throw tested::runtime_error("chrono: current zone");
 
   return true;
 }

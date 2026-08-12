@@ -124,7 +124,7 @@ private:
     phase_.notify_all();
   }
 
-  [[no_unique_address]]
+  FTL_NO_UNIQUE_ADDRESS
   CompletionFunction completion_;
 
   detail::mutex_state gate_;

@@ -36,6 +36,7 @@ add_library(
         STATIC
         runtime/current_zone.cpp
         runtime/tzdb_runtime.cpp
+        runtime/tzdb_tail.cpp
         "${FTL_TZDB_GENERATED_SOURCE}"
 )
 

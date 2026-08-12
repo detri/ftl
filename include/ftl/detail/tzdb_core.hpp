@@ -25,6 +25,88 @@ struct link_ref {
   }
 };
 
+enum class day_kind : unsigned char {
+  exact,
+  last_weekday,
+  weekday_on_or_after,
+  weekday_on_or_before,
+};
+
+enum class time_basis : unsigned char {
+  wall,
+  standard,
+  universal,
+};
+
+enum class rules_kind : unsigned char {
+  none,
+  fixed,
+  named,
+};
+
+struct day_spec {
+  day_kind kind = day_kind::exact;
+  int weekday = 0;
+  int day = 1;
+};
+
+struct rule_definition {
+  bool valid = false;
+
+  int from_year = 0;
+  int to_year = 0;
+  bool to_max = false;
+
+  int month = 1;
+  day_spec on;
+
+  int at_seconds = 0;
+  time_basis at_basis = time_basis::wall;
+
+  int save_seconds = 0;
+  bool save_is_daylight = false;
+
+  const char *letters = nullptr;
+
+  constexpr explicit operator bool() const noexcept { return valid; }
+};
+
+struct rule_set_definition {
+  bool valid = false;
+
+  const char *name = nullptr;
+
+  unsigned rule_begin = 0;
+  unsigned rule_count = 0;
+
+  constexpr explicit operator bool() const noexcept { return valid; }
+};
+
+struct era_definition {
+  bool valid = false;
+
+  int standard_offset_seconds = 0;
+
+  rules_kind rules = rules_kind::none;
+  unsigned rule_set = invalid_index;
+
+  int fixed_save_seconds = 0;
+  bool fixed_save_is_daylight = false;
+
+  const char *format = nullptr;
+
+  bool has_until = false;
+
+  int until_year = 0;
+  int until_month = 1;
+  day_spec until_day;
+
+  int until_seconds = 0;
+  time_basis until_basis = time_basis::wall;
+
+  constexpr explicit operator bool() const noexcept { return valid; }
+};
+
 struct zone_interval {
   bool valid = false;
 
@@ -65,6 +147,25 @@ bool valid() noexcept;
 unsigned zone_count() noexcept;
 unsigned link_count() noexcept;
 unsigned leap_count() noexcept;
+
+unsigned rule_count() noexcept;
+unsigned rule_set_count() noexcept;
+unsigned era_count() noexcept;
+
+rule_definition rule_at(unsigned index) noexcept;
+
+rule_set_definition rule_set_at(unsigned index) noexcept;
+
+era_definition era_at(unsigned index) noexcept;
+
+rule_definition rule_set_rule_at(unsigned rule_set_index,
+                                 unsigned relative_index) noexcept;
+
+unsigned zone_era_count(zone_ref zone) noexcept;
+
+era_definition zone_era_at(zone_ref zone, unsigned relative_index) noexcept;
+
+era_definition zone_final_era(zone_ref zone) noexcept;
 
 long long leap_date_seconds(unsigned index) noexcept;
 int leap_value(unsigned index) noexcept;

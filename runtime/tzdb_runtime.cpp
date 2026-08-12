@@ -1,8 +1,12 @@
+#include "tzdb_tail.hpp"
+
 #include <ftl/detail/tzdb_blob.hpp>
 #include <ftl/detail/tzdb_blob_format.hpp>
 #include <ftl/detail/tzdb_core.hpp>
 
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 
 namespace ftl_tzdb_runtime_core {
 namespace {
@@ -117,6 +121,98 @@ int compare_text(const char *left, size_type left_size,
   return 1;
 }
 
+std::uint8_t read_u8(const unsigned char *data) noexcept { return data[0]; }
+
+bool decode_day_kind(std::uint8_t value, day_kind &result) noexcept {
+  switch (value) {
+  case 0:
+    result = day_kind::exact;
+    return true;
+
+  case 1:
+    result = day_kind::last_weekday;
+    return true;
+
+  case 2:
+    result = day_kind::weekday_on_or_after;
+    return true;
+
+  case 3:
+    result = day_kind::weekday_on_or_before;
+    return true;
+
+  default:
+    return false;
+  }
+}
+
+bool decode_time_basis(std::uint8_t value, time_basis &result) noexcept {
+  switch (value) {
+  case 0:
+    result = time_basis::wall;
+    return true;
+
+  case 1:
+    result = time_basis::standard;
+    return true;
+
+  case 2:
+    result = time_basis::universal;
+    return true;
+
+  default:
+    return false;
+  }
+}
+
+bool decode_rules_kind(std::uint8_t value, rules_kind &result) noexcept {
+  switch (value) {
+  case 0:
+    result = rules_kind::none;
+    return true;
+
+  case 1:
+    result = rules_kind::fixed;
+    return true;
+
+  case 2:
+    result = rules_kind::named;
+    return true;
+
+  default:
+    return false;
+  }
+}
+
+bool decode_day_spec(const unsigned char *record, std::size_t kind_offset,
+                     std::size_t weekday_offset, std::size_t day_offset,
+                     day_spec &result) noexcept {
+  if (!decode_day_kind(read_u8(record + kind_offset), result.kind)) {
+    return false;
+  }
+
+  result.weekday = read_i32(record + weekday_offset);
+
+  result.day = read_i32(record + day_offset);
+
+  return true;
+}
+
+const unsigned char *rule_record_at(unsigned index) noexcept {
+  return record_at(table(format::table_id::rules), format::rule_record::size,
+                   index);
+}
+
+const unsigned char *rule_set_record_at(unsigned index) noexcept {
+  return record_at(table(format::table_id::rule_sets),
+                   format::rule_set_record::size, index);
+}
+
+const unsigned char *era_record_at(unsigned index) noexcept {
+  return record_at(table(format::table_id::eras), format::era_record::size,
+                   index);
+}
+
 const unsigned char *zone_record_at(unsigned index) noexcept {
   return record_at(table(format::table_id::zones), format::zone_record::size,
                    index);
@@ -140,6 +236,120 @@ const unsigned char *transition_record_at(unsigned index) noexcept {
 const unsigned char *windows_record_at(unsigned index) noexcept {
   return record_at(table(format::table_id::windows_zones),
                    format::windows_zone_record::size, index);
+}
+
+long long saturating_add(long long value, long long adjustment) noexcept {
+  constexpr long long minimum = std::numeric_limits<long long>::min();
+
+  constexpr long long maximum = std::numeric_limits<long long>::max();
+
+  if (adjustment > 0 && value > maximum - adjustment) {
+    return maximum;
+  }
+
+  if (adjustment < 0 && value < minimum - adjustment) {
+    return minimum;
+  }
+
+  return value + adjustment;
+}
+
+bool zone_offset_bounds(zone_ref zone, long long &minimum,
+                        long long &maximum) noexcept {
+  if (!zone)
+    return false;
+
+  const auto *record = zone_record_at(zone.index);
+
+  if (record == nullptr)
+    return false;
+
+  const long long initial =
+      read_i32(record + format::zone_record::initial_offset_seconds);
+
+  minimum = initial;
+  maximum = initial;
+
+  const unsigned transition_begin =
+      read_u32(record + format::zone_record::transition_begin);
+
+  const unsigned transition_count =
+      read_u32(record + format::zone_record::transition_count);
+
+  for (unsigned index = 0; index < transition_count; ++index) {
+    const auto *transition = transition_record_at(transition_begin + index);
+
+    if (transition == nullptr)
+      return false;
+
+    const long long offset =
+        read_i32(transition + format::transition_record::offset_seconds);
+
+    if (offset < minimum)
+      minimum = offset;
+
+    if (offset > maximum)
+      maximum = offset;
+  }
+
+  /*
+   * Also account for every state the open-ended
+   * final era can manufacture after the precomputed
+   * transition table ends.
+   */
+  const auto era = zone_final_era(zone);
+
+  if (!era)
+    return false;
+
+  auto include_offset = [&](long long offset) {
+    if (offset < minimum)
+      minimum = offset;
+
+    if (offset > maximum)
+      maximum = offset;
+  };
+
+  if (era.rules == rules_kind::none) {
+    include_offset(era.standard_offset_seconds);
+
+    return true;
+  }
+
+  if (era.rules == rules_kind::fixed) {
+    include_offset(static_cast<long long>(era.standard_offset_seconds) +
+                   era.fixed_save_seconds);
+
+    return true;
+  }
+
+  if (era.rule_set == invalid_index) {
+    return false;
+  }
+
+  /*
+   * SAVE == 0 is a valid possible baseline even if
+   * the final rule set happens not to contain an
+   * explicit zero-save Rule in some future database.
+   */
+  include_offset(era.standard_offset_seconds);
+
+  const auto set = rule_set_at(era.rule_set);
+
+  if (!set)
+    return false;
+
+  for (unsigned index = 0; index < set.rule_count; ++index) {
+    const auto rule = rule_set_rule_at(era.rule_set, index);
+
+    if (!rule)
+      return false;
+
+    include_offset(static_cast<long long>(era.standard_offset_seconds) +
+                   rule.save_seconds);
+  }
+
+  return true;
 }
 
 } // namespace
@@ -209,6 +419,223 @@ unsigned zone_count() noexcept { return table(format::table_id::zones).count; }
 unsigned link_count() noexcept { return table(format::table_id::links).count; }
 
 unsigned leap_count() noexcept { return table(format::table_id::leaps).count; }
+
+unsigned rule_count() noexcept { return table(format::table_id::rules).count; }
+
+unsigned rule_set_count() noexcept {
+  return table(format::table_id::rule_sets).count;
+}
+
+unsigned era_count() noexcept { return table(format::table_id::eras).count; }
+
+rule_definition rule_at(unsigned index) noexcept {
+  const auto *record = rule_record_at(index);
+
+  if (record == nullptr)
+    return {};
+
+  rule_definition result;
+
+  const std::uint8_t to_max = read_u8(record + format::rule_record::to_max);
+
+  const std::uint8_t save_is_daylight =
+      read_u8(record + format::rule_record::save_is_daylight);
+
+  if (to_max > 1 || save_is_daylight > 1)
+    return {};
+
+  if (!decode_day_spec(record, format::rule_record::day_kind,
+                       format::rule_record::weekday, format::rule_record::day,
+                       result.on)) {
+    return {};
+  }
+
+  if (!decode_time_basis(read_u8(record + format::rule_record::at_basis),
+                         result.at_basis)) {
+    return {};
+  }
+
+  result.from_year = read_i32(record + format::rule_record::from_year);
+
+  result.to_year = read_i32(record + format::rule_record::to_year);
+
+  result.to_max = to_max != 0;
+
+  result.month = read_i32(record + format::rule_record::month);
+
+  result.at_seconds = read_i32(record + format::rule_record::at_seconds);
+
+  result.save_seconds = read_i32(record + format::rule_record::save_seconds);
+
+  result.save_is_daylight = save_is_daylight != 0;
+
+  result.letters = string_at(read_u32(record + format::rule_record::letters));
+
+  if (result.letters == nullptr)
+    return {};
+
+  result.valid = true;
+  return result;
+}
+
+rule_set_definition rule_set_at(unsigned index) noexcept {
+  const auto *record = rule_set_record_at(index);
+
+  if (record == nullptr)
+    return {};
+
+  rule_set_definition result;
+
+  result.name = string_at(read_u32(record + format::rule_set_record::name));
+
+  result.rule_begin = read_u32(record + format::rule_set_record::rule_begin);
+
+  result.rule_count = read_u32(record + format::rule_set_record::rule_count);
+
+  if (result.name == nullptr)
+    return {};
+
+  const unsigned total = rule_count();
+
+  if (result.rule_begin > total ||
+      result.rule_count > total - result.rule_begin) {
+    return {};
+  }
+
+  result.valid = true;
+  return result;
+}
+
+era_definition era_at(unsigned index) noexcept {
+  const auto *record = era_record_at(index);
+
+  if (record == nullptr)
+    return {};
+
+  era_definition result;
+
+  if (!decode_rules_kind(read_u8(record + format::era_record::rules),
+                         result.rules)) {
+    return {};
+  }
+
+  const unsigned rule_set = read_u32(record + format::era_record::rule_set);
+
+  if (result.rules == rules_kind::named) {
+    if (rule_set >= rule_set_count())
+      return {};
+
+    result.rule_set = rule_set;
+  } else {
+    if (rule_set != format::no_rule_set)
+      return {};
+
+    result.rule_set = invalid_index;
+  }
+
+  const std::uint8_t fixed_save_is_daylight =
+      read_u8(record + format::era_record::fixed_save_is_daylight);
+
+  const std::uint8_t has_until =
+      read_u8(record + format::era_record::has_until);
+
+  if (fixed_save_is_daylight > 1 || has_until > 1)
+    return {};
+
+  result.standard_offset_seconds =
+      read_i32(record + format::era_record::standard_offset_seconds);
+
+  result.fixed_save_seconds =
+      read_i32(record + format::era_record::fixed_save_seconds);
+
+  result.fixed_save_is_daylight = fixed_save_is_daylight != 0;
+
+  result.format = string_at(read_u32(record + format::era_record::format));
+
+  if (result.format == nullptr)
+    return {};
+
+  result.has_until = has_until != 0;
+
+  result.until_year = read_i32(record + format::era_record::until_year);
+
+  result.until_month = read_i32(record + format::era_record::until_month);
+
+  if (!decode_day_spec(record, format::era_record::until_day_kind,
+                       format::era_record::until_weekday,
+                       format::era_record::until_day, result.until_day)) {
+    return {};
+  }
+
+  result.until_seconds = read_i32(record + format::era_record::until_seconds);
+
+  if (!decode_time_basis(read_u8(record + format::era_record::until_basis),
+                         result.until_basis)) {
+    return {};
+  }
+
+  result.valid = true;
+  return result;
+}
+
+rule_definition rule_set_rule_at(unsigned rule_set_index,
+                                 unsigned relative_index) noexcept {
+  const auto set = rule_set_at(rule_set_index);
+
+  if (!set || relative_index >= set.rule_count)
+    return {};
+
+  return rule_at(set.rule_begin + relative_index);
+}
+
+unsigned zone_era_count(zone_ref zone) noexcept {
+  if (!zone)
+    return 0;
+
+  const auto *record = zone_record_at(zone.index);
+
+  if (record == nullptr)
+    return 0;
+
+  const unsigned begin = read_u32(record + format::zone_record::era_begin);
+
+  const unsigned count = read_u32(record + format::zone_record::era_count);
+
+  const unsigned total = era_count();
+
+  if (begin > total || count > total - begin)
+    return 0;
+
+  return count;
+}
+
+era_definition zone_era_at(zone_ref zone, unsigned relative_index) noexcept {
+  if (!zone)
+    return {};
+
+  const auto *record = zone_record_at(zone.index);
+
+  if (record == nullptr)
+    return {};
+
+  const unsigned begin = read_u32(record + format::zone_record::era_begin);
+
+  const unsigned count = zone_era_count(zone);
+
+  if (relative_index >= count)
+    return {};
+
+  return era_at(begin + relative_index);
+}
+
+era_definition zone_final_era(zone_ref zone) noexcept {
+  const unsigned count = zone_era_count(zone);
+
+  if (count == 0)
+    return {};
+
+  return zone_era_at(zone, count - 1);
+}
 
 long long leap_date_seconds(unsigned index) noexcept {
   const auto *record = leap_record_at(index);
@@ -525,9 +952,8 @@ zone_interval interval_at(zone_ref zone, unsigned state_index) noexcept {
 }
 
 zone_interval lookup(zone_ref zone, long long timestamp) noexcept {
-  if (!zone || timestamp >= precomputed_until()) {
+  if (!zone)
     return {};
-  }
 
   const auto *record = zone_record_at(zone.index);
 
@@ -540,67 +966,208 @@ zone_interval lookup(zone_ref zone, long long timestamp) noexcept {
   const unsigned transition_count =
       read_u32(record + format::zone_record::transition_count);
 
-  unsigned first = 0;
-  unsigned last = transition_count;
+  const long long horizon = precomputed_until();
 
-  while (first < last) {
-    const unsigned middle = first + (last - first) / 2;
+  /*
+   * Everything before the generated horizon continues
+   * to use the exact precomputed transition table.
+   *
+   * Do not involve the tail evaluator in choosing the
+   * state for an already-covered timestamp.
+   */
+  if (timestamp < horizon) {
+    unsigned first = 0;
+    unsigned last = transition_count;
 
-    const auto *transition = transition_record_at(transition_begin + middle);
+    while (first < last) {
+      const unsigned middle = first + (last - first) / 2;
 
-    const long long begin =
-        read_i64(transition + format::transition_record::begin);
+      const auto *transition = transition_record_at(transition_begin + middle);
 
-    if (begin <= timestamp)
-      first = middle + 1;
-    else
-      last = middle;
+      if (transition == nullptr)
+        return {};
+
+      const long long begin =
+          read_i64(transition + format::transition_record::begin);
+
+      if (begin <= timestamp)
+        first = middle + 1;
+      else
+        last = middle;
+    }
+
+    auto result = interval_at(zone, first);
+
+    if (!result)
+      return {};
+
+    /*
+     * Normal precomputed intervals are already exact.
+     */
+    if (!result.end_is_horizon)
+      return result;
+
+    /*
+     * Only the END of the final precomputed interval is
+     * artificial.
+     *
+     * Ask the tail evaluator what state follows the
+     * horizon. If its first interval is still the same
+     * state, use that interval's real end while retaining
+     * the exact precomputed beginning/state.
+     */
+    const auto tail = ::ftl_tzdb_tail::lookup(zone, horizon, result);
+
+    if (!tail)
+      return {};
+
+    result.end = tail.end;
+    result.end_is_horizon = false;
+
+    return result;
   }
 
-  return interval_at(zone, first);
+  /*
+   * Post-horizon lookup starts from the exact state that
+   * the generated transition table established at the
+   * horizon.
+   */
+  const auto seed = interval_at(zone, transition_count);
+
+  if (!seed)
+    return {};
+
+  return ::ftl_tzdb_tail::lookup(zone, timestamp, seed);
 }
 
 local_lookup_result lookup_local(zone_ref zone, long long timestamp) noexcept {
   if (!zone)
     return {};
 
-  const auto *record = zone_record_at(zone.index);
+  long long minimum_offset = 0;
+  long long maximum_offset = 0;
 
-  if (record == nullptr)
+  if (!zone_offset_bounds(zone, minimum_offset, maximum_offset)) {
     return {};
+  }
 
-  const unsigned transition_count =
-      read_u32(record + format::zone_record::transition_count);
+  /*
+   * For:
+   *
+   *   local = sys + offset
+   *
+   * every possible sys interpretation lies in:
+   *
+   *   [local - max_offset,
+   *    local - min_offset]
+   *
+   * This lets local lookup operate over the normal
+   * sys lookup API and therefore works seamlessly on
+   * both sides of the precompute horizon.
+   */
+  long long first_system = saturating_add(timestamp, -maximum_offset);
+
+  long long last_system = saturating_add(timestamp, -minimum_offset);
+
+  if (first_system > last_system) {
+    const long long temporary = first_system;
+
+    first_system = last_system;
+    last_system = temporary;
+  }
 
   local_lookup_result result;
 
   unsigned matches = 0;
 
-  for (unsigned state = 0; state <= transition_count; ++state) {
-    const auto interval = interval_at(zone, state);
+  bool have_previous = false;
+  zone_interval previous;
 
-    if (!interval)
-      return {};
+  bool have_gap = false;
+  zone_interval gap_first;
+  zone_interval gap_second;
 
-    const bool after_begin =
-        interval.begin_unbounded ||
-        timestamp >= interval.begin + interval.offset_seconds;
+  zone_interval interval = lookup(zone, first_system);
 
-    const bool before_end = timestamp < interval.end + interval.offset_seconds;
+  if (!interval)
+    return {};
 
-    if (!after_begin || !before_end) {
-      continue;
+  for (;;) {
+    const long long local_begin =
+        interval.begin_unbounded
+            ? std::numeric_limits<long long>::min()
+            : saturating_add(interval.begin, interval.offset_seconds);
+
+    const long long local_end =
+        interval.end == std::numeric_limits<long long>::max()
+            ? std::numeric_limits<long long>::max()
+            : saturating_add(interval.end, interval.offset_seconds);
+
+    if (timestamp >= local_begin && timestamp < local_end) {
+      if (matches == 0) {
+        result.first = interval;
+      } else if (matches == 1) {
+        result.second = interval;
+      } else {
+        return {};
+      }
+
+      ++matches;
     }
 
-    if (matches == 0) {
-      result.first = interval;
-    } else if (matches == 1) {
-      result.second = interval;
-    } else {
+    if (have_previous && !interval.begin_unbounded) {
+      /*
+       * Both sides of a system transition share the
+       * same system instant, but map that instant to
+       * different local boundaries.
+       */
+      const long long previous_local_end =
+          saturating_add(interval.begin, previous.offset_seconds);
+
+      const long long next_local_begin =
+          saturating_add(interval.begin, interval.offset_seconds);
+
+      if (previous_local_end < next_local_begin &&
+          timestamp >= previous_local_end && timestamp < next_local_begin) {
+        have_gap = true;
+        gap_first = previous;
+        gap_second = interval;
+      }
+    }
+
+    if (interval.end == std::numeric_limits<long long>::max()) {
+      break;
+    }
+
+    /*
+     * No later system instant can represent this
+     * local timestamp once we've passed the complete
+     * offset-derived candidate range.
+     */
+    if (interval.end > last_system) {
+      break;
+    }
+
+    previous = interval;
+    have_previous = true;
+
+    const long long next_time = interval.end;
+
+    auto next = lookup(zone, next_time);
+
+    if (!next)
+      return {};
+
+    /*
+     * Corrupted/non-progressing interval topology
+     * must not turn this into an infinite loop.
+     */
+    if (next.end <= next_time &&
+        next.end != std::numeric_limits<long long>::max()) {
       return {};
     }
 
-    ++matches;
+    interval = next;
   }
 
   if (matches == 1) {
@@ -615,30 +1182,13 @@ local_lookup_result lookup_local(zone_ref zone, long long timestamp) noexcept {
     return result;
   }
 
-  for (unsigned state = 1; state <= transition_count; ++state) {
-    const auto previous = interval_at(zone, state - 1);
+  if (have_gap) {
+    result.result = local_result_kind::nonexistent;
 
-    const auto next = interval_at(zone, state);
+    result.first = gap_first;
+    result.second = gap_second;
 
-    if (!previous || !next)
-      return {};
-
-    const long long previous_local_end = next.begin + previous.offset_seconds;
-
-    const long long next_local_begin = next.begin + next.offset_seconds;
-
-    if (previous_local_end >= next_local_begin) {
-      continue;
-    }
-
-    if (timestamp >= previous_local_end && timestamp < next_local_begin) {
-      result.result = local_result_kind::nonexistent;
-
-      result.first = previous;
-      result.second = next;
-
-      return result;
-    }
+    return result;
   }
 
   return {};

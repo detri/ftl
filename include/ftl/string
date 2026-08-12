@@ -1057,7 +1057,7 @@ private:
   size_type size_{};
   size_type capacity_{small_capacity};
   bool allocated_{};
-  [[no_unique_address]] Allocator allocator_{};
+  FTL_NO_UNIQUE_ADDRESS Allocator allocator_{};
   Character small_[small_capacity + 1]{};
 };
 
