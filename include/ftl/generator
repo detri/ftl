@@ -263,76 +263,107 @@ public:
     }
 
     template <class SelectedAllocator>
-    [[nodiscard]]
-    static void *allocate_frame(size_t frame_size,
-                                const SelectedAllocator &allocator) {
-      using rebound_allocator = typename allocator_traits<
-          SelectedAllocator>::template rebind_alloc<allocation_unit>;
+[[nodiscard]]
+static void *allocate_frame(size_t frame_size,
+                            const SelectedAllocator &allocator) {
+  using rebound_allocator = typename allocator_traits<
+      SelectedAllocator>::template rebind_alloc<allocation_unit>;
 
-      using rebound_traits = allocator_traits<rebound_allocator>;
+  using rebound_traits = allocator_traits<rebound_allocator>;
 
-      static_assert(is_pointer_v<typename rebound_traits::pointer>,
-                    "generator frame allocator must use a raw pointer");
+  static_assert(is_pointer_v<typename rebound_traits::pointer>,
+                "generator frame allocator must use a raw pointer");
 
-      static_assert(alignof(rebound_allocator) <= allocation_alignment,
-                    "generator frame allocator has unsupported "
-                    "over-alignment");
+  rebound_allocator rebound{allocator};
 
-      rebound_allocator rebound{allocator};
+  const size_t header_offset =
+      align_up(frame_size, alignof(allocation_header));
 
-      const size_t header_offset =
-          align_up(frame_size, alignof(allocation_header));
+  const size_t allocator_storage_offset =
+      header_offset + sizeof(allocation_header);
 
-      const size_t allocator_offset =
-          align_up(header_offset + sizeof(allocation_header),
-                   alignof(rebound_allocator));
+  /*
+   * The allocation itself is only guaranteed allocation_unit alignment.
+   *
+   * An allocator object may have stronger alignment than that, so reserve
+   * enough padding to find a suitably aligned address inside the block.
+   */
+  const size_t allocator_storage_size =
+      sizeof(rebound_allocator) + alignof(rebound_allocator) - 1;
 
-      const size_t total_size = allocator_offset + sizeof(rebound_allocator);
+  const size_t total_size =
+      allocator_storage_offset + allocator_storage_size;
 
-      const size_t unit_count =
-          (total_size + sizeof(allocation_unit) - 1) / sizeof(allocation_unit);
+  const size_t unit_count =
+      (total_size + sizeof(allocation_unit) - 1) /
+      sizeof(allocation_unit);
 
-      allocation_unit *allocation =
-          rebound_traits::allocate(rebound, unit_count);
+  allocation_unit *allocation =
+      rebound_traits::allocate(rebound, unit_count);
 
-      auto *bytes = reinterpret_cast<unsigned char *>(allocation);
+  auto *bytes = reinterpret_cast<unsigned char *>(allocation);
 
-      auto *header =
-          reinterpret_cast<allocation_header *>(bytes + header_offset);
+  auto *header =
+      reinterpret_cast<allocation_header *>(bytes + header_offset);
 
-      auto *stored_allocator =
-          reinterpret_cast<rebound_allocator *>(bytes + allocator_offset);
+  void *allocator_storage =
+      static_cast<void *>(bytes + allocator_storage_offset);
+
+  size_t allocator_space = allocator_storage_size;
+
+  void *aligned_allocator_storage =
+      FTL_GENERATOR_NAMESPACE::align(
+          alignof(rebound_allocator),
+          sizeof(rebound_allocator),
+          allocator_storage,
+          allocator_space);
+
+  /*
+   * allocator_storage_size reserves alignment - 1 bytes of padding,
+   * so align() must succeed.
+   */
+  auto *stored_allocator =
+      static_cast<rebound_allocator *>(aligned_allocator_storage);
+
+  const size_t allocator_offset =
+      static_cast<unsigned char *>(aligned_allocator_storage) - bytes;
 
 #if FTL_HAS_EXCEPTIONS
-      bool header_constructed = false;
+  bool header_constructed = false;
 
-      try {
-        construct_at(header,
-                     allocation_header{&deallocate_frame<rebound_allocator>,
-                                       unit_count, allocator_offset});
+  try {
+    construct_at(
+        header,
+        allocation_header{
+            &deallocate_frame<rebound_allocator>,
+            unit_count,
+            allocator_offset});
 
-        header_constructed = true;
+    header_constructed = true;
 
-        construct_at(stored_allocator, rebound);
-      } catch (...) {
-        if (header_constructed) {
-          destroy_at(header);
-        }
+    construct_at(stored_allocator, rebound);
+  } catch (...) {
+    if (header_constructed) {
+      destroy_at(header);
+    }
 
-        rebound_traits::deallocate(rebound, allocation, unit_count);
+    rebound_traits::deallocate(rebound, allocation, unit_count);
 
-        throw;
-      }
+    throw;
+  }
 #else
-      construct_at(header,
-                   allocation_header{&deallocate_frame<rebound_allocator>,
-                                     unit_count, allocator_offset});
+  construct_at(
+      header,
+      allocation_header{
+          &deallocate_frame<rebound_allocator>,
+          unit_count,
+          allocator_offset});
 
-      construct_at(stored_allocator, rebound);
+  construct_at(stored_allocator, rebound);
 #endif
 
-      return allocation;
-    }
+  return allocation;
+}
 
     template <class Stored> class copied_yield_awaiter {
     public:
