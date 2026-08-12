@@ -1223,6 +1223,9 @@ constexpr bool operator>=(const sys_time<Duration> &left,
 }
 
 template <class Duration>
+  requires three_way_comparable_with<
+      sys_seconds,
+      sys_time<Duration>>
 constexpr auto operator<=>(const leap_second &left,
                            const sys_time<Duration> &right) noexcept {
   return left.date() <=> right;
@@ -2189,6 +2192,8 @@ private:
   sys_time<duration> tp_;
 };
 
+using zoned_seconds = zoned_time<seconds>;
+
 zoned_time()
     -> zoned_time<seconds>;
 
@@ -2819,9 +2824,9 @@ FTL_END_NAMESPACE
 #include <ftl/detail/chrono_io.hpp>
 #endif
 
-#if !defined(__cpp_lib_chrono) || __cpp_lib_chrono < 201611L
+#if !defined(__cpp_lib_chrono) || __cpp_lib_chrono < 201907L
 #undef __cpp_lib_chrono
-#define __cpp_lib_chrono 201611L
+#define __cpp_lib_chrono 201907L
 #endif
 
 #if !defined(__cpp_lib_chrono_udls) || __cpp_lib_chrono_udls < 201304L

@@ -16,6 +16,7 @@
 #include <locale>
 #include <memory>
 #include <ranges>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -36,6 +37,7 @@
 #include <ftl/locale>
 #include <ftl/memory>
 #include <ftl/ranges>
+#include <ftl/sstream>
 #include <ftl/stdexcept>
 #include <ftl/string>
 #include <ftl/string_view>
@@ -5644,6 +5646,96 @@ private:
   chrono_format_spec<charT> spec_{};
 };
 
+template <class T, class charT>
+class chrono_info_formatter {
+public:
+  constexpr chrono_info_formatter() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    return chrono_parse_format_spec(
+        context,
+        spec_,
+        false);
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator
+  format(const T &value, FormatContext &context) const {
+    basic_string<charT> content;
+
+    if (spec_.chrono_specs.empty()) {
+      basic_ostringstream<
+          charT,
+          char_traits<charT>,
+          allocator<charT>>
+          stream;
+
+      if (spec_.outer.localized) {
+        stream.imbue(context.locale());
+      } else {
+        stream.imbue(locale::classic());
+      }
+
+      stream << value;
+
+      content = stream.str();
+    } else {
+      chrono_expand_specs(
+          content,
+          spec_.chrono_specs,
+          false,
+          [&](basic_string<charT> &destination,
+              char modifier,
+              char conversion) {
+            if constexpr (is_same_v<T, chrono::sys_info>) {
+              switch (conversion) {
+              case 'z':
+                chrono_append_offset(
+                    destination,
+                    value.offset,
+                    modifier == 'E' ||
+                        modifier == 'O');
+
+                return;
+
+              case 'Z':
+                if (modifier != '\0') {
+                  throw_format_error(
+                      "invalid chrono modifier for time-zone abbreviation");
+                }
+
+                for (char character : value.abbrev) {
+                  destination.push_back(
+                      format_widen<charT>(character));
+                }
+
+                return;
+
+              default:
+                throw_format_error(
+                    "sys_info does not contain the requested chrono field");
+              }
+            } else {
+              throw_format_error(
+                  "local_info does not contain the requested chrono field");
+            }
+          });
+    }
+
+    return format_padded_text(
+        basic_string_view<charT>(
+            content.data(),
+            content.size()),
+        context,
+        spec_.outer,
+        format_alignment::left);
+  }
+
+private:
+  chrono_format_spec<charT> spec_{};
+};
+
 } // namespace detail
 
 template <class Rep, class Period, class charT>
@@ -5734,6 +5826,18 @@ struct formatter<
           chrono_local_time_format_formatter<
               Duration,
               charT> {};
+
+template <class charT>
+struct formatter<chrono::sys_info, charT>
+    : detail::chrono_info_formatter<
+          chrono::sys_info,
+          charT> {};
+
+template <class charT>
+struct formatter<chrono::local_info, charT>
+    : detail::chrono_info_formatter<
+          chrono::local_info,
+          charT> {};
 
 template <
     class Duration,

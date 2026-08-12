@@ -51,6 +51,20 @@ static_assert(tested::formattable<zoned_time<seconds>, char>);
 
 static_assert(tested::formattable<zoned_time<seconds>, wchar_t>);
 
+static_assert(tested::formattable<sys_info, char>);
+static_assert(tested::formattable<sys_info, wchar_t>);
+
+static_assert(tested::formattable<local_info, char>);
+static_assert(tested::formattable<local_info, wchar_t>);
+
+static_assert(tested::three_way_comparable_with<sys_seconds, sys_seconds>);
+
+#if !defined(__cpp_lib_chrono) || __cpp_lib_chrono < 201907L
+#error <chrono> must advertise the N4950 chrono facility
+#endif
+
+static_assert(tested::is_same_v<zoned_seconds, zoned_time<seconds>>);
+
 static_assert(
     tested::is_same_v<decltype(tested::declval<const time_zone &>().to_sys(
                           tested::declval<const local_time<milliseconds> &>())),
@@ -3205,6 +3219,73 @@ bool chrono_stream_io_works() {
           "2024-11-03 01:30:00 EST == 2024-11-03 06:30:00 UTC") {
         return false;
       }
+    } catch (...) {
+      return false;
+    }
+  }
+
+  /*
+   * sys_info stream insertion and formatting.
+   */
+  {
+    const auto *zone = locate_zone("America/New_York");
+
+    if (zone == nullptr)
+      return false;
+
+    const auto info = zone->get_info(sys_days{
+                                         year{2024} / July / 1,
+                                     } +
+                                     hours{16});
+
+    tested::ostringstream stream;
+
+    stream << info;
+
+    if (stream.fail())
+      return false;
+
+    if (tested::format("{}", info) != stream.str())
+      return false;
+
+    if (tested::format("{:%Z %z}", info) != "EDT -0400") {
+      return false;
+    }
+
+    if (tested::format("{:%Z %Ez}", info) != "EDT -04:00") {
+      return false;
+    }
+  }
+
+  /*
+   * local_info stream insertion and formatting.
+   */
+  {
+    const auto *zone = locate_zone("America/New_York");
+
+    if (zone == nullptr)
+      return false;
+
+    const auto info = zone->get_info(local_days{
+                                         year{2024} / November / 3,
+                                     } +
+                                     hours{1} + minutes{30});
+
+    tested::ostringstream stream;
+
+    stream << info;
+
+    if (stream.fail())
+      return false;
+
+    if (tested::format("{}", info) != stream.str())
+      return false;
+
+    try {
+      (void)tested::format("{:%Z}", info);
+
+      return false;
+    } catch (const tested::format_error &) {
     } catch (...) {
       return false;
     }

@@ -2320,6 +2320,51 @@ operator<<(basic_ostream<Character, Traits> &stream,
   });
 }
 
+template <class Character, class Traits>
+basic_ostream<Character, Traits> &
+operator<<(basic_ostream<Character, Traits> &stream,
+           const sys_info &value) {
+  return chrono_detail::io_buffered(stream, [&](auto &buffer) {
+    chrono_detail::io_ascii(buffer, "{offset=");
+
+    buffer << value.offset;
+
+    chrono_detail::io_ascii(buffer, ", save=");
+
+    buffer << value.save;
+
+    chrono_detail::io_ascii(buffer, ", abbrev=");
+
+    for (char character : value.abbrev) {
+      buffer.put(static_cast<Character>(
+          static_cast<unsigned char>(character)));
+    }
+
+    buffer.put(static_cast<Character>('}'));
+  });
+}
+
+template <class Character, class Traits>
+basic_ostream<Character, Traits> &
+operator<<(basic_ostream<Character, Traits> &stream,
+           const local_info &value) {
+  return chrono_detail::io_buffered(stream, [&](auto &buffer) {
+    chrono_detail::io_ascii(buffer, "{result=");
+
+    buffer << value.result;
+
+    chrono_detail::io_ascii(buffer, ", first=");
+
+    buffer << value.first;
+
+    chrono_detail::io_ascii(buffer, ", second=");
+
+    buffer << value.second;
+
+    buffer.put(static_cast<Character>('}'));
+  });
+}
+
 template <class Character, class Traits, class Duration, class TimeZonePtr>
 basic_ostream<Character, Traits> &
 operator<<(basic_ostream<Character, Traits> &stream,

@@ -158,6 +158,7 @@ passed its gate; they do not prevent subsequent standards-audit fixes.
 | `<flat_map>`           | Stage 4.3         |
 | `<ratio>`              | Stage 5.1         |
 | `<ctime>`              | Stage 5.1         |
+| `<chrono>`             | Stage 7.4         |
 | `<stdexcept>`          | Stage 5.2         |
 | `<system_error>`       | Stage 5.2         |
 | `<cfenv>`              | Stage 5.3         |
@@ -204,14 +205,6 @@ because coroutine transformation performs lookup through
 `std::coroutine_traits`. Normal namespace mode still provides and tests the
 library types directly.
 
-### Seeded headers
-
-Only one C++23 public header remains seeded rather than complete:
-
-| Header     | Implemented direction                                                                                                 | Major remaining groups                                                      |
-|------------|-----------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
-| `<chrono>` | durations, time points, calendars, clocks, clock conversion, literals, `hh_mm_ss`, and C++23 formatter specializations | stream insertion; `from_stream`; timezone database and associated tzdb APIs |
-
 `include/ftl/detail/rapidhash` is an implementation detail, not a standard
 header or roadmap milestone.
 
@@ -221,19 +214,22 @@ completed foundational headers. Such defects reopen those individual closures;
 they do not change the rule that completion is based on behavior and coverage,
 not file presence.
 
+### Seeded C++23 headers
+
+None.
+
 ### Absent C++23 headers
 
 None.
 
 All public C++23 standard-library headers in FTL's declared source-interface
-scope now exist. `<chrono>` remains the only public C++23 header that has not
-yet passed its final completion gate.
+scope now exist and have passed their completion gates.
 
 `<text_encoding>` is not a C++23 facility and is therefore out of scope.
 
 Freestanding C compatibility also requires deciding and documenting how the
-corresponding `.h` spellings are supplied. That is part of the relevant
-header's completion gate, not a separate implementation wave.
+corresponding `.h` spellings are supplied. That remains part of the relevant
+header's completion gate rather than a separate implementation wave.
 
 ## Dependency web
 
@@ -337,18 +333,19 @@ Some headers form delivery closures and should be completed together:
   algorithm surfaces. Grammar parsing, matching semantics, match results,
   iteration, replacement formatting, and locale/collation behavior are treated
   as one public closure rather than independently shippable regex layers.
+- `<chrono>` spans computational, formatting, stream, locale, and runtime
+  timezone facilities. Its computational core was delivered in Stage 5.1,
+  formatter integration in Stage 7.2, and the remaining stream/parsing and
+  timezone-database surface in Stage 7.4 before the header was declared
+  complete.
 
 ## Staged completion plan
 
-Only one stage is active at a time. Within a stage, pick the smallest listed
-closure whose prerequisites are green, create its synopsis checklist before
-changing code, finish it in both modes on all three compilers, then take the
-next closure.
+Stages 0 through 7 record the historical dependency-driven path used to reach
+C++23 source-interface completion. Stage 8 is the active productization phase.
 
-Historical stage numbering records delivery order. A deliberately deferred
-closure may remain open while later closures proceed when its dependency
-substrate is already complete and the deferral introduces no temporary public
-API or hosted-STL dependency. Stage 7.4 is the current example.
+A later standards audit may reopen an individual completed closure without
+changing the historical stage in which it first passed its completion gate.
 
 ### Stage 0 — Make completion enforceable
 
@@ -473,14 +470,13 @@ where required, and complexity checks.
 
 ### Stage 5 — Numerics, clocks, and errors
 
-**Status: active only through the deferred `<chrono>` completion tail.**
+**Status: complete.**
 
 Take these closures in order:
 
-1. `<ratio>` + `<chrono>` + `<ctime>` — **computational closure seeded**;
-   `<ratio>` and `<ctime>` complete
-2. `<system_error>` + `<stdexcept>` + `<stacktrace>` — **runtime closure
-   complete**
+1. `<ratio>` + `<chrono>` + `<ctime>` — **complete**; `<chrono>` received its
+   final stream/parsing and timezone-database closure in Stage 7.4
+2. `<system_error>` + `<stdexcept>` + `<stacktrace>` — **complete**
 3. `<cfenv>` + `<cmath>` + `<numbers>` + `<complex>` — **complete**
 4. `<random>` + `<valarray>` — **complete**
 
@@ -492,33 +488,25 @@ owned `<ctime>` surface, including FTL's own `tm`, UTC conversion, textual time
 storage, and platform-width `time_t`. Its runtime-only operations cross a small
 C runtime boundary instead of importing a vendor C++ standard-library ABI.
 
-The seeded `<chrono>` surface covers durations, time points, calendars,
-`hh_mm_ss`, system/steady/UTC/TAI/GPS/file clocks, clock conversions, literals,
-and the C++23 formatter specializations completed with Stage 7.2.
+The computational `<chrono>` surface delivered in Stage 5.1 covers durations,
+time points, calendars, `hh_mm_ss`, system/steady/UTC/TAI/GPS/file clocks,
+clock conversions, literals, and the underlying civil-time arithmetic used by
+later synchronization facilities. Stage 7.2 added the C++23 chrono formatter
+specializations, and Stage 7.4 completed stream insertion, parsing, timezone
+database ownership and lookup, leap-second handling, `zoned_time`, timezone
+formatting, and the final N4950 synopsis audit.
 
-It advertises `__cpp_lib_chrono == 201611L` until the remaining later chrono
-surface passes its closure. Local MSVC and Clang-CL builds pass the normal and
-`FTL_REPLACE_STL` computational tests; native GCC, Clang, and AppleClang
-coverage remains part of every reopened chrono completion gate.
+Completed `<chrono>` advertises `__cpp_lib_chrono == 201907L`.
 
 Shared machinery is kept private: `detail/time_core.hpp` owns civil-calendar
 arithmetic, `detail/time_storage.hpp` owns `<ctime>`'s thread-local result
 storage, and `detail/clock_runtime.hpp` owns platform system/steady clock reads.
+Timezone loading, current-zone discovery, and database ownership likewise stay
+behind private detail boundaries rather than exposing platform ABI types.
+
 Concurrency headers consume the detail clock boundary directly when they need
 timed waits rather than depending on unrelated public chrono formatting or
 timezone facilities.
-
-The remaining `<chrono>` work is now explicit:
-
-1. Complete all C++23 stream insertion and `from_stream` surfaces over the
-   finished stream and locale substrate.
-2. Implement timezone database ownership, discovery/loading, `tzdb_list`,
-   zones, links, leap seconds, current-zone lookup, reload behavior, and the
-   associated calendrical/time-zone APIs.
-3. Run the final synopsis, feature-macro, normal/replacement, freestanding, and
-   three-compiler/platform closure audit.
-
-Only after those items pass does `<chrono>` move from seeded to complete.
 
 Stage 5.2 completes the independently usable C++23 `<system_error>` and
 `<stdexcept>` surfaces and the runtime `<stacktrace>` closure. Error codes,
@@ -709,9 +697,9 @@ supported compiler/platform matrix in normal and replacement modes.
 
 ### Stage 7 — Localization, formatting, and I/O
 
-**Status: active. Stage 7.4 is the only remaining C++23 library closure.**
+**Status: complete.**
 
-Completed and remaining closures:
+Completed closures:
 
 1. **Stage 7.1 — Complete:** Locale core — `<clocale>` and deprecated
    `<codecvt>`; `<locale>` provides the dependency-independent
@@ -730,9 +718,25 @@ Completed and remaining closures:
    table. This closure also supplies the stream/formatter surfaces deferred
    from `<thread>`, `<stacktrace>`, `<complex>`, and `<random>`.
 
-4. **Stage 7.4 — Pending:** Return to `<chrono>` for the complete C++23 stream
-   insertion and `from_stream` surface, then complete timezone database support
-   and perform the final chrono closure audit.
+4. **Stage 7.4 — Complete:** Final `<chrono>` closure. The completed header
+   provides the remaining C++23 stream insertion and `from_stream` surface,
+   timezone database ownership and lookup, `tzdb`/`tzdb_list`, named zones and
+   links, leap-second data, current-zone discovery, reload behavior,
+   `sys_info`/`local_info`, `zoned_time`, timezone-aware streaming and
+   formatting, exception diagnostics, and the final synopsis and feature-test
+   audit against N4950.
+
+   The timezone implementation owns its database and runtime behavior rather
+   than wrapping a vendor C++ standard-library TZDB. Zone/link lookup,
+   transition queries, ambiguous and nonexistent local-time conversion,
+   historical leap seconds, and far-future rule expansion are covered by
+   focused tests. Current-zone discovery remains a platform runtime boundary.
+
+   The completed chrono facility advertises `__cpp_lib_chrono == 201907L`.
+   Defect-corrected standard behavior may be followed where a published
+   library issue corrects an unusable C++23 wording, provided the deviation is
+   documented and does not expand the public interface beyond the intended
+   standard facility.
 
 5. **Stage 7.5 — Complete:** `<iostream>` + `<fstream>` + `<sstream>` +
    `<spanstream>` + `<syncstream>` + `<iomanip>` + `<cstdio>` + deprecated
@@ -785,21 +789,23 @@ hash, range-integration, and deprecated `u8path` surfaces. The uniform UTF-8
 separator choice; raw `\` is not a second Windows path syntax and is rejected
 at the Win32 boundary.
 
-Stage 7 deliberately separated the dependency-independent locale core from the
-stream-dependent locale facets. This was a dependency split, not a reduced
-completion standard: `<locale>` moved to the complete inventory only after its
-entire C++23 synopsis and mandatory facet table were satisfied.
+Stage 7 deliberately separated dependency-independent facilities from the
+stream-dependent surfaces that completed them. This was a dependency split,
+not a reduced completion standard: `<locale>` and `<chrono>` moved to the
+complete inventory only after their entire C++23 public surfaces were
+available over the finished stream, formatting, locale, and runtime substrate.
 
-The same principle applies to `<chrono>`. Its computational and formatting
-subsystems are already usable, but the header remains seeded until its
-stream-parsing and timezone-database surface passes the same completion gate.
-
-**Exit:** Stage 7.4 completes `<chrono>`, leaving no seeded or absent C++23
-headers in FTL's declared source-interface scope.
+**Exit:** every public C++23 standard-library header in FTL's declared
+source-interface scope is complete.
 
 ### Stage 8 — Replacement product and ABI
 
-**Status: pending.**
+**Status: next.**
+
+C++23 source-interface completion is no longer the active implementation goal.
+Stage 8 turns the completed library surface into a deliberate replacement
+product with explicit integration, runtime, ABI, testing, and portability
+boundaries.
 
 - Implement `ftl_replace_stl()` as a transitive per-target CMake choice.
 - Make optional runtime link dependencies feature-sensitive per target instead
@@ -810,40 +816,50 @@ headers in FTL's declared source-interface scope.
 - Add whole-program replacement examples.
 - Add sanitizer configurations across supported compilers and platforms.
 - Add fuzzing for parsers and stateful facilities, especially text conversion,
-  format, regex, filesystem paths, and serialization-like grammars.
+  format, regex, filesystem paths, chrono parsing/timezone data, and
+  serialization-like grammars.
 - Add ABI/layout regression checks for standard-library-facing public types.
 - Add replacement-mode integration tests covering non-trivial source-built
   dependency graphs rather than isolated translation units.
 - Define the failure model for unsupported platform facilities so a
   freestanding target fails explicitly instead of accidentally importing a
   hosted vendor runtime.
+- Add cross-toolchain conformance sweeps that compare public synopsis,
+  constraints, feature-test advertisement, and observable behavior without
+  assuming vendor-library ABI or implementation choices.
+- Audit runtime ownership and initialization/destruction order across
+  allocation, locale, I/O, threads, filesystem, and timezone state before
+  promising whole-program replacement stability.
 
 **Exit:** a non-trivial application and its source-built dependency graph can
-select FTL without accidental vendor-STL mixing.
+select FTL without accidental vendor-STL mixing, with documented runtime and
+ABI boundaries suitable for real replacement-mode use.
 
-## Rules for changing the order
+## Rules for reopening completed work
 
-A stage may be split into smaller closures, but a later stage may move earlier
-only when:
+Source-interface completion does not freeze implementation work. A completed
+closure may be reopened when:
 
-1. Its complete transitive dependency closure is already green.
-2. The move does not require a temporary public API or hosted-STL dependency.
-3. The moved work can still satisfy the normal/replacement and three-compiler
-   completion gates in one change series.
+1. A standards audit finds a real synopsis, constraint, semantic, feature-test,
+   or exception-safety defect.
+2. A supported compiler or platform exposes behavior that violates the
+   completion gate.
+3. Stage 8 integration reveals accidental hosted-STL leakage or an invalid
+   runtime/ABI assumption.
+4. A defect report applicable to the C++23 facility corrects wording whose
+   literal implementation would be unusable or inconsistent with the intended
+   interface.
 
-A deferred closure may coexist with later completed closures when those same
-conditions hold and the roadmap records the deferral explicitly.
+Reopened work should fix the lowest responsible layer rather than introducing
+a local workaround in a dependent header.
 
-When blocked, fix the lowest incomplete dependency rather than adding a local
-workaround. This keeps the graph converging instead of creating multiple eras
-of half-compatible facilities.
+Historical stage numbers remain unchanged when a completed closure is repaired.
 
 ## After C++23 completion
 
-C++23 source-interface completion occurs when the remaining Stage 7.4 chrono
-closure passes its completion gate. Stage 8 then turns the completed library
-surface into a deliberate replacement product with documented whole-program
-integration and ABI rules.
+C++23 source-interface completion was reached with the Stage 7.4 `<chrono>`
+closure. Stage 8 now turns the completed library surface into a deliberate
+replacement product with documented whole-program integration and ABI rules.
 
 Only after Stage 8:
 
