@@ -783,6 +783,188 @@ bool chrono_time_zone_public_works() {
   return true;
 }
 
+bool chrono_local_info_works() {
+  const time_zone *new_york = nullptr;
+
+  try {
+    new_york = locate_zone("America/New_York");
+  } catch (...) {
+    return false;
+  }
+
+  if (new_york == nullptr)
+    return false;
+
+  /*
+   * Normal summer time: 2024-07-01 12:00 local.
+   */
+  const auto summer = new_york->get_info(local_seconds{seconds{1719835200LL}});
+
+  if (summer.result != local_info::unique)
+    return false;
+
+  if (summer.first.offset != hours{-4})
+    return false;
+
+  if (summer.first.save != minutes{60})
+    return false;
+
+  if (!equal_text(summer.first.abbrev.c_str(), "EDT"))
+    return false;
+
+  /*
+   * Unique requires second to be zero-initialized.
+   */
+  if (summer.second.begin != sys_seconds{})
+    return false;
+
+  if (summer.second.end != sys_seconds{})
+    return false;
+
+  if (summer.second.offset != seconds{})
+    return false;
+
+  if (summer.second.save != minutes{})
+    return false;
+
+  if (!summer.second.abbrev.empty())
+    return false;
+
+  /*
+   * Spring forward:
+   *
+   *   2024-03-10 01:59:59 EST
+   *   2024-03-10 03:00:00 EDT
+   *
+   * Therefore 02:30 local does not exist.
+   */
+  const auto gap = new_york->get_info(local_seconds{seconds{1710037800LL}});
+
+  if (gap.result != local_info::nonexistent)
+    return false;
+
+  if (gap.first.offset != hours{-5})
+    return false;
+
+  if (gap.first.save != minutes{0})
+    return false;
+
+  if (!equal_text(gap.first.abbrev.c_str(), "EST"))
+    return false;
+
+  if (gap.first.end != sys_seconds{seconds{1710054000LL}})
+    return false;
+
+  if (gap.second.offset != hours{-4})
+    return false;
+
+  if (gap.second.save != minutes{60})
+    return false;
+
+  if (!equal_text(gap.second.abbrev.c_str(), "EDT"))
+    return false;
+
+  if (gap.second.begin != sys_seconds{seconds{1710054000LL}})
+    return false;
+
+  /*
+   * The exact lower edge of the gap is nonexistent.
+   */
+  const auto gap_begin =
+      new_york->get_info(local_seconds{seconds{1710036000LL}});
+
+  if (gap_begin.result != local_info::nonexistent)
+    return false;
+
+  /*
+   * The exact upper edge belongs uniquely to the new state.
+   */
+  const auto gap_end = new_york->get_info(local_seconds{seconds{1710039600LL}});
+
+  if (gap_end.result != local_info::unique)
+    return false;
+
+  if (gap_end.first.offset != hours{-4})
+    return false;
+
+  /*
+   * Fall back:
+   *
+   * 01:30 occurs first under EDT and then again under EST.
+   */
+  const auto overlap = new_york->get_info(local_seconds{seconds{1730597400LL}});
+
+  if (overlap.result != local_info::ambiguous)
+    return false;
+
+  /*
+   * local_info::first is the earlier system-time interpretation.
+   */
+  if (overlap.first.offset != hours{-4})
+    return false;
+
+  if (overlap.first.save != minutes{60})
+    return false;
+
+  if (!equal_text(overlap.first.abbrev.c_str(), "EDT"))
+    return false;
+
+  if (overlap.first.end != sys_seconds{seconds{1730613600LL}})
+    return false;
+
+  /*
+   * local_info::second is the later system-time interpretation.
+   */
+  if (overlap.second.offset != hours{-5})
+    return false;
+
+  if (overlap.second.save != minutes{0})
+    return false;
+
+  if (!equal_text(overlap.second.abbrev.c_str(), "EST"))
+    return false;
+
+  if (overlap.second.begin != sys_seconds{seconds{1730613600LL}})
+    return false;
+
+  /*
+   * A fixed zone can never produce a gap or overlap.
+   */
+  const auto *utc = locate_zone("Etc/UTC");
+
+  const auto utc_local = utc->get_info(local_seconds{seconds{1710037800LL}});
+
+  if (utc_local.result != local_info::unique)
+    return false;
+
+  if (utc_local.first.offset != seconds{0})
+    return false;
+
+  if (!equal_text(utc_local.first.abbrev.c_str(), "UTC"))
+    return false;
+
+  /*
+   * Subsecond values inside the spring gap remain nonexistent.
+   */
+  const auto gap_fraction = new_york->get_info(
+      local_time<milliseconds>{milliseconds{1710037800123LL}});
+
+  if (gap_fraction.result != local_info::nonexistent)
+    return false;
+
+  /*
+   * Likewise a subsecond value inside the repeated fall-back hour
+   * remains ambiguous.
+   */
+  const auto overlap_fraction = new_york->get_info(
+      local_time<milliseconds>{milliseconds{1730597400123LL}});
+
+  if (overlap_fraction.result != local_info::ambiguous)
+    return false;
+
+  return true;
+}
+
 bool ftl_test() {
   if (!(system_clock::now().time_since_epoch() > seconds{0})) {
     return false;
@@ -811,6 +993,9 @@ bool ftl_test() {
     return false;
 
   if (!chrono_time_zone_public_works())
+    return false;
+
+  if (!chrono_local_info_works())
     return false;
 
   return true;

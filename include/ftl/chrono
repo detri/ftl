@@ -1369,14 +1369,63 @@ public:
         detail::tzdb_runtime::zone_ref{index_},
         whole_second.time_since_epoch().count());
 
-    /*
-     * The generated transition table currently stops at its configured
-     * horizon. Until the rule-tail evaluator exists, do not manufacture
-     * timezone information beyond that boundary.
-     */
     if (!interval)
-      throw runtime_error("chrono::time_zone::get_info: outside tzdb coverage");
+      throw runtime_error(
+          "chrono::time_zone::get_info: outside tzdb coverage");
 
+    return make_sys_info(interval);
+  }
+
+  template <class Duration>
+  local_info get_info(const local_time<Duration> &tp) const {
+    /*
+     * All generated transition boundaries are integral seconds.
+     * Flooring preserves the correct side of a boundary for negative
+     * subsecond local times as well.
+     */
+    const auto whole_second = floor<seconds>(tp);
+
+    const auto lookup = detail::tzdb_runtime::lookup_local(
+        detail::tzdb_runtime::zone_ref{index_},
+        whole_second.time_since_epoch().count());
+
+    if (!lookup)
+      throw runtime_error(
+          "chrono::time_zone::get_info: outside tzdb coverage");
+
+    local_info result{};
+
+    switch (lookup.result) {
+    case detail::tzdb_runtime::local_result_kind::unique:
+      result.result = local_info::unique;
+      result.first = make_sys_info(lookup.first);
+      break;
+
+    case detail::tzdb_runtime::local_result_kind::nonexistent:
+      result.result = local_info::nonexistent;
+      result.first = make_sys_info(lookup.first);
+      result.second = make_sys_info(lookup.second);
+      break;
+
+    case detail::tzdb_runtime::local_result_kind::ambiguous:
+      result.result = local_info::ambiguous;
+      result.first = make_sys_info(lookup.first);
+      result.second = make_sys_info(lookup.second);
+      break;
+
+    case detail::tzdb_runtime::local_result_kind::invalid:
+      throw runtime_error(
+          "chrono::time_zone::get_info: invalid local-time result");
+    }
+
+    return result;
+  }
+
+private:
+  constexpr time_zone() noexcept = default;
+
+  static sys_info
+  make_sys_info(const detail::tzdb_runtime::zone_interval &interval) {
     sys_info result;
 
     result.begin =
@@ -1385,16 +1434,12 @@ public:
             : sys_seconds{seconds{interval.begin}};
 
     result.end = sys_seconds{seconds{interval.end}};
-
     result.offset = seconds{interval.offset_seconds};
     result.save = minutes{interval.save_minutes};
     result.abbrev = interval.abbreviation;
 
     return result;
   }
-
-private:
-  constexpr time_zone() noexcept = default;
 
   unsigned index_ = 0;
 
