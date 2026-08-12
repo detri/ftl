@@ -39,6 +39,21 @@ static_assert(tested::formattable<local_seconds, char>);
 
 static_assert(tested::formattable<year_month_day, wchar_t>);
 
+static_assert(
+    tested::is_same_v<decltype(tested::declval<const time_zone &>().to_sys(
+                          tested::declval<const local_time<milliseconds> &>())),
+                      sys_time<milliseconds>>);
+
+static_assert(
+    tested::is_same_v<decltype(tested::declval<const time_zone &>().to_local(
+                          tested::declval<const sys_time<milliseconds> &>())),
+                      local_time<milliseconds>>);
+
+static_assert(
+    tested::is_same_v<decltype(tested::declval<const time_zone &>().to_sys(
+                          tested::declval<const local_time<minutes> &>())),
+                      sys_time<seconds>>);
+
 static_assert(duration_cast<seconds>(1500ms).count() == 1);
 static_assert(is_clock_v<system_clock> && is_clock_v<steady_clock>);
 static_assert(!is_clock_v<int>);
@@ -965,6 +980,176 @@ bool chrono_local_info_works() {
   return true;
 }
 
+bool chrono_time_zone_conversion_works() {
+  const auto *new_york = locate_zone("America/New_York");
+  const auto *utc = locate_zone("Etc/UTC");
+
+  if (new_york == nullptr || utc == nullptr)
+    return false;
+
+  /*
+   * Ordinary local -> sys conversion.
+   *
+   * 2024-07-01 12:00 EDT == 2024-07-01 16:00 UTC.
+   */
+  const local_seconds summer_local{seconds{1719835200LL}};
+
+  const auto summer_sys = new_york->to_sys(summer_local);
+
+  if (summer_sys != sys_seconds{seconds{1719849600LL}})
+    return false;
+
+  /*
+   * sys -> local is the inverse for unique local times.
+   */
+  if (new_york->to_local(summer_sys) != summer_local)
+    return false;
+
+  /*
+   * Preserve finer-than-second precision.
+   */
+  const local_time<milliseconds> precise_local{milliseconds{1719835200123LL}};
+
+  const auto precise_sys = new_york->to_sys(precise_local);
+
+  if (precise_sys != sys_time<milliseconds>{milliseconds{1719849600123LL}})
+    return false;
+
+  if (new_york->to_local(precise_sys) != precise_local)
+    return false;
+
+  /*
+   * Spring forward:
+   *
+   * 2024-03-10 02:30 does not exist in New York.
+   *
+   * The throwing overload must report nonexistent_local_time.
+   */
+  const local_seconds gap{seconds{1710037800LL}};
+
+  try {
+    (void)new_york->to_sys(gap);
+    return false;
+  } catch (const nonexistent_local_time &) {
+  } catch (...) {
+    return false;
+  }
+
+  /*
+   * For nonexistent local time, earliest and latest collapse onto the
+   * same system transition instant.
+   */
+  const auto gap_earliest = new_york->to_sys(gap, choose::earliest);
+
+  const auto gap_latest = new_york->to_sys(gap, choose::latest);
+
+  if (gap_earliest != sys_seconds{seconds{1710054000LL}})
+    return false;
+
+  if (gap_latest != gap_earliest)
+    return false;
+
+  /*
+   * Even a fractional point inside the gap collapses to that same
+   * transition instant, but retains the required result duration type.
+   */
+  const local_time<milliseconds> precise_gap{milliseconds{1710037800123LL}};
+
+  const auto precise_gap_sys = new_york->to_sys(precise_gap, choose::earliest);
+
+  if (precise_gap_sys != sys_time<milliseconds>{milliseconds{1710054000000LL}})
+    return false;
+
+  /*
+   * Fall back:
+   *
+   * 2024-11-03 01:30 occurs twice.
+   */
+  const local_seconds overlap{seconds{1730597400LL}};
+
+  try {
+    (void)new_york->to_sys(overlap);
+    return false;
+  } catch (const ambiguous_local_time &) {
+  } catch (...) {
+    return false;
+  }
+
+  /*
+   * First occurrence: EDT, UTC-4.
+   *
+   * 01:30 EDT == 05:30 UTC.
+   */
+  const auto overlap_earliest = new_york->to_sys(overlap, choose::earliest);
+
+  if (overlap_earliest != sys_seconds{seconds{1730611800LL}})
+    return false;
+
+  /*
+   * Second occurrence: EST, UTC-5.
+   *
+   * 01:30 EST == 06:30 UTC.
+   */
+  const auto overlap_latest = new_york->to_sys(overlap, choose::latest);
+
+  if (overlap_latest != sys_seconds{seconds{1730615400LL}})
+    return false;
+
+  if (!(overlap_earliest < overlap_latest))
+    return false;
+
+  /*
+   * sys -> local maps both interpretations back to the same repeated
+   * wall-clock value.
+   */
+  if (new_york->to_local(overlap_earliest) != overlap)
+    return false;
+
+  if (new_york->to_local(overlap_latest) != overlap)
+    return false;
+
+  /*
+   * Exact transition instant after the spring-forward maps to 03:00 EDT.
+   */
+  const auto spring_transition_local =
+      new_york->to_local(sys_seconds{seconds{1710054000LL}});
+
+  if (spring_transition_local != local_seconds{seconds{1710039600LL}})
+    return false;
+
+  /*
+   * Preserve subsecond precision across sys -> local as well.
+   */
+  const auto spring_fraction =
+      new_york->to_local(sys_time<milliseconds>{milliseconds{1710054000123LL}});
+
+  if (spring_fraction !=
+      local_time<milliseconds>{milliseconds{1710039600123LL}})
+    return false;
+
+  /*
+   * UTC is a useful negative-time precision sanity check.
+   */
+  const sys_time<milliseconds> before_epoch{milliseconds{-1}};
+
+  if (utc->to_local(before_epoch) != local_time<milliseconds>{milliseconds{-1}})
+    return false;
+
+  if (utc->to_sys(local_time<milliseconds>{milliseconds{-1}}) != before_epoch)
+    return false;
+
+  /*
+   * The exception classes themselves must derive from runtime_error.
+   */
+  static_assert(
+      tested::is_base_of_v<tested::runtime_error, nonexistent_local_time>);
+
+  static_assert(
+      tested::is_base_of_v<tested::runtime_error, ambiguous_local_time>);
+
+  return true;
+}
+
 bool ftl_test() {
   if (!(system_clock::now().time_since_epoch() > seconds{0})) {
     return false;
@@ -996,6 +1181,9 @@ bool ftl_test() {
     return false;
 
   if (!chrono_local_info_works())
+    return false;
+
+  if (!chrono_time_zone_conversion_works())
     return false;
 
   return true;

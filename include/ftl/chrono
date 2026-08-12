@@ -1342,6 +1342,20 @@ struct local_info {
   sys_info second;
 };
 
+class nonexistent_local_time : public runtime_error {
+public:
+  template <class Duration>
+  nonexistent_local_time(const local_time<Duration> &, const local_info &)
+      : runtime_error("nonexistent local time") {}
+};
+
+class ambiguous_local_time : public runtime_error {
+public:
+  template <class Duration>
+  ambiguous_local_time(const local_time<Duration> &, const local_info &)
+      : runtime_error("ambiguous local time") {}
+};
+
 namespace chrono_detail {
 struct time_zone_storage;
 }
@@ -1419,6 +1433,77 @@ public:
     }
 
     return result;
+  }
+
+  template <class Duration>
+  sys_time<common_type_t<Duration, seconds>>
+  to_sys(const local_time<Duration> &tp) const {
+    using result_duration = common_type_t<Duration, seconds>;
+
+    const auto info = get_info(tp);
+
+    switch (info.result) {
+    case local_info::unique:
+      return sys_time<result_duration>{
+          result_duration{tp.time_since_epoch()} -
+          result_duration{info.first.offset}};
+
+    case local_info::nonexistent:
+      throw nonexistent_local_time(tp, info);
+
+    case local_info::ambiguous:
+      throw ambiguous_local_time(tp, info);
+    }
+
+    throw runtime_error(
+        "chrono::time_zone::to_sys: invalid local_info result");
+  }
+
+  template <class Duration>
+  sys_time<common_type_t<Duration, seconds>>
+  to_sys(const local_time<Duration> &tp, choose selection) const {
+    using result_duration = common_type_t<Duration, seconds>;
+
+    const auto info = get_info(tp);
+
+    switch (info.result) {
+    case local_info::unique:
+      return sys_time<result_duration>{
+          result_duration{tp.time_since_epoch()} -
+          result_duration{info.first.offset}};
+
+    case local_info::nonexistent:
+      /*
+       * A gap is bounded by two local representations of the same
+       * system-clock transition instant.
+       */
+      return sys_time<result_duration>{
+          result_duration{info.first.end.time_since_epoch()}};
+
+    case local_info::ambiguous: {
+      const auto &selected =
+          selection == choose::earliest ? info.first : info.second;
+
+      return sys_time<result_duration>{
+          result_duration{tp.time_since_epoch()} -
+          result_duration{selected.offset}};
+    }
+    }
+
+    throw runtime_error(
+        "chrono::time_zone::to_sys: invalid local_info result");
+  }
+
+  template <class Duration>
+  local_time<common_type_t<Duration, seconds>>
+  to_local(const sys_time<Duration> &tp) const {
+    using result_duration = common_type_t<Duration, seconds>;
+
+    const auto info = get_info(tp);
+
+    return local_time<result_duration>{
+        result_duration{tp.time_since_epoch()} +
+        result_duration{info.offset}};
   }
 
 private:
