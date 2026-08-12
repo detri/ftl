@@ -1,29 +1,49 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_STDINT_H_HEADER
+#define FTL_STDINT_H_HEADER
+
+#ifdef FTL_REPLACE_STL
 #include <cstdint>
-using std::int8_t;
-using std::uint8_t;
-using std::int16_t;
-using std::uint16_t;
-using std::int32_t;
-using std::uint32_t;
-using std::int64_t;
-using std::uint64_t;
-using std::int_least8_t;
-using std::uint_least8_t;
-using std::int_least16_t;
-using std::uint_least16_t;
-using std::int_least32_t;
-using std::uint_least32_t;
-using std::int_least64_t;
-using std::uint_least64_t;
-using std::int_fast8_t;
-using std::uint_fast8_t;
-using std::int_fast16_t;
-using std::uint_fast16_t;
-using std::int_fast32_t;
-using std::uint_fast32_t;
-using std::int_fast64_t;
-using std::uint_fast64_t;
-using std::intptr_t;
-using std::uintptr_t;
-using std::intmax_t;
-using std::uintmax_t;
+#define FTL_STDINT_NAMESPACE std
+#else
+#include <ftl/cstdint>
+#define FTL_STDINT_NAMESPACE ftl
+#endif
+
+using FTL_STDINT_NAMESPACE::int8_t;
+using FTL_STDINT_NAMESPACE::uint8_t;
+using FTL_STDINT_NAMESPACE::int16_t;
+using FTL_STDINT_NAMESPACE::uint16_t;
+using FTL_STDINT_NAMESPACE::int32_t;
+using FTL_STDINT_NAMESPACE::uint32_t;
+using FTL_STDINT_NAMESPACE::int64_t;
+using FTL_STDINT_NAMESPACE::uint64_t;
+
+using FTL_STDINT_NAMESPACE::int_least8_t;
+using FTL_STDINT_NAMESPACE::uint_least8_t;
+using FTL_STDINT_NAMESPACE::int_least16_t;
+using FTL_STDINT_NAMESPACE::uint_least16_t;
+using FTL_STDINT_NAMESPACE::int_least32_t;
+using FTL_STDINT_NAMESPACE::uint_least32_t;
+using FTL_STDINT_NAMESPACE::int_least64_t;
+using FTL_STDINT_NAMESPACE::uint_least64_t;
+
+using FTL_STDINT_NAMESPACE::int_fast8_t;
+using FTL_STDINT_NAMESPACE::uint_fast8_t;
+using FTL_STDINT_NAMESPACE::int_fast16_t;
+using FTL_STDINT_NAMESPACE::uint_fast16_t;
+using FTL_STDINT_NAMESPACE::int_fast32_t;
+using FTL_STDINT_NAMESPACE::uint_fast32_t;
+using FTL_STDINT_NAMESPACE::int_fast64_t;
+using FTL_STDINT_NAMESPACE::uint_fast64_t;
+
+using FTL_STDINT_NAMESPACE::intptr_t;
+using FTL_STDINT_NAMESPACE::uintptr_t;
+
+using FTL_STDINT_NAMESPACE::intmax_t;
+using FTL_STDINT_NAMESPACE::uintmax_t;
+
+#undef FTL_STDINT_NAMESPACE
+
+#endif // FTL_STDINT_H_HEADER
