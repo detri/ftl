@@ -5414,6 +5414,236 @@ private:
   chrono_format_spec<charT> spec_{};
 };
 
+template <class Duration, class charT>
+class chrono_local_time_format_formatter {
+public:
+  constexpr chrono_local_time_format_formatter() noexcept = default;
+
+  constexpr typename basic_format_parse_context<charT>::iterator
+  parse(basic_format_parse_context<charT> &context) {
+    return chrono_parse_format_spec(
+        context,
+        spec_,
+        false);
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator
+  format(
+      const chrono::chrono_detail::
+          local_time_format_t<Duration> &value,
+      FormatContext &context) const {
+    using precision =
+        common_type_t<
+            Duration,
+            chrono::seconds>;
+
+    /*
+     * local_time's epoch arithmetic is deliberately
+     * identical to sys_time's civil arithmetic here.
+     *
+     * We are formatting the wall clock itself; the
+     * associated offset is metadata used only by %z.
+     */
+    const chrono::sys_time<precision>
+        civil_value{
+            precision{
+                value.time
+                    .time_since_epoch(),
+            },
+        };
+
+    const auto day_point =
+        chrono::floor<chrono::days>(
+            civil_value);
+
+    const chrono::sys_days
+        calendar_day{
+            day_point
+                .time_since_epoch(),
+        };
+
+    const chrono::year_month_day
+        calendar{
+            calendar_day,
+        };
+
+    const auto fields =
+        chrono_fields(calendar);
+
+    const precision time_since_midnight{
+        civil_value - day_point,
+    };
+
+    const chrono::hh_mm_ss<precision>
+        hms{
+            time_since_midnight,
+        };
+
+    const chrono_clock_hms_view<precision>
+        split{
+            addressof(hms),
+            false,
+        };
+
+    basic_string<charT> content;
+
+    basic_string_view<charT>
+        chrono_specs =
+            spec_.chrono_specs;
+
+    basic_string<charT>
+        default_specs;
+
+    /*
+     * Unlike bare local_time, local_time_format's
+     * standard default includes %Z.
+     */
+    if (chrono_specs.empty()) {
+      chrono_append_ascii(
+          default_specs,
+          "%F %T %Z");
+
+      chrono_specs =
+          basic_string_view<charT>(
+              default_specs.data(),
+              default_specs.size());
+    }
+
+    chrono_expand_specs(
+        content,
+        chrono_specs,
+        false,
+        [&](basic_string<charT> &destination,
+            char modifier,
+            char conversion) {
+          switch (conversion) {
+          case 'H':
+          case 'I':
+          case 'M':
+          case 'S':
+          case 'p':
+          case 'R':
+          case 'T':
+          case 'r':
+            chrono_append_time_of_day(
+                destination,
+                context,
+                split,
+                spec_.outer.localized,
+                conversion);
+
+            return;
+
+          case 'c':
+            chrono_append_date_conversion(
+                destination,
+                fields,
+                modifier,
+                'a');
+
+            destination.push_back(
+                format_widen<charT>(' '));
+
+            chrono_append_date_conversion(
+                destination,
+                fields,
+                modifier,
+                'b');
+
+            destination.push_back(
+                format_widen<charT>(' '));
+
+            chrono_append_date_conversion(
+                destination,
+                fields,
+                modifier,
+                'e');
+
+            destination.push_back(
+                format_widen<charT>(' '));
+
+            chrono_append_time_of_day(
+                destination,
+                context,
+                split,
+                spec_.outer.localized,
+                'T');
+
+            destination.push_back(
+                format_widen<charT>(' '));
+
+            chrono_append_date_conversion(
+                destination,
+                fields,
+                modifier,
+                'Y');
+
+            return;
+
+          case 'X':
+            chrono_append_time_of_day(
+                destination,
+                context,
+                split,
+                spec_.outer.localized,
+                'T');
+
+            return;
+
+          case 'z':
+            if (value.offset == nullptr) {
+              throw_format_error(
+                  "local_time_format does not contain a UTC offset");
+            }
+
+            chrono_append_offset(
+                destination,
+                *value.offset,
+                modifier == 'E' ||
+                    modifier == 'O');
+
+            return;
+
+          case 'Z':
+            if (value.abbrev == nullptr) {
+              throw_format_error(
+                  "local_time_format does not contain a time-zone abbreviation");
+            }
+
+            for (char character :
+                 *value.abbrev) {
+              destination.push_back(
+                  format_widen<charT>(
+                      character));
+            }
+
+            return;
+
+          default:
+            chrono_append_date_conversion(
+                destination,
+                fields,
+                modifier,
+                conversion);
+
+            return;
+          }
+        });
+
+    return format_padded_text(
+        basic_string_view<charT>(
+            content.data(),
+            content.size()),
+        context,
+        spec_.outer,
+        format_alignment::left);
+  }
+
+private:
+  chrono_format_spec<charT> spec_{};
+};
+
 } // namespace detail
 
 template <class Rep, class Period, class charT>
@@ -5494,6 +5724,68 @@ template <class Duration, class charT>
 struct formatter<chrono::local_time<Duration>, charT>
     : detail::chrono_time_point_formatter<detail::chrono_clock_kind::local,
                                           Duration, charT> {};
+
+template <class Duration, class charT>
+struct formatter<
+    chrono::chrono_detail::
+        local_time_format_t<Duration>,
+    charT>
+    : detail::
+          chrono_local_time_format_formatter<
+              Duration,
+              charT> {};
+
+template <
+    class Duration,
+    class TimeZonePtr,
+    class charT>
+struct formatter<
+    chrono::zoned_time<
+        Duration,
+        TimeZonePtr>,
+    charT>
+    : formatter<
+          chrono::chrono_detail::
+              local_time_format_t<
+                  common_type_t<
+                      Duration,
+                      chrono::seconds>>,
+          charT> {
+private:
+  using local_format_type =
+      chrono::chrono_detail::
+          local_time_format_t<
+              common_type_t<
+                  Duration,
+                  chrono::seconds>>;
+
+  using base_type =
+      formatter<
+          local_format_type,
+          charT>;
+
+public:
+  template <class FormatContext>
+  typename FormatContext::iterator
+  format(
+      const chrono::zoned_time<
+          Duration,
+          TimeZonePtr> &value,
+      FormatContext &context) const {
+    const chrono::sys_info info =
+        value.get_info();
+
+    const auto formatted =
+        chrono::local_time_format(
+            value.get_local_time(),
+            addressof(info.abbrev),
+            addressof(info.offset));
+
+    return base_type::format(
+        formatted,
+        context);
+  }
+};
 
 template <class Duration, class charT>
 struct formatter<chrono::utc_time<Duration>, charT>

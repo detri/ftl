@@ -39,6 +39,16 @@ static_assert(tested::formattable<local_seconds, char>);
 
 static_assert(tested::formattable<year_month_day, wchar_t>);
 
+using local_format_seconds = decltype(local_time_format(local_seconds{}));
+
+static_assert(tested::formattable<local_format_seconds, char>);
+
+static_assert(tested::formattable<local_format_seconds, wchar_t>);
+
+static_assert(tested::formattable<zoned_time<seconds>, char>);
+
+static_assert(tested::formattable<zoned_time<seconds>, wchar_t>);
+
 static_assert(
     tested::is_same_v<decltype(tested::declval<const time_zone &>().to_sys(
                           tested::declval<const local_time<milliseconds> &>())),
@@ -2541,6 +2551,162 @@ bool chrono_zoned_time_works() {
   return true;
 }
 
+bool chrono_zoned_formatting_works() {
+  /*
+   * local_time_format supplies time-zone metadata
+   * independently of a time_zone object.
+   */
+  const local_seconds local{
+      seconds{
+          1719835200LL,
+      },
+  };
+
+  const tested::string abbreviation{
+      "EDT",
+  };
+
+  const seconds offset{
+      -4 * 60 * 60,
+  };
+
+  const auto decorated = local_time_format(local, &abbreviation, &offset);
+
+  /*
+   * Its default chrono-spec is:
+   *
+   *   %F %T %Z
+   */
+  if (tested::format("{}", decorated) != "2024-07-01 12:00:00 EDT") {
+    return false;
+  }
+
+  if (tested::format("{:%F %T %z %Z}", decorated) !=
+      "2024-07-01 12:00:00 -0400 EDT") {
+    return false;
+  }
+
+  if (tested::format("{:%F %T %Ez %Z}", decorated) !=
+      "2024-07-01 12:00:00 -04:00 EDT") {
+    return false;
+  }
+
+  /*
+   * Metadata is optional unless the format string
+   * actually asks for it.
+   */
+  const auto undecorated = local_time_format(local);
+
+  if (tested::format("{:%F %T}", undecorated) != "2024-07-01 12:00:00") {
+    return false;
+  }
+
+  try {
+    (void)tested::format("{:%Z}", undecorated);
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  try {
+    (void)tested::format("{:%z}", undecorated);
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  /*
+   * Bare local_time still has no zone metadata.
+   */
+  try {
+    (void)tested::format("{:%Z}", local);
+
+    return false;
+  } catch (const tested::format_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  /*
+   * zoned_time automatically supplies the metadata
+   * from its associated sys_info.
+   */
+  zoned_time new_york{
+      "America/New_York",
+      sys_seconds{
+          seconds{
+              1719849600LL,
+          },
+      },
+  };
+
+  if (tested::format("{}", new_york) != "2024-07-01 12:00:00 EDT") {
+    return false;
+  }
+
+  if (tested::format("{:%F %T %Z %z}", new_york) !=
+      "2024-07-01 12:00:00 EDT -0400") {
+    return false;
+  }
+
+  if (tested::format("{:%F %T %Z %Ez}", new_york) !=
+      "2024-07-01 12:00:00 EDT -04:00") {
+    return false;
+  }
+
+  /*
+   * Winter exercises the other side of the same
+   * zone's rules.
+   */
+  zoned_time winter{
+      "America/New_York",
+      sys_days{year{2024} / January / 15} + hours{12},
+  };
+
+  if (tested::format("{:%F %T %Z %z}", winter) !=
+      "2024-01-15 07:00:00 EST -0500") {
+    return false;
+  }
+
+  /*
+   * And, importantly, the formatter consumes the
+   * post-horizon tail through ordinary zoned_time
+   * get_info(), not a separate formatting path.
+   */
+  zoned_time future{
+      "America/New_York",
+      sys_days{year{2600} / July / 15} + hours{12},
+  };
+
+  if (tested::format("{:%F %T %Z %z}", future) !=
+      "2600-07-15 08:00:00 EDT -0400") {
+    return false;
+  }
+
+  /*
+   * Fixed UTC zone.
+   */
+  zoned_time utc{
+      "Etc/UTC",
+      sys_days{year{2600} / July / 15} + hours{12},
+  };
+
+  if (tested::format("{}", utc) != "2600-07-15 12:00:00 UTC") {
+    return false;
+  }
+
+  if (tested::format("{:%F %T %Z %z}", utc) !=
+      "2600-07-15 12:00:00 UTC +0000") {
+    return false;
+  }
+
+  return true;
+}
+
 bool ftl_test() {
   if (!(system_clock::now().time_since_epoch() > seconds{0})) {
     return false;
@@ -2575,6 +2741,9 @@ bool ftl_test() {
     return false;
 
   if (!chrono_zoned_time_works())
+    return false;
+
+  if (!chrono_zoned_formatting_works())
     return false;
 
   if (!chrono_time_zone_public_works())
