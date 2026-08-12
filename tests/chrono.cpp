@@ -614,6 +614,175 @@ bool chrono_tzdb_runtime_works() {
   return true;
 }
 
+bool chrono_time_zone_public_works() {
+  const time_zone *new_york = nullptr;
+
+  try {
+    new_york = locate_zone("America/New_York");
+  } catch (...) {
+    return false;
+  }
+
+  if (new_york == nullptr)
+    return false;
+
+  if (new_york->name() != "America/New_York")
+    return false;
+
+  /*
+   * A string_view is not required to be null-terminated.
+   * Make sure public lookup does not accidentally fall back to C-string
+   * semantics.
+   */
+  const char sliced_name[] = "America/New_York!";
+
+  const time_zone *sliced = nullptr;
+
+  try {
+    sliced = locate_zone(tested::string_view{sliced_name, 16});
+  } catch (...) {
+    return false;
+  }
+
+  if (sliced != new_york)
+    return false;
+
+  /*
+   * backward contains:
+   *
+   *   Link America/New_York US/Eastern
+   *
+   * Public lookup of the Link must return the same canonical time_zone
+   * object, not merely an equivalent object.
+   */
+  const time_zone *eastern = nullptr;
+
+  try {
+    eastern = locate_zone("US/Eastern");
+  } catch (...) {
+    return false;
+  }
+
+  if (eastern != new_york)
+    return false;
+
+  if (eastern->name() != "America/New_York")
+    return false;
+
+  /*
+   * 2024-03-10 07:00:00 UTC is New York's spring-forward transition.
+   */
+  const auto before_spring =
+      new_york->get_info(sys_seconds{seconds{1710053999LL}});
+
+  if (before_spring.offset != hours{-5})
+    return false;
+
+  if (before_spring.save != minutes{0})
+    return false;
+
+  if (!equal_text(before_spring.abbrev.c_str(), "EST"))
+    return false;
+
+  if (before_spring.end != sys_seconds{seconds{1710054000LL}})
+    return false;
+
+  /*
+   * Exact transition equality belongs to the new state.
+   */
+  const auto spring = new_york->get_info(sys_seconds{seconds{1710054000LL}});
+
+  if (spring.begin != sys_seconds{seconds{1710054000LL}})
+    return false;
+
+  if (spring.end != sys_seconds{seconds{1730613600LL}})
+    return false;
+
+  if (spring.offset != hours{-4})
+    return false;
+
+  if (spring.save != minutes{60})
+    return false;
+
+  if (!equal_text(spring.abbrev.c_str(), "EDT"))
+    return false;
+
+  /*
+   * Subsecond timestamps immediately before the transition still belong
+   * to the old state. This specifically catches truncation-vs-floor bugs
+   * in the sys_time -> generated-second bridge.
+   */
+  const auto subsecond_before =
+      new_york->get_info(sys_time<milliseconds>{milliseconds{1710053999999LL}});
+
+  if (subsecond_before.offset != hours{-5})
+    return false;
+
+  if (!equal_text(subsecond_before.abbrev.c_str(), "EST"))
+    return false;
+
+  const auto subsecond_after =
+      new_york->get_info(sys_time<milliseconds>{milliseconds{1710054000001LL}});
+
+  if (subsecond_after.offset != hours{-4})
+    return false;
+
+  if (!equal_text(subsecond_after.abbrev.c_str(), "EDT"))
+    return false;
+
+  /*
+   * A fixed zone exercises the generated initial-state -> sys_info path.
+   */
+  const time_zone *utc = nullptr;
+
+  try {
+    utc = locate_zone("Etc/UTC");
+  } catch (...) {
+    return false;
+  }
+
+  if (utc == nullptr)
+    return false;
+
+  const auto utc_epoch = utc->get_info(sys_seconds{seconds{0}});
+
+  if (utc_epoch.offset != seconds{0})
+    return false;
+
+  if (utc_epoch.save != minutes{0})
+    return false;
+
+  if (!equal_text(utc_epoch.abbrev.c_str(), "UTC"))
+    return false;
+
+  /*
+   * Unknown names are required to fail rather than produce a null public
+   * time_zone pointer.
+   */
+  try {
+    (void)locate_zone("Definitely/Not_A_Zone");
+    return false;
+  } catch (const tested::runtime_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  /*
+   * Temporary FTL limitation until arbitrary-year rule evaluation lands:
+   * never silently claim generated coverage beyond the precomputed horizon.
+   */
+  try {
+    (void)new_york->get_info(sys_seconds{
+        seconds{tested::detail::tzdb_runtime::precomputed_until()}});
+    return false;
+  } catch (const tested::runtime_error &) {
+  } catch (...) {
+    return false;
+  }
+
+  return true;
+}
+
 bool ftl_test() {
   if (!(system_clock::now().time_since_epoch() > seconds{0})) {
     return false;
@@ -639,6 +808,9 @@ bool ftl_test() {
     return false;
 
   if (!chrono_tzdb_runtime_works())
+    return false;
+
+  if (!chrono_time_zone_public_works())
     return false;
 
   return true;

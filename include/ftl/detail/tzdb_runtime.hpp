@@ -4,9 +4,11 @@
 #define FTL_DETAIL_TZDB_RUNTIME_HEADER
 
 #ifdef FTL_REPLACE_STL
+#include <cstddef>
 #include <detail/tzdb_data.hpp>
 #include <type_traits>
 #else
+#include <ftl/cstddef>
 #include <ftl/detail/tzdb_data.hpp>
 #include <ftl/type_traits>
 #endif
@@ -79,10 +81,13 @@ constexpr long long precomputed_until() noexcept {
 
 constexpr const char *version() noexcept { return data::version; }
 
-constexpr int compare_text(const char *left, const char *right) noexcept {
-  while (*left != '\0' && *right != '\0') {
-    const auto l = static_cast<unsigned char>(*left);
-    const auto r = static_cast<unsigned char>(*right);
+constexpr int compare_text(const char *left, size_t left_size,
+                           const char *right) noexcept {
+  size_t index = 0;
+
+  while (index < left_size && right[index] != '\0') {
+    const auto l = static_cast<unsigned char>(left[index]);
+    const auto r = static_cast<unsigned char>(right[index]);
 
     if (l < r)
       return -1;
@@ -90,14 +95,22 @@ constexpr int compare_text(const char *left, const char *right) noexcept {
     if (l > r)
       return 1;
 
-    ++left;
-    ++right;
+    ++index;
   }
 
-  if (*left == *right)
-    return 0;
+  if (index == left_size)
+    return right[index] == '\0' ? 0 : -1;
 
-  return *left == '\0' ? -1 : 1;
+  return 1;
+}
+
+constexpr int compare_text(const char *left, const char *right) noexcept {
+  size_t length = 0;
+
+  while (left[length] != '\0')
+    ++length;
+
+  return compare_text(left, length, right);
 }
 
 constexpr zone_ref zone_at(unsigned index) noexcept {
@@ -140,7 +153,7 @@ constexpr zone_ref link_target(link_ref link) noexcept {
   return {target};
 }
 
-constexpr zone_ref find_zone(const char *name) noexcept {
+constexpr zone_ref find_zone(const char *name, size_t length) noexcept {
   if (name == nullptr)
     return {};
 
@@ -152,7 +165,45 @@ constexpr zone_ref find_zone(const char *name) noexcept {
 
     const auto &zone = data::zones[middle];
 
-    const int order = compare_text(name, data::string_at(zone.name));
+    const int order = compare_text(name, length, data::string_at(zone.name));
+
+    if (order < 0) {
+      last = middle;
+    } else if (order > 0) {
+      first = middle + 1;
+    } else {
+      return {middle};
+    }
+  }
+
+  return {};
+}
+
+constexpr zone_ref find_zone(const char *name) noexcept {
+  if (name == nullptr)
+    return {};
+
+  size_t length = 0;
+
+  while (name[length] != '\0')
+    ++length;
+
+  return find_zone(name, length);
+}
+
+constexpr link_ref find_link(const char *name, size_t length) noexcept {
+  if (name == nullptr)
+    return {};
+
+  unsigned first = 0;
+  unsigned last = link_count();
+
+  while (first < last) {
+    const unsigned middle = first + (last - first) / 2;
+
+    const auto &link = data::links[middle];
+
+    const int order = compare_text(name, length, data::string_at(link.name));
 
     if (order < 0) {
       last = middle;
@@ -170,26 +221,12 @@ constexpr link_ref find_link(const char *name) noexcept {
   if (name == nullptr)
     return {};
 
-  unsigned first = 0;
-  unsigned last = link_count();
+  size_t length = 0;
 
-  while (first < last) {
-    const unsigned middle = first + (last - first) / 2;
+  while (name[length] != '\0')
+    ++length;
 
-    const auto &link = data::links[middle];
-
-    const int order = compare_text(name, data::string_at(link.name));
-
-    if (order < 0) {
-      last = middle;
-    } else if (order > 0) {
-      first = middle + 1;
-    } else {
-      return {middle};
-    }
-  }
-
-  return {};
+  return find_link(name, length);
 }
 
 /*
@@ -198,14 +235,26 @@ constexpr link_ref find_link(const char *name) noexcept {
  * Links were completely resolved by buildtzdb, so this operation never
  * needs to chase an alias chain at runtime.
  */
-constexpr zone_ref locate_zone(const char *name) noexcept {
-  if (const auto zone = find_zone(name))
+constexpr zone_ref locate_zone(const char *name, size_t length) noexcept {
+  if (const auto zone = find_zone(name, length))
     return zone;
 
-  if (const auto link = find_link(name))
+  if (const auto link = find_link(name, length))
     return link_target(link);
 
   return {};
+}
+
+constexpr zone_ref locate_zone(const char *name) noexcept {
+  if (name == nullptr)
+    return {};
+
+  size_t length = 0;
+
+  while (name[length] != '\0')
+    ++length;
+
+  return locate_zone(name, length);
 }
 
 /*

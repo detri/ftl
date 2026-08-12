@@ -9,8 +9,12 @@
 #include <ctime>
 #include <detail/clock_runtime.hpp>
 #include <detail/time_core.hpp>
+#include <detail/tzdb_runtime.hpp>
 #include <limits>
 #include <ratio>
+#include <stdexcept>
+#include <string>
+#include <string_view>
 #include <type_traits>
 #else
 #include <ftl/compare>
@@ -18,8 +22,12 @@
 #include <ftl/ctime>
 #include <ftl/detail/clock_runtime.hpp>
 #include <ftl/detail/time_core.hpp>
+#include <ftl/detail/tzdb_runtime.hpp>
 #include <ftl/limits>
 #include <ftl/ratio>
+#include <ftl/stdexcept>
+#include <ftl/string>
+#include <ftl/string_view>
 #include <ftl/type_traits>
 #endif
 
@@ -1309,6 +1317,135 @@ constexpr auto clock_cast(const time_point<SourceClock, D> &t) {
     return clock_time_conversion<DestinationClock, system_clock>{}(
         clock_time_conversion<system_clock, utc_clock>{}(
             clock_time_conversion<utc_clock, SourceClock>{}(t)));
+}
+
+enum class choose {
+  earliest,
+  latest,
+};
+
+struct sys_info {
+  sys_seconds begin;
+  sys_seconds end;
+  seconds offset;
+  minutes save;
+  string abbrev;
+};
+
+struct local_info {
+  static constexpr int unique = 0;
+  static constexpr int nonexistent = 1;
+  static constexpr int ambiguous = 2;
+
+  int result;
+  sys_info first;
+  sys_info second;
+};
+
+namespace chrono_detail {
+struct time_zone_storage;
+}
+
+class time_zone {
+public:
+  time_zone(time_zone &&) = default;
+  time_zone &operator=(time_zone &&) = default;
+
+  string_view name() const noexcept {
+    return detail::tzdb_runtime::zone_name(
+        detail::tzdb_runtime::zone_ref{index_});
+  }
+
+  template <class Duration>
+  sys_info get_info(const sys_time<Duration> &st) const {
+    /*
+     * Generated transitions occur at integral system-clock seconds.
+     * Flooring rather than truncating is significant for negative
+     * subsecond timestamps.
+     */
+    const auto whole_second = floor<seconds>(st);
+
+    const auto interval = detail::tzdb_runtime::lookup(
+        detail::tzdb_runtime::zone_ref{index_},
+        whole_second.time_since_epoch().count());
+
+    /*
+     * The generated transition table currently stops at its configured
+     * horizon. Until the rule-tail evaluator exists, do not manufacture
+     * timezone information beyond that boundary.
+     */
+    if (!interval)
+      throw runtime_error("chrono::time_zone::get_info: outside tzdb coverage");
+
+    sys_info result;
+
+    result.begin =
+        interval.begin_unbounded
+            ? sys_seconds::min()
+            : sys_seconds{seconds{interval.begin}};
+
+    result.end = sys_seconds{seconds{interval.end}};
+
+    result.offset = seconds{interval.offset_seconds};
+    result.save = minutes{interval.save_minutes};
+    result.abbrev = interval.abbreviation;
+
+    return result;
+  }
+
+private:
+  constexpr time_zone() noexcept = default;
+
+  unsigned index_ = 0;
+
+  friend struct chrono_detail::time_zone_storage;
+};
+
+namespace chrono_detail {
+
+/*
+ * The generated tzdb owns the canonical zone ordering. Mirror that ordering
+ * with one stable public time_zone object per generated canonical Zone.
+ *
+ * Links never receive their own time_zone object: locate_zone(alias) returns
+ * the canonical target object, matching tzdb::locate_zone semantics.
+ */
+struct time_zone_storage {
+  time_zone zones[detail::tzdb_runtime::zone_count()];
+
+  constexpr time_zone_storage() noexcept {
+    for (unsigned index = 0; index < detail::tzdb_runtime::zone_count();
+         ++index) {
+      zones[index].index_ = index;
+    }
+  }
+};
+
+inline const time_zone_storage &time_zone_objects() noexcept {
+  static constexpr time_zone_storage storage{};
+  return storage;
+}
+
+} // namespace chrono_detail
+
+inline const time_zone *locate_zone(string_view name) {
+  const auto zone =
+      detail::tzdb_runtime::locate_zone(name.data(), name.size());
+
+  if (!zone)
+    throw runtime_error("chrono::locate_zone: time zone not found");
+
+  return &chrono_detail::time_zone_objects().zones[zone.index];
+}
+
+inline bool operator==(const time_zone &left,
+                       const time_zone &right) noexcept {
+  return left.name() == right.name();
+}
+
+inline strong_ordering operator<=>(const time_zone &left,
+                                   const time_zone &right) noexcept {
+  return left.name() <=> right.name();
 }
 
 namespace literals {
