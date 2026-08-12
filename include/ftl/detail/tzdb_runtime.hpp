@@ -6,10 +6,12 @@
 #ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <detail/tzdb_data.hpp>
+#include <detail/windows_tz_data.hpp>
 #include <type_traits>
 #else
 #include <ftl/cstddef>
 #include <ftl/detail/tzdb_data.hpp>
+#include <ftl/detail/windows_tz_data.hpp>
 #include <ftl/type_traits>
 #endif
 
@@ -18,6 +20,7 @@ FTL_BEGIN_NAMESPACE
 namespace detail::tzdb_runtime {
 
 namespace data = ::ftl_tzdb_data;
+namespace windows_data = ::ftl_windows_tz_data;
 
 inline constexpr unsigned invalid_index = ~0u;
 
@@ -121,9 +124,7 @@ constexpr int leap_elapsed_at_sys(long long timestamp) noexcept {
   return elapsed;
 }
 
-constexpr long long leap_expiration() noexcept {
-  return data::leap_expiration;
-}
+constexpr long long leap_expiration() noexcept { return data::leap_expiration; }
 
 constexpr long long precomputed_until() noexcept {
   return data::precomputed_until;
@@ -161,6 +162,50 @@ constexpr int compare_text(const char *left, const char *right) noexcept {
     ++length;
 
   return compare_text(left, length, right);
+}
+
+constexpr unsigned windows_zone_count() noexcept {
+  return static_cast<unsigned>(sizeof(windows_data::mappings) /
+                               sizeof(windows_data::mappings[0]));
+}
+
+constexpr const char *windows_zone_target(const char *name,
+                                          size_t length) noexcept {
+  if (name == nullptr)
+    return nullptr;
+
+  unsigned first = 0;
+  unsigned last = windows_zone_count();
+
+  while (first < last) {
+    const unsigned middle = first + (last - first) / 2;
+
+    const auto &mapping = windows_data::mappings[middle];
+
+    const int order = compare_text(name, length, mapping.windows_name);
+
+    if (order < 0) {
+      last = middle;
+    } else if (order > 0) {
+      first = middle + 1;
+    } else {
+      return mapping.iana_name;
+    }
+  }
+
+  return nullptr;
+}
+
+constexpr const char *windows_zone_target(const char *name) noexcept {
+  if (name == nullptr)
+    return nullptr;
+
+  size_t length = 0;
+
+  while (name[length] != '\0')
+    ++length;
+
+  return windows_zone_target(name, length);
 }
 
 constexpr zone_ref zone_at(unsigned index) noexcept {
@@ -325,8 +370,7 @@ constexpr zone_interval interval_at(zone_ref zone,
 
     result.offset_seconds = record.initial_offset_seconds;
     result.save_minutes = record.initial_save_minutes;
-    result.abbreviation =
-        data::string_at(record.initial_abbreviation);
+    result.abbreviation = data::string_at(record.initial_abbreviation);
   } else {
     const auto &transition =
         data::transitions[record.transition_begin + state_index - 1];
@@ -334,13 +378,11 @@ constexpr zone_interval interval_at(zone_ref zone,
     result.begin = transition.begin;
     result.offset_seconds = transition.offset_seconds;
     result.save_minutes = transition.save_minutes;
-    result.abbreviation =
-        data::string_at(transition.abbreviation);
+    result.abbreviation = data::string_at(transition.abbreviation);
   }
 
   if (state_index < record.transition_count) {
-    result.end =
-        data::transitions[record.transition_begin + state_index].begin;
+    result.end = data::transitions[record.transition_begin + state_index].begin;
   } else {
     result.end = data::precomputed_until;
     result.end_is_horizon = true;
@@ -360,8 +402,7 @@ constexpr zone_interval interval_at(zone_ref zone,
  * The transition immediately preceding that upper bound owns timestamp.
  * Consequently an exact transition instant belongs to the NEW state.
  */
-constexpr zone_interval lookup(zone_ref zone,
-                               long long timestamp) noexcept {
+constexpr zone_interval lookup(zone_ref zone, long long timestamp) noexcept {
   if (!zone || timestamp >= data::precomputed_until)
     return {};
 
@@ -393,8 +434,8 @@ constexpr zone_interval lookup(zone_ref zone,
   return interval_at(zone, first);
 }
 
-constexpr local_lookup_result
-lookup_local(zone_ref zone, long long timestamp) noexcept {
+constexpr local_lookup_result lookup_local(zone_ref zone,
+                                           long long timestamp) noexcept {
   if (!zone)
     return {};
 
@@ -428,8 +469,7 @@ lookup_local(zone_ref zone, long long timestamp) noexcept {
         interval.begin_unbounded ||
         timestamp >= interval.begin + interval.offset_seconds;
 
-    const bool before_end =
-        timestamp < interval.end + interval.offset_seconds;
+    const bool before_end = timestamp < interval.end + interval.offset_seconds;
 
     if (!after_begin || !before_end)
       continue;
@@ -494,17 +534,14 @@ lookup_local(zone_ref zone, long long timestamp) noexcept {
     if (!previous || !next)
       return {};
 
-    const long long previous_local_end =
-        next.begin + previous.offset_seconds;
+    const long long previous_local_end = next.begin + previous.offset_seconds;
 
-    const long long next_local_begin =
-        next.begin + next.offset_seconds;
+    const long long next_local_begin = next.begin + next.offset_seconds;
 
     if (previous_local_end >= next_local_begin)
       continue;
 
-    if (timestamp >= previous_local_end &&
-        timestamp < next_local_begin) {
+    if (timestamp >= previous_local_end && timestamp < next_local_begin) {
       result.result = local_result_kind::nonexistent;
       result.first = previous;
       result.second = next;

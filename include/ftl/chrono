@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <ctime>
 #include <detail/clock_runtime.hpp>
+#include <detail/current_zone.hpp>
 #include <detail/time_core.hpp>
 #include <detail/tzdb_runtime.hpp>
 #include <iterator>
@@ -28,6 +29,7 @@
 #include <ftl/cstdint>
 #include <ftl/ctime>
 #include <ftl/detail/clock_runtime.hpp>
+#include <ftl/detail/current_zone.hpp>
 #include <ftl/detail/time_core.hpp>
 #include <ftl/detail/tzdb_runtime.hpp>
 #include <ftl/iterator>
@@ -1808,14 +1810,26 @@ struct tzdb {
   }
 
   const time_zone *current_zone() const {
+    char name[512]{};
+
+    const auto discovered =
+        ::ftl_current_zone_runtime::current_zone_name(name, sizeof(name));
+
+    if (discovered.state != ::ftl_current_zone_runtime::status::success) {
+      throw runtime_error("chrono::tzdb::current_zone: "
+                          "unable to determine platform time zone");
+    }
+
     /*
-     * Platform discovery is the next slice.
-     *
-     * Do not silently claim Etc/UTC: that would return a valid pointer
-     * containing incorrect information on most machines.
+     * Platform discovery produces an IANA Zone or Link
+     * name. Resolve it through this tzdb rather than
+     * through the global database so historical tzdb
+     * objects remain self-contained.
      */
-    throw runtime_error(
-        "chrono::tzdb::current_zone: platform current zone unavailable");
+    return locate_zone(string_view{
+        name,
+        discovered.size,
+    });
   }
 };
 
@@ -2111,9 +2125,7 @@ inline const time_zone *locate_zone(string_view name) {
   return get_tzdb().locate_zone(name);
 }
 
-inline const time_zone *current_zone() {
-  return get_tzdb().current_zone();
-}
+inline const time_zone *current_zone() { return get_tzdb().current_zone(); }
 
 inline string remote_version() {
   /*
@@ -2143,8 +2155,7 @@ inline const tzdb &reload_tzdb() {
    * snapshot is newer, reconstruct the compiled database and prepend it.
    */
   chrono_detail::tzdb_list_factory::push_front(
-      list,
-      chrono_detail::tzdb_factory::make());
+      list, chrono_detail::tzdb_factory::make());
 
   return list.front();
 }

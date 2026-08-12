@@ -1619,6 +1619,59 @@ bool chrono_tzdb_remote_works() {
   return true;
 }
 
+bool chrono_current_zone_works() {
+  namespace runtime = tested::detail::tzdb_runtime;
+
+  /*
+   * Validate a couple of generated CLDR mappings
+   * regardless of which OS this test is running on.
+   */
+  const char *eastern = runtime::windows_zone_target("Eastern Standard Time");
+
+  if (eastern == nullptr)
+    return false;
+
+  if (tested::string_view{eastern} != "America/New_York")
+    return false;
+
+  const char *utc = runtime::windows_zone_target("UTC");
+
+  if (utc == nullptr)
+    return false;
+
+  if (tested::string_view{utc} != "Etc/UTC")
+    return false;
+
+  /*
+   * Integration test against the CI host's actual
+   * configured local zone.
+   *
+   * Windows exercises GetDynamicTimeZoneInformation
+   * + CLDR.
+   *
+   * Linux exercises the zoneinfo/file paths.
+   *
+   * Darwin exercises the zoneinfo fast path or the
+   * CoreFoundation fallback.
+   */
+  const time_zone *const zone = current_zone();
+
+  if (zone == nullptr)
+    return false;
+
+  if (get_tzdb().current_zone() != zone)
+    return false;
+
+  /*
+   * Whatever the platform reports must resolve back
+   * to the same canonical object in this database.
+   */
+  if (locate_zone(zone->name()) != zone)
+    return false;
+
+  return true;
+}
+
 bool ftl_test() {
   if (!(system_clock::now().time_since_epoch() > seconds{0})) {
     return false;
@@ -1665,6 +1718,9 @@ bool ftl_test() {
     return false;
 
   if (!chrono_tzdb_remote_works())
+    return false;
+
+  if (!chrono_current_zone_works())
     return false;
 
   return true;

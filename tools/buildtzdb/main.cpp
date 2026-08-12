@@ -1,20 +1,31 @@
 #include "emit.hpp"
 #include "parser.hpp"
 #include "transitions.hpp"
+#include "windows_zones.hpp"
 
 #include <exception>
 #include <filesystem>
 #include <iostream>
 
 int main(int argc, char **argv) {
-  if (argc != 3) {
-    std::cerr << "usage: buildtzdb <tzdata-directory> <output-header>\n";
+  if (argc != 5) {
+    std::cerr << "usage: buildtzdb "
+                 "<tzdata-directory> "
+                 "<windowsZones.xml> "
+                 "<output-header> "
+                 "<windows-output-header>\n";
+
     return 2;
   }
 
   try {
     const std::filesystem::path input = argv[1];
-    const std::filesystem::path output = argv[2];
+
+    const std::filesystem::path windows_input = argv[2];
+
+    const std::filesystem::path output = argv[3];
+
+    const std::filesystem::path windows_output = argv[4];
 
     const auto db = ftl_tzdb_tool::parse_database(input);
 
@@ -29,11 +40,14 @@ int main(int argc, char **argv) {
 
       if (zone.transitions.size() > largest_count) {
         largest_count = zone.transitions.size();
+
         largest_zone = zone.name;
       }
     }
 
     ftl_tzdb_tool::emit_database(db, compiled, output);
+
+    ftl_tzdb_tool::emit_windows_zones(db, windows_input, windows_output);
 
     std::cout << "tzdb " << db.version << ": " << db.zones.size() << " zones, "
               << db.links.size() << " links, " << db.rules.size() << " rules, "
@@ -47,6 +61,7 @@ int main(int argc, char **argv) {
 
   } catch (const std::exception &e) {
     std::cerr << "buildtzdb: " << e.what() << '\n';
+
     return 1;
   }
 }

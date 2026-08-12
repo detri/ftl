@@ -18,6 +18,57 @@ target_include_directories(ftl INTERFACE include)
 target_compile_features(ftl INTERFACE cxx_std_23)
 target_link_libraries(ftl INTERFACE ftl_math_runtime)
 
+# Chrono
+
+add_library(
+        ftl_chrono_runtime
+        STATIC
+        runtime/current_zone.cpp
+)
+
+target_include_directories(
+        ftl_chrono_runtime
+        PRIVATE
+        include
+)
+
+target_compile_features(
+        ftl_chrono_runtime
+        PRIVATE
+        cxx_std_23
+)
+
+if (MSVC)
+    target_compile_options(
+            ftl_chrono_runtime
+            PRIVATE
+            /EHs-c-
+    )
+else ()
+    target_compile_options(
+            ftl_chrono_runtime
+            PRIVATE
+            -fno-exceptions
+            -fno-rtti
+    )
+endif ()
+
+if (APPLE)
+    find_library(
+            FTL_COREFOUNDATION_FRAMEWORK
+            CoreFoundation
+            REQUIRED
+    )
+
+    target_link_libraries(
+            ftl_chrono_runtime
+            PUBLIC
+            "${FTL_COREFOUNDATION_FRAMEWORK}"
+    )
+endif ()
+
+# I/O
+
 add_library(ftl_io_runtime STATIC runtime/native_io.cpp runtime/native_filesystem.cpp runtime/stdio.cpp
                                   runtime/stdio_format.cpp)
 target_include_directories(ftl_io_runtime PRIVATE include)
@@ -28,7 +79,11 @@ if (MSVC)
 else ()
     target_compile_options(ftl_io_runtime PRIVATE -fno-exceptions -fno-rtti)
 endif ()
+
+# Dependencies
+
 target_link_libraries(ftl INTERFACE ftl_io_runtime)
+target_link_libraries(ftl INTERFACE ftl_chrono_runtime)
 
 # Compiler
 
