@@ -343,9 +343,10 @@ constexpr bool operator==(time_point<C, D1> a, time_point<C, D2> b) {
   return a.time_since_epoch() == b.time_since_epoch();
 }
 template <class C, class D1, class D2>
-constexpr auto operator<=>(time_point<C, D1> a, time_point<C, D2> b) {
-  return chrono_detail::compare_values(a.time_since_epoch(),
-                                       b.time_since_epoch());
+  requires three_way_comparable_with<D1, D2>
+constexpr auto operator<=>(const time_point<C, D1> &left,
+                           const time_point<C, D2> &right) {
+  return left.time_since_epoch() <=> right.time_since_epoch();
 }
 template <class To, class C, class D>
 constexpr auto time_point_cast(const time_point<C, D> &p) {
@@ -1223,9 +1224,7 @@ constexpr bool operator>=(const sys_time<Duration> &left,
 }
 
 template <class Duration>
-  requires three_way_comparable_with<
-      sys_seconds,
-      sys_time<Duration>>
+  requires three_way_comparable_with<seconds, Duration>
 constexpr auto operator<=>(const leap_second &left,
                            const sys_time<Duration> &right) noexcept {
   return left.date() <=> right;
