@@ -207,21 +207,16 @@ template<class T, class U, class Category = partial_ordering>
 concept three_way_comparable_with =
     three_way_comparable<T, Category> &&
     three_way_comparable<U, Category> &&
-    common_reference_with<const remove_reference_t<T>&,
-                          const remove_reference_t<U>&> &&
-    three_way_comparable<common_reference_t<
-        const remove_reference_t<T>&, const remove_reference_t<U>&>, Category> &&
-    equality_comparable_with<T, U> &&
+    detail::comparison_common_type_with<T, U> &&
+    three_way_comparable<
+        common_reference_t<
+            const remove_reference_t<T>&,
+            const remove_reference_t<U>&>,
+        Category> &&
+    detail::weakly_equality_comparable_with<T, U> &&
+    detail::partially_ordered_with<T, U> &&
     requires(const remove_reference_t<T>& left,
              const remove_reference_t<U>& right) {
-        { left < right } -> detail::boolean_testable;
-        { left > right } -> detail::boolean_testable;
-        { left <= right } -> detail::boolean_testable;
-        { left >= right } -> detail::boolean_testable;
-        { right < left } -> detail::boolean_testable;
-        { right > left } -> detail::boolean_testable;
-        { right <= left } -> detail::boolean_testable;
-        { right >= left } -> detail::boolean_testable;
         { left <=> right } -> detail::compares_as<Category>;
         { right <=> left } -> detail::compares_as<Category>;
     };
