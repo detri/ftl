@@ -2858,9 +2858,6 @@ bool chrono_stream_io_works() {
 
   /*
    * Direct sys_time from_stream.
-   *
-   * Parsed -0400 is subtracted from the civil
-   * timestamp before assignment.
    */
   {
     tested::istringstream stream{
@@ -2904,7 +2901,8 @@ bool chrono_stream_io_works() {
 
     minutes offset{};
 
-    from_stream(stream, "%F %T %Ez", parsed, nullptr, &offset);
+    from_stream(stream, "%F %T %Ez", parsed,
+                static_cast<tested::string *>(nullptr), &offset);
 
     if (stream.fail())
       return false;
@@ -2931,7 +2929,8 @@ bool chrono_stream_io_works() {
 
     minutes offset{};
 
-    from_stream(stream, "%F %T %z", parsed, nullptr, &offset);
+    from_stream(stream, "%F %T %z", parsed,
+                static_cast<tested::string *>(nullptr), &offset);
 
     if (stream.fail())
       return false;
