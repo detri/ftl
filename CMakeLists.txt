@@ -5,6 +5,11 @@ project(ftl VERSION ${FTL_VERSION} LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
+# tzdb tool
+if(PROJECT_IS_TOP_LEVEL)
+    add_subdirectory(tools/buildtzdb)
+endif()
+
 # FTL
 
 add_library(ftl INTERFACE)
@@ -12,6 +17,78 @@ add_subdirectory(external/openlibm)
 target_include_directories(ftl INTERFACE include)
 target_compile_features(ftl INTERFACE cxx_std_23)
 target_link_libraries(ftl INTERFACE ftl_math_runtime)
+
+# Chrono
+
+set(
+        FTL_TZDB_GENERATED_SOURCE
+        "${CMAKE_CURRENT_SOURCE_DIR}/runtime/tzdb_blob.cpp"
+)
+
+set_source_files_properties(
+        "${FTL_TZDB_GENERATED_SOURCE}"
+        PROPERTIES
+        GENERATED TRUE
+)
+
+add_library(
+        ftl_chrono_runtime
+        STATIC
+        runtime/current_zone.cpp
+        runtime/tzdb_runtime.cpp
+        runtime/tzdb_tail.cpp
+        "${FTL_TZDB_GENERATED_SOURCE}"
+)
+
+target_include_directories(
+        ftl_chrono_runtime
+        PRIVATE
+        include
+)
+
+target_compile_features(
+        ftl_chrono_runtime
+        PRIVATE
+        cxx_std_23
+)
+
+if (MSVC)
+    target_compile_options(
+            ftl_chrono_runtime
+            PRIVATE
+            /EHs-c-
+    )
+else ()
+    target_compile_options(
+            ftl_chrono_runtime
+            PRIVATE
+            -fno-exceptions
+            -fno-rtti
+    )
+endif ()
+
+if (APPLE)
+    find_library(
+            FTL_COREFOUNDATION_FRAMEWORK
+            CoreFoundation
+            REQUIRED
+    )
+
+    target_link_libraries(
+            ftl_chrono_runtime
+            PUBLIC
+            "${FTL_COREFOUNDATION_FRAMEWORK}"
+    )
+endif ()
+
+if (TARGET ftl-tzdb-data)
+    add_dependencies(
+            ftl_chrono_runtime
+            ftl-tzdb-data
+    )
+endif ()
+
+# I/O
 
 add_library(ftl_io_runtime STATIC runtime/native_io.cpp runtime/native_filesystem.cpp runtime/stdio.cpp
                                   runtime/stdio_format.cpp)
@@ -23,7 +100,11 @@ if (MSVC)
 else ()
     target_compile_options(ftl_io_runtime PRIVATE -fno-exceptions -fno-rtti)
 endif ()
+
+# Dependencies
+
 target_link_libraries(ftl INTERFACE ftl_io_runtime)
+target_link_libraries(ftl INTERFACE ftl_chrono_runtime)
 
 # Compiler
 

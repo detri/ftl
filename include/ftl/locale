@@ -20,7 +20,6 @@ extern "C" int snprintf(char *, decltype(sizeof(0)), const char *, ...);
 #include <detail/rapidhash>
 #include <memory>
 #include <limits>
-#include <mutex>
 #include <iosfwd>
 #include <iterator>
 #include <stdexcept>
@@ -44,7 +43,6 @@ extern "C" int snprintf(char *, decltype(sizeof(0)), const char *, ...);
 #include <ftl/detail/rapidhash>
 #include <ftl/memory>
 #include <ftl/limits>
-#include <ftl/mutex>
 #include <ftl/iosfwd>
 #include <ftl/iterator>
 #include <ftl/stdexcept>
@@ -69,9 +67,11 @@ template <class Facet> const Facet &use_facet(const locale &);
 template <class Facet> bool has_facet(const locale &) noexcept;
 
 namespace detail {
+
 struct locale_facet_control;
 struct locale_facet_slot;
 struct locale_state;
+
 int locale_stream_base(const ios_base &) noexcept;
 bool locale_stream_boolalpha(const ios_base &) noexcept;
 bool locale_stream_showbase(const ios_base &) noexcept;
@@ -85,6 +85,87 @@ streamsize locale_stream_take_width(ios_base &) noexcept;
 locale locale_stream_locale(ios_base &);
 unsigned int locale_stream_failbit() noexcept;
 unsigned int locale_stream_eofbit() noexcept;
+
+/*
+ * <locale> must not depend on <mutex>.
+ *
+ * <mutex> itself depends on <chrono> for timed locking,
+ * while C++23 chrono stream I/O depends on the iostream
+ * stack. Pulling <mutex> through <locale> therefore creates
+ * a real header cycle:
+ *
+ *   ios -> locale -> mutex -> chrono -> ostream -> ios
+ *
+ * The messages catalog only needs a tiny internal lock,
+ * so keep that synchronization entirely inside <locale>.
+ */
+class locale_catalog_mutex {
+public:
+  constexpr locale_catalog_mutex() noexcept = default;
+
+  locale_catalog_mutex(
+      const locale_catalog_mutex &) = delete;
+
+  locale_catalog_mutex &
+  operator=(
+      const locale_catalog_mutex &) = delete;
+
+  void lock() noexcept {
+    unsigned expected = 0;
+
+    while (!state_.compare_exchange_weak(
+        expected,
+        1,
+        memory_order_acquire,
+        memory_order_relaxed)) {
+      if (expected != 0) {
+        state_.wait(
+            expected,
+            memory_order_relaxed);
+      }
+
+      expected = 0;
+    }
+  }
+
+  void unlock() noexcept {
+    state_.store(
+        0,
+        memory_order_release);
+
+    state_.notify_one();
+  }
+
+private:
+  atomic<unsigned> state_{0};
+};
+
+template <class Mutex>
+class locale_catalog_lock_guard {
+public:
+  explicit locale_catalog_lock_guard(
+      Mutex &mutex) noexcept
+      : mutex_(mutex) {
+    mutex_.lock();
+  }
+
+  ~locale_catalog_lock_guard() {
+    mutex_.unlock();
+  }
+
+  locale_catalog_lock_guard(
+      const locale_catalog_lock_guard &) =
+      delete;
+
+  locale_catalog_lock_guard &
+  operator=(
+      const locale_catalog_lock_guard &) =
+      delete;
+
+private:
+  Mutex &mutex_;
+};
+
 } // namespace detail
 
 class locale {
@@ -4517,10 +4598,23 @@ locale_convert_message(const char *source, const locale &conversion_locale,
 } // namespace detail
 
 template <class Character>
-class messages : public locale::facet, public messages_base {
-  static_assert(is_same_v<Character, char> || is_same_v<Character, wchar_t>,
-                "FTL provides the required messages "
-                "specializations for char and wchar_t");
+class messages
+    : public locale::facet,
+      public messages_base {
+  static_assert(
+      is_same_v<Character, char> ||
+          is_same_v<Character, wchar_t>,
+      "FTL provides the required messages "
+      "specializations for char and wchar_t");
+
+private:
+  using mutex =
+      detail::locale_catalog_mutex;
+
+  template <class Mutex>
+  using lock_guard =
+      detail::locale_catalog_lock_guard<
+          Mutex>;
 
 public:
   using char_type = Character;

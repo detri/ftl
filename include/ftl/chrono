@@ -4,23 +4,45 @@
 #define FTL_CHRONO_HEADER
 
 #ifdef FTL_REPLACE_STL
+#include <atomic>
 #include <compare>
+#include <cstddef>
 #include <cstdint>
 #include <ctime>
 #include <detail/clock_runtime.hpp>
+#include <detail/current_zone.hpp>
 #include <detail/time_core.hpp>
+#include <detail/tzdb_runtime.hpp>
+#include <iterator>
 #include <limits>
+#include <new>
 #include <ratio>
+#include <stdexcept>
+#include <string>
+#include <string_view>
 #include <type_traits>
+#include <utility>
+#include <vector>
 #else
+#include <ftl/atomic>
 #include <ftl/compare>
+#include <ftl/cstddef>
 #include <ftl/cstdint>
 #include <ftl/ctime>
 #include <ftl/detail/clock_runtime.hpp>
+#include <ftl/detail/current_zone.hpp>
 #include <ftl/detail/time_core.hpp>
+#include <ftl/detail/tzdb_runtime.hpp>
+#include <ftl/iterator>
 #include <ftl/limits>
+#include <ftl/new>
 #include <ftl/ratio>
+#include <ftl/stdexcept>
+#include <ftl/string>
+#include <ftl/string_view>
 #include <ftl/type_traits>
+#include <ftl/utility>
+#include <ftl/vector>
 #endif
 
 FTL_BEGIN_NAMESPACE
@@ -321,9 +343,10 @@ constexpr bool operator==(time_point<C, D1> a, time_point<C, D2> b) {
   return a.time_since_epoch() == b.time_since_epoch();
 }
 template <class C, class D1, class D2>
-constexpr auto operator<=>(time_point<C, D1> a, time_point<C, D2> b) {
-  return chrono_detail::compare_values(a.time_since_epoch(),
-                                       b.time_since_epoch());
+  requires three_way_comparable_with<D1, D2>
+constexpr auto operator<=>(const time_point<C, D1> &left,
+                           const time_point<C, D2> &right) {
+  return left.time_since_epoch() <=> right.time_since_epoch();
 }
 template <class To, class C, class D>
 constexpr auto time_point_cast(const time_point<C, D> &p) {
@@ -1112,53 +1135,346 @@ struct leap_second_info {
   bool is_leap_second;
   seconds elapsed;
 };
+
 namespace chrono_detail {
-inline constexpr long long leap_boundaries[] = {
-    78796800,   94694400,   126230400, 157766400, 189302400,  220924800,
-    252460800,  283996800,  315532800, 362793600, 394329600,  425865600,
-    489024000,  567993600,  631152000, 662688000, 709948800,  741484800,
-    773020800,  820454400,  867715200, 915148800, 1136073600, 1230768000,
-    1341100800, 1435708800, 1483228800};
-constexpr int leaps_before(long long unix_seconds) noexcept {
-  int n = 0;
-  for (auto boundary : leap_boundaries)
-    if (unix_seconds >= boundary)
-      ++n;
-    else
-      break;
-  return n;
+struct leap_second_factory;
 }
+
+class leap_second {
+public:
+  leap_second(const leap_second &) = default;
+  leap_second &operator=(const leap_second &) = default;
+
+  constexpr sys_seconds date() const noexcept { return date_; }
+
+  constexpr seconds value() const noexcept { return value_; }
+
+private:
+  constexpr leap_second(sys_seconds date, seconds value) noexcept
+      : date_(date), value_(value) {}
+
+  sys_seconds date_{};
+  seconds value_{};
+
+  friend struct chrono_detail::leap_second_factory;
+};
+
+constexpr bool operator==(const leap_second &left,
+                          const leap_second &right) noexcept {
+  return left.date() == right.date();
+}
+
+constexpr strong_ordering operator<=>(const leap_second &left,
+                                      const leap_second &right) noexcept {
+  return left.date() <=> right.date();
+}
+
+template <class Duration>
+constexpr bool operator==(const leap_second &left,
+                          const sys_time<Duration> &right) noexcept {
+  return left.date() == right;
+}
+
+template <class Duration>
+constexpr bool operator<(const leap_second &left,
+                         const sys_time<Duration> &right) noexcept {
+  return left.date() < right;
+}
+
+template <class Duration>
+constexpr bool operator<(const sys_time<Duration> &left,
+                         const leap_second &right) noexcept {
+  return left < right.date();
+}
+
+template <class Duration>
+constexpr bool operator>(const leap_second &left,
+                         const sys_time<Duration> &right) noexcept {
+  return right < left;
+}
+
+template <class Duration>
+constexpr bool operator>(const sys_time<Duration> &left,
+                         const leap_second &right) noexcept {
+  return right < left;
+}
+
+template <class Duration>
+constexpr bool operator<=(const leap_second &left,
+                          const sys_time<Duration> &right) noexcept {
+  return !(right < left);
+}
+
+template <class Duration>
+constexpr bool operator<=(const sys_time<Duration> &left,
+                          const leap_second &right) noexcept {
+  return !(right < left);
+}
+
+template <class Duration>
+constexpr bool operator>=(const leap_second &left,
+                          const sys_time<Duration> &right) noexcept {
+  return !(left < right);
+}
+
+template <class Duration>
+constexpr bool operator>=(const sys_time<Duration> &left,
+                          const leap_second &right) noexcept {
+  return !(left < right);
+}
+
+template <class Duration>
+  requires three_way_comparable_with<seconds, Duration>
+constexpr auto operator<=>(const leap_second &left,
+                           const sys_time<Duration> &right) noexcept {
+  return left.date() <=> right;
+}
+
+namespace chrono_detail {
+
+struct leap_second_factory {
+  static leap_second make(unsigned index) noexcept {
+    return leap_second{
+        sys_seconds{
+            seconds{
+                detail::tzdb_runtime::leap_date_seconds(index),
+            },
+        },
+        seconds{
+            detail::tzdb_runtime::leap_value(index),
+        },
+    };
+  }
+};
+
+inline int leaps_before(long long unix_seconds) noexcept {
+  return detail::tzdb_runtime::leap_elapsed_at_sys(unix_seconds);
+}
+
 } // namespace chrono_detail
+template <class D>
+leap_second_info get_leap_second_info(
+    const utc_time<D> &t) {
+  using common_duration =
+      common_type_t<D, seconds>;
+
+  const common_duration utc{
+      t.time_since_epoch(),
+  };
+
+  int elapsed = 0;
+
+  for (unsigned index = 0;
+       index <
+       detail::tzdb_runtime::leap_count();
+       ++index) {
+    const int value =
+        detail::tzdb_runtime::
+            leap_value(index);
+
+    const common_duration
+        system_boundary{
+            seconds{
+                detail::tzdb_runtime::
+                    leap_date_seconds(
+                        index),
+            },
+        };
+
+    if (value > 0) {
+      const auto leap_begin =
+          system_boundary +
+          common_duration{
+              seconds{elapsed},
+          };
+
+      if (utc < leap_begin)
+        break;
+
+      const auto leap_end =
+          leap_begin +
+          common_duration{
+              seconds{value},
+          };
+
+      if (utc < leap_end) {
+        return {
+            true,
+            seconds{
+                elapsed + value,
+            },
+        };
+      }
+
+      elapsed += value;
+      continue;
+    }
+
+    /*
+     * A negative leap inserts no UTC interval.
+     *
+     * Once UTC reaches the post-deletion boundary,
+     * the new correction is active.
+     */
+    const int after =
+        elapsed + value;
+
+    const auto boundary =
+        system_boundary +
+        common_duration{
+            seconds{after},
+        };
+
+    if (utc < boundary)
+      break;
+
+    elapsed = after;
+  }
+
+  return {
+      false,
+      seconds{elapsed},
+  };
+}
+
 struct utc_clock {
   using rep = long long;
   using period = nano;
   using duration = nanoseconds;
-  using time_point = utc_time<duration>;
-  static constexpr bool is_steady = false;
-  template <class D> static constexpr auto from_sys(const sys_time<D> &t) {
-    auto whole = duration_cast<seconds>(t.time_since_epoch()).count();
-    using C = common_type_t<D, seconds>;
-    return utc_time<C>{C(t.time_since_epoch()) +
-                       seconds{chrono_detail::leaps_before(whole)}};
+  using time_point =
+      utc_time<duration>;
+
+  static constexpr bool is_steady =
+      false;
+
+  template <class D>
+  static auto from_sys(
+      const sys_time<D> &t) {
+    /*
+     * Leap boundaries are integral sys seconds.
+     *
+     * floor rather than duration_cast matters for
+     * negative subsecond timestamps.
+     */
+    const auto whole =
+        floor<seconds>(t)
+            .time_since_epoch()
+            .count();
+
+    using C =
+        common_type_t<D, seconds>;
+
+    return utc_time<C>{
+        C{t.time_since_epoch()} +
+        C{
+            seconds{
+                chrono_detail::
+                    leaps_before(whole),
+            },
+        },
+    };
   }
-  template <class D> static constexpr auto to_sys(const utc_time<D> &t) {
-    auto guess = duration_cast<seconds>(t.time_since_epoch()).count();
-    for (int i = 0; i < 2; ++i)
-      guess = duration_cast<seconds>(t.time_since_epoch()).count() -
-              chrono_detail::leaps_before(guess);
-    using C = common_type_t<D, seconds>;
-    return sys_time<C>{C(t.time_since_epoch()) -
-                       seconds{chrono_detail::leaps_before(guess)}};
+
+  template <class D>
+  static auto to_sys(
+      const utc_time<D> &t) {
+    using C =
+        common_type_t<D, seconds>;
+
+    const C utc{
+        t.time_since_epoch(),
+    };
+
+    int elapsed = 0;
+
+    /*
+     * Walk the generated leap table directly.
+     *
+     * Outside a positive leap:
+     *
+     *   sys = utc - elapsed
+     *
+     * During a positive leap there is no one-to-one
+     * sys representation. N4950 requires the final
+     * representable sys value before the insertion.
+     */
+    for (unsigned index = 0;
+         index <
+         detail::tzdb_runtime::
+             leap_count();
+         ++index) {
+      const int value =
+          detail::tzdb_runtime::
+              leap_value(index);
+
+      const C system_boundary{
+          seconds{
+              detail::tzdb_runtime::
+                  leap_date_seconds(
+                      index),
+          },
+      };
+
+      if (value > 0) {
+        const C leap_begin =
+            system_boundary +
+            C{
+                seconds{elapsed},
+            };
+
+        if (utc < leap_begin)
+          break;
+
+        const C leap_end =
+            leap_begin +
+            C{
+                seconds{value},
+            };
+
+        if (utc < leap_end) {
+          /*
+           * Collapse every point inside the inserted
+           * UTC interval onto the final representable
+           * sys tick before the insertion.
+           */
+          return sys_time<C>{
+              system_boundary -
+              C{1},
+          };
+        }
+
+        elapsed += value;
+        continue;
+      }
+
+      const int after =
+          elapsed + value;
+
+      const C boundary =
+          system_boundary +
+          C{
+              seconds{after},
+          };
+
+      if (utc < boundary)
+        break;
+
+      elapsed = after;
+    }
+
+    return sys_time<C>{
+        utc -
+        C{
+            seconds{elapsed},
+        },
+    };
   }
-  static time_point now() { return from_sys(system_clock::now()); }
+
+  static time_point now() {
+    return from_sys(
+        system_clock::now());
+  }
 };
-template <class D>
-constexpr leap_second_info get_leap_second_info(const utc_time<D> &t) {
-  auto sys = utc_clock::to_sys(t);
-  auto elapsed = seconds{chrono_detail::leaps_before(
-      duration_cast<seconds>(sys.time_since_epoch()).count())};
-  return {utc_clock::from_sys(sys) < t, elapsed};
-}
 struct tai_clock {
   using rep = long long;
   using period = nano;
@@ -1311,6 +1627,1147 @@ constexpr auto clock_cast(const time_point<SourceClock, D> &t) {
             clock_time_conversion<utc_clock, SourceClock>{}(t)));
 }
 
+enum class choose {
+  earliest,
+  latest,
+};
+
+struct sys_info {
+  sys_seconds begin;
+  sys_seconds end;
+  seconds offset;
+  minutes save;
+  string abbrev;
+};
+
+struct local_info {
+  static constexpr int unique = 0;
+  static constexpr int nonexistent = 1;
+  static constexpr int ambiguous = 2;
+
+  int result;
+  sys_info first;
+  sys_info second;
+};
+
+class time_zone;
+
+const time_zone *locate_zone(string_view name);
+
+const time_zone *current_zone();
+
+class nonexistent_local_time
+    : public runtime_error {
+public:
+  template <class Duration>
+  nonexistent_local_time(
+      const local_time<Duration> &tp,
+      const local_info &info);
+};
+
+class ambiguous_local_time
+    : public runtime_error {
+public:
+  template <class Duration>
+  ambiguous_local_time(
+      const local_time<Duration> &tp,
+      const local_info &info);
+};
+
+namespace chrono_detail {
+struct tzdb_factory;
+struct tzdb_list_factory;
+} // namespace chrono_detail
+
+class time_zone {
+public:
+  time_zone(time_zone &&) = default;
+  time_zone &operator=(time_zone &&) = default;
+
+  string_view name() const noexcept {
+    return detail::tzdb_runtime::zone_name(
+        detail::tzdb_runtime::zone_ref{index_});
+  }
+
+  template <class Duration>
+  sys_info get_info(const sys_time<Duration> &st) const {
+    /*
+     * Generated transitions occur at integral system-clock seconds.
+     * Flooring rather than truncating is significant for negative
+     * subsecond timestamps.
+     */
+    const auto whole_second = floor<seconds>(st);
+
+    const auto interval =
+        detail::tzdb_runtime::lookup(detail::tzdb_runtime::zone_ref{index_},
+                                     whole_second.time_since_epoch().count());
+
+    if (!interval)
+      throw runtime_error("chrono::time_zone::get_info: outside tzdb coverage");
+
+    return make_sys_info(interval);
+  }
+
+  template <class Duration>
+  local_info get_info(const local_time<Duration> &tp) const {
+    /*
+     * All generated transition boundaries are integral seconds.
+     * Flooring preserves the correct side of a boundary for negative
+     * subsecond local times as well.
+     */
+    const auto whole_second = floor<seconds>(tp);
+
+    const auto lookup = detail::tzdb_runtime::lookup_local(
+        detail::tzdb_runtime::zone_ref{index_},
+        whole_second.time_since_epoch().count());
+
+    if (!lookup)
+      throw runtime_error("chrono::time_zone::get_info: outside tzdb coverage");
+
+    local_info result{};
+
+    switch (lookup.result) {
+    case detail::tzdb_runtime::local_result_kind::unique:
+      result.result = local_info::unique;
+      result.first = make_sys_info(lookup.first);
+      break;
+
+    case detail::tzdb_runtime::local_result_kind::nonexistent:
+      result.result = local_info::nonexistent;
+      result.first = make_sys_info(lookup.first);
+      result.second = make_sys_info(lookup.second);
+      break;
+
+    case detail::tzdb_runtime::local_result_kind::ambiguous:
+      result.result = local_info::ambiguous;
+      result.first = make_sys_info(lookup.first);
+      result.second = make_sys_info(lookup.second);
+      break;
+
+    case detail::tzdb_runtime::local_result_kind::invalid:
+      throw runtime_error(
+          "chrono::time_zone::get_info: invalid local-time result");
+    }
+
+    return result;
+  }
+
+  template <class Duration>
+  sys_time<common_type_t<Duration, seconds>>
+  to_sys(const local_time<Duration> &tp) const {
+    using result_duration = common_type_t<Duration, seconds>;
+
+    const auto info = get_info(tp);
+
+    switch (info.result) {
+    case local_info::unique:
+      return sys_time<result_duration>{result_duration{tp.time_since_epoch()} -
+                                       result_duration{info.first.offset}};
+
+    case local_info::nonexistent:
+      throw nonexistent_local_time(tp, info);
+
+    case local_info::ambiguous:
+      throw ambiguous_local_time(tp, info);
+    }
+
+    throw runtime_error("chrono::time_zone::to_sys: invalid local_info result");
+  }
+
+  template <class Duration>
+  sys_time<common_type_t<Duration, seconds>>
+  to_sys(const local_time<Duration> &tp, choose selection) const {
+    using result_duration = common_type_t<Duration, seconds>;
+
+    const auto info = get_info(tp);
+
+    switch (info.result) {
+    case local_info::unique:
+      return sys_time<result_duration>{result_duration{tp.time_since_epoch()} -
+                                       result_duration{info.first.offset}};
+
+    case local_info::nonexistent:
+      /*
+       * A gap is bounded by two local representations of the same
+       * system-clock transition instant.
+       */
+      return sys_time<result_duration>{
+          result_duration{info.first.end.time_since_epoch()}};
+
+    case local_info::ambiguous: {
+      const auto &selected =
+          selection == choose::earliest ? info.first : info.second;
+
+      return sys_time<result_duration>{result_duration{tp.time_since_epoch()} -
+                                       result_duration{selected.offset}};
+    }
+    }
+
+    throw runtime_error("chrono::time_zone::to_sys: invalid local_info result");
+  }
+
+  template <class Duration>
+  local_time<common_type_t<Duration, seconds>>
+  to_local(const sys_time<Duration> &tp) const {
+    using result_duration = common_type_t<Duration, seconds>;
+
+    const auto info = get_info(tp);
+
+    return local_time<result_duration>{result_duration{tp.time_since_epoch()} +
+                                       result_duration{info.offset}};
+  }
+
+private:
+  constexpr time_zone() noexcept = default;
+
+  static sys_info
+  make_sys_info(const detail::tzdb_runtime::zone_interval &interval) {
+    sys_info result;
+
+    result.begin = interval.begin_unbounded
+                       ? sys_seconds::min()
+                       : sys_seconds{seconds{interval.begin}};
+
+    result.end = sys_seconds{seconds{interval.end}};
+    result.offset = seconds{interval.offset_seconds};
+    result.save = minutes{interval.save_minutes};
+    result.abbrev = interval.abbreviation;
+
+    return result;
+  }
+
+  unsigned index_ = 0;
+
+  friend struct chrono_detail::tzdb_factory;
+};
+
+inline bool operator==(const time_zone &left, const time_zone &right) noexcept {
+  return left.name() == right.name();
+}
+
+inline strong_ordering operator<=>(const time_zone &left,
+                                   const time_zone &right) noexcept {
+  return left.name() <=> right.name();
+}
+
+template <class T>
+struct zoned_traits {};
+
+template <>
+struct zoned_traits<
+    const time_zone *> {
+  static const time_zone *
+  default_zone() {
+    return chrono::locate_zone(
+        "UTC");
+  }
+
+  static const time_zone *
+  locate_zone(
+      string_view name) {
+    return chrono::locate_zone(
+        name);
+  }
+};
+
+namespace chrono_detail {
+
+template <class TimeZonePtrOrName>
+using time_zone_representation_t =
+    conditional_t<
+        is_convertible_v<
+            TimeZonePtrOrName,
+            string_view>,
+        const time_zone *,
+        remove_cvref_t<
+            TimeZonePtrOrName>>;
+
+} // namespace chrono_detail
+
+template <
+    class Duration,
+    class TimeZonePtr =
+        const time_zone *>
+class zoned_time {
+  static_assert(
+      chrono_detail::
+          is_duration<
+              Duration>::value);
+
+public:
+  using duration =
+      common_type_t<
+          Duration,
+          seconds>;
+
+private:
+  using traits_ =
+      zoned_traits<
+          TimeZonePtr>;
+
+public:
+  zoned_time()
+    requires requires {
+      traits_::default_zone();
+    }
+      : zone_(
+            traits_::
+                default_zone()),
+        tp_{} {}
+
+  zoned_time(
+      const zoned_time &) =
+      default;
+
+  zoned_time &
+  operator=(
+      const zoned_time &) =
+      default;
+
+  zoned_time(
+      const sys_time<
+          Duration> &st)
+    requires requires {
+      traits_::default_zone();
+    }
+      : zone_(
+            traits_::
+                default_zone()),
+        tp_(st) {}
+
+  explicit zoned_time(
+      TimeZonePtr zone)
+      : zone_(
+            move(zone)),
+        tp_{} {}
+
+  explicit zoned_time(
+      string_view name)
+    requires requires {
+      traits_::locate_zone(
+          string_view{});
+    }
+      : zone_(
+            traits_::
+                locate_zone(
+                    name)),
+        tp_{} {}
+
+  template <class Duration2>
+    requires is_convertible_v<
+        sys_time<Duration2>,
+        sys_time<Duration>>
+  zoned_time(
+      const zoned_time<
+          Duration2,
+          TimeZonePtr> &other)
+      : zone_(
+            other.
+                get_time_zone()),
+        tp_(
+            other.
+                get_sys_time()) {}
+
+  zoned_time(
+      TimeZonePtr zone,
+      const sys_time<
+          Duration> &st)
+      : zone_(
+            move(zone)),
+        tp_(st) {}
+
+  zoned_time(
+      string_view name,
+      const sys_time<
+          Duration> &st)
+    requires requires {
+      traits_::locate_zone(
+          string_view{});
+    }
+      : zoned_time(
+            traits_::
+                locate_zone(
+                    name),
+            st) {}
+
+  zoned_time(
+      TimeZonePtr zone,
+      const local_time<
+          Duration> &tp)
+    requires
+      is_convertible_v<
+          decltype(
+              declval<
+                  TimeZonePtr &>()
+                  ->to_sys(
+                      declval<
+                          const local_time<
+                              Duration> &>())),
+          sys_time<duration>>
+      : zone_(
+            move(zone)),
+        tp_(
+            zone_->
+                to_sys(tp)) {}
+
+  zoned_time(
+      string_view name,
+      const local_time<
+          Duration> &tp)
+    requires requires {
+      traits_::locate_zone(
+          string_view{});
+    }
+      : zoned_time(
+            traits_::
+                locate_zone(
+                    name),
+            tp) {}
+
+  zoned_time(
+      TimeZonePtr zone,
+      const local_time<
+          Duration> &tp,
+      choose selection)
+    requires
+      is_convertible_v<
+          decltype(
+              declval<
+                  TimeZonePtr &>()
+                  ->to_sys(
+                      declval<
+                          const local_time<
+                              Duration> &>(),
+                      choose::earliest)),
+          sys_time<duration>>
+      : zone_(
+            move(zone)),
+        tp_(
+            zone_->
+                to_sys(
+                    tp,
+                    selection)) {}
+
+  zoned_time(
+      string_view name,
+      const local_time<
+          Duration> &tp,
+      choose selection)
+    requires requires {
+      traits_::locate_zone(
+          string_view{});
+    }
+      : zoned_time(
+            traits_::
+                locate_zone(
+                    name),
+            tp,
+            selection) {}
+
+  template <
+      class Duration2,
+      class TimeZonePtr2>
+    requires is_convertible_v<
+        sys_time<Duration2>,
+        sys_time<Duration>>
+  zoned_time(
+      TimeZonePtr zone,
+      const zoned_time<
+          Duration2,
+          TimeZonePtr2> &other)
+      : zone_(
+            move(zone)),
+        tp_(
+            other.
+                get_sys_time()) {}
+
+  template <
+      class Duration2,
+      class TimeZonePtr2>
+    requires is_convertible_v<
+        sys_time<Duration2>,
+        sys_time<Duration>>
+  zoned_time(
+      TimeZonePtr zone,
+      const zoned_time<
+          Duration2,
+          TimeZonePtr2> &other,
+      choose)
+      : zoned_time(
+            move(zone),
+            other) {}
+
+  template <
+      class Duration2,
+      class TimeZonePtr2>
+  zoned_time(
+      string_view name,
+      const zoned_time<
+          Duration2,
+          TimeZonePtr2> &other)
+    requires requires {
+      traits_::locate_zone(
+          string_view{});
+    }
+      : zoned_time(
+            traits_::
+                locate_zone(
+                    name),
+            other) {}
+
+  template <
+      class Duration2,
+      class TimeZonePtr2>
+  zoned_time(
+      string_view name,
+      const zoned_time<
+          Duration2,
+          TimeZonePtr2> &other,
+      choose selection)
+    requires requires {
+      traits_::locate_zone(
+          string_view{});
+    }
+      : zoned_time(
+            traits_::
+                locate_zone(
+                    name),
+            other,
+            selection) {}
+
+  zoned_time &
+  operator=(
+      const sys_time<
+          Duration> &st) {
+    tp_ = st;
+    return *this;
+  }
+
+  zoned_time &
+  operator=(
+      const local_time<
+          Duration> &lt) {
+    tp_ =
+        zone_->
+            to_sys(lt);
+
+    return *this;
+  }
+
+  operator
+  sys_time<duration>() const {
+    return get_sys_time();
+  }
+
+  explicit operator
+  local_time<duration>() const {
+    return get_local_time();
+  }
+
+  TimeZonePtr
+  get_time_zone() const {
+    return zone_;
+  }
+
+  local_time<duration>
+  get_local_time() const {
+    return zone_->
+        to_local(tp_);
+  }
+
+  sys_time<duration>
+  get_sys_time() const {
+    return tp_;
+  }
+
+  sys_info
+  get_info() const {
+    return zone_->
+        get_info(tp_);
+  }
+
+private:
+  TimeZonePtr zone_;
+  sys_time<duration> tp_;
+};
+
+using zoned_seconds = zoned_time<seconds>;
+
+zoned_time()
+    -> zoned_time<seconds>;
+
+template <class Duration>
+zoned_time(
+    sys_time<Duration>)
+    -> zoned_time<
+        common_type_t<
+            Duration,
+            seconds>>;
+
+template <
+    class TimeZonePtrOrName>
+zoned_time(
+    TimeZonePtrOrName &&)
+    -> zoned_time<
+        seconds,
+        chrono_detail::
+            time_zone_representation_t<
+                TimeZonePtrOrName>>;
+
+template <
+    class TimeZonePtrOrName,
+    class Duration>
+zoned_time(
+    TimeZonePtrOrName &&,
+    sys_time<Duration>)
+    -> zoned_time<
+        common_type_t<
+            Duration,
+            seconds>,
+        chrono_detail::
+            time_zone_representation_t<
+                TimeZonePtrOrName>>;
+
+template <
+    class TimeZonePtrOrName,
+    class Duration>
+zoned_time(
+    TimeZonePtrOrName &&,
+    local_time<Duration>,
+    choose =
+        choose::earliest)
+    -> zoned_time<
+        common_type_t<
+            Duration,
+            seconds>,
+        chrono_detail::
+            time_zone_representation_t<
+                TimeZonePtrOrName>>;
+
+template <
+    class Duration,
+    class TimeZonePtrOrName,
+    class TimeZonePtr2>
+zoned_time(
+    TimeZonePtrOrName &&,
+    zoned_time<
+        Duration,
+        TimeZonePtr2>,
+    choose =
+        choose::earliest)
+    -> zoned_time<
+        common_type_t<
+            Duration,
+            seconds>,
+        chrono_detail::
+            time_zone_representation_t<
+                TimeZonePtrOrName>>;
+
+template <
+    class Duration1,
+    class Duration2,
+    class TimeZonePtr>
+bool operator==(
+    const zoned_time<
+        Duration1,
+        TimeZonePtr> &left,
+    const zoned_time<
+        Duration2,
+        TimeZonePtr> &right) {
+  return
+      left.get_time_zone() ==
+          right.get_time_zone() &&
+      left.get_sys_time() ==
+          right.get_sys_time();
+}
+
+namespace chrono_detail {
+
+template <class Duration>
+struct local_time_format_t {
+  local_time<Duration> time;
+  const string *abbrev = nullptr;
+  const seconds *offset = nullptr;
+};
+
+} // namespace chrono_detail
+
+template <class Duration>
+chrono_detail::local_time_format_t<Duration>
+local_time_format(
+    local_time<Duration> time,
+    const string *abbrev = nullptr,
+    const seconds *offset_sec = nullptr) {
+  return {
+      time,
+      abbrev,
+      offset_sec,
+  };
+}
+
+class time_zone_link {
+public:
+  time_zone_link(time_zone_link &&) = default;
+  time_zone_link &operator=(time_zone_link &&) = default;
+
+  string_view name() const noexcept {
+    return detail::tzdb_runtime::link_name(
+        detail::tzdb_runtime::link_ref{index_});
+  }
+
+  string_view target() const noexcept {
+    const auto target = detail::tzdb_runtime::link_target(
+        detail::tzdb_runtime::link_ref{index_});
+
+    if (!target)
+      return {};
+
+    return detail::tzdb_runtime::zone_name(target);
+  }
+
+private:
+  constexpr time_zone_link() noexcept = default;
+
+  unsigned index_ = 0;
+
+  friend struct chrono_detail::tzdb_factory;
+};
+
+inline bool operator==(const time_zone_link &left,
+                       const time_zone_link &right) noexcept {
+  return left.name() == right.name();
+}
+
+inline strong_ordering operator<=>(const time_zone_link &left,
+                                   const time_zone_link &right) noexcept {
+  return left.name() <=> right.name();
+}
+
+struct tzdb {
+  string version;
+  vector<time_zone> zones;
+  vector<time_zone_link> links;
+  vector<leap_second> leap_seconds;
+
+  const time_zone *locate_zone(string_view tz_name) const {
+    /*
+     * The standard requires each public vector to be sorted specifically
+     * so lookup can be efficient. Search the public database representation
+     * itself rather than reaching around it into generated tables.
+     */
+    size_t first = 0;
+    size_t last = zones.size();
+
+    while (first < last) {
+      const size_t middle = first + (last - first) / 2;
+
+      if (zones[middle].name() < tz_name)
+        first = middle + 1;
+      else
+        last = middle;
+    }
+
+    if (first < zones.size() && zones[first].name() == tz_name) {
+      return &zones[first];
+    }
+
+    first = 0;
+    last = links.size();
+
+    while (first < last) {
+      const size_t middle = first + (last - first) / 2;
+
+      if (links[middle].name() < tz_name)
+        first = middle + 1;
+      else
+        last = middle;
+    }
+
+    if (first == links.size() || links[first].name() != tz_name) {
+      throw runtime_error("chrono::tzdb::locate_zone: time zone not found");
+    }
+
+    const string_view target = links[first].target();
+
+    first = 0;
+    last = zones.size();
+
+    while (first < last) {
+      const size_t middle = first + (last - first) / 2;
+
+      if (zones[middle].name() < target)
+        first = middle + 1;
+      else
+        last = middle;
+    }
+
+    if (first < zones.size() && zones[first].name() == target) {
+      return &zones[first];
+    }
+
+    /*
+     * A valid initialized tzdb must not contain a link whose canonical
+     * target is missing.
+     */
+    throw runtime_error("chrono::tzdb::locate_zone: invalid time zone link");
+  }
+
+  const time_zone *current_zone() const {
+    char name[512]{};
+
+    const auto discovered =
+        ::ftl_current_zone_runtime::current_zone_name(name, sizeof(name));
+
+    if (discovered.state != ::ftl_current_zone_runtime::status::success) {
+      throw runtime_error("chrono::tzdb::current_zone: "
+                          "unable to determine platform time zone");
+    }
+
+    /*
+     * Platform discovery produces an IANA Zone or Link
+     * name. Resolve it through this tzdb rather than
+     * through the global database so historical tzdb
+     * objects remain self-contained.
+     */
+    return locate_zone(string_view{
+        name,
+        discovered.size,
+    });
+  }
+};
+
+class tzdb_list {
+private:
+  class list_mutex {
+  public:
+    constexpr list_mutex() noexcept = default;
+
+    list_mutex(const list_mutex &) = delete;
+    list_mutex &operator=(const list_mutex &) = delete;
+
+    void lock() noexcept {
+      unsigned expected = 0;
+
+      while (!state_.compare_exchange_weak(expected, 1, memory_order_acquire,
+                                           memory_order_relaxed)) {
+        if (expected != 0) {
+          state_.wait(expected, memory_order_relaxed);
+        }
+
+        expected = 0;
+      }
+    }
+
+    void unlock() noexcept {
+      state_.store(0, memory_order_release);
+      state_.notify_one();
+    }
+
+  private:
+    atomic<unsigned> state_{0};
+  };
+
+  class list_guard {
+  public:
+    explicit list_guard(list_mutex &mutex) noexcept : mutex_(mutex) {
+      mutex_.lock();
+    }
+
+    ~list_guard() { mutex_.unlock(); }
+
+    list_guard(const list_guard &) = delete;
+    list_guard &operator=(const list_guard &) = delete;
+
+  private:
+    list_mutex &mutex_;
+  };
+
+  struct node {
+    tzdb database;
+    node *next = nullptr;
+
+    explicit node(tzdb &&value, node *following = nullptr)
+        : database(static_cast<tzdb &&>(value)), next(following) {}
+  };
+
+public:
+  tzdb_list(const tzdb_list &) = delete;
+  tzdb_list &operator=(const tzdb_list &) = delete;
+
+  class const_iterator {
+  public:
+    using iterator_category = forward_iterator_tag;
+    using value_type = tzdb;
+    using difference_type = ptrdiff_t;
+    using pointer = const tzdb *;
+    using reference = const tzdb &;
+
+    constexpr const_iterator() noexcept = default;
+
+    reference operator*() const noexcept { return current_->database; }
+
+    pointer operator->() const noexcept { return &current_->database; }
+
+    const_iterator &operator++() noexcept {
+      current_ = current_->next;
+      return *this;
+    }
+
+    const_iterator operator++(int) noexcept {
+      const_iterator old = *this;
+      ++*this;
+      return old;
+    }
+
+    friend constexpr bool operator==(const const_iterator &left,
+                                     const const_iterator &right) noexcept {
+      return left.current_ == right.current_;
+    }
+
+  private:
+    explicit constexpr const_iterator(node *current) noexcept
+        : current_(current) {}
+
+    node *current_ = nullptr;
+
+    friend class tzdb_list;
+  };
+
+  const tzdb &front() const noexcept {
+    list_guard guard(mutex_);
+    return head_->database;
+  }
+
+  const_iterator erase_after(const_iterator position) {
+    list_guard guard(mutex_);
+
+    node *const previous = position.current_;
+    node *const erased = previous->next;
+
+    previous->next = erased->next;
+
+    const_iterator result{erased->next};
+
+    delete erased;
+
+    return result;
+  }
+
+  const_iterator begin() const noexcept {
+    list_guard guard(mutex_);
+    return const_iterator{head_};
+  }
+
+  const_iterator end() const noexcept { return const_iterator{}; }
+
+  const_iterator cbegin() const noexcept { return begin(); }
+
+  const_iterator cend() const noexcept { return end(); }
+
+private:
+  explicit tzdb_list(tzdb &&initial)
+      : head_(new node{
+            static_cast<tzdb &&>(initial),
+            nullptr,
+        }) {}
+
+  ~tzdb_list() = default;
+
+  void push_front(tzdb &&database) {
+    node *replacement = new node{
+        static_cast<tzdb &&>(database),
+        nullptr,
+    };
+
+    list_guard guard(mutex_);
+
+    replacement->next = head_;
+    head_ = replacement;
+  }
+
+  mutable list_mutex mutex_;
+  node *head_ = nullptr;
+
+  friend struct chrono_detail::tzdb_list_factory;
+};
+
+namespace chrono_detail {
+
+struct tzdb_factory {
+  static time_zone make_zone(unsigned index) {
+    time_zone zone;
+    zone.index_ = index;
+    return zone;
+  }
+
+  static time_zone_link make_link(unsigned index) {
+    time_zone_link link;
+    link.index_ = index;
+    return link;
+  }
+
+  static tzdb make() {
+    if (!detail::tzdb_runtime::valid()) {
+      throw runtime_error("chrono::tzdb: invalid built-in "
+                          "timezone database");
+    }
+
+    tzdb result;
+
+    result.version = detail::tzdb_runtime::version();
+
+    result.zones.reserve(detail::tzdb_runtime::zone_count());
+
+    for (unsigned index = 0; index < detail::tzdb_runtime::zone_count();
+         ++index) {
+      result.zones.push_back(make_zone(index));
+    }
+
+    result.links.reserve(detail::tzdb_runtime::link_count());
+
+    for (unsigned index = 0; index < detail::tzdb_runtime::link_count();
+         ++index) {
+      result.links.push_back(make_link(index));
+    }
+
+    result.leap_seconds.reserve(detail::tzdb_runtime::leap_count());
+
+    for (unsigned index = 0; index < detail::tzdb_runtime::leap_count();
+         ++index) {
+      result.leap_seconds.push_back(leap_second_factory::make(index));
+    }
+
+    return result;
+  }
+};
+
+struct tzdb_list_factory {
+  static tzdb_list *construct(void *storage) {
+    return ::new (storage) tzdb_list{
+        tzdb_factory::make(),
+    };
+  }
+
+  static void push_front(tzdb_list &list, tzdb database) {
+    list.push_front(static_cast<tzdb &&>(database));
+  }
+};
+
+} // namespace chrono_detail
+
+namespace chrono_detail {
+
+alignas(tzdb_list) inline unsigned char tzdb_list_storage[sizeof(tzdb_list)];
+
+inline tzdb_list *tzdb_list_instance = nullptr;
+
+/*
+ * 0 = uninitialized
+ * 1 = initialization in progress
+ * 2 = initialized
+ */
+inline atomic<unsigned> tzdb_list_initialization_state{0};
+
+inline void initialize_tzdb_list() {
+  for (;;) {
+    unsigned state = tzdb_list_initialization_state.load(memory_order_acquire);
+
+    if (state == 2)
+      return;
+
+    if (state == 0) {
+      unsigned expected = 0;
+
+      if (tzdb_list_initialization_state.compare_exchange_strong(
+              expected, 1, memory_order_acq_rel, memory_order_acquire)) {
+        try {
+          tzdb_list_instance = tzdb_list_factory::construct(
+              static_cast<void *>(tzdb_list_storage));
+
+          tzdb_list_initialization_state.store(2, memory_order_release);
+
+          tzdb_list_initialization_state.notify_all();
+
+          return;
+        } catch (...) {
+          tzdb_list_instance = nullptr;
+
+          /*
+           * Match call_once semantics: a failed initialization does not
+           * permanently poison the singleton. A later caller may retry.
+           */
+          tzdb_list_initialization_state.store(0, memory_order_release);
+
+          tzdb_list_initialization_state.notify_all();
+
+          throw;
+        }
+      }
+
+      continue;
+    }
+
+    /*
+     * Another thread owns initialization. atomic::wait handles the actual
+     * blocking through FTL's platform wait/notify backend.
+     */
+    tzdb_list_initialization_state.wait(1, memory_order_acquire);
+  }
+}
+
+} // namespace chrono_detail
+
+inline tzdb_list &get_tzdb_list() {
+  chrono_detail::initialize_tzdb_list();
+
+  if (chrono_detail::tzdb_list_instance == nullptr) {
+    throw runtime_error("chrono::get_tzdb_list: no valid database");
+  }
+
+  return *chrono_detail::tzdb_list_instance;
+}
+
+inline const tzdb &get_tzdb() { return get_tzdb_list().front(); }
+
+inline const time_zone *locate_zone(string_view name) {
+  return get_tzdb().locate_zone(name);
+}
+
+inline const time_zone *current_zone() { return get_tzdb().current_zone(); }
+
+inline string remote_version() {
+  /*
+   * FTL ships a deterministic vendored tzdb snapshot.
+   *
+   * Until an optional hosted update source exists, that snapshot is also
+   * the newest remote database known to the implementation.
+   */
+  return string{detail::tzdb_runtime::version()};
+}
+
+inline const tzdb &reload_tzdb() {
+  tzdb_list &list = get_tzdb_list();
+
+  /*
+   * The implementation currently has no independently updated remote
+   * database. If the bundled version is already at the front, the standard
+   * specifies that reload_tzdb() has no effects.
+   */
+  if (list.front().version == remote_version())
+    return list.front();
+
+  /*
+   * Keep this branch real rather than unreachable-by-construction.
+   *
+   * If the list somehow contains an older database while the compiled
+   * snapshot is newer, reconstruct the compiled database and prepend it.
+   */
+  chrono_detail::tzdb_list_factory::push_front(
+      list, chrono_detail::tzdb_factory::make());
+
+  return list.front();
+}
+
 namespace literals {
 inline namespace chrono_literals {
 constexpr day operator""d(unsigned long long value) noexcept {
@@ -1360,13 +2817,20 @@ struct common_type<chrono::time_point<C, D1>, chrono::time_point<C, D2>> {
 
 FTL_END_NAMESPACE
 
-#if !defined(__cpp_lib_chrono) || __cpp_lib_chrono < 201611L
+#ifdef FTL_REPLACE_STL
+#include <detail/chrono_io.hpp>
+#else
+#include <ftl/detail/chrono_io.hpp>
+#endif
+
+#if !defined(__cpp_lib_chrono) || __cpp_lib_chrono < 201907L
 #undef __cpp_lib_chrono
-#define __cpp_lib_chrono 201611L
+#define __cpp_lib_chrono 201907L
 #endif
 
 #if !defined(__cpp_lib_chrono_udls) || __cpp_lib_chrono_udls < 201304L
 #undef __cpp_lib_chrono_udls
 #define __cpp_lib_chrono_udls 201304L
 #endif
+
 #endif
