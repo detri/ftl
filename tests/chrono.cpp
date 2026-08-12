@@ -2,11 +2,13 @@
 #include <chrono>
 #include <detail/tzdb_runtime.hpp>
 #include <format>
+#include <sstream>
 namespace tested = std;
 #else
 #include <ftl/chrono>
 #include <ftl/detail/tzdb_runtime.hpp>
 #include <ftl/format>
+#include <ftl/sstream>
 namespace tested = ftl;
 #endif
 
@@ -2707,6 +2709,511 @@ bool chrono_zoned_formatting_works() {
   return true;
 }
 
+bool chrono_stream_io_works() {
+  /*
+   * Duration insertion follows the specified
+   * count + units-suffix representation.
+   */
+  {
+    tested::ostringstream stream;
+
+    stream << milliseconds{1500};
+
+    if (stream.str() != "1500ms")
+      return false;
+  }
+
+  /*
+   * hh_mm_ss.
+   */
+  {
+    tested::ostringstream stream;
+
+    stream << hh_mm_ss<milliseconds>{
+        milliseconds{
+            4083007,
+        },
+    };
+
+    if (stream.str() != "01:08:03.007") {
+      return false;
+    }
+  }
+
+  /*
+   * sys_time and local_time.
+   */
+  {
+    tested::ostringstream stream;
+
+    stream << sys_seconds{
+        seconds{0},
+    };
+
+    if (stream.str() != "1970-01-01 00:00:00") {
+      return false;
+    }
+  }
+
+  {
+    tested::ostringstream stream;
+
+    stream << local_seconds{
+        seconds{0},
+    };
+
+    if (stream.str() != "1970-01-01 00:00:00") {
+      return false;
+    }
+  }
+
+  /*
+   * Fractional system time.
+   */
+  {
+    tested::ostringstream stream;
+
+    stream << sys_time<milliseconds>{
+        milliseconds{
+            1234,
+        },
+    };
+
+    if (stream.str() != "1970-01-01 00:00:01.234") {
+      return false;
+    }
+  }
+
+  /*
+   * Positive UTC leap-second insertion.
+   */
+  {
+    tested::ostringstream stream;
+
+    stream << utc_time<milliseconds>{
+        milliseconds{
+            1483228826500LL,
+        },
+    };
+
+    if (stream.str() != "2016-12-31 23:59:60.500") {
+      return false;
+    }
+  }
+
+  /*
+   * Calendar stream forms.
+   */
+  {
+    tested::ostringstream stream;
+
+    stream << year{2024} / July / 1;
+
+    if (stream.str() != "2024-07-01") {
+      return false;
+    }
+  }
+
+  {
+    tested::ostringstream stream;
+
+    stream << July / day{1};
+
+    if (stream.str() != "Jul/01") {
+      return false;
+    }
+  }
+
+  {
+    tested::ostringstream stream;
+
+    stream << Monday;
+
+    if (stream.str() != "Mon")
+      return false;
+  }
+
+  /*
+   * zoned_time uses its local wall clock plus
+   * the active abbreviation.
+   */
+  {
+    tested::ostringstream stream;
+
+    const zoned_time value{
+        "America/New_York",
+        sys_seconds{
+            seconds{
+                1719849600LL,
+            },
+        },
+    };
+
+    stream << value;
+
+    if (stream.str() != "2024-07-01 12:00:00 EDT") {
+      return false;
+    }
+  }
+
+  /*
+   * Direct sys_time from_stream.
+   *
+   * Parsed -0400 is subtracted from the civil
+   * timestamp before assignment.
+   */
+  {
+    tested::istringstream stream{
+        "2024-07-01 12:34:56 -0400 EDT",
+    };
+
+    sys_seconds parsed{};
+
+    tested::string abbrev;
+
+    minutes offset{};
+
+    from_stream(stream, "%F %T %z %Z", parsed, &abbrev, &offset);
+
+    if (stream.fail())
+      return false;
+
+    const auto expected =
+        sys_days{year{2024} / July / 1} + hours{16} + minutes{34} + seconds{56};
+
+    if (parsed != expected)
+      return false;
+
+    if (abbrev != "EDT")
+      return false;
+
+    if (offset != minutes{-240}) {
+      return false;
+    }
+  }
+
+  /*
+   * Colonized offset.
+   */
+  {
+    tested::istringstream stream{
+        "2024-07-01 12:00:00 -04:30",
+    };
+
+    sys_seconds parsed{};
+
+    minutes offset{};
+
+    from_stream(stream, "%F %T %Ez", parsed, nullptr, &offset);
+
+    if (stream.fail())
+      return false;
+
+    if (offset != minutes{-270}) {
+      return false;
+    }
+
+    if (parsed != sys_days{year{2024} / July / 1} + hours{16} + minutes{30}) {
+      return false;
+    }
+  }
+
+  /*
+   * local_time captures an offset but does not
+   * apply it to the local clock value.
+   */
+  {
+    tested::istringstream stream{
+        "2024-07-01 12:34:56 -0400",
+    };
+
+    local_seconds parsed{};
+
+    minutes offset{};
+
+    from_stream(stream, "%F %T %z", parsed, nullptr, &offset);
+
+    if (stream.fail())
+      return false;
+
+    if (parsed != local_days{year{2024} / July / 1} + hours{12} + minutes{34} +
+                      seconds{56}) {
+      return false;
+    }
+
+    if (offset != minutes{-240}) {
+      return false;
+    }
+  }
+
+  /*
+   * Calendar target.
+   */
+  {
+    tested::istringstream stream{
+        "2024-02-29",
+    };
+
+    year_month_day parsed{
+        year{2000},
+        January,
+        day{1},
+    };
+
+    from_stream(stream, "%F", parsed);
+
+    if (stream.fail())
+      return false;
+
+    if (parsed != year{2024} / February / day{29}) {
+      return false;
+    }
+  }
+
+  /*
+   * Localized month/weekday names in the classic
+   * locale.
+   */
+  {
+    tested::istringstream stream{
+        "Jul Monday",
+    };
+
+    month parsed_month{
+        January,
+    };
+
+    weekday parsed_weekday{
+        Sunday,
+    };
+
+    from_stream(stream, "%b", parsed_month);
+
+    if (stream.fail())
+      return false;
+
+    stream >> tested::ws;
+
+    from_stream(stream, "%A", parsed_weekday);
+
+    if (stream.fail())
+      return false;
+
+    if (parsed_month != July)
+      return false;
+
+    if (parsed_weekday != Monday)
+      return false;
+  }
+
+  /*
+   * Duration parsing uses time-of-day fields.
+   */
+  {
+    tested::istringstream stream{
+        "01:02:03.500",
+    };
+
+    milliseconds parsed{};
+
+    from_stream(stream, "%T", parsed);
+
+    if (stream.fail())
+      return false;
+
+    if (parsed != milliseconds{
+                      3723500,
+                  }) {
+      return false;
+    }
+  }
+
+  /*
+   * parse() manipulator.
+   */
+  {
+    tested::istringstream stream{
+        "2024-07-01 12:34:56",
+    };
+
+    sys_seconds parsed{};
+
+    stream >> parse("%F %T", parsed);
+
+    if (stream.fail())
+      return false;
+
+    if (parsed != sys_days{year{2024} / July / 1} + hours{12} + minutes{34} +
+                      seconds{56}) {
+      return false;
+    }
+  }
+
+  /*
+   * parse() with both auxiliary outputs.
+   */
+  {
+    tested::istringstream stream{
+        "2024-07-01 12:00:00 EDT -0400",
+    };
+
+    sys_seconds parsed{};
+
+    tested::string abbrev;
+
+    minutes offset{};
+
+    stream >> parse("%F %T %Z %z", parsed, abbrev, offset);
+
+    if (stream.fail())
+      return false;
+
+    if (abbrev != "EDT")
+      return false;
+
+    if (offset != minutes{-240}) {
+      return false;
+    }
+  }
+
+  /*
+   * Failure must not modify the destination.
+   */
+  {
+    tested::istringstream stream{
+        "2024-02-31",
+    };
+
+    year_month_day parsed{
+        year{1999},
+        December,
+        day{31},
+    };
+
+    from_stream(stream, "%F", parsed);
+
+    if (!stream.fail())
+      return false;
+
+    if (parsed != year{1999} / December / day{31}) {
+      return false;
+    }
+  }
+
+  /*
+   * Conflicting redundant fields fail.
+   *
+   * 2024-07-01 is Monday, not Tuesday.
+   */
+  {
+    tested::istringstream stream{
+        "2024-07-01 Tuesday",
+    };
+
+    year_month_day parsed{
+        year{1999},
+        December,
+        day{31},
+    };
+
+    from_stream(stream, "%F %A", parsed);
+
+    if (!stream.fail())
+      return false;
+
+    if (parsed != year{1999} / December / day{31}) {
+      return false;
+    }
+  }
+
+  /*
+   * UTC leap second parsing.
+   */
+  {
+    tested::istringstream stream{
+        "2016-12-31 23:59:60.500",
+    };
+
+    utc_time<milliseconds> parsed{};
+
+    from_stream(stream, "%F %T", parsed);
+
+    if (stream.fail())
+      return false;
+
+    if (!get_leap_second_info(parsed).is_leap_second) {
+      return false;
+    }
+
+    tested::ostringstream rendered;
+
+    rendered << parsed;
+
+    if (rendered.str() != "2016-12-31 23:59:60.500") {
+      return false;
+    }
+  }
+
+  /*
+   * Exact nonexistent_local_time diagnostic.
+   */
+  {
+    const auto *zone = locate_zone("America/New_York");
+
+    if (zone == nullptr)
+      return false;
+
+    const local_seconds gap =
+        local_days{year{2024} / March / 10} + hours{2} + minutes{30};
+
+    try {
+      (void)zone->to_sys(gap);
+
+      return false;
+    } catch (const nonexistent_local_time &error) {
+      if (tested::string{error.what()} !=
+          "2024-03-10 02:30:00 is in a gap between\n"
+          "2024-03-10 02:00:00 EST and\n"
+          "2024-03-10 03:00:00 EDT which are both equivalent to\n"
+          "2024-03-10 07:00:00 UTC") {
+        return false;
+      }
+    } catch (...) {
+      return false;
+    }
+  }
+
+  /*
+   * Exact ambiguous_local_time diagnostic.
+   */
+  {
+    const auto *zone = locate_zone("America/New_York");
+
+    if (zone == nullptr)
+      return false;
+
+    const local_seconds overlap =
+        local_days{year{2024} / November / 3} + hours{1} + minutes{30};
+
+    try {
+      (void)zone->to_sys(overlap);
+
+      return false;
+    } catch (const ambiguous_local_time &error) {
+      if (tested::string{error.what()} !=
+          "2024-11-03 01:30:00 is ambiguous. It could be\n"
+          "2024-11-03 01:30:00 EDT == 2024-11-03 05:30:00 UTC or\n"
+          "2024-11-03 01:30:00 EST == 2024-11-03 06:30:00 UTC") {
+        return false;
+      }
+    } catch (...) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 bool ftl_test() {
   if (!(system_clock::now().time_since_epoch() > seconds{0})) {
     return false;
@@ -2744,6 +3251,9 @@ bool ftl_test() {
     return false;
 
   if (!chrono_zoned_formatting_works())
+    return false;
+
+  if (!chrono_stream_io_works())
     return false;
 
   if (!chrono_time_zone_public_works())

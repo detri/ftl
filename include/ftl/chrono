@@ -1654,18 +1654,22 @@ const time_zone *locate_zone(string_view name);
 
 const time_zone *current_zone();
 
-class nonexistent_local_time : public runtime_error {
+class nonexistent_local_time
+    : public runtime_error {
 public:
   template <class Duration>
-  nonexistent_local_time(const local_time<Duration> &, const local_info &)
-      : runtime_error("nonexistent local time") {}
+  nonexistent_local_time(
+      const local_time<Duration> &tp,
+      const local_info &info);
 };
 
-class ambiguous_local_time : public runtime_error {
+class ambiguous_local_time
+    : public runtime_error {
 public:
   template <class Duration>
-  ambiguous_local_time(const local_time<Duration> &, const local_info &)
-      : runtime_error("ambiguous local time") {}
+  ambiguous_local_time(
+      const local_time<Duration> &tp,
+      const local_info &info);
 };
 
 namespace chrono_detail {
@@ -2809,6 +2813,12 @@ struct common_type<chrono::time_point<C, D1>, chrono::time_point<C, D2>> {
 
 FTL_END_NAMESPACE
 
+#ifdef FTL_REPLACE_STL
+#include <detail/chrono_io.hpp>
+#else
+#include <ftl/detail/chrono_io.hpp>
+#endif
+
 #if !defined(__cpp_lib_chrono) || __cpp_lib_chrono < 201611L
 #undef __cpp_lib_chrono
 #define __cpp_lib_chrono 201611L
@@ -2818,4 +2828,5 @@ FTL_END_NAMESPACE
 #undef __cpp_lib_chrono_udls
 #define __cpp_lib_chrono_udls 201304L
 #endif
+
 #endif
