@@ -4,13 +4,17 @@
 #define FTL_CHRONO_HEADER
 
 #ifdef FTL_REPLACE_STL
+#include <atomic>
 #include <compare>
+#include <cstddef>
 #include <cstdint>
 #include <ctime>
 #include <detail/clock_runtime.hpp>
 #include <detail/time_core.hpp>
 #include <detail/tzdb_runtime.hpp>
+#include <iterator>
 #include <limits>
+#include <new>
 #include <ratio>
 #include <stdexcept>
 #include <string>
@@ -18,13 +22,17 @@
 #include <type_traits>
 #include <vector>
 #else
+#include <ftl/atomic>
 #include <ftl/compare>
+#include <ftl/cstddef>
 #include <ftl/cstdint>
 #include <ftl/ctime>
 #include <ftl/detail/clock_runtime.hpp>
 #include <ftl/detail/time_core.hpp>
 #include <ftl/detail/tzdb_runtime.hpp>
+#include <ftl/iterator>
 #include <ftl/limits>
+#include <ftl/new>
 #include <ftl/ratio>
 #include <ftl/stdexcept>
 #include <ftl/string>
@@ -1518,7 +1526,8 @@ public:
 
 namespace chrono_detail {
 struct tzdb_factory;
-}
+struct tzdb_list_factory;
+} // namespace chrono_detail
 
 class time_zone {
 public:
@@ -1682,8 +1691,7 @@ private:
   friend struct chrono_detail::tzdb_factory;
 };
 
-inline bool operator==(const time_zone &left,
-                       const time_zone &right) noexcept {
+inline bool operator==(const time_zone &left, const time_zone &right) noexcept {
   return left.name() == right.name();
 }
 
@@ -1754,8 +1762,7 @@ struct tzdb {
         last = middle;
     }
 
-    if (first < zones.size() &&
-        zones[first].name() == tz_name) {
+    if (first < zones.size() && zones[first].name() == tz_name) {
       return &zones[first];
     }
 
@@ -1771,10 +1778,8 @@ struct tzdb {
         last = middle;
     }
 
-    if (first == links.size() ||
-        links[first].name() != tz_name) {
-      throw runtime_error(
-          "chrono::tzdb::locate_zone: time zone not found");
+    if (first == links.size() || links[first].name() != tz_name) {
+      throw runtime_error("chrono::tzdb::locate_zone: time zone not found");
     }
 
     const string_view target = links[first].target();
@@ -1791,8 +1796,7 @@ struct tzdb {
         last = middle;
     }
 
-    if (first < zones.size() &&
-        zones[first].name() == target) {
+    if (first < zones.size() && zones[first].name() == target) {
       return &zones[first];
     }
 
@@ -1800,8 +1804,7 @@ struct tzdb {
      * A valid initialized tzdb must not contain a link whose canonical
      * target is missing.
      */
-    throw runtime_error(
-        "chrono::tzdb::locate_zone: invalid time zone link");
+    throw runtime_error("chrono::tzdb::locate_zone: invalid time zone link");
   }
 
   const time_zone *current_zone() const {
@@ -1814,6 +1817,161 @@ struct tzdb {
     throw runtime_error(
         "chrono::tzdb::current_zone: platform current zone unavailable");
   }
+};
+
+class tzdb_list {
+private:
+  class list_mutex {
+  public:
+    constexpr list_mutex() noexcept = default;
+
+    list_mutex(const list_mutex &) = delete;
+    list_mutex &operator=(const list_mutex &) = delete;
+
+    void lock() noexcept {
+      unsigned expected = 0;
+
+      while (!state_.compare_exchange_weak(expected, 1, memory_order_acquire,
+                                           memory_order_relaxed)) {
+        if (expected != 0) {
+          state_.wait(expected, memory_order_relaxed);
+        }
+
+        expected = 0;
+      }
+    }
+
+    void unlock() noexcept {
+      state_.store(0, memory_order_release);
+      state_.notify_one();
+    }
+
+  private:
+    atomic<unsigned> state_{0};
+  };
+
+  class list_guard {
+  public:
+    explicit list_guard(list_mutex &mutex) noexcept : mutex_(mutex) {
+      mutex_.lock();
+    }
+
+    ~list_guard() { mutex_.unlock(); }
+
+    list_guard(const list_guard &) = delete;
+    list_guard &operator=(const list_guard &) = delete;
+
+  private:
+    list_mutex &mutex_;
+  };
+
+  struct node {
+    tzdb database;
+    node *next = nullptr;
+
+    explicit node(tzdb &&value, node *following = nullptr)
+        : database(static_cast<tzdb &&>(value)), next(following) {}
+  };
+
+public:
+  tzdb_list(const tzdb_list &) = delete;
+  tzdb_list &operator=(const tzdb_list &) = delete;
+
+  class const_iterator {
+  public:
+    using iterator_category = forward_iterator_tag;
+    using value_type = tzdb;
+    using difference_type = ptrdiff_t;
+    using pointer = const tzdb *;
+    using reference = const tzdb &;
+
+    constexpr const_iterator() noexcept = default;
+
+    reference operator*() const noexcept { return current_->database; }
+
+    pointer operator->() const noexcept { return &current_->database; }
+
+    const_iterator &operator++() noexcept {
+      current_ = current_->next;
+      return *this;
+    }
+
+    const_iterator operator++(int) noexcept {
+      const_iterator old = *this;
+      ++*this;
+      return old;
+    }
+
+    friend constexpr bool operator==(const const_iterator &left,
+                                     const const_iterator &right) noexcept {
+      return left.current_ == right.current_;
+    }
+
+  private:
+    explicit constexpr const_iterator(node *current) noexcept
+        : current_(current) {}
+
+    node *current_ = nullptr;
+
+    friend class tzdb_list;
+  };
+
+  const tzdb &front() const noexcept {
+    list_guard guard(mutex_);
+    return head_->database;
+  }
+
+  const_iterator erase_after(const_iterator position) {
+    list_guard guard(mutex_);
+
+    node *const previous = position.current_;
+    node *const erased = previous->next;
+
+    previous->next = erased->next;
+
+    const_iterator result{erased->next};
+
+    delete erased;
+
+    return result;
+  }
+
+  const_iterator begin() const noexcept {
+    list_guard guard(mutex_);
+    return const_iterator{head_};
+  }
+
+  const_iterator end() const noexcept { return const_iterator{}; }
+
+  const_iterator cbegin() const noexcept { return begin(); }
+
+  const_iterator cend() const noexcept { return end(); }
+
+private:
+  explicit tzdb_list(tzdb &&initial)
+      : head_(new node{
+            static_cast<tzdb &&>(initial),
+            nullptr,
+        }) {}
+
+  ~tzdb_list() = default;
+
+  void push_front(tzdb &&database) {
+    node *replacement = new node{
+        static_cast<tzdb &&>(database),
+        nullptr,
+    };
+
+    list_guard guard(mutex_);
+
+    replacement->next = head_;
+    head_ = replacement;
+  }
+
+  mutable list_mutex mutex_;
+  node *head_ = nullptr;
+
+  friend struct chrono_detail::tzdb_list_factory;
 };
 
 namespace chrono_detail {
@@ -1836,61 +1994,124 @@ struct tzdb_factory {
 
     result.version = detail::tzdb_runtime::version();
 
-    result.zones.reserve(
-        detail::tzdb_runtime::zone_count());
+    result.zones.reserve(detail::tzdb_runtime::zone_count());
 
-    for (unsigned index = 0;
-         index < detail::tzdb_runtime::zone_count();
+    for (unsigned index = 0; index < detail::tzdb_runtime::zone_count();
          ++index) {
       result.zones.push_back(make_zone(index));
     }
 
-    result.links.reserve(
-        detail::tzdb_runtime::link_count());
+    result.links.reserve(detail::tzdb_runtime::link_count());
 
-    for (unsigned index = 0;
-         index < detail::tzdb_runtime::link_count();
+    for (unsigned index = 0; index < detail::tzdb_runtime::link_count();
          ++index) {
       result.links.push_back(make_link(index));
     }
 
-    result.leap_seconds.reserve(
-        detail::tzdb_runtime::leap_count());
+    result.leap_seconds.reserve(detail::tzdb_runtime::leap_count());
 
-    for (unsigned index = 0;
-         index < detail::tzdb_runtime::leap_count();
+    for (unsigned index = 0; index < detail::tzdb_runtime::leap_count();
          ++index) {
-      result.leap_seconds.push_back(
-          leap_second_factory::make(index));
+      result.leap_seconds.push_back(leap_second_factory::make(index));
     }
 
     return result;
   }
 };
 
+struct tzdb_list_factory {
+  static tzdb_list *construct(void *storage) {
+    return ::new (storage) tzdb_list{
+        tzdb_factory::make(),
+    };
+  }
+
+  static void push_front(tzdb_list &list, tzdb database) {
+    list.push_front(static_cast<tzdb &&>(database));
+  }
+};
+
 } // namespace chrono_detail
 
-inline const tzdb &get_tzdb() {
-  /*
-   * This is the immutable initial database.
-   *
-   * get_tzdb_list() will become the owning layer when the update/list
-   * surface lands; get_tzdb() can then become get_tzdb_list().front()
-   * without changing callers.
-   */
-  static const tzdb database =
-      chrono_detail::tzdb_factory::make();
+namespace chrono_detail {
 
-  return database;
+alignas(tzdb_list) inline unsigned char tzdb_list_storage[sizeof(tzdb_list)];
+
+inline tzdb_list *tzdb_list_instance = nullptr;
+
+/*
+ * 0 = uninitialized
+ * 1 = initialization in progress
+ * 2 = initialized
+ */
+inline atomic<unsigned> tzdb_list_initialization_state{0};
+
+inline void initialize_tzdb_list() {
+  for (;;) {
+    unsigned state = tzdb_list_initialization_state.load(memory_order_acquire);
+
+    if (state == 2)
+      return;
+
+    if (state == 0) {
+      unsigned expected = 0;
+
+      if (tzdb_list_initialization_state.compare_exchange_strong(
+              expected, 1, memory_order_acq_rel, memory_order_acquire)) {
+        try {
+          tzdb_list_instance = tzdb_list_factory::construct(
+              static_cast<void *>(tzdb_list_storage));
+
+          tzdb_list_initialization_state.store(2, memory_order_release);
+
+          tzdb_list_initialization_state.notify_all();
+
+          return;
+        } catch (...) {
+          tzdb_list_instance = nullptr;
+
+          /*
+           * Match call_once semantics: a failed initialization does not
+           * permanently poison the singleton. A later caller may retry.
+           */
+          tzdb_list_initialization_state.store(0, memory_order_release);
+
+          tzdb_list_initialization_state.notify_all();
+
+          throw;
+        }
+      }
+
+      continue;
+    }
+
+    /*
+     * Another thread owns initialization. atomic::wait handles the actual
+     * blocking through FTL's platform wait/notify backend.
+     */
+    tzdb_list_initialization_state.wait(1, memory_order_acquire);
+  }
 }
+
+} // namespace chrono_detail
+
+inline tzdb_list &get_tzdb_list() {
+  chrono_detail::initialize_tzdb_list();
+
+  if (chrono_detail::tzdb_list_instance == nullptr) {
+    throw runtime_error("chrono::get_tzdb_list: no valid database");
+  }
+
+  return *chrono_detail::tzdb_list_instance;
+}
+
+inline const tzdb &get_tzdb() { return get_tzdb_list().front(); }
 
 inline const time_zone *locate_zone(string_view name) {
   return get_tzdb().locate_zone(name);
 }
 
-inline const time_zone *current_zone() {
-  return get_tzdb().current_zone();
-}
+inline const time_zone *current_zone() { return get_tzdb().current_zone(); }
 
 namespace literals {
 inline namespace chrono_literals {

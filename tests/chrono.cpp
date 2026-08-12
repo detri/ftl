@@ -78,6 +78,25 @@ static_assert(noexcept(tested::declval<const time_zone_link &>().name()));
 
 static_assert(noexcept(tested::declval<const time_zone_link &>().target()));
 
+static_assert(
+    tested::is_same_v<typename tzdb_list::const_iterator::value_type, tzdb>);
+
+static_assert(tested::is_same_v<typename tzdb_list::const_iterator::reference,
+                                const tzdb &>);
+
+static_assert(tested::is_same_v<typename tzdb_list::const_iterator::pointer,
+                                const tzdb *>);
+
+static_assert(
+    tested::is_same_v<decltype(tested::declval<const tzdb_list &>().front()),
+                      const tzdb &>);
+
+static_assert(noexcept(tested::declval<const tzdb_list &>().front()));
+
+static_assert(noexcept(tested::declval<const tzdb_list &>().begin()));
+
+static_assert(noexcept(tested::declval<const tzdb_list &>().end()));
+
 static_assert(duration_cast<seconds>(1500ms).count() == 1);
 static_assert(is_clock_v<system_clock> && is_clock_v<steady_clock>);
 static_assert(!is_clock_v<int>);
@@ -1467,6 +1486,63 @@ bool chrono_tzdb_public_works() {
   return true;
 }
 
+bool chrono_tzdb_list_works() {
+  tzdb_list &list = get_tzdb_list();
+
+  /*
+   * There is one unique process-wide tzdb_list object.
+   */
+  if (&get_tzdb_list() != &list)
+    return false;
+
+  /*
+   * Initial database construction produces exactly one element.
+   */
+  auto first = list.begin();
+
+  if (first == list.end())
+    return false;
+
+  if (&*first != &list.front())
+    return false;
+
+  if (&*first != &get_tzdb())
+    return false;
+
+  auto after_first = first;
+  ++after_first;
+
+  if (after_first != list.end())
+    return false;
+
+  /*
+   * const traversal exposes the same singleton contents.
+   */
+  const tzdb_list &const_list = list;
+
+  if (const_list.cbegin() == const_list.cend())
+    return false;
+
+  if (&*const_list.cbegin() != &get_tzdb())
+    return false;
+
+  /*
+   * Existing public accessors are now rooted in tzdb_list::front().
+   */
+  const auto *new_york = locate_zone("America/New_York");
+
+  if (new_york == nullptr)
+    return false;
+
+  if (new_york != get_tzdb().locate_zone("America/New_York"))
+    return false;
+
+  if (get_tzdb().version != "2026c")
+    return false;
+
+  return true;
+}
+
 bool ftl_test() {
   if (!(system_clock::now().time_since_epoch() > seconds{0})) {
     return false;
@@ -1507,6 +1583,9 @@ bool ftl_test() {
     return false;
 
   if (!chrono_tzdb_public_works())
+    return false;
+
+  if (!chrono_tzdb_list_works())
     return false;
 
   return true;
