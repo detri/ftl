@@ -155,4 +155,10 @@ inline void operator delete[](void*, void*) noexcept {}
 #define __cpp_lib_launder 201606L
 #endif
 
+#if !defined(__cpp_lib_destroying_delete) || \
+    __cpp_lib_destroying_delete < 201806L
+#undef __cpp_lib_destroying_delete
+#define __cpp_lib_destroying_delete 201806L
+#endif
+
 #endif // FTL_NEW_HEADER

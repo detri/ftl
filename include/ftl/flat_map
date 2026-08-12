@@ -31,10 +31,7 @@
 #define FTL_FLAT_NAMESPACE ftl
 #include <ftl/__associative/flat_tags.hpp>
 #endif
-#if !defined(__cpp_lib_flat_map) || __cpp_lib_flat_map < 202207L
-#undef __cpp_lib_flat_map
-#define __cpp_lib_flat_map 202207L
-#endif
+
 #if defined(_MSC_VER) && !defined(__clang__)
 extern "C" void __cdecl __fastfail(unsigned int);
 #pragma intrinsic(__fastfail)
@@ -1042,6 +1039,12 @@ erase_if(flat_multimap<K, T, C, KC, MC> &values, P predicate) {
   return flat_map_erase_if(values, move(predicate));
 }
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_flat_map) || __cpp_lib_flat_map < 202207L
+#undef __cpp_lib_flat_map
+#define __cpp_lib_flat_map 202207L
+#endif
+
 #undef FTL_FLAT_NAMESPACE
 #undef FTL_FLAT_MAP_TRAP
 #endif

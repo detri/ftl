@@ -5913,6 +5913,17 @@ struct formatter<chrono::file_time<Duration>, charT>
 
 FTL_END_NAMESPACE
 
+#if !defined(__cpp_lib_format) || __cpp_lib_format < 202207L
+#undef __cpp_lib_format
+#define __cpp_lib_format 202207L
+#endif
+
+#if !defined(__cpp_lib_format_ranges) || \
+    __cpp_lib_format_ranges < 202207L
+#undef __cpp_lib_format_ranges
+#define __cpp_lib_format_ranges 202207L
+#endif
+
 #undef FTL_FORMAT_NS
 
 #endif // FTL_FORMAT_HEADER

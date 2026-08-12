@@ -29,10 +29,7 @@
 #define FTL_FLAT_NAMESPACE ftl
 #include <ftl/__associative/flat_tags.hpp>
 #endif
-#if !defined(__cpp_lib_flat_set) || __cpp_lib_flat_set < 202207L
-#undef __cpp_lib_flat_set
-#define __cpp_lib_flat_set 202207L
-#endif
+
 FTL_BEGIN_NAMESPACE
 namespace detail {
 template <class Compare>
@@ -588,5 +585,11 @@ erase_if(flat_multiset<Key, Compare, Container> &values, Predicate predicate) {
   return flat_set_erase_if(values, move(predicate));
 }
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_flat_set) || __cpp_lib_flat_set < 202207L
+#undef __cpp_lib_flat_set
+#define __cpp_lib_flat_set 202207L
+#endif
+
 #undef FTL_FLAT_NAMESPACE
 #endif

@@ -3,10 +3,6 @@
 #ifndef FTL_SPAN_HEADER
 #define FTL_SPAN_HEADER
 
-#ifndef __cpp_lib_span
-#define __cpp_lib_span 202002L
-#endif
-
 #ifdef FTL_REPLACE_STL
 #include <array>
 #include <cstddef>

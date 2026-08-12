@@ -2194,6 +2194,12 @@ constexpr bool is_corresponding_member(Member1 Class1::* left,
 #endif
 #endif
 
+#if !defined(__cpp_lib_result_of_sfinae) || \
+    __cpp_lib_result_of_sfinae < 201210L
+#undef __cpp_lib_result_of_sfinae
+#define __cpp_lib_result_of_sfinae 201210L
+#endif
+
 FTL_END_NAMESPACE
 
 #endif // FTL_TYPE_TRAITS_HEADER

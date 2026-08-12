@@ -3,16 +3,6 @@
 #ifndef FTL_STACKTRACE_HEADER
 #define FTL_STACKTRACE_HEADER
 
-#if !defined(__cpp_lib_stacktrace) || __cpp_lib_stacktrace < 202011L
-#undef __cpp_lib_stacktrace
-#define __cpp_lib_stacktrace 202011L
-#endif
-
-#if !defined(__cpp_lib_formatters) || __cpp_lib_formatters < 202302L
-#undef __cpp_lib_formatters
-#define __cpp_lib_formatters 202302L
-#endif
-
 #ifdef FTL_REPLACE_STL
 #include <compare>
 #include <cstdint>
@@ -329,5 +319,15 @@ template <class Allocator> struct hash<basic_stacktrace<Allocator>> {
 };
 
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_stacktrace) || __cpp_lib_stacktrace < 202011L
+#undef __cpp_lib_stacktrace
+#define __cpp_lib_stacktrace 202011L
+#endif
+
+#if !defined(__cpp_lib_formatters) || __cpp_lib_formatters < 202302L
+#undef __cpp_lib_formatters
+#define __cpp_lib_formatters 202302L
+#endif
 
 #endif

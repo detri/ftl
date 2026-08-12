@@ -3,11 +3,6 @@
 #ifndef FTL_THREAD_HEADER
 #define FTL_THREAD_HEADER
 
-#if !defined(__cpp_lib_formatters) || __cpp_lib_formatters < 202302L
-#undef __cpp_lib_formatters
-#define __cpp_lib_formatters 202302L
-#endif
-
 #ifdef FTL_REPLACE_STL
 #include <chrono>
 #include <compare>
@@ -448,6 +443,11 @@ FTL_THREAD_END_NAMESPACE
     __cpp_lib_jthread < 201911L
 #undef __cpp_lib_jthread
 #define __cpp_lib_jthread 201911L
+#endif
+
+#if !defined(__cpp_lib_formatters) || __cpp_lib_formatters < 202302L
+#undef __cpp_lib_formatters
+#define __cpp_lib_formatters 202302L
 #endif
 
 #endif // FTL_THREAD_HEADER

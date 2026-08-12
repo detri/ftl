@@ -541,5 +541,41 @@ template <class T>
 using list = FTL_LIST_NAMESPACE::list<T, polymorphic_allocator<T>>;
 }
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_allocator_traits_is_always_equal) || \
+    __cpp_lib_allocator_traits_is_always_equal < 201411L
+#undef __cpp_lib_allocator_traits_is_always_equal
+#define __cpp_lib_allocator_traits_is_always_equal 201411L
+#endif
+
+#if !defined(__cpp_lib_containers_ranges) || \
+    __cpp_lib_containers_ranges < 202202L
+#undef __cpp_lib_containers_ranges
+#define __cpp_lib_containers_ranges 202202L
+#endif
+
+#if !defined(__cpp_lib_erase_if) || __cpp_lib_erase_if < 202002L
+#undef __cpp_lib_erase_if
+#define __cpp_lib_erase_if 202002L
+#endif
+
+#if !defined(__cpp_lib_incomplete_container_elements) || \
+    __cpp_lib_incomplete_container_elements < 201505L
+#undef __cpp_lib_incomplete_container_elements
+#define __cpp_lib_incomplete_container_elements 201505L
+#endif
+
+#if !defined(__cpp_lib_list_remove_return_type) || \
+    __cpp_lib_list_remove_return_type < 201806L
+#undef __cpp_lib_list_remove_return_type
+#define __cpp_lib_list_remove_return_type 201806L
+#endif
+
+#if !defined(__cpp_lib_nonmember_container_access) || \
+    __cpp_lib_nonmember_container_access < 201411L
+#undef __cpp_lib_nonmember_container_access
+#define __cpp_lib_nonmember_container_access 201411L
+#endif
+
 #undef FTL_LIST_NAMESPACE
 #endif

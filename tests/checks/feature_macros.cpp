@@ -33,12 +33,12 @@
 #endif
 #if __cpp_lib_integral_constant_callable < 201304L ||                          \
     __cpp_lib_is_null_pointer < 201309L || __cpp_lib_is_final < 201402L ||     \
-    __cpp_lib_type_identity < 201806L || __cpp_lib_const_iterator < 202207L || \
+    __cpp_lib_type_identity < 201806L ||                                       \
     __cpp_lib_move_iterator_concept < 202207L ||                               \
     __cpp_lib_common_reference < 202302L
 #error <type_traits> must advertise completed facilities
 #endif
-#if __cpp_lib_concepts < 202002L
+#if __cpp_lib_concepts < 202207L
 #error <concepts> must advertise standard concepts
 #endif
 #if __cpp_lib_three_way_comparison < 201907L
@@ -98,7 +98,7 @@
 #error Stage 2.5 vocabulary feature macros are incomplete
 #endif
 
-#if __cpp_lib_ranges < 202110L || __cpp_lib_ranges_zip < 202110L ||            \
+#if __cpp_lib_ranges < 202302L || __cpp_lib_ranges_zip < 202110L ||            \
     __cpp_lib_ranges_chunk < 202202L || __cpp_lib_ranges_slide < 202202L ||    \
     __cpp_lib_ranges_chunk_by < 202202L ||                                     \
     __cpp_lib_ranges_stride < 202207L ||                                       \

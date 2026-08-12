@@ -3,11 +3,6 @@
 #ifndef FTL_FILESYSTEM_HEADER
 #define FTL_FILESYSTEM_HEADER
 
-#if !defined(__cpp_lib_filesystem) || __cpp_lib_filesystem < 201703L
-#undef __cpp_lib_filesystem
-#define __cpp_lib_filesystem 201703L
-#endif
-
 #ifdef FTL_REPLACE_STL
 #include <chrono>
 #include <compare>
@@ -1955,5 +1950,15 @@ inline constexpr bool enable_view<filesystem::recursive_directory_iterator> =
     true;
 } // namespace ranges
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_filesystem) || __cpp_lib_filesystem < 201703L
+#undef __cpp_lib_filesystem
+#define __cpp_lib_filesystem 201703L
+#endif
+
+#if !defined(__cpp_lib_char8_t) || __cpp_lib_char8_t < 201907L
+#undef __cpp_lib_char8_t
+#define __cpp_lib_char8_t 201907L
+#endif
 
 #endif

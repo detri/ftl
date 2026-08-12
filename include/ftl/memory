@@ -2377,4 +2377,33 @@ FTL_END_NAMESPACE
 #define __cpp_lib_algorithm_iterator_requirements 202207L
 #endif
 
+#if !defined(__cpp_lib_addressof_constexpr) || \
+    __cpp_lib_addressof_constexpr < 201603L
+#undef __cpp_lib_addressof_constexpr
+#define __cpp_lib_addressof_constexpr 201603L
+#endif
+
+#if !defined(__cpp_lib_allocator_traits_is_always_equal) || \
+    __cpp_lib_allocator_traits_is_always_equal < 201411L
+#undef __cpp_lib_allocator_traits_is_always_equal
+#define __cpp_lib_allocator_traits_is_always_equal 201411L
+#endif
+
+#if !defined(__cpp_lib_atomic_value_initialization) || \
+    __cpp_lib_atomic_value_initialization < 201911L
+#undef __cpp_lib_atomic_value_initialization
+#define __cpp_lib_atomic_value_initialization 201911L
+#endif
+
+#if !defined(__cpp_lib_ranges) || __cpp_lib_ranges < 202302L
+#undef __cpp_lib_ranges
+#define __cpp_lib_ranges 202302L
+#endif
+
+#if !defined(__cpp_lib_transparent_operators) || \
+    __cpp_lib_transparent_operators < 201510L
+#undef __cpp_lib_transparent_operators
+#define __cpp_lib_transparent_operators 201510L
+#endif
+
 #endif // FTL_MEMORY_HEADER

@@ -84,5 +84,18 @@ template<class T, class C> bool operator>=(const stack<T, C>& x, const stack<T, 
 template<class T, three_way_comparable C> compare_three_way_result_t<C> operator<=>(const stack<T, C>& x, const stack<T, C>& y) { return x.c <=> y.c; }
 template<class T, class C> void swap(stack<T, C>& x, stack<T, C>& y) noexcept(noexcept(x.swap(y))) { x.swap(y); }
 FTL_END_NAMESPACE
+
+#if !defined(__cpp_lib_adaptor_iterator_pair_constructor) || \
+    __cpp_lib_adaptor_iterator_pair_constructor < 202106L
+#undef __cpp_lib_adaptor_iterator_pair_constructor
+#define __cpp_lib_adaptor_iterator_pair_constructor 202106L
+#endif
+
+#if !defined(__cpp_lib_containers_ranges) || \
+    __cpp_lib_containers_ranges < 202202L
+#undef __cpp_lib_containers_ranges
+#define __cpp_lib_containers_ranges 202202L
+#endif
+
 #undef FTL_STACK_NAMESPACE
 #endif

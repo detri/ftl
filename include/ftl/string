@@ -1481,6 +1481,44 @@ FTL_END_NAMESPACE
 #define __cpp_lib_containers_ranges 202202L
 #endif
 
+#if !defined(__cpp_lib_allocator_traits_is_always_equal) || \
+    __cpp_lib_allocator_traits_is_always_equal < 201411L
+#undef __cpp_lib_allocator_traits_is_always_equal
+#define __cpp_lib_allocator_traits_is_always_equal 201411L
+#endif
+
+#if !defined(__cpp_lib_char8_t) || __cpp_lib_char8_t < 201907L
+#undef __cpp_lib_char8_t
+#define __cpp_lib_char8_t 201907L
+#endif
+
+#if !defined(__cpp_lib_erase_if) || __cpp_lib_erase_if < 202002L
+#undef __cpp_lib_erase_if
+#define __cpp_lib_erase_if 202002L
+#endif
+
+#if !defined(__cpp_lib_nonmember_container_access) || \
+    __cpp_lib_nonmember_container_access < 201411L
+#undef __cpp_lib_nonmember_container_access
+#define __cpp_lib_nonmember_container_access 201411L
+#endif
+
+#if !defined(__cpp_lib_starts_ends_with) || \
+    __cpp_lib_starts_ends_with < 201711L
+#undef __cpp_lib_starts_ends_with
+#define __cpp_lib_starts_ends_with 201711L
+#endif
+
+#if !defined(__cpp_lib_string_udls) || __cpp_lib_string_udls < 201304L
+#undef __cpp_lib_string_udls
+#define __cpp_lib_string_udls 201304L
+#endif
+
+#if !defined(__cpp_lib_string_view) || __cpp_lib_string_view < 201803L
+#undef __cpp_lib_string_view
+#define __cpp_lib_string_view 201803L
+#endif
+
 #undef FTL_STRING_NAMESPACE
 #undef FTL_STRING_TRAP
 #endif // FTL_STRING_HEADER

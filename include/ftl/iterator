@@ -2677,16 +2677,33 @@ template <class E> constexpr const E *data(initializer_list<E> x) noexcept {
 #define __cpp_lib_constexpr_iterator 201811L
 #endif
 
-#if !defined(__cpp_lib_const_iterator) || \
-    __cpp_lib_const_iterator < 202207L
-#undef __cpp_lib_const_iterator
-#define __cpp_lib_const_iterator 202207L
-#endif
-
 #if !defined(__cpp_lib_move_iterator_concept) || \
     __cpp_lib_move_iterator_concept < 202207L
 #undef __cpp_lib_move_iterator_concept
 #define __cpp_lib_move_iterator_concept 202207L
+#endif
+
+#if !defined(__cpp_lib_array_constexpr) || \
+    __cpp_lib_array_constexpr < 201811L
+#undef __cpp_lib_array_constexpr
+#define __cpp_lib_array_constexpr 201811L
+#endif
+
+#if !defined(__cpp_lib_make_reverse_iterator) || \
+    __cpp_lib_make_reverse_iterator < 201402L
+#undef __cpp_lib_make_reverse_iterator
+#define __cpp_lib_make_reverse_iterator 201402L
+#endif
+
+#if !defined(__cpp_lib_null_iterators) || \
+    __cpp_lib_null_iterators < 201304L
+#undef __cpp_lib_null_iterators
+#define __cpp_lib_null_iterators 201304L
+#endif
+
+#if !defined(__cpp_lib_ranges) || __cpp_lib_ranges < 202302L
+#undef __cpp_lib_ranges
+#define __cpp_lib_ranges 202302L
 #endif
 
 FTL_END_NAMESPACE
