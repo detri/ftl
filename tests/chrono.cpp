@@ -54,6 +54,18 @@ static_assert(
                           tested::declval<const local_time<minutes> &>())),
                       sys_time<seconds>>);
 
+static_assert(
+    tested::is_same_v<decltype(tested::declval<const leap_second &>().date()),
+                      sys_seconds>);
+
+static_assert(
+    tested::is_same_v<decltype(tested::declval<const leap_second &>().value()),
+                      seconds>);
+
+static_assert(noexcept(tested::declval<const leap_second &>().date()));
+
+static_assert(noexcept(tested::declval<const leap_second &>().value()));
+
 static_assert(duration_cast<seconds>(1500ms).count() == 1);
 static_assert(is_clock_v<system_clock> && is_clock_v<steady_clock>);
 static_assert(!is_clock_v<int>);
@@ -1150,6 +1162,163 @@ bool chrono_time_zone_conversion_works() {
   return true;
 }
 
+bool chrono_leap_second_works() {
+  namespace tz = tested::detail::tzdb_runtime;
+
+  /*
+   * The leap data now comes from the vendored IANA 2026c snapshot.
+   */
+  if (tz::leap_count() != 27)
+    return false;
+
+  /*
+   * First positive leap:
+   *
+   * 1972-06-30 23:59:60 UTC
+   * -> insertion boundary 1972-07-01 00:00:00 sys
+   */
+  if (tz::leap_date_seconds(0) != 78796800LL)
+    return false;
+
+  if (tz::leap_value(0) != 1)
+    return false;
+
+  /*
+   * Most recent leap in the snapshot:
+   *
+   * 2016-12-31 23:59:60 UTC
+   * -> insertion boundary 2017-01-01 00:00:00 sys
+   */
+  const unsigned last = tz::leap_count() - 1;
+
+  if (tz::leap_date_seconds(last) != 1483228800LL)
+    return false;
+
+  if (tz::leap_value(last) != 1)
+    return false;
+
+  /*
+   * The generator also carries the leap-table validity horizon from
+   * leap-seconds.list.
+   *
+   * 2027-06-28 00:00:00 UTC.
+   */
+  if (tz::leap_expiration() != 1814140800LL)
+    return false;
+
+  /*
+   * Cumulative system-time correction immediately before and at the
+   * 2017 insertion boundary.
+   */
+  if (tz::leap_elapsed_at_sys(1483228799LL) != 26)
+    return false;
+
+  if (tz::leap_elapsed_at_sys(1483228800LL) != 27)
+    return false;
+
+  /*
+   * utc_clock::from_sys now consumes that same generated table.
+   *
+   * Immediately before insertion:
+   *
+   * sys 1483228799 + 26 elapsed seconds.
+   */
+  const auto before = utc_clock::from_sys(sys_seconds{seconds{1483228799LL}});
+
+  if (before != utc_seconds{seconds{1483228825LL}})
+    return false;
+
+  /*
+   * At the system boundary the new leap has been inserted:
+   *
+   * sys 1483228800 + 27 elapsed seconds.
+   */
+  const auto after = utc_clock::from_sys(sys_seconds{seconds{1483228800LL}});
+
+  if (after != utc_seconds{seconds{1483228827LL}})
+    return false;
+
+  /*
+   * The missing UTC second between those two values is the leap second.
+   */
+  const utc_seconds leap{
+      seconds{1483228826LL},
+  };
+
+  const auto during = get_leap_second_info(leap);
+
+  if (!during.is_leap_second)
+    return false;
+
+  /*
+   * The currently active insertion counts toward elapsed.
+   */
+  if (during.elapsed != seconds{27})
+    return false;
+
+  /*
+   * Immediately before it, only 26 insertions have elapsed.
+   */
+  const auto before_info =
+      get_leap_second_info(utc_seconds{seconds{1483228825LL}});
+
+  if (before_info.is_leap_second)
+    return false;
+
+  if (before_info.elapsed != seconds{26})
+    return false;
+
+  /*
+   * Immediately after it, the 27th correction remains in force but we
+   * are no longer inside the insertion itself.
+   */
+  const auto after_info =
+      get_leap_second_info(utc_seconds{seconds{1483228827LL}});
+
+  if (after_info.is_leap_second)
+    return false;
+
+  if (after_info.elapsed != seconds{27})
+    return false;
+
+  /*
+   * Existing utc_clock::to_sys leap behavior remains backed by the
+   * generated database as well.
+   */
+  if (utc_clock::to_sys(leap) != sys_seconds{seconds{1483228799LL}})
+    return false;
+
+  /*
+   * Exercise the actual public leap_second representation that tzdb will
+   * expose in the next slice.
+   */
+  const auto first =
+      tested::chrono::chrono_detail::leap_second_factory::make(0);
+
+  const auto latest =
+      tested::chrono::chrono_detail::leap_second_factory::make(last);
+
+  if (first.date() != sys_seconds{seconds{78796800LL}})
+    return false;
+
+  if (first.value() != seconds{1})
+    return false;
+
+  if (latest.date() != sys_seconds{seconds{1483228800LL}})
+    return false;
+
+  if (!(first < latest))
+    return false;
+
+  if (!(latest == sys_seconds{seconds{1483228800LL}}))
+    return false;
+
+  if (!(first < sys_seconds{seconds{1483228800LL}}))
+    return false;
+
+  return true;
+}
+
 bool ftl_test() {
   if (!(system_clock::now().time_since_epoch() > seconds{0})) {
     return false;
@@ -1184,6 +1353,9 @@ bool ftl_test() {
     return false;
 
   if (!chrono_time_zone_conversion_works())
+    return false;
+
+  if (!chrono_leap_second_works())
     return false;
 
   return true;

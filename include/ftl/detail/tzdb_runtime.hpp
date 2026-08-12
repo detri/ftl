@@ -92,6 +92,39 @@ constexpr unsigned leap_count() noexcept {
   return static_cast<unsigned>(sizeof(data::leaps) / sizeof(data::leaps[0]));
 }
 
+constexpr long long leap_date_seconds(unsigned index) noexcept {
+  if (index >= leap_count())
+    return 0;
+
+  return data::leaps[index].date_seconds;
+}
+
+constexpr int leap_value(unsigned index) noexcept {
+  if (index >= leap_count())
+    return 0;
+
+  return data::leaps[index].value;
+}
+
+constexpr int leap_elapsed_at_sys(long long timestamp) noexcept {
+  int elapsed = 0;
+
+  for (unsigned index = 0; index < leap_count(); ++index) {
+    const auto &leap = data::leaps[index];
+
+    if (timestamp < leap.date_seconds)
+      break;
+
+    elapsed += leap.value;
+  }
+
+  return elapsed;
+}
+
+constexpr long long leap_expiration() noexcept {
+  return data::leap_expiration;
+}
+
 constexpr long long precomputed_until() noexcept {
   return data::precomputed_until;
 }
