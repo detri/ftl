@@ -429,6 +429,9 @@ constexpr complex<long double> operator""il(unsigned long long value) {
 
 FTL_COMPLEX_END
 
+#undef FTL_COMPLEX_BEGIN
+#undef FTL_COMPLEX_END
+
 #if !defined(__cpp_lib_complex_udls) || __cpp_lib_complex_udls < 201309L
 #undef __cpp_lib_complex_udls
 #define __cpp_lib_complex_udls 201309L
@@ -439,6 +442,4 @@ FTL_COMPLEX_END
 #define __cpp_lib_constexpr_complex 201711L
 #endif
 
-#undef FTL_COMPLEX_BEGIN
-#undef FTL_COMPLEX_END
 #endif

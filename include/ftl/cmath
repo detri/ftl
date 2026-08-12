@@ -1731,6 +1731,9 @@ FTL_CMATH_END
 #define NAN (::ftl::numeric_limits<float>::quiet_NaN())
 #endif
 
+#undef FTL_CMATH_BEGIN
+#undef FTL_CMATH_END
+
 #if !defined(__cpp_lib_constexpr_cmath) || __cpp_lib_constexpr_cmath < 202202L
 #undef __cpp_lib_constexpr_cmath
 #define __cpp_lib_constexpr_cmath 202202L
@@ -1749,6 +1752,4 @@ FTL_CMATH_END
 #define __cpp_lib_math_special_functions 201603L
 #endif
 
-#undef FTL_CMATH_BEGIN
-#undef FTL_CMATH_END
 #endif

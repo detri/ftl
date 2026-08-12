@@ -211,10 +211,11 @@ private:
   syncbuf_type sb_;
 };
 
+FTL_END_NAMESPACE
+
 #if !defined(__cpp_lib_syncbuf) || __cpp_lib_syncbuf < 201803L
 #undef __cpp_lib_syncbuf
 #define __cpp_lib_syncbuf 201803L
 #endif
 
-FTL_END_NAMESPACE
 #endif

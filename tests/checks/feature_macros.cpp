@@ -3,23 +3,43 @@
 #include <ftl/barrier>
 #include <ftl/bit>
 #include <ftl/bitset>
+#include <ftl/charconv>
+#include <ftl/cmath>
+#include <ftl/compare>
+#include <ftl/complex>
+#include <ftl/concepts>
+#include <ftl/coroutine>
 #include <ftl/cstddef>
+#include <ftl/exception>
 #include <ftl/expected>
 #include <ftl/filesystem>
+#include <ftl/functional>
+#include <ftl/generator>
 #include <ftl/ios>
+#include <ftl/iterator>
 #include <ftl/latch>
+#include <ftl/mdspan>
+#include <ftl/memory>
+#include <ftl/memory_resource>
+#include <ftl/new>
 #include <ftl/numbers>
 #include <ftl/optional>
 #include <ftl/ranges>
 #include <ftl/semaphore>
 #include <ftl/source_location>
+#include <ftl/span>
+#include <ftl/spanstream>
 #include <ftl/stacktrace>
 #include <ftl/stdfloat>
 #include <ftl/stop_token>
+#include <ftl/string>
+#include <ftl/string_view>
+#include <ftl/syncstream>
 #include <ftl/thread>
+#include <ftl/type_traits>
 #include <ftl/utility>
 #include <ftl/variant>
-#include <ftl/version>
+
 
 #if __cpp_lib_byte < 201603L
 #error <cstddef> must advertise std::byte
@@ -87,6 +107,9 @@
 #ifdef __cpp_lib_stdfloat
 #error N4950 does not define __cpp_lib_stdfloat
 #endif
+#ifdef __cpp_lib_const_iterator
+#error N4950 does not define __cpp_lib_const_iterator
+#endif
 #if __cpp_lib_constexpr_memory < 202202L ||                                    \
     __cpp_lib_allocate_at_least < 202302L || __cpp_lib_out_ptr < 202106L ||    \
     __cpp_lib_start_lifetime_as < 202207L ||                                   \
@@ -115,10 +138,6 @@
 #if __cpp_lib_coroutine < 201902L || __cpp_lib_span < 202002L ||               \
     __cpp_lib_generator < 202207L || __cpp_lib_mdspan < 202207L
 #error Stage 2.6 feature macros are incomplete
-#endif
-
-#if __cpp_lib_mdspan < 202207L
-#error <mdspan> must advertise the C++23 mdspan facility
 #endif
 
 #if __cpp_lib_string_view < 201803L ||                                         \
@@ -167,6 +186,10 @@
 #if __cpp_lib_semaphore < 201907L || __cpp_lib_latch < 201907L ||              \
     __cpp_lib_barrier < 202302L
 #error Stage 6.4 coordination feature macros are incomplete
+#endif
+
+#if __cpp_lib_char8_t != 201907L
+#error included facilities must advertise char8_t support
 #endif
 
 int main() {}
