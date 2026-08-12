@@ -102,8 +102,21 @@ FILE* file_pointer = nullptr;
 [[maybe_unused]]
 fpos_t* fpos_pointer = nullptr;
 
+static_assert(TIME_UTC > 0);
+
+[[maybe_unused]]
+timespec* timespec_pointer = nullptr;
+
 bool ftl_test() {
   assert(true);
+
+  timespec current{};
+
+  if (timespec_get(&current, TIME_UTC) != TIME_UTC)
+    return false;
+
+  if (current.tv_nsec < 0 || current.tv_nsec >= 1000000000L)
+    return false;
 
   return isdigit('7') != 0 && isalpha('A') != 0 && tolower('A') == 'a' &&
          toupper('a') == 'A';

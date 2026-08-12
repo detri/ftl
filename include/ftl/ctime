@@ -6,18 +6,30 @@
 #ifdef FTL_REPLACE_STL
 #include <__c_time_types.hpp>
 #include <cstddef>
+#include <detail/clock_runtime.hpp>
 #include <detail/time_core.hpp>
 #include <detail/time_storage.hpp>
 #include <type_traits>
 #else
 #include <ftl/__c_time_types.hpp>
 #include <ftl/cstddef>
+#include <ftl/detail/clock_runtime.hpp>
 #include <ftl/detail/time_core.hpp>
 #include <ftl/detail/time_storage.hpp>
 #include <ftl/type_traits>
 #endif
 
+#ifndef CLOCKS_PER_SEC
+#if defined(_WIN32)
 #define CLOCKS_PER_SEC 1000L
+#else
+#define CLOCKS_PER_SEC 1000000L
+#endif
+#endif
+
+#ifndef TIME_UTC
+#define TIME_UTC 1
+#endif
 
 namespace ftl_time_runtime {
 extern "C" {
@@ -51,6 +63,22 @@ inline time_t time(time_t *result) noexcept {
 #else
   return ftl_time_runtime::time(result);
 #endif
+}
+
+inline int timespec_get(timespec *value, int base) noexcept {
+  if (!value || base != TIME_UTC)
+    return 0;
+
+  const long long nanoseconds =
+      ::ftl_clock_runtime::system_nanoseconds();
+
+  value->tv_sec =
+      static_cast<time_t>(nanoseconds / 1000000000LL);
+
+  value->tv_nsec =
+      static_cast<long>(nanoseconds % 1000000000LL);
+
+  return base;
 }
 
 inline tm *gmtime(const time_t *source) noexcept {
