@@ -1669,4 +1669,3 @@ bool ftl_test() {
 
   return true;
 }
-using
