@@ -1,4 +1,5 @@
 #ifdef FTL_REPLACE_STL
+#include <algorithm>
 #include <atomic>
 #include <filesystem>
 #include <iterator>
@@ -20,6 +21,7 @@
 #include <vector>
 namespace tested = std;
 #else
+#include <ftl/algorithm>
 #include <ftl/atomic>
 #include <ftl/filesystem>
 #include <ftl/iterator>
@@ -41,6 +43,27 @@ namespace tested = std;
 #include <ftl/vector>
 namespace tested = ftl;
 #endif
+
+struct projected_move_only {
+  projected_move_only() = default;
+  projected_move_only(projected_move_only &&) = default;
+
+  projected_move_only(const projected_move_only &) = delete;
+  projected_move_only &operator=(const projected_move_only &) = delete;
+};
+
+struct move_only_projection {
+  projected_move_only operator()(int) const { return {}; }
+};
+
+struct projected_consumer {
+  void operator()(projected_move_only) const {}
+};
+
+static_assert(requires(int *first, int *last) {
+  tested::ranges::for_each(first, last, projected_consumer{},
+                           move_only_projection{});
+});
 
 /*
  * __cpp_lib_addressof_constexpr

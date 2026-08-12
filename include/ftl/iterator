@@ -395,8 +395,7 @@ constexpr bool pointer_total_less(T *left, U *right) noexcept {
     return left < right;
   }
 
-  return reinterpret_cast<uintptr_t>(left) <
-         reinterpret_cast<uintptr_t>(right);
+  return reinterpret_cast<uintptr_t>(left) < reinterpret_cast<uintptr_t>(right);
 }
 
 template <class T, class U>
@@ -422,10 +421,8 @@ concept has_nonmember_three_way = requires(T &&left, U &&right) {
 template <class T, class U>
 inline constexpr bool uses_builtin_object_pointer_less_v =
     is_convertible_v<T, const volatile void *> &&
-    is_convertible_v<U, const volatile void *> &&
-    !has_member_less<T, U> &&
-    !has_nonmember_less<T, U> &&
-    !has_member_three_way<T, U> &&
+    is_convertible_v<U, const volatile void *> && !has_member_less<T, U> &&
+    !has_nonmember_less<T, U> && !has_member_three_way<T, U> &&
     !has_nonmember_three_way<T, U>;
 
 } // namespace detail
@@ -437,24 +434,18 @@ struct less {
   template <class T, class U>
     requires totally_ordered_with<T, U>
   constexpr bool operator()(T &&left, U &&right) const
-      noexcept(noexcept(static_cast<T &&>(left) <
-                        static_cast<U &&>(right))) {
-    if constexpr (
-        is_pointer_v<remove_reference_t<T>> &&
-        is_pointer_v<remove_reference_t<U>>) {
+      noexcept(noexcept(static_cast<T &&>(left) < static_cast<U &&>(right))) {
+    if constexpr (is_pointer_v<remove_reference_t<T>> &&
+                  is_pointer_v<remove_reference_t<U>>) {
+      return FTL_ITER_NS::detail::pointer_total_less(static_cast<T &&>(left),
+                                                     static_cast<U &&>(right));
+    } else if constexpr (FTL_ITER_NS::detail::
+                             uses_builtin_object_pointer_less_v<T, U>) {
       return FTL_ITER_NS::detail::pointer_total_less(
-          static_cast<T &&>(left),
-          static_cast<U &&>(right));
-    } else if constexpr (
-        FTL_ITER_NS::detail::uses_builtin_object_pointer_less_v<T, U>) {
-      return FTL_ITER_NS::detail::pointer_total_less(
-          static_cast<const volatile void *>(
-              static_cast<T &&>(left)),
-          static_cast<const volatile void *>(
-              static_cast<U &&>(right)));
+          static_cast<const volatile void *>(static_cast<T &&>(left)),
+          static_cast<const volatile void *>(static_cast<U &&>(right)));
     } else {
-      return static_cast<T &&>(left) <
-             static_cast<U &&>(right);
+      return static_cast<T &&>(left) < static_cast<U &&>(right);
     }
   }
 };
@@ -524,9 +515,27 @@ concept indirectly_readable = requires(const Iterator iterator) {
                                  const iter_value_t<Iterator> &>;
 };
 
+namespace detail {
+
+template <class Iterator, class = void> struct indirect_value {
+  using type = iter_value_t<Iterator> &;
+};
+
+template <class Iterator>
+struct indirect_value<Iterator,
+                      void_t<typename Iterator::__ftl_indirect_value_type>> {
+  using type = typename Iterator::__ftl_indirect_value_type;
+};
+
+template <class Iterator>
+using indirect_value_t = typename indirect_value<Iterator>::type;
+
+} // namespace detail
+
 template <indirectly_readable Iterator>
 using iter_common_reference_t =
-    common_reference_t<iter_reference_t<Iterator>, iter_value_t<Iterator> &>;
+    common_reference_t<iter_reference_t<Iterator>,
+                       detail::indirect_value_t<Iterator>>;
 
 template <class Output, class T>
 concept indirectly_writable = requires(Output &&output, T &&value) {
@@ -706,23 +715,27 @@ inline constexpr iter_swap_fn iter_swap{};
 template <class F, class Iterator>
 concept indirectly_unary_invocable =
     indirectly_readable<Iterator> && copy_constructible<F> &&
-    invocable<F &, iter_value_t<Iterator> &> &&
+    invocable<F &, detail::indirect_value_t<Iterator>> &&
     invocable<F &, iter_reference_t<Iterator>> &&
     invocable<F &, iter_common_reference_t<Iterator>> &&
-    common_reference_with<invoke_result_t<F &, iter_value_t<Iterator> &>,
-                          invoke_result_t<F &, iter_reference_t<Iterator>>>;
+    common_reference_with<
+        invoke_result_t<F &, detail::indirect_value_t<Iterator>>,
+        invoke_result_t<F &, iter_reference_t<Iterator>>>;
 
 template <class F, class Iterator>
 concept indirectly_regular_unary_invocable =
     indirectly_readable<Iterator> && copy_constructible<F> &&
-    regular_invocable<F &, iter_value_t<Iterator> &> &&
+    regular_invocable<F &, detail::indirect_value_t<Iterator>> &&
     regular_invocable<F &, iter_reference_t<Iterator>> &&
-    regular_invocable<F &, iter_common_reference_t<Iterator>>;
+    regular_invocable<F &, iter_common_reference_t<Iterator>> &&
+    common_reference_with<
+        invoke_result_t<F &, detail::indirect_value_t<Iterator>>,
+        invoke_result_t<F &, iter_reference_t<Iterator>>>;
 
 template <class F, class Iterator>
 concept indirect_unary_predicate =
     indirectly_readable<Iterator> && copy_constructible<F> &&
-    predicate<F &, iter_value_t<Iterator> &> &&
+    predicate<F &, detail::indirect_value_t<Iterator>> &&
     predicate<F &, iter_reference_t<Iterator>> &&
     predicate<F &, iter_common_reference_t<Iterator>>;
 
@@ -730,20 +743,45 @@ template <class F, class Iterator1, class Iterator2>
 concept indirect_binary_predicate =
     indirectly_readable<Iterator1> && indirectly_readable<Iterator2> &&
     copy_constructible<F> &&
-    predicate<F &, iter_value_t<Iterator1> &, iter_value_t<Iterator2> &> &&
-    predicate<F &, iter_value_t<Iterator1> &, iter_reference_t<Iterator2>> &&
-    predicate<F &, iter_reference_t<Iterator1>, iter_value_t<Iterator2> &> &&
+    predicate<F &, detail::indirect_value_t<Iterator1>,
+              detail::indirect_value_t<Iterator2>> &&
+    predicate<F &, detail::indirect_value_t<Iterator1>,
+              iter_reference_t<Iterator2>> &&
+    predicate<F &, iter_reference_t<Iterator1>,
+              detail::indirect_value_t<Iterator2>> &&
     predicate<F &, iter_reference_t<Iterator1>, iter_reference_t<Iterator2>> &&
     predicate<F &, iter_common_reference_t<Iterator1>,
               iter_common_reference_t<Iterator2>>;
 
 template <class F, class Iterator1, class Iterator2 = Iterator1>
 concept indirect_equivalence_relation =
-    indirect_binary_predicate<F, Iterator1, Iterator2>;
+    indirectly_readable<Iterator1> && indirectly_readable<Iterator2> &&
+    copy_constructible<F> &&
+    equivalence_relation<F &, detail::indirect_value_t<Iterator1>,
+                         detail::indirect_value_t<Iterator2>> &&
+    equivalence_relation<F &, detail::indirect_value_t<Iterator1>,
+                         iter_reference_t<Iterator2>> &&
+    equivalence_relation<F &, iter_reference_t<Iterator1>,
+                         detail::indirect_value_t<Iterator2>> &&
+    equivalence_relation<F &, iter_reference_t<Iterator1>,
+                         iter_reference_t<Iterator2>> &&
+    equivalence_relation<F &, iter_common_reference_t<Iterator1>,
+                         iter_common_reference_t<Iterator2>>;
 
 template <class F, class Iterator1, class Iterator2 = Iterator1>
 concept indirect_strict_weak_order =
-    indirect_binary_predicate<F, Iterator1, Iterator2>;
+    indirectly_readable<Iterator1> && indirectly_readable<Iterator2> &&
+    copy_constructible<F> &&
+    strict_weak_order<F &, detail::indirect_value_t<Iterator1>,
+                      detail::indirect_value_t<Iterator2>> &&
+    strict_weak_order<F &, detail::indirect_value_t<Iterator1>,
+                      iter_reference_t<Iterator2>> &&
+    strict_weak_order<F &, iter_reference_t<Iterator1>,
+                      detail::indirect_value_t<Iterator2>> &&
+    strict_weak_order<F &, iter_reference_t<Iterator1>,
+                      iter_reference_t<Iterator2>> &&
+    strict_weak_order<F &, iter_common_reference_t<Iterator1>,
+                      iter_common_reference_t<Iterator2>>;
 
 template <class F, class... Iterators>
   requires(indirectly_readable<Iterators> && ...) &&
@@ -766,9 +804,15 @@ struct identity {
 template <indirectly_readable Iterator,
           indirectly_regular_unary_invocable<Iterator> Projection>
 struct projected {
-  using value_type = remove_cvref_t<indirect_result_t<Projection &, Iterator>>;
+  using value_type =
+      remove_cvref_t<indirect_result_t<Projection &, Iterator>>;
 
-  indirect_result_t<Projection &, Iterator> operator*() const;
+  using __ftl_indirect_value_type =
+      invoke_result_t<Projection &,
+                      detail::indirect_value_t<Iterator>>;
+
+  indirect_result_t<Projection &, Iterator>
+  operator*() const;
 };
 
 template <weakly_incrementable Iterator, class Projection>
@@ -1877,64 +1921,37 @@ constexpr insert_iterator<C> inserter(C &c, typename C::iterator i) {
 
 namespace detail {
 
-template <class Iterator, class = void>
-struct move_iterator_category_base {};
+template <class Iterator, class = void> struct move_iterator_category_base {};
 
 template <class Iterator>
 struct move_iterator_category_base<
-    Iterator,
-    void_t<
-        typename iterator_traits<
-            Iterator
-        >::iterator_category
-    >
-> {
+    Iterator, void_t<typename iterator_traits<Iterator>::iterator_category>> {
 private:
   using underlying_category =
-      typename iterator_traits<
-          Iterator
-      >::iterator_category;
+      typename iterator_traits<Iterator>::iterator_category;
 
 public:
-  using iterator_category =
-      conditional_t<
-          derived_from<
-              underlying_category,
-              random_access_iterator_tag
-          >,
-          random_access_iterator_tag,
-          underlying_category
-      >;
+  using iterator_category = conditional_t<
+      derived_from<underlying_category, random_access_iterator_tag>,
+      random_access_iterator_tag, underlying_category>;
 };
 
 template <class Iterator>
-using move_iterator_concept_t =
-    conditional_t<
-        random_access_iterator<Iterator>,
-        random_access_iterator_tag,
-        conditional_t<
-            bidirectional_iterator<Iterator>,
-            bidirectional_iterator_tag,
-            conditional_t<
-                forward_iterator<Iterator>,
-                forward_iterator_tag,
-                input_iterator_tag
-            >
-        >
-    >;
+using move_iterator_concept_t = conditional_t<
+    random_access_iterator<Iterator>, random_access_iterator_tag,
+    conditional_t<bidirectional_iterator<Iterator>, bidirectional_iterator_tag,
+                  conditional_t<forward_iterator<Iterator>,
+                                forward_iterator_tag, input_iterator_tag>>>;
 
 } // namespace detail
 
 template <class I>
-class move_iterator
-    : public detail::
-          move_iterator_category_base<I> {
+class move_iterator : public detail::move_iterator_category_base<I> {
   I current{};
 
 public:
   using iterator_type = I;
-    using iterator_concept =
-        detail::move_iterator_concept_t<I>;
+  using iterator_concept = detail::move_iterator_concept_t<I>;
   using value_type = iter_value_t<I>;
   using difference_type = iter_difference_t<I>;
   using pointer = I;
@@ -2022,25 +2039,19 @@ public:
     return a.current == b.base();
   }
 
-    template <class U>
-    friend constexpr auto
-    operator<=>(
-        const move_iterator& a,
-        const move_iterator<U>& b
-    )
-    #ifdef FTL_REPLACE_STL
-      requires three_way_comparable_with<I, U>
-    #endif
-    {
-    #ifdef FTL_REPLACE_STL
-      return a.current <=> b.base();
-    #else
-      return compare_three_way{}(
-          a.current,
-          b.base()
-      );
-    #endif
-    }
+  template <class U>
+  friend constexpr auto operator<=>(const move_iterator &a,
+                                    const move_iterator<U> &b)
+#ifdef FTL_REPLACE_STL
+    requires three_way_comparable_with<I, U>
+#endif
+  {
+#ifdef FTL_REPLACE_STL
+    return a.current <=> b.base();
+#else
+    return compare_three_way{}(a.current, b.base());
+#endif
+  }
 
   friend constexpr move_iterator operator+(move_iterator x, difference_type n)
     requires random_access_iterator<I>
@@ -2448,6 +2459,7 @@ public:
     streambuf_type *buffer_;
     proxy(C value, streambuf_type *buffer) : kept_(value), buffer_(buffer) {}
     friend class istreambuf_iterator;
+
   public:
     C operator*() { return kept_; }
   };
@@ -2480,8 +2492,8 @@ public:
 
 private:
   bool at_end() const {
-    return !buffer || Traits::eq_int_type(detail::streambuf_sgetc(buffer),
-                                          Traits::eof());
+    return !buffer ||
+           Traits::eq_int_type(detail::streambuf_sgetc(buffer), Traits::eof());
   }
 
   template <class X, class Y>
@@ -2516,8 +2528,8 @@ public:
   ostreambuf_iterator(streambuf_type *b) noexcept : buffer(b) {}
 
   ostreambuf_iterator &operator=(C c) {
-    if (!buffer || Traits::eq_int_type(detail::streambuf_sputc(buffer, c),
-                                       Traits::eof()))
+    if (!buffer ||
+        Traits::eq_int_type(detail::streambuf_sputc(buffer, c), Traits::eof()))
       failed_state = true;
     return *this;
   }
@@ -2660,7 +2672,7 @@ template <class E> constexpr const E *data(initializer_list<E> x) noexcept {
   return x.begin();
 }
 
-#if !defined(__cpp_lib_nonmember_container_access) || \
+#if !defined(__cpp_lib_nonmember_container_access) ||                          \
     __cpp_lib_nonmember_container_access < 201411L
 #undef __cpp_lib_nonmember_container_access
 #define __cpp_lib_nonmember_container_access 201411L
@@ -2671,32 +2683,30 @@ template <class E> constexpr const E *data(initializer_list<E> x) noexcept {
 #define __cpp_lib_ssize 201902L
 #endif
 
-#if !defined(__cpp_lib_constexpr_iterator) || \
+#if !defined(__cpp_lib_constexpr_iterator) ||                                  \
     __cpp_lib_constexpr_iterator < 201811L
 #undef __cpp_lib_constexpr_iterator
 #define __cpp_lib_constexpr_iterator 201811L
 #endif
 
-#if !defined(__cpp_lib_move_iterator_concept) || \
+#if !defined(__cpp_lib_move_iterator_concept) ||                               \
     __cpp_lib_move_iterator_concept < 202207L
 #undef __cpp_lib_move_iterator_concept
 #define __cpp_lib_move_iterator_concept 202207L
 #endif
 
-#if !defined(__cpp_lib_array_constexpr) || \
-    __cpp_lib_array_constexpr < 201811L
+#if !defined(__cpp_lib_array_constexpr) || __cpp_lib_array_constexpr < 201811L
 #undef __cpp_lib_array_constexpr
 #define __cpp_lib_array_constexpr 201811L
 #endif
 
-#if !defined(__cpp_lib_make_reverse_iterator) || \
+#if !defined(__cpp_lib_make_reverse_iterator) ||                               \
     __cpp_lib_make_reverse_iterator < 201402L
 #undef __cpp_lib_make_reverse_iterator
 #define __cpp_lib_make_reverse_iterator 201402L
 #endif
 
-#if !defined(__cpp_lib_null_iterators) || \
-    __cpp_lib_null_iterators < 201304L
+#if !defined(__cpp_lib_null_iterators) || __cpp_lib_null_iterators < 201304L
 #undef __cpp_lib_null_iterators
 #define __cpp_lib_null_iterators 201304L
 #endif
