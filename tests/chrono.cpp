@@ -528,63 +528,68 @@ bool chrono_tzdb_runtime_works() {
   if (!new_york)
     return false;
 
-  if (!equal_text(tz::zone_name(new_york), "America/New_York"))
+  if (!equal_text(tz::zone_name(new_york), "America/New_York")) {
     return false;
+  }
 
   /*
    * backward contains:
    *
    *   Link America/New_York US/Eastern
    *
-   * buildtzdb resolves links to final Zone indices, so both names must
-   * identify the same generated zone.
+   * Links resolve to the canonical Zone.
    */
   const auto eastern_link = tz::find_link("US/Eastern");
 
   if (!eastern_link)
     return false;
 
-  if (!equal_text(tz::link_name(eastern_link), "US/Eastern"))
+  if (!equal_text(tz::link_name(eastern_link), "US/Eastern")) {
     return false;
+  }
 
   const auto eastern_target = tz::link_target(eastern_link);
 
-  if (!eastern_target || eastern_target.index != new_york.index)
+  if (!eastern_target || eastern_target.index != new_york.index) {
     return false;
+  }
 
   const auto eastern = tz::locate_zone("US/Eastern");
 
-  if (!eastern || eastern.index != new_york.index)
+  if (!eastern || eastern.index != new_york.index) {
     return false;
+  }
 
-  if (tz::locate_zone("Definitely/Not_A_Zone"))
+  if (tz::locate_zone("Definitely/Not_A_Zone")) {
     return false;
+  }
 
   /*
-   * 2024-03-10 07:00:00 UTC is the New York spring-forward
-   * transition.
-   *
-   * The second immediately before it must still be EST.
+   * 2024-03-10 07:00:00 UTC is the
+   * New York spring-forward transition.
    */
   const auto before_spring = tz::lookup(new_york, 1710053999LL);
 
   if (!before_spring)
     return false;
 
-  if (before_spring.offset_seconds != -5 * 60 * 60)
+  if (before_spring.offset_seconds != -5 * 60 * 60) {
     return false;
+  }
 
   if (before_spring.save_minutes != 0)
     return false;
 
-  if (!equal_text(before_spring.abbreviation, "EST"))
+  if (!equal_text(before_spring.abbreviation, "EST")) {
     return false;
+  }
 
-  if (before_spring.end != 1710054000LL)
+  if (before_spring.end != 1710054000LL) {
     return false;
+  }
 
   /*
-   * Exact equality with transition.begin belongs to the new state.
+   * Transition equality belongs to the new state.
    */
   const auto spring = tz::lookup(new_york, 1710054000LL);
 
@@ -594,43 +599,50 @@ bool chrono_tzdb_runtime_works() {
   if (spring.begin_unbounded)
     return false;
 
-  if (spring.begin != 1710054000LL)
+  if (spring.begin != 1710054000LL) {
     return false;
+  }
 
-  if (spring.offset_seconds != -4 * 60 * 60)
+  if (spring.offset_seconds != -4 * 60 * 60) {
     return false;
+  }
 
   if (spring.save_minutes != 60)
     return false;
 
-  if (!equal_text(spring.abbreviation, "EDT"))
+  if (!equal_text(spring.abbreviation, "EDT")) {
     return false;
+  }
 
   /*
-   * 2024-11-03 06:00:00 UTC is the corresponding fall-back.
+   * Corresponding fall-back.
    */
-  if (spring.end != 1730613600LL)
+  if (spring.end != 1730613600LL) {
     return false;
+  }
 
   const auto fall = tz::lookup(new_york, 1730613600LL);
 
   if (!fall)
     return false;
 
-  if (fall.begin != 1730613600LL)
+  if (fall.begin != 1730613600LL) {
     return false;
+  }
 
-  if (fall.offset_seconds != -5 * 60 * 60)
+  if (fall.offset_seconds != -5 * 60 * 60) {
     return false;
+  }
 
   if (fall.save_minutes != 0)
     return false;
 
-  if (!equal_text(fall.abbreviation, "EST"))
+  if (!equal_text(fall.abbreviation, "EST")) {
     return false;
+  }
 
   /*
-   * A no-DST zone exercises the generated initial-state path.
+   * Fixed-zone initial-state path.
    */
   const auto utc = tz::locate_zone("Etc/UTC");
 
@@ -648,27 +660,90 @@ bool chrono_tzdb_runtime_works() {
   if (utc_epoch.save_minutes != 0)
     return false;
 
-  if (!equal_text(utc_epoch.abbreviation, "UTC"))
+  if (!equal_text(utc_epoch.abbreviation, "UTC")) {
     return false;
+  }
 
   /*
-   * The current runtime slice must never pretend that the generated
-   * transition table knows anything past its coverage horizon.
+   * The precomputed horizon is now an internal
+   * implementation boundary, not a coverage boundary.
+   *
+   * A lookup immediately before it must expose the
+   * real next transition produced by the tail evaluator.
    */
-  const auto last_precomputed =
-      tz::lookup(new_york, tz::precomputed_until() - 1);
+  const long long horizon = tz::precomputed_until();
 
-  if (!last_precomputed)
+  const auto before_horizon = tz::lookup(new_york, horizon - 1);
+
+  if (!before_horizon)
     return false;
 
-  if (!last_precomputed.end_is_horizon)
+  if (before_horizon.end_is_horizon)
     return false;
 
-  if (last_precomputed.end != tz::precomputed_until())
+  if (before_horizon.end <= horizon)
     return false;
 
-  if (tz::lookup(new_york, tz::precomputed_until()))
+  if (before_horizon.offset_seconds != -5 * 60 * 60) {
     return false;
+  }
+
+  if (before_horizon.save_minutes != 0)
+    return false;
+
+  if (!equal_text(before_horizon.abbreviation, "EST")) {
+    return false;
+  }
+
+  /*
+   * Exact equality with the old artificial horizon
+   * must continue seamlessly in the same winter state.
+   */
+  const auto at_horizon = tz::lookup(new_york, horizon);
+
+  if (!at_horizon)
+    return false;
+
+  if (at_horizon.end_is_horizon)
+    return false;
+
+  if (at_horizon.offset_seconds != -5 * 60 * 60) {
+    return false;
+  }
+
+  if (at_horizon.save_minutes != 0)
+    return false;
+
+  if (!equal_text(at_horizon.abbreviation, "EST")) {
+    return false;
+  }
+
+  if (at_horizon.begin != before_horizon.begin) {
+    return false;
+  }
+
+  if (at_horizon.end != before_horizon.end) {
+    return false;
+  }
+
+  /*
+   * A fixed zone also extends beyond the generated
+   * transition horizon indefinitely.
+   */
+  const auto utc_future = tz::lookup(utc, horizon);
+
+  if (!utc_future)
+    return false;
+
+  if (utc_future.offset_seconds != 0)
+    return false;
+
+  if (utc_future.save_minutes != 0)
+    return false;
+
+  if (!equal_text(utc_future.abbreviation, "UTC")) {
+    return false;
+  }
 
   return true;
 }
@@ -685,20 +760,22 @@ bool chrono_time_zone_public_works() {
   if (new_york == nullptr)
     return false;
 
-  if (new_york->name() != "America/New_York")
+  if (new_york->name() != "America/New_York") {
     return false;
+  }
 
   /*
-   * A string_view is not required to be null-terminated.
-   * Make sure public lookup does not accidentally fall back to C-string
-   * semantics.
+   * A string_view need not be NUL terminated.
    */
   const char sliced_name[] = "America/New_York!";
 
   const time_zone *sliced = nullptr;
 
   try {
-    sliced = locate_zone(tested::string_view{sliced_name, 16});
+    sliced = locate_zone(tested::string_view{
+        sliced_name,
+        16,
+    });
   } catch (...) {
     return false;
   }
@@ -707,12 +784,7 @@ bool chrono_time_zone_public_works() {
     return false;
 
   /*
-   * backward contains:
-   *
-   *   Link America/New_York US/Eastern
-   *
-   * Public lookup of the Link must return the same canonical time_zone
-   * object, not merely an equivalent object.
+   * Link lookup returns the same canonical object.
    */
   const time_zone *eastern = nullptr;
 
@@ -725,37 +797,63 @@ bool chrono_time_zone_public_works() {
   if (eastern != new_york)
     return false;
 
-  if (eastern->name() != "America/New_York")
+  if (eastern->name() != "America/New_York") {
     return false;
+  }
 
   /*
-   * 2024-03-10 07:00:00 UTC is New York's spring-forward transition.
+   * 2024 spring-forward.
    */
-  const auto before_spring =
-      new_york->get_info(sys_seconds{seconds{1710053999LL}});
+  const auto before_spring = new_york->get_info(sys_seconds{
+      seconds{
+          1710053999LL,
+      },
+  });
 
-  if (before_spring.offset != hours{-5})
+  if (before_spring.offset != hours{-5}) {
     return false;
+  }
 
-  if (before_spring.save != minutes{0})
+  if (before_spring.save != minutes{0}) {
     return false;
+  }
 
-  if (!equal_text(before_spring.abbrev.c_str(), "EST"))
+  if (!equal_text(before_spring.abbrev.c_str(), "EST")) {
     return false;
+  }
 
-  if (before_spring.end != sys_seconds{seconds{1710054000LL}})
+  if (before_spring.end != sys_seconds{
+                               seconds{
+                                   1710054000LL,
+                               },
+                           }) {
     return false;
+  }
 
   /*
-   * Exact transition equality belongs to the new state.
+   * Exact transition equality belongs to EDT.
    */
-  const auto spring = new_york->get_info(sys_seconds{seconds{1710054000LL}});
+  const auto spring = new_york->get_info(sys_seconds{
+      seconds{
+          1710054000LL,
+      },
+  });
 
-  if (spring.begin != sys_seconds{seconds{1710054000LL}})
+  if (spring.begin != sys_seconds{
+                          seconds{
+                              1710054000LL,
+                          },
+                      }) {
     return false;
+  }
 
-  if (spring.end != sys_seconds{seconds{1730613600LL}})
+  if (spring.end != sys_seconds{
+                        seconds{
+                            1730613600LL,
+                        },
+                    }) {
     return false;
+  }
 
   if (spring.offset != hours{-4})
     return false;
@@ -763,34 +861,43 @@ bool chrono_time_zone_public_works() {
   if (spring.save != minutes{60})
     return false;
 
-  if (!equal_text(spring.abbrev.c_str(), "EDT"))
+  if (!equal_text(spring.abbrev.c_str(), "EDT")) {
     return false;
+  }
 
   /*
-   * Subsecond timestamps immediately before the transition still belong
-   * to the old state. This specifically catches truncation-vs-floor bugs
-   * in the sys_time -> generated-second bridge.
+   * Subsecond boundary behavior.
    */
-  const auto subsecond_before =
-      new_york->get_info(sys_time<milliseconds>{milliseconds{1710053999999LL}});
+  const auto subsecond_before = new_york->get_info(sys_time<milliseconds>{
+      milliseconds{
+          1710053999999LL,
+      },
+  });
 
-  if (subsecond_before.offset != hours{-5})
+  if (subsecond_before.offset != hours{-5}) {
     return false;
+  }
 
-  if (!equal_text(subsecond_before.abbrev.c_str(), "EST"))
+  if (!equal_text(subsecond_before.abbrev.c_str(), "EST")) {
     return false;
+  }
 
-  const auto subsecond_after =
-      new_york->get_info(sys_time<milliseconds>{milliseconds{1710054000001LL}});
+  const auto subsecond_after = new_york->get_info(sys_time<milliseconds>{
+      milliseconds{
+          1710054000001LL,
+      },
+  });
 
-  if (subsecond_after.offset != hours{-4})
+  if (subsecond_after.offset != hours{-4}) {
     return false;
+  }
 
-  if (!equal_text(subsecond_after.abbrev.c_str(), "EDT"))
+  if (!equal_text(subsecond_after.abbrev.c_str(), "EDT")) {
     return false;
+  }
 
   /*
-   * A fixed zone exercises the generated initial-state -> sys_info path.
+   * Fixed-zone public path.
    */
   const time_zone *utc = nullptr;
 
@@ -803,7 +910,9 @@ bool chrono_time_zone_public_works() {
   if (utc == nullptr)
     return false;
 
-  const auto utc_epoch = utc->get_info(sys_seconds{seconds{0}});
+  const auto utc_epoch = utc->get_info(sys_seconds{
+      seconds{0},
+  });
 
   if (utc_epoch.offset != seconds{0})
     return false;
@@ -811,15 +920,16 @@ bool chrono_time_zone_public_works() {
   if (utc_epoch.save != minutes{0})
     return false;
 
-  if (!equal_text(utc_epoch.abbrev.c_str(), "UTC"))
+  if (!equal_text(utc_epoch.abbrev.c_str(), "UTC")) {
     return false;
+  }
 
   /*
-   * Unknown names are required to fail rather than produce a null public
-   * time_zone pointer.
+   * Unknown names throw.
    */
   try {
     (void)locate_zone("Definitely/Not_A_Zone");
+
     return false;
   } catch (const tested::runtime_error &) {
   } catch (...) {
@@ -827,15 +937,57 @@ bool chrono_time_zone_public_works() {
   }
 
   /*
-   * Temporary FTL limitation until arbitrary-year rule evaluation lands:
-   * never silently claim generated coverage beyond the precomputed horizon.
+   * Arbitrary-year evaluation has now landed.
+   *
+   * The generated horizon is therefore invisible
+   * through the public time_zone API.
    */
+  const auto horizon = sys_seconds{
+      seconds{
+          tested::detail::tzdb_runtime::precomputed_until(),
+      },
+  };
+
+  sys_info horizon_info;
+
   try {
-    (void)new_york->get_info(sys_seconds{
-        seconds{tested::detail::tzdb_runtime::precomputed_until()}});
-    return false;
-  } catch (const tested::runtime_error &) {
+    horizon_info = new_york->get_info(horizon);
   } catch (...) {
+    return false;
+  }
+
+  if (horizon_info.offset != hours{-5}) {
+    return false;
+  }
+
+  if (horizon_info.save != minutes{0}) {
+    return false;
+  }
+
+  if (!equal_text(horizon_info.abbrev.c_str(), "EST")) {
+    return false;
+  }
+
+  if (horizon_info.begin > horizon)
+    return false;
+
+  if (horizon_info.end <= horizon)
+    return false;
+
+  /*
+   * And the same public API works well beyond the
+   * formerly generated coverage range.
+   */
+  const auto future =
+      new_york->get_info(sys_days{year{2600} / July / 15} + hours{12});
+
+  if (future.offset != hours{-4})
+    return false;
+
+  if (future.save != minutes{60})
+    return false;
+
+  if (!equal_text(future.abbrev.c_str(), "EDT")) {
     return false;
   }
 
@@ -1797,254 +1949,254 @@ bool chrono_tzdb_raw_rules_work() {
   return true;
 }
 
-int chrono_tzdb_tail_works() {
+bool chrono_tzdb_tail_works() {
   namespace runtime = tested::detail::tzdb_runtime;
 
-  int stage = 100;
+  const time_zone *const new_york = locate_zone("America/New_York");
 
-  try {
-    stage = 101;
-    const time_zone *const new_york = locate_zone("America/New_York");
+  if (new_york == nullptr)
+    return false;
 
-    if (new_york == nullptr)
-      return 101;
+  /*
+   * The generated transition table stops at 2501-01-01,
+   * but that boundary is only an implementation detail.
+   *
+   * The state active immediately before the horizon must
+   * expose its actual next transition.
+   */
+  const auto before_horizon = sys_days{year{2500} / December / 31} + hours{12};
 
-    stage = 102;
-    const auto before_horizon =
-        sys_days{year{2500} / December / 31} + hours{12};
+  const auto horizon_info = new_york->get_info(before_horizon);
 
-    const auto horizon_info = new_york->get_info(before_horizon);
-
-    if (horizon_info.end ==
-        sys_seconds{seconds{runtime::precomputed_until()}}) {
-      return 102;
-    }
-
-    stage = 103;
-    const auto winter_2600 =
-        new_york->get_info(sys_days{year{2600} / January / 15} + hours{12});
-
-    if (winter_2600.offset != hours{-5}) {
-      return 103;
-    }
-
-    if (winter_2600.save != minutes{0}) {
-      return 104;
-    }
-
-    if (winter_2600.abbrev != "EST")
-      return 105;
-
-    stage = 106;
-    const auto summer_2600 =
-        new_york->get_info(sys_days{year{2600} / July / 15} + hours{12});
-
-    if (summer_2600.offset != hours{-4}) {
-      return 106;
-    }
-
-    if (summer_2600.save != minutes{60}) {
-      return 107;
-    }
-
-    if (summer_2600.abbrev != "EDT")
-      return 108;
-
-    stage = 109;
-    const auto spring = sys_days{year{2600} / March / 9} + hours{7};
-
-    const auto spring_before = new_york->get_info(spring - seconds{1});
-
-    if (spring_before.offset != hours{-5}) {
-      return 109;
-    }
-
-    stage = 110;
-    const auto spring_at = new_york->get_info(spring);
-
-    if (spring_at.offset != hours{-4}) {
-      return 110;
-    }
-
-    if (spring_before.end != floor<seconds>(spring)) {
-      return 111;
-    }
-
-    if (spring_at.begin != floor<seconds>(spring)) {
-      return 112;
-    }
-
-    stage = 113;
-    const auto autumn = sys_days{year{2600} / November / 2} + hours{6};
-
-    const auto autumn_before = new_york->get_info(autumn - seconds{1});
-
-    if (autumn_before.offset != hours{-4}) {
-      return 113;
-    }
-
-    stage = 114;
-    const auto autumn_at = new_york->get_info(autumn);
-
-    if (autumn_at.offset != hours{-5}) {
-      return 114;
-    }
-
-    stage = 115;
-    const auto gap =
-        local_days{year{2600} / March / 9} + hours{2} + minutes{30};
-
-    const auto gap_info = new_york->get_info(gap);
-
-    if (gap_info.result != local_info::nonexistent) {
-      return 115;
-    }
-
-    if (gap_info.first.offset != hours{-5}) {
-      return 116;
-    }
-
-    if (gap_info.second.offset != hours{-4}) {
-      return 117;
-    }
-
-    stage = 118;
-    const auto overlap =
-        local_days{year{2600} / November / 2} + hours{1} + minutes{30};
-
-    const auto overlap_info = new_york->get_info(overlap);
-
-    if (overlap_info.result != local_info::ambiguous) {
-      return 118;
-    }
-
-    if (overlap_info.first.offset != hours{-4}) {
-      return 119;
-    }
-
-    if (overlap_info.second.offset != hours{-5}) {
-      return 120;
-    }
-
-    stage = 121;
-    const time_zone *const sydney = locate_zone("Australia/Sydney");
-
-    if (sydney == nullptr)
-      return 121;
-
-    stage = 122;
-    const auto sydney_january =
-        sydney->get_info(sys_days{year{2600} / January / 15} + hours{12});
-
-    if (sydney_january.offset != hours{11}) {
-      return 122;
-    }
-
-    stage = 123;
-    const auto sydney_july =
-        sydney->get_info(sys_days{year{2600} / July / 15} + hours{12});
-
-    if (sydney_july.offset != hours{10}) {
-      return 123;
-    }
-
-    stage = 124;
-    const auto winter_30000 =
-        new_york->get_info(sys_days{year{30000} / January / 15} + hours{12});
-
-    if (winter_30000.offset != hours{-5}) {
-      return 124;
-    }
-
-    stage = 125;
-    const auto summer_30000 =
-        new_york->get_info(sys_days{year{30000} / July / 15} + hours{12});
-
-    if (summer_30000.offset != hours{-4}) {
-      return 125;
-    }
-
-    stage = 126;
-    const time_zone *const utc = locate_zone("Etc/UTC");
-
-    if (utc == nullptr)
-      return 126;
-
-    stage = 127;
-    const auto utc_future = utc->get_info(sys_days{year{30000} / June / 1});
-
-    if (utc_future.offset != seconds{0}) {
-      return 127;
-    }
-
-    if (utc_future.save != minutes{0}) {
-      return 128;
-    }
-
-    return 0;
-  } catch (...) {
-    return -stage;
+  if (horizon_info.end == sys_seconds{
+                              seconds{
+                                  runtime::precomputed_until(),
+                              },
+                          }) {
+    return false;
   }
+
+  /*
+   * Ordinary post-horizon winter state.
+   */
+  const auto winter_2600 =
+      new_york->get_info(sys_days{year{2600} / January / 15} + hours{12});
+
+  if (winter_2600.offset != hours{-5})
+    return false;
+
+  if (winter_2600.save != minutes{0})
+    return false;
+
+  if (winter_2600.abbrev != "EST")
+    return false;
+
+  /*
+   * Ordinary post-horizon daylight state.
+   */
+  const auto summer_2600 =
+      new_york->get_info(sys_days{year{2600} / July / 15} + hours{12});
+
+  if (summer_2600.offset != hours{-4})
+    return false;
+
+  if (summer_2600.save != minutes{60})
+    return false;
+
+  if (summer_2600.abbrev != "EDT")
+    return false;
+
+  /*
+   * 2600-03-09 is the second Sunday in March.
+   *
+   * US daylight time begins at 02:00 standard time,
+   * which is 07:00 UTC in New York.
+   */
+  const auto spring = sys_days{year{2600} / March / 9} + hours{7};
+
+  const auto spring_before = new_york->get_info(spring - seconds{1});
+
+  const auto spring_at = new_york->get_info(spring);
+
+  if (spring_before.offset != hours{-5})
+    return false;
+
+  if (spring_at.offset != hours{-4})
+    return false;
+
+  if (spring_before.end != floor<seconds>(spring)) {
+    return false;
+  }
+
+  if (spring_at.begin != floor<seconds>(spring)) {
+    return false;
+  }
+
+  /*
+   * 2600-11-02 is the first Sunday in November.
+   *
+   * The rollback occurs at 02:00 daylight time,
+   * which is 06:00 UTC.
+   */
+  const auto autumn = sys_days{year{2600} / November / 2} + hours{6};
+
+  const auto autumn_before = new_york->get_info(autumn - seconds{1});
+
+  const auto autumn_at = new_york->get_info(autumn);
+
+  if (autumn_before.offset != hours{-4})
+    return false;
+
+  if (autumn_at.offset != hours{-5})
+    return false;
+
+  /*
+   * Future spring-forward gap.
+   */
+  const auto gap = local_days{year{2600} / March / 9} + hours{2} + minutes{30};
+
+  const auto gap_info = new_york->get_info(gap);
+
+  if (gap_info.result != local_info::nonexistent) {
+    return false;
+  }
+
+  if (gap_info.first.offset != hours{-5})
+    return false;
+
+  if (gap_info.second.offset != hours{-4})
+    return false;
+
+  /*
+   * Future fall-back overlap.
+   */
+  const auto overlap =
+      local_days{year{2600} / November / 2} + hours{1} + minutes{30};
+
+  const auto overlap_info = new_york->get_info(overlap);
+
+  if (overlap_info.result != local_info::ambiguous) {
+    return false;
+  }
+
+  if (overlap_info.first.offset != hours{-4})
+    return false;
+
+  if (overlap_info.second.offset != hours{-5})
+    return false;
+
+  /*
+   * Southern-hemisphere recurrence must carry daylight
+   * state across the calendar-year boundary.
+   */
+  const time_zone *const sydney = locate_zone("Australia/Sydney");
+
+  if (sydney == nullptr)
+    return false;
+
+  const auto sydney_january =
+      sydney->get_info(sys_days{year{2600} / January / 15} + hours{12});
+
+  if (sydney_january.offset != hours{11})
+    return false;
+
+  const auto sydney_july =
+      sydney->get_info(sys_days{year{2600} / July / 15} + hours{12});
+
+  if (sydney_july.offset != hours{10})
+    return false;
+
+  /*
+   * Exercise the 400-year Gregorian cycle reduction
+   * rather than merely replaying another century.
+   */
+  const auto winter_30000 =
+      new_york->get_info(sys_days{year{30000} / January / 15} + hours{12});
+
+  if (winter_30000.offset != hours{-5})
+    return false;
+
+  const auto summer_30000 =
+      new_york->get_info(sys_days{year{30000} / July / 15} + hours{12});
+
+  if (summer_30000.offset != hours{-4})
+    return false;
+
+  /*
+   * A constant final era extends indefinitely too.
+   */
+  const time_zone *const utc = locate_zone("Etc/UTC");
+
+  if (utc == nullptr)
+    return false;
+
+  const auto utc_future = utc->get_info(sys_days{year{30000} / June / 1});
+
+  if (utc_future.offset != seconds{0})
+    return false;
+
+  if (utc_future.save != minutes{0})
+    return false;
+
+  return true;
 }
 
 bool ftl_test() {
-  if (!(system_clock::now().time_since_epoch() > seconds{0}))
-    throw tested::runtime_error("chrono: system_clock");
+  if (!(system_clock::now().time_since_epoch() > seconds{0})) {
+    return false;
+  }
 
-  if (!(steady_clock::now().time_since_epoch() > nanoseconds{0}))
-    throw tested::runtime_error("chrono: steady_clock");
+  if (!(steady_clock::now().time_since_epoch() > nanoseconds{0})) {
+    return false;
+  }
 
   if (!chrono_duration_formatting_works())
-    throw tested::runtime_error("chrono: duration formatting");
+    return false;
 
   if (!chrono_hms_formatting_works())
-    throw tested::runtime_error("chrono: hms formatting");
+    return false;
 
   if (!chrono_format_errors_work())
-    throw tested::runtime_error("chrono: format errors");
+    return false;
 
   if (!chrono_calendar_formatting_works())
-    throw tested::runtime_error("chrono: calendar formatting");
+    return false;
 
   if (!chrono_clock_formatting_works())
-    throw tested::runtime_error("chrono: clock formatting");
+    return false;
 
   if (!chrono_tzdb_runtime_works())
-    throw tested::runtime_error("chrono: tzdb runtime");
+    return false;
 
   if (!chrono_tzdb_raw_rules_work())
-    throw tested::runtime_error("chrono: tzdb raw rules");
+    return false;
 
-  /*
-   * This function currently contains its own detailed
-   * exceptions, so don't collapse it to a generic label.
-   */
   if (!chrono_tzdb_tail_works())
-    throw tested::runtime_error("chrono: tzdb tail returned false");
+    return false;
 
   if (!chrono_time_zone_public_works())
-    throw tested::runtime_error("chrono: time_zone public");
+    return false;
 
   if (!chrono_local_info_works())
-    throw tested::runtime_error("chrono: local_info");
+    return false;
 
   if (!chrono_time_zone_conversion_works())
-    throw tested::runtime_error("chrono: time_zone conversion");
+    return false;
 
   if (!chrono_leap_second_works())
-    throw tested::runtime_error("chrono: leap seconds");
+    return false;
 
   if (!chrono_tzdb_public_works())
-    throw tested::runtime_error("chrono: tzdb public");
+    return false;
 
   if (!chrono_tzdb_list_works())
-    throw tested::runtime_error("chrono: tzdb list");
+    return false;
 
   if (!chrono_tzdb_remote_works())
-    throw tested::runtime_error("chrono: tzdb remote");
+    return false;
 
   if (!chrono_current_zone_works())
-    throw tested::runtime_error("chrono: current zone");
+    return false;
 
   return true;
 }
