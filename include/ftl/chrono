@@ -21,6 +21,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 #else
 #include <ftl/atomic>
@@ -40,6 +41,7 @@
 #include <ftl/string>
 #include <ftl/string_view>
 #include <ftl/type_traits>
+#include <ftl/utility>
 #include <ftl/vector>
 #endif
 
@@ -1248,50 +1250,11 @@ inline int leaps_before(long long unix_seconds) noexcept {
 }
 
 } // namespace chrono_detail
-struct utc_clock {
-  using rep = long long;
-  using period = nano;
-  using duration = nanoseconds;
-  using time_point = utc_time<duration>;
-
-  static constexpr bool is_steady = false;
-
-  template <class D> static auto from_sys(const sys_time<D> &t) {
-    const auto whole = duration_cast<seconds>(t.time_since_epoch()).count();
-
-    using C = common_type_t<D, seconds>;
-
-    return utc_time<C>{
-        C(t.time_since_epoch()) +
-            seconds{
-                chrono_detail::leaps_before(whole),
-            },
-    };
-  }
-
-  template <class D> static auto to_sys(const utc_time<D> &t) {
-    auto guess = duration_cast<seconds>(t.time_since_epoch()).count();
-
-    for (int iteration = 0; iteration < 2; ++iteration) {
-      guess = duration_cast<seconds>(t.time_since_epoch()).count() -
-              chrono_detail::leaps_before(guess);
-    }
-
-    using C = common_type_t<D, seconds>;
-
-    return sys_time<C>{
-        C(t.time_since_epoch()) -
-            seconds{
-                chrono_detail::leaps_before(guess),
-            },
-    };
-  }
-
-  static time_point now() { return from_sys(system_clock::now()); }
-};
-
-template <class D> leap_second_info get_leap_second_info(const utc_time<D> &t) {
-  using common_duration = common_type_t<D, seconds>;
+template <class D>
+leap_second_info get_leap_second_info(
+    const utc_time<D> &t) {
+  using common_duration =
+      common_type_t<D, seconds>;
 
   const common_duration utc{
       t.time_since_epoch(),
@@ -1299,35 +1262,45 @@ template <class D> leap_second_info get_leap_second_info(const utc_time<D> &t) {
 
   int elapsed = 0;
 
-  for (unsigned index = 0; index < detail::tzdb_runtime::leap_count();
+  for (unsigned index = 0;
+       index <
+       detail::tzdb_runtime::leap_count();
        ++index) {
-    const int value = detail::tzdb_runtime::leap_value(index);
+    const int value =
+        detail::tzdb_runtime::
+            leap_value(index);
 
-    const common_duration system_boundary{
-        seconds{
-            detail::tzdb_runtime::leap_date_seconds(index),
-        },
-    };
+    const common_duration
+        system_boundary{
+            seconds{
+                detail::tzdb_runtime::
+                    leap_date_seconds(
+                        index),
+            },
+        };
 
     if (value > 0) {
-      /*
-       * Immediately before insertion the UTC clock is ahead of sys_time
-       * by 'elapsed'. The inserted UTC interval therefore starts at:
-       *
-       *   system boundary + previous elapsed correction
-       */
       const auto leap_begin =
-          system_boundary + common_duration{seconds{elapsed}};
+          system_boundary +
+          common_duration{
+              seconds{elapsed},
+          };
 
       if (utc < leap_begin)
         break;
 
-      const auto leap_end = leap_begin + common_duration{seconds{value}};
+      const auto leap_end =
+          leap_begin +
+          common_duration{
+              seconds{value},
+          };
 
       if (utc < leap_end) {
         return {
             true,
-            seconds{elapsed + value},
+            seconds{
+                elapsed + value,
+            },
         };
       }
 
@@ -1336,12 +1309,19 @@ template <class D> leap_second_info get_leap_second_info(const utc_time<D> &t) {
     }
 
     /*
-     * A negative leap inserts no UTC interval. Once the UTC timeline
-     * reaches the post-deletion boundary, apply its correction.
+     * A negative leap inserts no UTC interval.
+     *
+     * Once UTC reaches the post-deletion boundary,
+     * the new correction is active.
      */
-    const int after = elapsed + value;
+    const int after =
+        elapsed + value;
 
-    const auto boundary = system_boundary + common_duration{seconds{after}};
+    const auto boundary =
+        system_boundary +
+        common_duration{
+            seconds{after},
+        };
 
     if (utc < boundary)
       break;
@@ -1354,6 +1334,145 @@ template <class D> leap_second_info get_leap_second_info(const utc_time<D> &t) {
       seconds{elapsed},
   };
 }
+
+struct utc_clock {
+  using rep = long long;
+  using period = nano;
+  using duration = nanoseconds;
+  using time_point =
+      utc_time<duration>;
+
+  static constexpr bool is_steady =
+      false;
+
+  template <class D>
+  static auto from_sys(
+      const sys_time<D> &t) {
+    /*
+     * Leap boundaries are integral sys seconds.
+     *
+     * floor rather than duration_cast matters for
+     * negative subsecond timestamps.
+     */
+    const auto whole =
+        floor<seconds>(t)
+            .time_since_epoch()
+            .count();
+
+    using C =
+        common_type_t<D, seconds>;
+
+    return utc_time<C>{
+        C{t.time_since_epoch()} +
+        C{
+            seconds{
+                chrono_detail::
+                    leaps_before(whole),
+            },
+        },
+    };
+  }
+
+  template <class D>
+  static auto to_sys(
+      const utc_time<D> &t) {
+    using C =
+        common_type_t<D, seconds>;
+
+    const C utc{
+        t.time_since_epoch(),
+    };
+
+    int elapsed = 0;
+
+    /*
+     * Walk the generated leap table directly.
+     *
+     * Outside a positive leap:
+     *
+     *   sys = utc - elapsed
+     *
+     * During a positive leap there is no one-to-one
+     * sys representation. N4950 requires the final
+     * representable sys value before the insertion.
+     */
+    for (unsigned index = 0;
+         index <
+         detail::tzdb_runtime::
+             leap_count();
+         ++index) {
+      const int value =
+          detail::tzdb_runtime::
+              leap_value(index);
+
+      const C system_boundary{
+          seconds{
+              detail::tzdb_runtime::
+                  leap_date_seconds(
+                      index),
+          },
+      };
+
+      if (value > 0) {
+        const C leap_begin =
+            system_boundary +
+            C{
+                seconds{elapsed},
+            };
+
+        if (utc < leap_begin)
+          break;
+
+        const C leap_end =
+            leap_begin +
+            C{
+                seconds{value},
+            };
+
+        if (utc < leap_end) {
+          /*
+           * Collapse every point inside the inserted
+           * UTC interval onto the final representable
+           * sys tick before the insertion.
+           */
+          return sys_time<C>{
+              system_boundary -
+              C{1},
+          };
+        }
+
+        elapsed += value;
+        continue;
+      }
+
+      const int after =
+          elapsed + value;
+
+      const C boundary =
+          system_boundary +
+          C{
+              seconds{after},
+          };
+
+      if (utc < boundary)
+        break;
+
+      elapsed = after;
+    }
+
+    return sys_time<C>{
+        utc -
+        C{
+            seconds{elapsed},
+        },
+    };
+  }
+
+  static time_point now() {
+    return from_sys(
+        system_clock::now());
+  }
+};
 struct tai_clock {
   using rep = long long;
   using period = nano;
@@ -1528,6 +1647,12 @@ struct local_info {
   sys_info first;
   sys_info second;
 };
+
+class time_zone;
+
+const time_zone *locate_zone(string_view name);
+
+const time_zone *current_zone();
 
 class nonexistent_local_time : public runtime_error {
 public:
@@ -1717,6 +1842,435 @@ inline bool operator==(const time_zone &left, const time_zone &right) noexcept {
 inline strong_ordering operator<=>(const time_zone &left,
                                    const time_zone &right) noexcept {
   return left.name() <=> right.name();
+}
+
+template <class T>
+struct zoned_traits {};
+
+template <>
+struct zoned_traits<
+    const time_zone *> {
+  static const time_zone *
+  default_zone() {
+    return chrono::locate_zone(
+        "UTC");
+  }
+
+  static const time_zone *
+  locate_zone(
+      string_view name) {
+    return chrono::locate_zone(
+        name);
+  }
+};
+
+namespace chrono_detail {
+
+template <class TimeZonePtrOrName>
+using time_zone_representation_t =
+    conditional_t<
+        is_convertible_v<
+            TimeZonePtrOrName,
+            string_view>,
+        const time_zone *,
+        remove_cvref_t<
+            TimeZonePtrOrName>>;
+
+} // namespace chrono_detail
+
+template <
+    class Duration,
+    class TimeZonePtr =
+        const time_zone *>
+class zoned_time {
+  static_assert(
+      chrono_detail::
+          is_duration<
+              Duration>::value);
+
+public:
+  using duration =
+      common_type_t<
+          Duration,
+          seconds>;
+
+private:
+  using traits_ =
+      zoned_traits<
+          TimeZonePtr>;
+
+public:
+  zoned_time()
+    requires requires {
+      traits_::default_zone();
+    }
+      : zone_(
+            traits_::
+                default_zone()),
+        tp_{} {}
+
+  zoned_time(
+      const zoned_time &) =
+      default;
+
+  zoned_time &
+  operator=(
+      const zoned_time &) =
+      default;
+
+  zoned_time(
+      const sys_time<
+          Duration> &st)
+    requires requires {
+      traits_::default_zone();
+    }
+      : zone_(
+            traits_::
+                default_zone()),
+        tp_(st) {}
+
+  explicit zoned_time(
+      TimeZonePtr zone)
+      : zone_(
+            move(zone)),
+        tp_{} {}
+
+  explicit zoned_time(
+      string_view name)
+    requires requires {
+      traits_::locate_zone(
+          string_view{});
+    }
+      : zone_(
+            traits_::
+                locate_zone(
+                    name)),
+        tp_{} {}
+
+  template <class Duration2>
+    requires is_convertible_v<
+        sys_time<Duration2>,
+        sys_time<Duration>>
+  zoned_time(
+      const zoned_time<
+          Duration2,
+          TimeZonePtr> &other)
+      : zone_(
+            other.
+                get_time_zone()),
+        tp_(
+            other.
+                get_sys_time()) {}
+
+  zoned_time(
+      TimeZonePtr zone,
+      const sys_time<
+          Duration> &st)
+      : zone_(
+            move(zone)),
+        tp_(st) {}
+
+  zoned_time(
+      string_view name,
+      const sys_time<
+          Duration> &st)
+    requires requires {
+      traits_::locate_zone(
+          string_view{});
+    }
+      : zoned_time(
+            traits_::
+                locate_zone(
+                    name),
+            st) {}
+
+  zoned_time(
+      TimeZonePtr zone,
+      const local_time<
+          Duration> &tp)
+    requires
+      is_convertible_v<
+          decltype(
+              declval<
+                  TimeZonePtr &>()
+                  ->to_sys(
+                      declval<
+                          const local_time<
+                              Duration> &>())),
+          sys_time<duration>>
+      : zone_(
+            move(zone)),
+        tp_(
+            zone_->
+                to_sys(tp)) {}
+
+  zoned_time(
+      string_view name,
+      const local_time<
+          Duration> &tp)
+    requires requires {
+      traits_::locate_zone(
+          string_view{});
+    }
+      : zoned_time(
+            traits_::
+                locate_zone(
+                    name),
+            tp) {}
+
+  zoned_time(
+      TimeZonePtr zone,
+      const local_time<
+          Duration> &tp,
+      choose selection)
+    requires
+      is_convertible_v<
+          decltype(
+              declval<
+                  TimeZonePtr &>()
+                  ->to_sys(
+                      declval<
+                          const local_time<
+                              Duration> &>(),
+                      choose::earliest)),
+          sys_time<duration>>
+      : zone_(
+            move(zone)),
+        tp_(
+            zone_->
+                to_sys(
+                    tp,
+                    selection)) {}
+
+  zoned_time(
+      string_view name,
+      const local_time<
+          Duration> &tp,
+      choose selection)
+    requires requires {
+      traits_::locate_zone(
+          string_view{});
+    }
+      : zoned_time(
+            traits_::
+                locate_zone(
+                    name),
+            tp,
+            selection) {}
+
+  template <
+      class Duration2,
+      class TimeZonePtr2>
+    requires is_convertible_v<
+        sys_time<Duration2>,
+        sys_time<Duration>>
+  zoned_time(
+      TimeZonePtr zone,
+      const zoned_time<
+          Duration2,
+          TimeZonePtr2> &other)
+      : zone_(
+            move(zone)),
+        tp_(
+            other.
+                get_sys_time()) {}
+
+  template <
+      class Duration2,
+      class TimeZonePtr2>
+    requires is_convertible_v<
+        sys_time<Duration2>,
+        sys_time<Duration>>
+  zoned_time(
+      TimeZonePtr zone,
+      const zoned_time<
+          Duration2,
+          TimeZonePtr2> &other,
+      choose)
+      : zoned_time(
+            move(zone),
+            other) {}
+
+  template <
+      class Duration2,
+      class TimeZonePtr2>
+  zoned_time(
+      string_view name,
+      const zoned_time<
+          Duration2,
+          TimeZonePtr2> &other)
+    requires requires {
+      traits_::locate_zone(
+          string_view{});
+    }
+      : zoned_time(
+            traits_::
+                locate_zone(
+                    name),
+            other) {}
+
+  template <
+      class Duration2,
+      class TimeZonePtr2>
+  zoned_time(
+      string_view name,
+      const zoned_time<
+          Duration2,
+          TimeZonePtr2> &other,
+      choose selection)
+    requires requires {
+      traits_::locate_zone(
+          string_view{});
+    }
+      : zoned_time(
+            traits_::
+                locate_zone(
+                    name),
+            other,
+            selection) {}
+
+  zoned_time &
+  operator=(
+      const sys_time<
+          Duration> &st) {
+    tp_ = st;
+    return *this;
+  }
+
+  zoned_time &
+  operator=(
+      const local_time<
+          Duration> &lt) {
+    tp_ =
+        zone_->
+            to_sys(lt);
+
+    return *this;
+  }
+
+  operator
+  sys_time<duration>() const {
+    return get_sys_time();
+  }
+
+  explicit operator
+  local_time<duration>() const {
+    return get_local_time();
+  }
+
+  TimeZonePtr
+  get_time_zone() const {
+    return zone_;
+  }
+
+  local_time<duration>
+  get_local_time() const {
+    return zone_->
+        to_local(tp_);
+  }
+
+  sys_time<duration>
+  get_sys_time() const {
+    return tp_;
+  }
+
+  sys_info
+  get_info() const {
+    return zone_->
+        get_info(tp_);
+  }
+
+private:
+  TimeZonePtr zone_;
+  sys_time<duration> tp_;
+};
+
+zoned_time()
+    -> zoned_time<seconds>;
+
+template <class Duration>
+zoned_time(
+    sys_time<Duration>)
+    -> zoned_time<
+        common_type_t<
+            Duration,
+            seconds>>;
+
+template <
+    class TimeZonePtrOrName>
+zoned_time(
+    TimeZonePtrOrName &&)
+    -> zoned_time<
+        seconds,
+        chrono_detail::
+            time_zone_representation_t<
+                TimeZonePtrOrName>>;
+
+template <
+    class TimeZonePtrOrName,
+    class Duration>
+zoned_time(
+    TimeZonePtrOrName &&,
+    sys_time<Duration>)
+    -> zoned_time<
+        common_type_t<
+            Duration,
+            seconds>,
+        chrono_detail::
+            time_zone_representation_t<
+                TimeZonePtrOrName>>;
+
+template <
+    class TimeZonePtrOrName,
+    class Duration>
+zoned_time(
+    TimeZonePtrOrName &&,
+    local_time<Duration>,
+    choose =
+        choose::earliest)
+    -> zoned_time<
+        common_type_t<
+            Duration,
+            seconds>,
+        chrono_detail::
+            time_zone_representation_t<
+                TimeZonePtrOrName>>;
+
+template <
+    class Duration,
+    class TimeZonePtrOrName,
+    class TimeZonePtr2>
+zoned_time(
+    TimeZonePtrOrName &&,
+    zoned_time<
+        Duration,
+        TimeZonePtr2>,
+    choose =
+        choose::earliest)
+    -> zoned_time<
+        common_type_t<
+            Duration,
+            seconds>,
+        chrono_detail::
+            time_zone_representation_t<
+                TimeZonePtrOrName>>;
+
+template <
+    class Duration1,
+    class Duration2,
+    class TimeZonePtr>
+bool operator==(
+    const zoned_time<
+        Duration1,
+        TimeZonePtr> &left,
+    const zoned_time<
+        Duration2,
+        TimeZonePtr> &right) {
+  return
+      left.get_time_zone() ==
+          right.get_time_zone() &&
+      left.get_sys_time() ==
+          right.get_sys_time();
 }
 
 class time_zone_link {

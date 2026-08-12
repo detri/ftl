@@ -553,32 +553,6 @@ bool state_from_rule(const runtime::era_definition &era,
   return result.letters != nullptr;
 }
 
-bool analyze_rule_set(const runtime::rule_set_definition &set,
-                      long long horizon_year, rule_analysis &result) noexcept {
-  if (!set)
-    return false;
-
-  result.has_max = false;
-  result.settle_year = horizon_year;
-
-  result.last_finite_year = horizon_year - 1;
-
-  for (unsigned index = 0; index < set.rule_count; ++index) {
-    const auto rule = runtime::rule_set_rule_at(
-        set.rule_begin == runtime::invalid_index ? runtime::invalid_index : 0,
-        0);
-
-    (void)rule;
-  }
-
-  /*
-   * rule_set_rule_at takes a rule-set index rather
-   * than a rule_set_definition. This helper is filled
-   * by analyze_rule_set_index below.
-   */
-  return true;
-}
-
 bool analyze_rule_set_index(unsigned rule_set_index, long long horizon_year,
                             rule_analysis &result) noexcept {
   const auto set = runtime::rule_set_at(rule_set_index);

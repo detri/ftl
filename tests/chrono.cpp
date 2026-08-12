@@ -2141,6 +2141,406 @@ bool chrono_tzdb_tail_works() {
   return true;
 }
 
+bool chrono_utc_subsecond_leap_works() {
+  /*
+   * The final generated positive leap is inserted
+   * at 2017-01-01 00:00:00 sys time.
+   *
+   * Before insertion UTC has accumulated 26 seconds,
+   * so the inserted UTC second is:
+   *
+   *   [1483228826, 1483228827)
+   */
+  const utc_time<milliseconds> leap_begin{
+      milliseconds{
+          1483228826000LL,
+      },
+  };
+
+  const utc_time<milliseconds> leap_middle{
+      milliseconds{
+          1483228826500LL,
+      },
+  };
+
+  const utc_time<milliseconds> leap_end{
+      milliseconds{
+          1483228827000LL,
+      },
+  };
+
+  /*
+   * Every point inside the inserted UTC second maps
+   * to the last representable millisecond before the
+   * system-clock insertion boundary.
+   */
+  const auto expected_last = sys_time<milliseconds>{
+      milliseconds{
+          1483228799999LL,
+      },
+  };
+
+  if (utc_clock::to_sys(leap_begin) != expected_last) {
+    return false;
+  }
+
+  if (utc_clock::to_sys(leap_middle) != expected_last) {
+    return false;
+  }
+
+  /*
+   * The first UTC tick after the leap maps normally
+   * onto the insertion boundary itself.
+   */
+  if (utc_clock::to_sys(leap_end) != sys_time<milliseconds>{
+                                         milliseconds{
+                                             1483228800000LL,
+                                         },
+                                     }) {
+    return false;
+  }
+
+  /*
+   * from_sys preserves the discontinuity.
+   */
+  if (utc_clock::from_sys(expected_last) != utc_time<milliseconds>{
+                                                milliseconds{
+                                                    1483228825999LL,
+                                                },
+                                            }) {
+    return false;
+  }
+
+  if (utc_clock::from_sys(sys_time<milliseconds>{
+          milliseconds{
+              1483228800000LL,
+          },
+      }) != leap_end) {
+    return false;
+  }
+
+  return true;
+}
+
+bool chrono_zoned_time_works() {
+  const time_zone *const utc = locate_zone("UTC");
+
+  const time_zone *const new_york = locate_zone("America/New_York");
+
+  if (utc == nullptr || new_york == nullptr) {
+    return false;
+  }
+
+  /*
+   * Default construction uses zoned_traits'
+   * default zone.
+   */
+  zoned_time default_value;
+
+  if (default_value.get_time_zone() != utc) {
+    return false;
+  }
+
+  if (default_value.get_sys_time() != sys_seconds{}) {
+    return false;
+  }
+
+  /*
+   * Construct from sys_time with the default zone.
+   */
+  const sys_seconds source{
+      seconds{
+          1719849600LL,
+      },
+  };
+
+  zoned_time default_sys{
+      source,
+  };
+
+  if (default_sys.get_time_zone() != utc) {
+    return false;
+  }
+
+  if (default_sys.get_sys_time() != source) {
+    return false;
+  }
+
+  /*
+   * Explicit zone + sys_time.
+   */
+  zoned_time new_york_sys{
+      new_york,
+      source,
+  };
+
+  if (new_york_sys.get_time_zone() != new_york) {
+    return false;
+  }
+
+  if (new_york_sys.get_sys_time() != source) {
+    return false;
+  }
+
+  if (new_york_sys.get_local_time() != local_seconds{
+                                           seconds{
+                                               1719835200LL,
+                                           },
+                                       }) {
+    return false;
+  }
+
+  const auto summer_info = new_york_sys.get_info();
+
+  if (summer_info.offset != hours{-4}) {
+    return false;
+  }
+
+  if (summer_info.save != minutes{60}) {
+    return false;
+  }
+
+  if (summer_info.abbrev != "EDT") {
+    return false;
+  }
+
+  /*
+   * Name-based construction.
+   */
+  zoned_time named{
+      "America/New_York",
+      source,
+  };
+
+  if (named.get_time_zone() != new_york) {
+    return false;
+  }
+
+  if (!(named == new_york_sys))
+    return false;
+
+  /*
+   * Unique local-time construction.
+   */
+  const local_seconds summer_local{
+      seconds{
+          1719835200LL,
+      },
+  };
+
+  zoned_time from_local{
+      new_york,
+      summer_local,
+  };
+
+  if (from_local.get_sys_time() != source) {
+    return false;
+  }
+
+  /*
+   * Conversion operators.
+   */
+  if (static_cast<sys_seconds>(from_local) != source) {
+    return false;
+  }
+
+  if (static_cast<local_seconds>(from_local) != summer_local) {
+    return false;
+  }
+
+  /*
+   * Assignment preserves the zone.
+   */
+  zoned_time assigned{
+      new_york,
+  };
+
+  assigned = source;
+
+  if (assigned.get_time_zone() != new_york) {
+    return false;
+  }
+
+  if (assigned.get_sys_time() != source) {
+    return false;
+  }
+
+  assigned = summer_local;
+
+  if (assigned.get_time_zone() != new_york) {
+    return false;
+  }
+
+  if (assigned.get_sys_time() != source) {
+    return false;
+  }
+
+  /*
+   * Nonexistent local time throws without choose.
+   */
+  const local_seconds gap{
+      seconds{
+          1710037800LL,
+      },
+  };
+
+  try {
+    zoned_time invalid{
+        new_york,
+        gap,
+    };
+
+    (void)invalid;
+    return false;
+  } catch (const nonexistent_local_time &) {
+  } catch (...) {
+    return false;
+  }
+
+  /*
+   * choose collapses the gap onto the transition.
+   */
+  zoned_time gap_earliest{
+      new_york,
+      gap,
+      choose::earliest,
+  };
+
+  zoned_time gap_latest{
+      new_york,
+      gap,
+      choose::latest,
+  };
+
+  if (gap_earliest.get_sys_time() != sys_seconds{
+                                         seconds{
+                                             1710054000LL,
+                                         },
+                                     }) {
+    return false;
+  }
+
+  if (gap_latest.get_sys_time() != gap_earliest.get_sys_time()) {
+    return false;
+  }
+
+  /*
+   * Ambiguous local time selects distinct system
+   * interpretations.
+   */
+  const local_seconds overlap{
+      seconds{
+          1730597400LL,
+      },
+  };
+
+  try {
+    zoned_time invalid{
+        new_york,
+        overlap,
+    };
+
+    (void)invalid;
+    return false;
+  } catch (const ambiguous_local_time &) {
+  } catch (...) {
+    return false;
+  }
+
+  zoned_time overlap_earliest{
+      new_york,
+      overlap,
+      choose::earliest,
+  };
+
+  zoned_time overlap_latest{
+      new_york,
+      overlap,
+      choose::latest,
+  };
+
+  if (overlap_earliest.get_sys_time() != sys_seconds{
+                                             seconds{
+                                                 1730611800LL,
+                                             },
+                                         }) {
+    return false;
+  }
+
+  if (overlap_latest.get_sys_time() != sys_seconds{
+                                           seconds{
+                                               1730615400LL,
+                                           },
+                                       }) {
+    return false;
+  }
+
+  /*
+   * Re-zoning a zoned_time preserves its system
+   * time. choose has no effect for this constructor.
+   */
+  zoned_time rezoned{
+      utc,
+      overlap_earliest,
+  };
+
+  if (rezoned.get_time_zone() != utc) {
+    return false;
+  }
+
+  if (rezoned.get_sys_time() != overlap_earliest.get_sys_time()) {
+    return false;
+  }
+
+  zoned_time rezoned_choose{
+      utc,
+      overlap_earliest,
+      choose::latest,
+  };
+
+  if (rezoned_choose.get_sys_time() != rezoned.get_sys_time()) {
+    return false;
+  }
+
+  /*
+   * Future tail integration through zoned_time.
+   */
+  zoned_time future{
+      "America/New_York",
+      sys_days{year{2600} / July / 15} + hours{12},
+  };
+
+  if (future.get_info().offset != hours{-4}) {
+    return false;
+  }
+
+  if (future.get_info().save != minutes{60}) {
+    return false;
+  }
+
+  /*
+   * CTAD.
+   */
+  static_assert(tested::is_same_v<decltype(zoned_time{
+                                      sys_seconds{},
+                                  }),
+                                  zoned_time<seconds>>);
+
+  static_assert(tested::is_same_v<decltype(zoned_time{
+                                      "America/New_York",
+                                      sys_seconds{},
+                                  }),
+                                  zoned_time<seconds, const time_zone *>>);
+
+  static_assert(tested::is_same_v<decltype(zoned_time{
+                                      new_york,
+                                      sys_seconds{},
+                                  }),
+                                  zoned_time<seconds, const time_zone *>>);
+
+  return true;
+}
+
 bool ftl_test() {
   if (!(system_clock::now().time_since_epoch() > seconds{0})) {
     return false;
@@ -2174,6 +2574,9 @@ bool ftl_test() {
   if (!chrono_tzdb_tail_works())
     return false;
 
+  if (!chrono_zoned_time_works())
+    return false;
+
   if (!chrono_time_zone_public_works())
     return false;
 
@@ -2184,6 +2587,9 @@ bool ftl_test() {
     return false;
 
   if (!chrono_leap_second_works())
+    return false;
+
+  if (!chrono_utc_subsecond_leap_works())
     return false;
 
   if (!chrono_tzdb_public_works())
