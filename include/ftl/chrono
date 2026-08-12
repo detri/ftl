@@ -2111,7 +2111,43 @@ inline const time_zone *locate_zone(string_view name) {
   return get_tzdb().locate_zone(name);
 }
 
-inline const time_zone *current_zone() { return get_tzdb().current_zone(); }
+inline const time_zone *current_zone() {
+  return get_tzdb().current_zone();
+}
+
+inline string remote_version() {
+  /*
+   * FTL ships a deterministic vendored tzdb snapshot.
+   *
+   * Until an optional hosted update source exists, that snapshot is also
+   * the newest remote database known to the implementation.
+   */
+  return string{detail::tzdb_runtime::version()};
+}
+
+inline const tzdb &reload_tzdb() {
+  tzdb_list &list = get_tzdb_list();
+
+  /*
+   * The implementation currently has no independently updated remote
+   * database. If the bundled version is already at the front, the standard
+   * specifies that reload_tzdb() has no effects.
+   */
+  if (list.front().version == remote_version())
+    return list.front();
+
+  /*
+   * Keep this branch real rather than unreachable-by-construction.
+   *
+   * If the list somehow contains an older database while the compiled
+   * snapshot is newer, reconstruct the compiled database and prepend it.
+   */
+  chrono_detail::tzdb_list_factory::push_front(
+      list,
+      chrono_detail::tzdb_factory::make());
+
+  return list.front();
+}
 
 namespace literals {
 inline namespace chrono_literals {

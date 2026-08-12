@@ -1543,6 +1543,82 @@ bool chrono_tzdb_list_works() {
   return true;
 }
 
+bool chrono_tzdb_remote_works() {
+  tzdb_list &list = get_tzdb_list();
+
+  /*
+   * FTL's deterministic remote database is currently the same vendored
+   * snapshot used to initialize the local database.
+   */
+  if (remote_version() != "2026c")
+    return false;
+
+  if (remote_version() != get_tzdb().version)
+    return false;
+
+  /*
+   * Capture every identity that reload_tzdb() must preserve when the
+   * versions are already equal.
+   */
+  const tzdb *const database_before = &get_tzdb();
+
+  const time_zone *const new_york_before = locate_zone("America/New_York");
+
+  const auto begin_before = list.begin();
+
+  auto after_before = begin_before;
+  ++after_before;
+
+  /*
+   * With equal local/remote versions reload_tzdb() has no effects.
+   */
+  const tzdb &reloaded = reload_tzdb();
+
+  if (&reloaded != database_before)
+    return false;
+
+  if (&get_tzdb() != database_before)
+    return false;
+
+  if (&list.front() != database_before)
+    return false;
+
+  /*
+   * Existing pointers into the database remain valid.
+   */
+  if (locate_zone("America/New_York") != new_york_before)
+    return false;
+
+  if (new_york_before->name() != "America/New_York")
+    return false;
+
+  /*
+   * No second database was inserted.
+   */
+  const auto begin_after = list.begin();
+
+  if (begin_after != begin_before)
+    return false;
+
+  auto after_after = begin_after;
+  ++after_after;
+
+  if (after_after != list.end())
+    return false;
+
+  if (after_before != list.end())
+    return false;
+
+  /*
+   * Repeated reloads remain idempotent while the remote version does not
+   * change.
+   */
+  if (&reload_tzdb() != database_before)
+    return false;
+
+  return true;
+}
+
 bool ftl_test() {
   if (!(system_clock::now().time_since_epoch() > seconds{0})) {
     return false;
@@ -1588,5 +1664,9 @@ bool ftl_test() {
   if (!chrono_tzdb_list_works())
     return false;
 
+  if (!chrono_tzdb_remote_works())
+    return false;
+
   return true;
 }
+using
