@@ -462,9 +462,11 @@ constexpr void swap(T& left, T& right)
 
 template<class T, size_t N>
 constexpr void swap(T (&left)[N], T (&right)[N])
-    noexcept(noexcept(swap(left[0], right[0]))) {
-    for (size_t i = 0; i < N; ++i)
+    noexcept(detail::type_traits_nothrow_swappable_v<T>)
+    requires detail::type_traits_swappable_v<T> {
+    for (size_t i = 0; i < N; ++i) {
         swap(left[i], right[i]);
+    }
 }
 
 template<class T, class U = T>

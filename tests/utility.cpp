@@ -31,24 +31,23 @@ static_assert(tested::is_same_v<tested::make_index_sequence<3>,
 
 constexpr int forward_like_value = 4;
 static_assert(tested::is_same_v<
-              decltype(tested::forward_like<const int&>(forward_like_value)),
-              const int&>);
+              decltype(tested::forward_like<const int &>(forward_like_value)),
+              const int &>);
 static_assert(tested::is_same_v<decltype(tested::move(forward_like_value)),
-                                const int&&>);
+                                const int &&>);
 static_assert(tested::is_same_v<decltype(tested::as_const(forward_like_value)),
-                                const int&>);
-static_assert(tested::is_same_v<decltype(tested::declval<int&>()), int&>);
+                                const int &>);
+static_assert(tested::is_same_v<decltype(tested::declval<int &>()), int &>);
 
 struct throwing_move {
-    throwing_move(const throwing_move&) noexcept = default;
-    throwing_move(throwing_move&&) noexcept(false) {}
+  throwing_move(const throwing_move &) noexcept = default;
+  throwing_move(throwing_move &&) noexcept(false) {}
 };
-static_assert(tested::is_same_v<
-              decltype(tested::move_if_noexcept(
-                  tested::declval<throwing_move&>())),
-              const throwing_move&>);
-static_assert(tested::is_same_v<decltype(tested::in_place),
-                                const tested::in_place_t>);
+static_assert(tested::is_same_v<decltype(tested::move_if_noexcept(
+                                    tested::declval<throwing_move &>())),
+                                const throwing_move &>);
+static_assert(
+    tested::is_same_v<decltype(tested::in_place), const tested::in_place_t>);
 static_assert(tested::is_same_v<decltype(tested::in_place_type<int>),
                                 const tested::in_place_type_t<int>>);
 static_assert(tested::is_same_v<decltype(tested::in_place_index<1>),
@@ -56,35 +55,50 @@ static_assert(tested::is_same_v<decltype(tested::in_place_index<1>),
 static_assert(tested::is_same_v<decltype(tested::piecewise_construct),
                                 const tested::piecewise_construct_t>);
 static_assert(tested::tuple_size_v<tested::pair<int, long>> == 2);
-static_assert(tested::is_same_v<
-              tested::tuple_element_t<1, const tested::pair<int, long>>,
-              const long>);
-static_assert(tested::is_same_v<
-              tested::common_type_t<tested::pair<int, short>,
-                                    tested::pair<long, int>>,
-              tested::pair<long, int>>);
-static_assert(tested::is_constructible_v<tested::pair<int&, int&>,
-                                         tested::pair<int, int>&>);
-static_assert(!tested::is_constructible_v<tested::pair<int&, int&>,
-                                          const tested::pair<int, int>&>);
+static_assert(
+    tested::is_same_v<tested::tuple_element_t<1, const tested::pair<int, long>>,
+                      const long>);
+static_assert(tested::is_same_v<tested::common_type_t<tested::pair<int, short>,
+                                                      tested::pair<long, int>>,
+                                tested::pair<long, int>>);
+static_assert(tested::is_constructible_v<tested::pair<int &, int &>,
+                                         tested::pair<int, int> &>);
+static_assert(!tested::is_constructible_v<tested::pair<int &, int &>,
+                                          const tested::pair<int, int> &>);
 
 constexpr bool pair_works() {
-    tested::pair<int, long> first{1, 2};
-    tested::get<long>(first) = 4;
-    tested::pair<long, long> second = first;
-    tested::get<0>(second) = 3;
-    auto made = tested::make_pair(5L, 6L);
-    tested::swap(second, made);
-    return second == tested::pair<long, long>{5, 6} &&
-           made == tested::pair<long, long>{3, 4} &&
-           second > made;
+  tested::pair<int, long> first{1, 2};
+  tested::get<long>(first) = 4;
+  tested::pair<long, long> second = first;
+  tested::get<0>(second) = 3;
+  auto made = tested::make_pair(5L, 6L);
+  tested::swap(second, made);
+  return second == tested::pair<long, long>{5, 6} &&
+         made == tested::pair<long, long>{3, 4} && second > made;
 }
 static_assert(pair_works());
 
 constexpr bool utility_works() {
-    int a = 1, b = 2;
-    tested::swap(a, b);
-    return a == 2 && b == 1 && tested::exchange(a, 3) == 2 && a == 3;
+  int a = 1;
+  int b = 2;
+
+  tested::swap(a, b);
+
+  if (a != 2 || b != 1) {
+    return false;
+  }
+
+  int left[3] = {1, 2, 3};
+  int right[3] = {4, 5, 6};
+
+  tested::swap(left, right);
+
+  if (left[0] != 4 || left[1] != 5 || left[2] != 6 || right[0] != 1 ||
+      right[1] != 2 || right[2] != 3) {
+    return false;
+  }
+
+  return tested::exchange(a, 3) == 2 && a == 3;
 }
 
 static_assert(utility_works());
