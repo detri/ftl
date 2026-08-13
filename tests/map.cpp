@@ -50,8 +50,31 @@ static_assert(!probe_findable<tested::map<int, int>>);
 static_assert(probe_erasable<tested::map<int, int, transparent_compare>>);
 static_assert(!noexcept(tested::declval<tested::map<int, int, throwing_compare> &>() =
                         tested::declval<tested::map<int, int, throwing_compare> &&>()));
+static_assert(tested::is_same_v<
+    typename tested::map<int, int, tested::less<int>>::node_type,
+    typename tested::multimap<int, int, tested::greater<int>>::node_type>);
+static_assert(!tested::is_constructible_v<
+    typename tested::map<int, int>::value_compare, tested::less<int>>);
+static_assert(!tested::is_invocable_v<
+    typename tested::map<int, int>::value_compare, int, int>);
+using deduced_map = decltype(tested::map(
+    tested::declval<tested::pair<const int, int> *>(),
+    tested::declval<tested::pair<const int, int> *>(),
+    tested::declval<tested::allocator<tested::pair<const int, int>>>()));
+static_assert(tested::is_same_v<deduced_map, tested::map<int, int>>);
 
 bool ftl_test() {
+  {
+    tested::multimap<int, int, tested::greater<int>> source{
+        {3, 30}, {2, 20}, {2, 21}, {1, 10}};
+    tested::map<int, int> destination{{2, 99}};
+    destination.merge(source);
+    if (destination.size() != 3 || destination.at(1) != 10 ||
+        destination.at(2) != 99 || destination.at(3) != 30 ||
+        source.count(2) != 2)
+      return false;
+  }
+
   tested::map<int, int> values{{3, 30}, {1, 10}, {2, 20}, {2, 99}};
   if (values.size() != 3 || values.begin()->first != 1 || values.at(3) != 30)
     return false;

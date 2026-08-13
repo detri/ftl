@@ -6,6 +6,21 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+struct immovable {
+    int number;
+    constexpr explicit immovable(int input) : number(input) {}
+    immovable(const immovable&) = delete;
+    immovable(immovable&&) = delete;
+};
+
+struct throwing_move {
+    throwing_move() = default;
+    throwing_move(const throwing_move&) = default;
+    throwing_move(throwing_move&&) noexcept(false) {}
+    throwing_move& operator=(throwing_move&&) = default;
+    friend void swap(throwing_move&, throwing_move&) noexcept {}
+};
+
 constexpr bool expected_works() {
     tested::expected<int, int> value = 3;
     auto doubled = value.transform([](int x) { return x * 2; });
@@ -22,7 +37,20 @@ constexpr bool expected_works() {
            void_mapped == 8 && void_chained == 9;
 }
 
+constexpr bool immovable_monadic_results_work() {
+    tested::expected<int, int> value(4);
+    auto mapped = value.transform([](int x) { return immovable{x}; });
+    tested::expected<int, int> error(tested::unexpect, 5);
+    auto mapped_error = error.transform_error(
+        [](int x) { return immovable{x}; });
+    return mapped->number == 4 && mapped_error.error().number == 5;
+}
+
 static_assert(expected_works());
+static_assert(immovable_monadic_results_work());
+static_assert(noexcept(tested::declval<tested::expected<int, int>&>().emplace(1)));
+static_assert(!tested::is_swappable_v<
+              tested::expected<throwing_move, throwing_move>>);
 static_assert(tested::expected<int, int>{3} == 3);
 static_assert(tested::expected<int, int>{tested::unexpected(2)} == tested::unexpected(2));
 static_assert(tested::is_trivially_copyable_v<tested::expected<int, int>>);

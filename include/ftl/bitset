@@ -68,6 +68,8 @@ public:
   class reference {
     friend class bitset;
 
+    constexpr reference() noexcept = default;
+
     constexpr reference(bitset &owner, size_t position) noexcept
         : owner_(&owner), position_(position) {}
 
@@ -161,9 +163,6 @@ public:
   }
 
   template <class Character>
-    requires(!is_array_v<Character> && is_trivially_copyable_v<Character> &&
-             is_standard_layout_v<Character> &&
-             is_trivially_default_constructible_v<Character>)
   constexpr explicit bitset(
       const Character *value,
       typename basic_string_view<Character>::size_type count =
@@ -411,31 +410,42 @@ basic_istream<Character, Traits> &operator>>(basic_istream<Character, Traits> &i
   if (!guard)
     return input;
 
-  basic_string<Character, Traits> characters;
-  auto *buffer = input.rdbuf();
-  const Character zero = input.widen('0');
-  const Character one = input.widen('1');
-  typename basic_istream<Character, Traits>::iostate state =
-      basic_istream<Character, Traits>::goodbit;
-  while (characters.size() < N) {
-    const typename Traits::int_type current = buffer->sgetc();
-    if (Traits::eq_int_type(current, Traits::eof())) {
-      state |= basic_istream<Character, Traits>::eofbit;
-      break;
+  try {
+    basic_string<Character, Traits> characters;
+    auto *buffer = input.rdbuf();
+    const Character zero = input.widen('0');
+    const Character one = input.widen('1');
+    typename basic_istream<Character, Traits>::iostate state =
+        basic_istream<Character, Traits>::goodbit;
+    while (characters.size() < N) {
+      const typename Traits::int_type current = buffer->sgetc();
+      if (Traits::eq_int_type(current, Traits::eof())) {
+        state |= basic_istream<Character, Traits>::eofbit;
+        break;
+      }
+      const Character character = Traits::to_char_type(current);
+      if (!Traits::eq(character, zero) && !Traits::eq(character, one))
+        break;
+      characters.push_back(character);
+      static_cast<void>(buffer->sbumpc());
     }
-    const Character character = Traits::to_char_type(current);
-    if (!Traits::eq(character, zero) && !Traits::eq(character, one))
-      break;
-    characters.push_back(character);
-    static_cast<void>(buffer->sbumpc());
-  }
 
-  if constexpr (N != 0)
-    if (characters.empty())
-      state |= basic_istream<Character, Traits>::failbit;
-  value = bitset<N>(characters);
-  if (state != basic_istream<Character, Traits>::goodbit)
-    input.setstate(state);
+    if constexpr (N != 0)
+      if (characters.empty())
+        state |= basic_istream<Character, Traits>::failbit;
+    value = bitset<N>(characters);
+    if (state != basic_istream<Character, Traits>::goodbit)
+      input.setstate(state);
+  } catch (...) {
+    const bool rethrow =
+        (input.exceptions() & basic_istream<Character, Traits>::badbit) != 0;
+    try {
+      input.setstate(basic_istream<Character, Traits>::badbit);
+    } catch (...) {
+    }
+    if (rethrow)
+      throw;
+  }
   return input;
 }
 

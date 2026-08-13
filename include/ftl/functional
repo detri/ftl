@@ -4,6 +4,7 @@
 #define FTL_FUNCTIONAL_HEADER
 
 #ifdef FTL_REPLACE_STL
+#include <cmath>
 #include <compare>
 #include <detail/rapidhash>
 #include <exception>
@@ -14,6 +15,7 @@
 #include <typeinfo>
 #include <utility>
 #else
+#include <ftl/cmath>
 #include <ftl/compare>
 #include <ftl/detail/rapidhash>
 #include <ftl/exception>
@@ -639,6 +641,40 @@ public:
     return call(*this, args, index_sequence_for<Bound...>{});
   }
 };
+
+template <class R, class F, class... Bound> class bind_r_t {
+  F function;
+  tuple<Bound...> bound;
+
+  template <class Self, class Tuple, size_t... I>
+  static constexpr R call(Self &self, Tuple &args, index_sequence<I...>) {
+    return invoke_r<R>(self.function,
+                       bind_resolve(get<I>(self.bound), args)...);
+  }
+
+public:
+  template <class G, class... A>
+  constexpr bind_r_t(G &&f, A &&...a)
+      : function(forward<G>(f)), bound(forward<A>(a)...) {}
+
+  template <class... A>
+    requires is_invocable_r_v<R, F &, decltype(bind_resolve(
+                                      declval<Bound &>(),
+                                      declval<tuple<A &&...> &>()))...>
+  constexpr R operator()(A &&...a) {
+    auto args = forward_as_tuple(forward<A>(a)...);
+    return call(*this, args, index_sequence_for<Bound...>{});
+  }
+
+  template <class... A>
+    requires is_invocable_r_v<R, const F &, decltype(bind_resolve(
+                                            declval<const Bound &>(),
+                                            declval<tuple<A &&...> &>()))...>
+  constexpr R operator()(A &&...a) const {
+    auto args = forward_as_tuple(forward<A>(a)...);
+    return call(*this, args, index_sequence_for<Bound...>{});
+  }
+};
 } // namespace detail
 template <class F, class... A> constexpr auto bind(F &&function, A &&...args) {
   return detail::bind_t<decay_t<F>, decay_t<A>...>(forward<F>(function),
@@ -646,10 +682,13 @@ template <class F, class... A> constexpr auto bind(F &&function, A &&...args) {
 }
 template <class R, class F, class... A>
 constexpr auto bind(F &&function, A &&...args) {
-  return bind(forward<F>(function), forward<A>(args)...);
+  return detail::bind_r_t<R, decay_t<F>, decay_t<A>...>(
+      forward<F>(function), forward<A>(args)...);
 }
 template <class F, class... A>
 struct is_bind_expression<detail::bind_t<F, A...>> : true_type {};
+template <class R, class F, class... A>
+struct is_bind_expression<detail::bind_r_t<R, F, A...>> : true_type {};
 
 template <class Member> class mem_fn_t {
 public:
@@ -682,7 +721,9 @@ template <class R, class... Args> class function<R(Args...)> {
   }
   struct erased {
     virtual ~erased() = default;
-    virtual erased *clone() const = 0;
+    virtual erased *clone(void *inline_storage) const = 0;
+    virtual erased *move_to(void *inline_storage) = 0;
+    virtual void destroy_inline() noexcept = 0;
     virtual R call(Args &&...) = 0;
 #if FTL_HAS_RTTI
     virtual const type_info &type() const noexcept = 0;
@@ -692,9 +733,20 @@ template <class R, class... Args> class function<R(Args...)> {
     virtual const void *address() const noexcept = 0;
   };
   template <class F> struct model final : erased {
+    static constexpr bool stored_inline =
+        is_pointer_v<F> || detail::is_reference_wrapper_v<F>;
     F value;
     template <class G> explicit model(G &&object) : value(forward<G>(object)) {}
-    erased *clone() const override { return new model(value); }
+    erased *clone(void *inline_storage) const override {
+      if constexpr (stored_inline)
+        return ::new (inline_storage) model(value);
+      else
+        return new model(value);
+    }
+    erased *move_to(void *inline_storage) override {
+      return ::new (inline_storage) model(move(value));
+    }
+    void destroy_inline() noexcept override { this->~model(); }
     R call(Args &&...args) override {
       return invoke_r<R>(value, forward<Args>(args)...);
     }
@@ -705,39 +757,73 @@ template <class R, class... Args> class function<R(Args...)> {
     void *address() noexcept override { return &value; }
     const void *address() const noexcept override { return &value; }
   };
+  alignas(void *) unsigned char inline_storage_[2 * sizeof(void *)]{};
   erased *target_ = nullptr;
+
+  [[nodiscard]] bool has_inline_target() const noexcept {
+    return target_ == reinterpret_cast<const erased *>(inline_storage_);
+  }
+
+  void destroy_target() noexcept {
+    if (!target_)
+      return;
+    if (has_inline_target())
+      target_->destroy_inline();
+    else
+      delete target_;
+    target_ = nullptr;
+  }
+
+  void move_from(function &other) noexcept {
+    if (!other.target_)
+      return;
+    if (other.has_inline_target()) {
+      target_ = other.target_->move_to(inline_storage_);
+      other.target_->destroy_inline();
+      other.target_ = nullptr;
+    } else {
+      target_ = exchange(other.target_, nullptr);
+    }
+  }
 
 public:
   using result_type = R;
   function() noexcept = default;
   function(nullptr_t) noexcept {}
   function(const function &other)
-      : target_(other.target_ ? other.target_->clone() : nullptr) {}
-  function(function &&other) noexcept
-      : target_(exchange(other.target_, nullptr)) {}
+      : target_(other.target_ ? other.target_->clone(inline_storage_) : nullptr) {}
+  function(function &&other) noexcept { move_from(other); }
   template <class F>
     requires(!is_same_v<remove_cvref_t<F>, function>) &&
             is_copy_constructible_v<decay_t<F>> &&
+            is_constructible_v<decay_t<F>, F> &&
             is_invocable_r_v<R, decay_t<F> &, Args...>
   function(F &&value) {
     using T = decay_t<F>;
     if constexpr (is_pointer_v<T> || is_member_pointer_v<T>)
       if (!value)
         return;
-    target_ = new model<T>(forward<F>(value));
+    if constexpr (model<T>::stored_inline) {
+      static_assert(sizeof(model<T>) <= sizeof(inline_storage_));
+      static_assert(alignof(model<T>) <= alignof(void *));
+      target_ = ::new (static_cast<void *>(inline_storage_))
+          model<T>(forward<F>(value));
+    } else {
+      target_ = new model<T>(forward<F>(value));
+    }
   }
-  ~function() { delete target_; }
+  ~function() { destroy_target(); }
   function &operator=(const function &other) {
     function(other).swap(*this);
     return *this;
   }
   function &operator=(function &&other) noexcept {
-    function(move(other)).swap(*this);
+    destroy_target();
+    move_from(other);
     return *this;
   }
   function &operator=(nullptr_t) noexcept {
-    delete target_;
-    target_ = nullptr;
+    destroy_target();
     return *this;
   }
   template <class F> function &operator=(F &&value) {
@@ -749,9 +835,11 @@ public:
     return *this;
   }
   void swap(function &other) noexcept {
-    auto *value = target_;
-    target_ = other.target_;
-    other.target_ = value;
+    if (this == &other)
+      return;
+    function temporary(move(*this));
+    move_from(other);
+    other.move_from(temporary);
   }
   explicit operator bool() const noexcept { return target_ != nullptr; }
   R operator()(Args... args) const {
@@ -764,11 +852,13 @@ public:
     }
     return target_->call(forward<Args>(args)...);
   }
-#if FTL_HAS_RTTI
   const type_info &target_type() const noexcept {
+#if FTL_HAS_RTTI
     return target_ ? target_->type() : typeid(void);
-  }
+#else
+    terminate();
 #endif
+  }
   template <class T> T *target() noexcept {
     using U = remove_cv_t<T>;
 
@@ -829,6 +919,9 @@ FTL_DETAIL_FUNCTION_GUIDE(const volatile && noexcept);
 #undef FTL_DETAIL_FUNCTION_GUIDE
 } // namespace detail
 template <class R, class... A> function(R (*)(A...)) -> function<R(A...)>;
+template <class R, class... A> struct detail::function_guide<R (*)(A...)> {
+  using type = R(A...);
+};
 template <class F>
 function(F) -> function<
     typename detail::function_guide<decltype(&F::operator())>::type>;
@@ -1038,7 +1131,8 @@ inline size_t rapid_hash_object(const void *object, size_t length) noexcept {
 } // namespace detail
 
 template <class T>
-  requires(is_integral_v<T> || is_enum_v<T>)
+  requires(is_same_v<T, remove_cv_t<T>> &&
+           (is_integral_v<T> || is_enum_v<T>))
 struct hash<T> {
   constexpr size_t operator()(T value) const noexcept {
     return ftl_rapidhash::rapidhash_t<T>{}(value);
@@ -1062,7 +1156,24 @@ template <> struct hash<nullptr_t> {
     size_t operator()(T value) const noexcept {                                \
       if (value == static_cast<T>(0))                                          \
         return detail::rapid_hash_word(0);                                     \
-      return detail::rapid_hash_object(&value, sizeof(value));                 \
+      if (isnan(value))                                                        \
+        return detail::rapid_hash_word(0x7ff8000000000000ULL);                 \
+      if (isinf(value))                                                        \
+        return detail::rapid_hash_word(value < static_cast<T>(0)               \
+                                           ? 0xfff0000000000000ULL             \
+                                           : 0x7ff0000000000000ULL);           \
+      struct canonical { int exponent; bool negative; unsigned char digits[16]; }; \
+      canonical representation{};                                              \
+      representation.negative = value < static_cast<T>(0);                     \
+      T fraction = frexp(representation.negative ? -value : value,             \
+                         &representation.exponent);                            \
+      for (auto &digit : representation.digits) {                              \
+        fraction *= static_cast<T>(256);                                       \
+        digit = static_cast<unsigned char>(fraction);                          \
+        fraction -= static_cast<T>(digit);                                     \
+      }                                                                         \
+      return detail::rapid_hash_object(&representation,                        \
+                                       sizeof(representation));                \
     }                                                                          \
   }
 FTL_DETAIL_FLOAT_HASH(float);

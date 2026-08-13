@@ -119,6 +119,24 @@ static_assert(!has_integer_to_chars<charconv_scoped_enum>);
 static_assert(!has_integer_from_chars<charconv_unscoped_enum>);
 static_assert(!has_integer_from_chars<charconv_scoped_enum>);
 
+#if defined(__SIZEOF_INT128__)
+static_assert(has_integer_to_chars<__int128>);
+static_assert(has_integer_to_chars<unsigned __int128>);
+static_assert(has_integer_from_chars<__int128>);
+static_assert(has_integer_from_chars<unsigned __int128>);
+
+constexpr bool extended_integer_charconv_works() {
+  char buffer[64]{};
+  const __int128 original = (static_cast<__int128>(1) << 100) + 17;
+  auto written = tested::to_chars(buffer, buffer + 64, original);
+  __int128 parsed{};
+  auto read = tested::from_chars(buffer, written.ptr, parsed);
+  return written.ec == tested::errc{} && read.ec == tested::errc{} &&
+         read.ptr == written.ptr && parsed == original;
+}
+static_assert(extended_integer_charconv_works());
+#endif
+
 constexpr bool equal_text(const char *first, const char *last,
                           const char *expected) {
   while (first != last && *expected != '\0') {

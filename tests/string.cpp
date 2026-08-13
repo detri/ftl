@@ -117,6 +117,34 @@ constexpr bool capacity_and_access() {
 }
 static_assert(capacity_and_access());
 
+struct overwrite_operation {
+  overwrite_operation() = default;
+  overwrite_operation(const overwrite_operation&) = delete;
+  overwrite_operation(overwrite_operation&&) = default;
+  constexpr tested::size_t operator()(char *buffer, tested::size_t) && {
+    buffer[0] = 'x';
+    return 1;
+  }
+};
+
+struct non_integer_result_operation {
+  constexpr double operator()(char *, tested::size_t) && { return 0; }
+};
+
+template<class Operation>
+concept can_resize_and_overwrite = requires(tested::string& value,
+                                            Operation operation) {
+  value.resize_and_overwrite(1, tested::move(operation));
+};
+
+static_assert(can_resize_and_overwrite<overwrite_operation>);
+static_assert(!can_resize_and_overwrite<non_integer_result_operation>);
+static_assert([] {
+  tested::string value;
+  value.resize_and_overwrite(1, overwrite_operation{});
+  return value == "x";
+}());
+
 constexpr bool modifiers() {
   tested::string value = "ace";
   value.insert(1, "b");

@@ -18,4 +18,20 @@ int sum(int count, ...) {
     return result;
 }
 
-bool ftl_test() { return sum(3, 2, 3, 4) == 9; }
+struct large_argument {
+    long long first;
+    long long second;
+};
+
+large_argument read_large(int marker, ...) {
+    tested::va_list arguments;
+    va_start(arguments, marker);
+    auto result = va_arg(arguments, large_argument);
+    va_end(arguments);
+    return result;
+}
+
+bool ftl_test() {
+    const auto large = read_large(0, large_argument{11, 17});
+    return sum(3, 2, 3, 4) == 9 && large.first == 11 && large.second == 17;
+}

@@ -41,6 +41,39 @@ struct random_access_iterator_tag : bidirectional_iterator_tag {};
 
 struct contiguous_iterator_tag : random_access_iterator_tag {};
 
+#ifndef FTL_POINTER_TRAITS_DECLARED
+template <class Pointer, class = void> struct pointer_traits;
+#define FTL_POINTER_TRAITS_DECLARED 1
+#endif
+
+namespace detail {
+
+template <class T>
+constexpr T *iterator_to_address(T *value) noexcept {
+  static_assert(!is_function_v<T>);
+  return value;
+}
+
+template <class Pointer>
+  requires requires(const Pointer &value) {
+    pointer_traits<Pointer>::to_address(value);
+  }
+constexpr auto iterator_to_address(const Pointer &value) noexcept {
+  return pointer_traits<Pointer>::to_address(value);
+}
+
+template <class Pointer>
+  requires(!requires(const Pointer &value) {
+             pointer_traits<Pointer>::to_address(value);
+           } && requires(const Pointer &value) {
+             iterator_to_address(value.operator->());
+           })
+constexpr auto iterator_to_address(const Pointer &value) noexcept {
+  return iterator_to_address(value.operator->());
+}
+
+} // namespace detail
+
 template <class> struct incrementable_traits {};
 
 template <class T> struct incrementable_traits<T *> {
@@ -505,6 +538,9 @@ concept indirectly_readable = requires(const Iterator iterator) {
   typename iter_reference_t<Iterator>;
   typename iter_rvalue_reference_t<Iterator>;
 
+  { *iterator } -> same_as<iter_reference_t<Iterator>>;
+  { ranges::iter_move(iterator) } -> same_as<iter_rvalue_reference_t<Iterator>>;
+
   requires common_reference_with<iter_reference_t<Iterator> &&,
                                  iter_value_t<Iterator> &>;
 
@@ -671,17 +707,28 @@ concept contiguous_iterator =
     same_as<iter_value_t<Iterator>,
             remove_cvref_t<iter_reference_t<Iterator>>> &&
     requires(const Iterator &iterator) {
-      {
-        __builtin_addressof(*iterator)
-      } -> same_as<add_pointer_t<iter_reference_t<Iterator>>>;
+      { detail::iterator_to_address(iterator) } ->
+          same_as<add_pointer_t<iter_reference_t<Iterator>>>;
     };
 
 namespace ranges {
 namespace detail {
 
+template <class T, class U>
+concept can_exchange_iter_swap = requires(T &&left, U &&right) {
+  iter_value_t<T>(ranges::iter_move(static_cast<T &&>(left)));
+  *static_cast<T &&>(left) = ranges::iter_move(static_cast<U &&>(right));
+  *static_cast<U &&>(right) = declval<iter_value_t<T> &&>();
+};
+
 template <class T, class U> consteval bool iter_swap_noexcept() {
   if constexpr (has_adl_iter_swap<T, U>) {
     return noexcept(iter_swap(declval<T &&>(), declval<U &&>()));
+  } else if constexpr (requires(T &&left, U &&right) {
+                         ranges::swap(*static_cast<T &&>(left),
+                                      *static_cast<U &&>(right));
+                       }) {
+    return noexcept(ranges::swap(*declval<T &&>(), *declval<U &&>()));
   } else {
     using value_type = iter_value_t<T>;
 
@@ -695,10 +742,21 @@ template <class T, class U> consteval bool iter_swap_noexcept() {
 
 struct iter_swap_fn {
   template <class T, class U>
+    requires detail::has_adl_iter_swap<T, U> ||
+             requires(T &&left, U &&right) {
+               ranges::swap(*static_cast<T &&>(left),
+                            *static_cast<U &&>(right));
+             } ||
+             detail::can_exchange_iter_swap<T, U>
   constexpr void operator()(T &&left, U &&right) const
       noexcept(detail::iter_swap_noexcept<T, U>()) {
     if constexpr (detail::has_adl_iter_swap<T, U>) {
       iter_swap(static_cast<T &&>(left), static_cast<U &&>(right));
+    } else if constexpr (requires {
+                           ranges::swap(*static_cast<T &&>(left),
+                                        *static_cast<U &&>(right));
+                         }) {
+      ranges::swap(*static_cast<T &&>(left), *static_cast<U &&>(right));
     } else {
       iter_value_t<T> old(ranges::iter_move(left));
       *left = ranges::iter_move(right);
@@ -886,9 +944,10 @@ concept sortable =
 
 template <class InputIterator, class Distance>
 constexpr void advance(InputIterator &iterator, Distance distance) {
-  if constexpr (random_access_iterator<InputIterator>) {
+  using category = typename iterator_traits<InputIterator>::iterator_category;
+  if constexpr (derived_from<category, random_access_iterator_tag>) {
     iterator += distance;
-  } else if constexpr (bidirectional_iterator<InputIterator>) {
+  } else if constexpr (derived_from<category, bidirectional_iterator_tag>) {
     if (distance >= 0) {
       while (distance-- > 0)
         ++iterator;
@@ -905,7 +964,8 @@ constexpr void advance(InputIterator &iterator, Distance distance) {
 template <class InputIterator>
 constexpr typename iterator_traits<InputIterator>::difference_type
 distance(InputIterator first, InputIterator last) {
-  if constexpr (random_access_iterator<InputIterator>) {
+  using category = typename iterator_traits<InputIterator>::iterator_category;
+  if constexpr (derived_from<category, random_access_iterator_tag>) {
     return last - first;
   } else {
     typename iterator_traits<InputIterator>::difference_type result{};
@@ -1028,42 +1088,60 @@ public:
 };
 
 template <class Iterator1, class Iterator2>
+  requires requires(const Iterator1 &left, const Iterator2 &right) {
+    { left == right } -> convertible_to<bool>;
+  }
 constexpr bool operator==(const reverse_iterator<Iterator1> &left,
                           const reverse_iterator<Iterator2> &right) {
   return left.base() == right.base();
 }
 
 template <class Iterator1, class Iterator2>
+  requires requires(const Iterator1 &left, const Iterator2 &right) {
+    { left != right } -> convertible_to<bool>;
+  }
 constexpr bool operator!=(const reverse_iterator<Iterator1> &left,
                           const reverse_iterator<Iterator2> &right) {
   return !(left == right);
 }
 
 template <class Iterator1, class Iterator2>
+  requires requires(const Iterator1 &left, const Iterator2 &right) {
+    { left > right } -> convertible_to<bool>;
+  }
 constexpr bool operator<(const reverse_iterator<Iterator1> &left,
                          const reverse_iterator<Iterator2> &right) {
   return right.base() < left.base();
 }
 
 template <class Iterator1, class Iterator2>
+  requires requires(const Iterator1 &left, const Iterator2 &right) {
+    { left < right } -> convertible_to<bool>;
+  }
 constexpr bool operator>(const reverse_iterator<Iterator1> &left,
                          const reverse_iterator<Iterator2> &right) {
   return right < left;
 }
 
 template <class Iterator1, class Iterator2>
+  requires requires(const Iterator1 &left, const Iterator2 &right) {
+    { left >= right } -> convertible_to<bool>;
+  }
 constexpr bool operator<=(const reverse_iterator<Iterator1> &left,
                           const reverse_iterator<Iterator2> &right) {
   return !(right < left);
 }
 
 template <class Iterator1, class Iterator2>
+  requires requires(const Iterator1 &left, const Iterator2 &right) {
+    { left <= right } -> convertible_to<bool>;
+  }
 constexpr bool operator>=(const reverse_iterator<Iterator1> &left,
                           const reverse_iterator<Iterator2> &right) {
   return !(left < right);
 }
 
-template <class Iterator1, class Iterator2>
+template <class Iterator1, three_way_comparable_with<Iterator1> Iterator2>
 constexpr auto operator<=>(const reverse_iterator<Iterator1> &left,
                            const reverse_iterator<Iterator2> &right) {
   return right.base() <=> left.base();
@@ -1113,8 +1191,8 @@ template <class Iterator, class = void> struct counted_iterator_concept_base {};
 
 template <class Iterator>
 struct counted_iterator_concept_base<
-    Iterator, void_t<typename Iterator::iterator_concept>> {
-  using iterator_concept = typename Iterator::iterator_concept;
+    Iterator, void_t<typename iter_concept<Iterator>::type>> {
+  using iterator_concept = typename iter_concept<Iterator>::type;
 };
 
 template <class Iterator, class = void>
@@ -1122,8 +1200,9 @@ struct counted_iterator_category_base {};
 
 template <class Iterator>
 struct counted_iterator_category_base<
-    Iterator, void_t<typename Iterator::iterator_category>> {
-  using iterator_category = typename Iterator::iterator_category;
+    Iterator, void_t<typename iterator_traits<Iterator>::iterator_category>> {
+  using iterator_category =
+      typename iterator_traits<Iterator>::iterator_category;
 };
 } // namespace detail
 
@@ -1503,76 +1582,57 @@ constexpr operator CI() && {
 #endif
   }
 
-  /*
-   * The heterogeneous relational overloads normally have the
-   * specified form:
-   *
-   *     return current op right;
-   *
-   * When right is another basic_const_iterator specialization,
-   * compare its underlying iterator directly. This avoids the
-   * comparison-rewrite/ADL recursion encountered by MSVC while
-   * preserving the adaptor's specified observable comparison.
-   */
-template <class I>
+  template <class I>
   requires(
       detail::different_from<I, basic_const_iterator> &&
       random_access_iterator<Iterator> &&
-      totally_ordered_with<Iterator, I>)
-constexpr bool operator<(const I &right) const {
-  if constexpr (
-      detail::is_basic_const_iterator<
-          remove_cvref_t<I>>::value) {
-    return current < right.base();
-  } else {
+      totally_ordered_with<Iterator, I>
+#ifndef FTL_REPLACE_STL
+      && !detail::is_basic_const_iterator<remove_cvref_t<I>>::value
+#endif
+      )
+  constexpr bool operator<(const I &right) const {
     return current < right;
   }
-}
 
-template <class I>
+  template <class I>
   requires(
       detail::different_from<I, basic_const_iterator> &&
       random_access_iterator<Iterator> &&
-      totally_ordered_with<Iterator, I>)
-constexpr bool operator>(const I &right) const {
-  if constexpr (
-      detail::is_basic_const_iterator<
-          remove_cvref_t<I>>::value) {
-    return current > right.base();
-  } else {
+      totally_ordered_with<Iterator, I>
+#ifndef FTL_REPLACE_STL
+      && !detail::is_basic_const_iterator<remove_cvref_t<I>>::value
+#endif
+      )
+  constexpr bool operator>(const I &right) const {
     return current > right;
   }
-}
 
-template <class I>
+  template <class I>
   requires(
       detail::different_from<I, basic_const_iterator> &&
       random_access_iterator<Iterator> &&
-      totally_ordered_with<Iterator, I>)
-constexpr bool operator<=(const I &right) const {
-  if constexpr (
-      detail::is_basic_const_iterator<
-          remove_cvref_t<I>>::value) {
-    return current <= right.base();
-  } else {
+      totally_ordered_with<Iterator, I>
+#ifndef FTL_REPLACE_STL
+      && !detail::is_basic_const_iterator<remove_cvref_t<I>>::value
+#endif
+      )
+  constexpr bool operator<=(const I &right) const {
     return current <= right;
   }
-}
 
-template <class I>
+  template <class I>
   requires(
       detail::different_from<I, basic_const_iterator> &&
       random_access_iterator<Iterator> &&
-      totally_ordered_with<Iterator, I>)
-constexpr bool operator>=(const I &right) const {
-  if constexpr (
-      detail::is_basic_const_iterator<
-          remove_cvref_t<I>>::value) {
-    return current >= right.base();
-  } else {
+      totally_ordered_with<Iterator, I>
+#ifndef FTL_REPLACE_STL
+      && !detail::is_basic_const_iterator<remove_cvref_t<I>>::value
+#endif
+      )
+  constexpr bool operator>=(const I &right) const {
     return current >= right;
   }
-}
 
   template <class I>
     requires(
@@ -1580,7 +1640,8 @@ constexpr bool operator>=(const I &right) const {
         random_access_iterator<Iterator> &&
         totally_ordered_with<Iterator, I>
 #ifdef FTL_REPLACE_STL
-        && three_way_comparable_with<Iterator, I>
+        &&
+        three_way_comparable_with<Iterator, I>
 #else
         && requires(const Iterator &left, const I &other) {
              left <=> other;
@@ -1591,75 +1652,41 @@ constexpr bool operator>=(const I &right) const {
     return current <=> right;
   }
 
-  /*
-   * Make the RHS specialization a deduced parameter constrained
-   * back to this Iterator specialization. This avoids the
-   * cross-specialization hidden-friend recursion described by
-   * the basic_const_iterator comparison DR work.
-   */
-template <
-    detail::not_a_const_iterator I,
-    same_as<Iterator> J
-#if defined(_MSC_VER) && !defined(__clang__)
-    , Iterator * = nullptr
-#endif
-    >
+  template <detail::not_a_const_iterator I>
   requires(
       random_access_iterator<Iterator> &&
       totally_ordered_with<Iterator, I>)
-friend constexpr bool
-operator<(const I &left,
-          const basic_const_iterator<J> &right) {
-  return left < right.current;
-}
+  friend constexpr bool operator<(const I &left,
+                                  const basic_const_iterator &right) {
+    return left < right.current;
+  }
 
-template <
-    detail::not_a_const_iterator I,
-    same_as<Iterator> J
-#if defined(_MSC_VER) && !defined(__clang__)
-    , Iterator * = nullptr
-#endif
-    >
+  template <detail::not_a_const_iterator I>
   requires(
       random_access_iterator<Iterator> &&
       totally_ordered_with<Iterator, I>)
-friend constexpr bool
-operator>(const I &left,
-          const basic_const_iterator<J> &right) {
-  return left > right.current;
-}
+  friend constexpr bool operator>(const I &left,
+                                  const basic_const_iterator &right) {
+    return left > right.current;
+  }
 
-template <
-    detail::not_a_const_iterator I,
-    same_as<Iterator> J
-#if defined(_MSC_VER) && !defined(__clang__)
-    , Iterator * = nullptr
-#endif
-    >
+  template <detail::not_a_const_iterator I>
   requires(
       random_access_iterator<Iterator> &&
       totally_ordered_with<Iterator, I>)
-friend constexpr bool
-operator<=(const I &left,
-           const basic_const_iterator<J> &right) {
-  return left <= right.current;
-}
+  friend constexpr bool operator<=(const I &left,
+                                   const basic_const_iterator &right) {
+    return left <= right.current;
+  }
 
-template <
-    detail::not_a_const_iterator I,
-    same_as<Iterator> J
-#if defined(_MSC_VER) && !defined(__clang__)
-    , Iterator * = nullptr
-#endif
-    >
+  template <detail::not_a_const_iterator I>
   requires(
       random_access_iterator<Iterator> &&
       totally_ordered_with<Iterator, I>)
-friend constexpr bool
-operator>=(const I &left,
-           const basic_const_iterator<J> &right) {
-  return left >= right.current;
-}
+  friend constexpr bool operator>=(const I &left,
+                                   const basic_const_iterator &right) {
+    return left >= right.current;
+  }
 
   friend constexpr basic_const_iterator
   operator+(const basic_const_iterator &iterator,
@@ -1710,6 +1737,50 @@ operator>=(const I &left,
         ranges::iter_move(iterator.current));
   }
 };
+
+#ifndef FTL_REPLACE_STL
+/*
+ * Built-in comparison rewriting cannot use FTL's ordering category types in a
+ * non-std namespace when comparing two specializations.
+ * These overloads provide the same specified comparisons without depending on
+ * that rewrite.
+ */
+template <input_iterator I, input_iterator J>
+  requires(random_access_iterator<I> && random_access_iterator<J> &&
+           totally_ordered_with<I, J>)
+constexpr bool operator<(
+    const basic_const_iterator<I> &left,
+    const basic_const_iterator<J> &right) {
+  return left.base() < right.base();
+}
+
+template <input_iterator I, input_iterator J>
+  requires(random_access_iterator<I> && random_access_iterator<J> &&
+           totally_ordered_with<I, J>)
+constexpr bool operator>(
+    const basic_const_iterator<I> &left,
+    const basic_const_iterator<J> &right) {
+  return left.base() > right.base();
+}
+
+template <input_iterator I, input_iterator J>
+  requires(random_access_iterator<I> && random_access_iterator<J> &&
+           totally_ordered_with<I, J>)
+constexpr bool operator<=(
+    const basic_const_iterator<I> &left,
+    const basic_const_iterator<J> &right) {
+  return left.base() <= right.base();
+}
+
+template <input_iterator I, input_iterator J>
+  requires(random_access_iterator<I> && random_access_iterator<J> &&
+           totally_ordered_with<I, J>)
+constexpr bool operator>=(
+    const basic_const_iterator<I> &left,
+    const basic_const_iterator<J> &right) {
+  return left.base() >= right.base();
+}
+#endif
 
 template <input_iterator Iterator>
 using const_iterator = conditional_t<constant_iterator<Iterator>, Iterator,
@@ -2205,22 +2276,34 @@ template <class I> constexpr move_iterator<I> make_move_iterator(I i) {
 }
 
 template <class I, class J>
+  requires requires(const I &a, const J &b) {
+    { a < b } -> convertible_to<bool>;
+  }
 constexpr bool operator<(const move_iterator<I> &a, const move_iterator<J> &b) {
   return a.base() < b.base();
 }
 
 template <class I, class J>
+  requires requires(const I &a, const J &b) {
+    { a > b } -> convertible_to<bool>;
+  }
 constexpr bool operator>(const move_iterator<I> &a, const move_iterator<J> &b) {
   return b < a;
 }
 
 template <class I, class J>
+  requires requires(const I &a, const J &b) {
+    { a <= b } -> convertible_to<bool>;
+  }
 constexpr bool operator<=(const move_iterator<I> &a,
                           const move_iterator<J> &b) {
   return !(b < a);
 }
 
 template <class I, class J>
+  requires requires(const I &a, const J &b) {
+    { a >= b } -> convertible_to<bool>;
+  }
 constexpr bool operator>=(const move_iterator<I> &a,
                           const move_iterator<J> &b) {
   return !(a < b);
@@ -2278,6 +2361,15 @@ public:
 template <input_or_output_iterator I, sentinel_for<I> S>
   requires(!same_as<I, S> && copyable<I>)
 class common_iterator {
+  template <class T, class... Args>
+  static constexpr T *construct_member(T *location, Args &&...args) {
+#if defined(_MSC_VER) && !defined(__clang__)
+    [[msvc::constexpr]]
+#endif
+    return ::new (static_cast<void *>(location))
+        T(static_cast<Args &&>(args)...);
+  }
+
 public:
   union {
     I iterator;
@@ -2285,34 +2377,79 @@ public:
   };
 
   bool holds_iterator;
+  bool has_active_member = true;
 
 private:
   constexpr void destroy() {
+    if (!has_active_member)
+      return;
     if (holds_iterator)
       iterator.~I();
     else
       sentinel.~S();
   }
 
+  class arrow_proxy {
+    iter_value_t<I> keep;
+
+  public:
+    constexpr explicit arrow_proxy(iter_reference_t<I> &&value)
+        : keep(FTL_ITER_NS::move(value)) {}
+
+    constexpr const iter_value_t<I> *operator->() const noexcept {
+      return __builtin_addressof(keep);
+    }
+  };
+
+  class postfix_proxy {
+    iter_value_t<I> keep;
+
+  public:
+    constexpr explicit postfix_proxy(iter_reference_t<I> &&value)
+        : keep(static_cast<iter_reference_t<I> &&>(value)) {}
+
+    constexpr const iter_value_t<I> &operator*() const noexcept {
+      return keep;
+    }
+  };
+
 public:
-  constexpr common_iterator() : sentinel{}, holds_iterator(false) {}
+  constexpr common_iterator()
+    requires default_initializable<I>
+      : iterator{}, holds_iterator(true) {}
   constexpr common_iterator(I i) : iterator(move(i)), holds_iterator(true) {}
   constexpr common_iterator(S s) : sentinel(move(s)), holds_iterator(false) {}
 
   constexpr common_iterator(const common_iterator &x)
+    requires(default_initializable<I> && is_trivially_copy_constructible_v<I> &&
+             is_trivially_copy_constructible_v<S>)
+      : iterator(x.holds_iterator ? x.iterator : I{}), holds_iterator(true) {
+    if (!x.holds_iterator) {
+      iterator.~I();
+      has_active_member = false;
+      construct_member(__builtin_addressof(sentinel), x.sentinel);
+      holds_iterator = false;
+      has_active_member = true;
+    }
+  }
+
+  constexpr common_iterator(const common_iterator &x)
+    requires(!(default_initializable<I> &&
+               is_trivially_copy_constructible_v<I> &&
+               is_trivially_copy_constructible_v<S>))
       : holds_iterator(x.holds_iterator) {
     if (holds_iterator)
-      ::new ((void *)__builtin_addressof(iterator)) I(x.iterator);
+      construct_member(__builtin_addressof(iterator), x.iterator);
     else
-      ::new ((void *)__builtin_addressof(sentinel)) S(x.sentinel);
+      construct_member(__builtin_addressof(sentinel), x.sentinel);
   }
 
   constexpr common_iterator(common_iterator &&x)
       : holds_iterator(x.holds_iterator) {
     if (holds_iterator)
-      ::new ((void *)__builtin_addressof(iterator)) I(move(x.iterator));
+      construct_member(__builtin_addressof(iterator), move(x.iterator));
     else
-      ::new ((void *)__builtin_addressof(sentinel)) S(move(x.sentinel));
+      construct_member(__builtin_addressof(sentinel), move(x.sentinel));
   }
 
   constexpr ~common_iterator() { destroy(); }
@@ -2327,11 +2464,13 @@ public:
         sentinel = x.sentinel;
     } else {
       destroy();
-      holds_iterator = x.holds_iterator;
-      if (holds_iterator)
-        ::new ((void *)__builtin_addressof(iterator)) I(x.iterator);
+      has_active_member = false;
+      if (x.holds_iterator)
+        construct_member(__builtin_addressof(iterator), x.iterator);
       else
-        ::new ((void *)__builtin_addressof(sentinel)) S(x.sentinel);
+        construct_member(__builtin_addressof(sentinel), x.sentinel);
+      holds_iterator = x.holds_iterator;
+      has_active_member = true;
     }
     return *this;
   }
@@ -2345,14 +2484,21 @@ public:
   }
 
   constexpr auto operator->() const
-    requires indirectly_readable<const I>
+    requires(indirectly_readable<const I> &&
+             (requires(const I &i) { i.operator->(); } ||
+              is_reference_v<iter_reference_t<I>> ||
+              constructible_from<iter_value_t<I>, iter_reference_t<I>>))
   {
     if constexpr (is_pointer_v<I>)
       return iterator;
     else if constexpr (requires { iterator.operator->(); })
-      return iterator.operator->();
-    else
-      return __builtin_addressof(*iterator);
+      return iterator;
+    else if constexpr (is_reference_v<iter_reference_t<I>>) {
+      auto &&temporary = *iterator;
+      return __builtin_addressof(temporary);
+    } else {
+      return arrow_proxy(*iterator);
+    }
   }
 
   constexpr common_iterator &operator++() {
@@ -2365,8 +2511,19 @@ public:
       auto x = *this;
       ++*this;
       return x;
-    } else
+    } else if constexpr (
+        requires(I &i) {
+          { *i++ } -> detail::can_reference;
+        } ||
+        !(indirectly_readable<I> &&
+          constructible_from<iter_value_t<I>, iter_reference_t<I>> &&
+          move_constructible<iter_value_t<I>>)) {
       return iterator++;
+    } else {
+      postfix_proxy proxy(**this);
+      ++*this;
+      return proxy;
+    }
   }
 
   template <class I2, class S2>

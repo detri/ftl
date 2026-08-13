@@ -4,19 +4,96 @@
 FTL_BEGIN_NAMESPACE
 namespace detail {
 
+template <class Value> struct associative_tree_node {
+  associative_tree_node *parent{};
+  associative_tree_node *left{};
+  associative_tree_node *right{};
+  int height{1};
+  Value value;
+
+  template <class... Args>
+  explicit associative_tree_node(Args &&...args)
+      : value(forward<Args>(args)...) {}
+};
+
+template <class Value, class Key, class Allocator>
+class associative_tree_node_handle {
+  using node = associative_tree_node<Value>;
+  using value_traits = allocator_traits<Allocator>;
+  using node_allocator = typename value_traits::template rebind_alloc<node>;
+  using node_traits = allocator_traits<node_allocator>;
+
+  node *value_{};
+  optional<Allocator> allocator_;
+  template <class, class, class, class, class, bool>
+  friend class associative_tree;
+
+  associative_tree_node_handle(node *value, const Allocator &allocator)
+      : value_(value), allocator_(in_place, allocator) {}
+
+public:
+  using allocator_type = Allocator;
+  using value_type = Value;
+  associative_tree_node_handle() noexcept = default;
+  associative_tree_node_handle(associative_tree_node_handle &&other) noexcept
+      : value_(exchange(other.value_, nullptr)),
+        allocator_(move(other.allocator_)) {
+    other.allocator_.reset();
+  }
+  associative_tree_node_handle &
+  operator=(associative_tree_node_handle &&other) noexcept {
+    if (this != &other) {
+      reset();
+      value_ = exchange(other.value_, nullptr);
+      if (!allocator_ ||
+          value_traits::propagate_on_container_move_assignment::value)
+        allocator_ = move(other.allocator_);
+      other.allocator_.reset();
+    }
+    return *this;
+  }
+  associative_tree_node_handle(const associative_tree_node_handle &) = delete;
+  associative_tree_node_handle &
+  operator=(const associative_tree_node_handle &) = delete;
+  ~associative_tree_node_handle() { reset(); }
+  [[nodiscard]] bool empty() const noexcept { return !value_; }
+  explicit operator bool() const noexcept { return value_ != nullptr; }
+  allocator_type get_allocator() const { return *allocator_; }
+  value_type &value() const { return value_->value; }
+  auto &key() const requires requires(Value &item) { item.first; } {
+    return const_cast<Key &>(value_->value.first);
+  }
+  auto &mapped() const requires requires(Value &item) { item.second; } {
+    return value_->value.second;
+  }
+  void swap(associative_tree_node_handle &other) noexcept(
+      value_traits::propagate_on_container_swap::value ||
+      value_traits::is_always_equal::value) {
+    FTL_ASSOCIATIVE_NAMESPACE::swap(value_, other.value_);
+    if constexpr (value_traits::propagate_on_container_swap::value)
+      FTL_ASSOCIATIVE_NAMESPACE::swap(allocator_, other.allocator_);
+  }
+
+private:
+  void reset() noexcept {
+    if (!value_)
+      return;
+    node_allocator allocator(*allocator_);
+    auto pointer = pointer_traits<typename node_traits::pointer>::pointer_to(*value_);
+    node_traits::destroy(allocator, value_);
+    node_traits::deallocate(allocator, pointer, 1);
+    value_ = nullptr;
+    allocator_.reset();
+  }
+};
+
 template <class Value, class Key, class KeyOfValue, class Compare,
           class Allocator, bool Multi>
 class associative_tree {
-  struct node {
-    node *parent{};
-    node *left{};
-    node *right{};
-    int height{1};
-    Value value;
+  using node = associative_tree_node<Value>;
 
-    template <class... Args>
-    explicit node(Args &&...args) : value(forward<Args>(args)...) {}
-  };
+  template <class, class, class, class, class, bool>
+  friend class associative_tree;
 
   using value_traits = allocator_traits<Allocator>;
   using node_allocator = typename value_traits::template rebind_alloc<node>;
@@ -81,61 +158,7 @@ public:
   using iterator = basic_iterator<false>;
   using const_iterator = basic_iterator<true>;
 
-  class node_type {
-    node *value_{};
-    FTL_NO_UNIQUE_ADDRESS Allocator allocator_{};
-    friend class associative_tree;
-
-    node_type(node *value, const Allocator &allocator)
-        : value_(value), allocator_(allocator) {}
-
-  public:
-    node_type() = default;
-    node_type(node_type &&other) noexcept
-        : value_(exchange(other.value_, nullptr)),
-          allocator_(move(other.allocator_)) {}
-    node_type &operator=(node_type &&other) noexcept {
-      if (this != &other) {
-        reset();
-        allocator_ = move(other.allocator_);
-        value_ = exchange(other.value_, nullptr);
-      }
-      return *this;
-    }
-    node_type(const node_type &) = delete;
-    node_type &operator=(const node_type &) = delete;
-    ~node_type() { reset(); }
-    [[nodiscard]] bool empty() const noexcept { return !value_; }
-    explicit operator bool() const noexcept { return value_ != nullptr; }
-    allocator_type get_allocator() const { return allocator_; }
-    value_type &value() const { return value_->value; }
-    auto &key() const
-      requires requires(Value &item) { item.first; }
-    {
-      return const_cast<Key &>(value_->value.first);
-    }
-    auto &mapped() const
-      requires requires(Value &item) { item.second; }
-    {
-      return value_->value.second;
-    }
-    void swap(node_type &other) noexcept {
-      FTL_ASSOCIATIVE_NAMESPACE::swap(value_, other.value_);
-      FTL_ASSOCIATIVE_NAMESPACE::swap(allocator_, other.allocator_);
-    }
-
-  private:
-    void reset() noexcept {
-      if (!value_)
-        return;
-      node_allocator allocator(allocator_);
-      auto pointer =
-          pointer_traits<typename node_traits::pointer>::pointer_to(*value_);
-      node_traits::destroy(allocator, value_);
-      node_traits::deallocate(allocator, pointer, 1);
-      value_ = nullptr;
-    }
-  };
+  using node_type = associative_tree_node_handle<Value, Key, Allocator>;
 
   struct insert_return_type {
     iterator position;
@@ -153,11 +176,11 @@ public:
       : compare_(other.compare_),
         allocator_(value_traits::select_on_container_copy_construction(
             other.allocator_)) {
-    insert(other.begin(), other.end());
+    initialize([&] { insert(other.begin(), other.end()); });
   }
   associative_tree(const associative_tree &other, const Allocator &allocator)
       : compare_(other.compare_), allocator_(allocator) {
-    insert(other.begin(), other.end());
+    initialize([&] { insert(other.begin(), other.end()); });
   }
   associative_tree(associative_tree &&other) noexcept
       : root_(exchange(other.root_, nullptr)), size_(exchange(other.size_, 0)),
@@ -168,8 +191,8 @@ public:
       root_ = exchange(other.root_, nullptr);
       size_ = exchange(other.size_, 0);
     } else {
-      insert(make_move_iterator(other.begin()),
-             make_move_iterator(other.end()));
+      initialize([&] { insert(make_move_iterator(other.begin()),
+                              make_move_iterator(other.end())); });
       other.clear();
     }
   }
@@ -229,7 +252,17 @@ public:
   }
 
   template <class V> auto insert(V &&value) {
-    return insert_node(make_node(static_cast<V &&>(value)));
+    node *added = make_node(static_cast<V &&>(value));
+#if FTL_HAS_EXCEPTIONS
+    try {
+      return insert_node(added);
+    } catch (...) {
+      destroy_node(added);
+      throw;
+    }
+#else
+    return insert_node(added);
+#endif
   }
   template <class InputIterator>
   void insert(InputIterator first, InputIterator last) {
@@ -237,49 +270,62 @@ public:
       insert(*first);
   }
   template <class... Args> auto emplace(Args &&...args) {
-    return insert_node(make_node(forward<Args>(args)...));
+    node *added = make_node(forward<Args>(args)...);
+#if FTL_HAS_EXCEPTIONS
+    try {
+      return insert_node(added);
+    } catch (...) {
+      destroy_node(added);
+      throw;
+    }
+#else
+    return insert_node(added);
+#endif
   }
-  iterator insert(const_iterator, const Value &value) {
-    if constexpr (Multi)
-      return insert(value);
-    else
-      return insert(value).first;
+  iterator insert(const_iterator hint, const Value &value) {
+    return insert_hint_value(hint, value);
   }
-  iterator insert(const_iterator, Value &&value) {
-    if constexpr (Multi)
-      return insert(move(value));
-    else
-      return insert(move(value)).first;
+  iterator insert(const_iterator hint, Value &&value) {
+    return insert_hint_value(hint, move(value));
   }
   template <class... Args>
-  iterator emplace_hint(const_iterator, Args &&...args) {
-    if constexpr (Multi)
-      return emplace(forward<Args>(args)...);
-    else
-      return emplace(forward<Args>(args)...).first;
+  iterator emplace_hint(const_iterator hint, Args &&...args) {
+    node *added = make_node(forward<Args>(args)...);
+#if FTL_HAS_EXCEPTIONS
+    try { return insert_node_at_hint(hint, added); }
+    catch (...) { destroy_node(added); throw; }
+#else
+    return insert_node_at_hint(hint, added);
+#endif
   }
 
   auto insert(node_type &&handle) {
     if constexpr (Multi) {
       if (!handle)
         return end();
-      node *value = exchange(handle.value_, nullptr);
-      return insert_node(value);
+      auto result = insert_node(handle.value_, false);
+      handle.value_ = nullptr;
+      return result;
     } else {
       if (!handle)
         return insert_return_type{end(), false, {}};
       const Key &key = KeyOfValue{}(handle.value_->value);
       if (auto found = find_node(key))
         return insert_return_type{iterator(found, this), false, move(handle)};
-      node *value = exchange(handle.value_, nullptr);
-      return insert_return_type{insert_node(value).first, true, {}};
+      auto result = insert_node(handle.value_, false);
+      handle.value_ = nullptr;
+      return insert_return_type{result.first, true, {}};
     }
   }
-  iterator insert(const_iterator, node_type &&handle) {
+  iterator insert(const_iterator hint, node_type &&handle) {
+    if (!handle)
+      return end();
+    iterator result = insert_node_at_hint(hint, handle.value_, false);
     if constexpr (Multi)
-      return insert(move(handle));
-    else
-      return insert(move(handle)).position;
+      handle.value_ = nullptr;
+    else if (result.current_ == handle.value_)
+      handle.value_ = nullptr;
+    return result;
   }
 
   iterator erase(const_iterator position) {
@@ -324,17 +370,19 @@ public:
     node *found = find_node(key);
     return found ? node_type(detach(found), allocator_) : node_type{};
   }
-  void merge(associative_tree &other) {
-    if (this == &other)
+  template <class OtherCompare, bool OtherMulti>
+  void merge(associative_tree<Value, Key, KeyOfValue, OtherCompare, Allocator,
+                              OtherMulti> &other) {
+    if (static_cast<const void *>(this) == static_cast<const void *>(&other))
       return;
     for (auto current = other.begin(); current != other.end();) {
       auto candidate = current++;
-      if constexpr (!Multi) {
-        if (contains(KeyOfValue{}(*candidate)))
+      insertion_slot slot = locate_insertion(KeyOfValue{}(*candidate));
+      if constexpr (!Multi)
+        if (slot.equivalent)
           continue;
-      }
-      node_type handle = other.extract(candidate);
-      insert(move(handle));
+      node *moved = other.detach_iterator(candidate);
+      attach(moved, slot);
     }
   }
 
@@ -374,6 +422,64 @@ public:
   }
 
 private:
+  struct insertion_slot {
+    node *parent{};
+    node *equivalent{};
+    bool left{};
+  };
+  insertion_slot locate_insertion(const Key &key) const {
+    insertion_slot result;
+    node *current = root_;
+    while (current) {
+      result.parent = current;
+      const Key &current_key = KeyOfValue{}(current->value);
+      if (compare_(key, current_key)) {
+        result.left = true;
+        current = current->left;
+      } else if constexpr (!Multi) {
+        if (!compare_(current_key, key)) {
+          result.equivalent = current;
+          return result;
+        }
+        result.left = false;
+        current = current->right;
+      } else {
+        result.left = false;
+        current = current->right;
+      }
+    }
+    return result;
+  }
+  void attach(node *added, insertion_slot slot) noexcept {
+    added->parent = slot.parent;
+    added->left = added->right = nullptr;
+    added->height = 1;
+    if (!slot.parent)
+      root_ = added;
+    else if (slot.left)
+      slot.parent->left = added;
+    else
+      slot.parent->right = added;
+    ++size_;
+    rebalance(slot.parent);
+  }
+  template <class V> iterator insert_hint_value(const_iterator hint, V &&value) {
+    node *added = make_node(static_cast<V &&>(value));
+#if FTL_HAS_EXCEPTIONS
+    try { return insert_node_at_hint(hint, added); }
+    catch (...) { destroy_node(added); throw; }
+#else
+    return insert_node_at_hint(hint, added);
+#endif
+  }
+  template <class Operation> void initialize(Operation operation) {
+#if FTL_HAS_EXCEPTIONS
+    try { operation(); }
+    catch (...) { clear(); throw; }
+#else
+    operation();
+#endif
+  }
   template <class... Args> node *make_node(Args &&...args) {
     node_allocator allocator(allocator_);
     auto storage = node_traits::allocate(allocator, 1);
@@ -405,7 +511,7 @@ private:
     destroy_node(value);
   }
 
-  auto insert_node(node *added) {
+  auto insert_node(node *added, bool destroy_duplicate = true) {
     added->left = added->right = added->parent = nullptr;
     added->height = 1;
     if (!root_) {
@@ -429,7 +535,8 @@ private:
         }
       } else if constexpr (!Multi) {
         if (!compare_(current_key, key)) {
-          destroy_node(added);
+          if (destroy_duplicate)
+            destroy_node(added);
           return pair<iterator, bool>{iterator(parent, this), false};
         }
         if (parent->right)
@@ -454,6 +561,44 @@ private:
       return iterator(added, this);
     else
       return pair<iterator, bool>{iterator(added, this), true};
+  }
+  iterator insert_node_at_hint(const_iterator hint, node *added,
+                               bool destroy_duplicate = true) {
+    if (!root_) {
+      auto result = insert_node(added, destroy_duplicate);
+      if constexpr (Multi)
+        return result;
+      else
+        return result.first;
+    }
+    const Key &key = KeyOfValue{}(added->value);
+    node *next = hint.current_;
+    node *previous = next ? predecessor(next) : maximum(root_);
+    const bool after_previous =
+        !previous || (Multi ? !compare_(key, KeyOfValue{}(previous->value))
+                            : compare_(KeyOfValue{}(previous->value), key));
+    const bool before_next =
+        !next || (Multi ? !compare_(KeyOfValue{}(next->value), key)
+                        : compare_(key, KeyOfValue{}(next->value)));
+    if (after_previous && before_next) {
+      added->left = added->right = nullptr;
+      added->height = 1;
+      if (next && !next->left) {
+        next->left = added;
+        added->parent = next;
+      } else {
+        previous->right = added;
+        added->parent = previous;
+      }
+      ++size_;
+      rebalance(added->parent);
+      return iterator(added, this);
+    }
+    auto result = insert_node(added, destroy_duplicate);
+    if constexpr (Multi)
+      return result;
+    else
+      return result.first;
   }
 
   node *detach(node *value) {
@@ -484,6 +629,7 @@ private:
     rebalance(rebalance_from);
     return value;
   }
+  node *detach_iterator(iterator value) { return detach(value.current_); }
   void transplant(node *old_value, node *new_value) {
     if (!old_value->parent)
       root_ = new_value;

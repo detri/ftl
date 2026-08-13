@@ -781,8 +781,13 @@ public:
   result_type operator()() {
 #if defined(_WIN32)
     result_type value;
-    if (!detail::SystemFunction036(&value, sizeof(value)))
+    if (!detail::SystemFunction036(&value, sizeof(value))) {
+#if FTL_HAS_EXCEPTIONS
       throw runtime_error("random_device entropy source failed");
+#else
+      __builtin_trap();
+#endif
+    }
     return value;
 #elif defined(__APPLE__)
     result_type value;
@@ -796,8 +801,13 @@ public:
       const long count = detail::random_getrandom(current, remaining);
       if (count == -4)
         continue;
-      if (count <= 0)
+      if (count <= 0) {
+#if FTL_HAS_EXCEPTIONS
         throw runtime_error("random_device entropy source failed");
+#else
+        __builtin_trap();
+#endif
+      }
       current += count;
       remaining -= static_cast<size_t>(count);
     }

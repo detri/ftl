@@ -19,6 +19,11 @@ using pointer_subrange = tested::ranges::subrange<int *, int *>;
 
 using pointer_tuple = tested::tuple<int *, int *>;
 
+static_assert(tested::is_same_v<
+              decltype(tested::get<int &>(
+                  tested::declval<tested::tuple<int &> &&>())),
+              int &>);
+
 template <class T> using lvalue_qualifier = T &;
 
 static_assert(tested::tuple_size_v<pointer_subrange> == 2);
@@ -141,12 +146,9 @@ constexpr bool subrange_tuple_interop_works() {
 
 #endif
 
-  /*
-   * Existing C++23 tuple-like constructors.
-   */
-  pointer_tuple tuple_value{subrange};
+  pointer_tuple tuple_value{values, values + 4};
 
-  tested::pair<int *, int *> pair_value{subrange};
+  tested::pair<int *, int *> pair_value{values, values + 4};
 
   if (tested::get<0>(tuple_value) != values ||
       tested::get<1>(tuple_value) != values + 4 || pair_value.first != values ||

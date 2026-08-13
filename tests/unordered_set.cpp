@@ -27,6 +27,28 @@ struct set_transparent_equal {
   bool operator()(int, set_hash_probe) const { return false; }
   bool operator()(set_hash_probe, int) const { return false; }
 };
+struct alternate_int_hash { tested::size_t operator()(int value) const { return static_cast<tested::size_t>(value * 17); } };
+struct alternate_int_equal { bool operator()(int a, int b) const { return a == b; } };
+struct grouped_key { int identity; int group; friend bool operator==(const grouped_key&, const grouped_key&) = default; };
+struct grouped_hash { tested::size_t operator()(const grouped_key& value) const { return value.group; } };
+struct grouped_equal { bool operator()(const grouped_key& a, const grouped_key& b) const { return a.group == b.group; } };
+struct controlled_hash {
+  inline static int before_throw = -1;
+  tested::size_t operator()(int value) const {
+    if (before_throw == 0) throw 1;
+    if (before_throw > 0) --before_throw;
+    return value;
+  }
+};
+struct unordered_allocation_state { inline static int allocations; inline static int deallocations; };
+template<class T> struct tracked_unordered_allocator {
+  using value_type = T;
+  tracked_unordered_allocator() = default;
+  template<class U> tracked_unordered_allocator(const tracked_unordered_allocator<U>&) {}
+  T* allocate(tested::size_t n) { ++unordered_allocation_state::allocations; return static_cast<T*>(::operator new(n * sizeof(T))); }
+  void deallocate(T* p, tested::size_t) { ++unordered_allocation_state::deallocations; ::operator delete(p); }
+  template<class U> bool operator==(const tracked_unordered_allocator<U>&) const { return true; }
+};
 template <class C> concept set_hash_probe_findable = requires(C &c) {
   c.find(set_hash_probe{});
 };
@@ -40,7 +62,50 @@ static_assert(set_hash_probe_findable<tested::unordered_set<
 static_assert(set_hash_probe_findable<tested::unordered_multiset<
                   int, set_transparent_hash, set_transparent_equal>>);
 static_assert(!set_hash_probe_findable<tested::unordered_set<int>>);
+static_assert(tested::is_same_v<
+    typename tested::unordered_set<int>::node_type,
+    typename tested::unordered_multiset<int, alternate_int_hash,
+                                         alternate_int_equal>::node_type>);
+using deduced_unordered_set = decltype(tested::unordered_set(
+    tested::declval<int *>(), tested::declval<int *>(), tested::size_t{},
+    tested::declval<tested::allocator<int>>()));
+static_assert(tested::is_same_v<deduced_unordered_set,
+                                tested::unordered_set<int>>);
 bool ftl_test() {
+  {
+    tested::unordered_set<int, controlled_hash> source{1};
+    tested::unordered_set<int, controlled_hash> destination{2};
+    auto handle = source.extract(1);
+    controlled_hash::before_throw = 0;
+    try { destination.insert(tested::move(handle)); return false; }
+    catch (...) {}
+    controlled_hash::before_throw = -1;
+    if (!handle || handle.value() != 1) return false;
+  }
+  {
+    using allocation_set = tested::unordered_set<int, controlled_hash,
+        tested::equal_to<int>, tracked_unordered_allocator<int>>;
+    allocation_set guarded(8);
+    unordered_allocation_state::allocations = unordered_allocation_state::deallocations = 0;
+    controlled_hash::before_throw = 0;
+    try { guarded.insert(1); return false; }
+    catch (...) {}
+    controlled_hash::before_throw = -1;
+    if (unordered_allocation_state::allocations != 1 ||
+        unordered_allocation_state::deallocations != 1) return false;
+  }
+  {
+    tested::unordered_multiset<int, alternate_int_hash, alternate_int_equal> source{1, 2, 2, 3};
+    tested::unordered_set<int> destination{2};
+    destination.merge(source);
+    if (destination.size() != 3 || source.count(2) != 2) return false;
+  }
+  {
+    tested::unordered_set<grouped_key, grouped_hash, grouped_equal> left{{1, 7}};
+    tested::unordered_set<grouped_key, grouped_hash, grouped_equal> right{{2, 7}};
+    if (left == right) return false;
+  }
+
   tested::unordered_set<int> values{1, 2, 2};
   const int *stable = &*values.find(1);
   for (int i = 3; i != 100; ++i)

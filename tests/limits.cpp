@@ -18,6 +18,12 @@ static_assert(tested::numeric_limits<const long long>::is_specialized);
 static_assert(tested::numeric_limits<float>::is_iec559);
 static_assert(tested::numeric_limits<float>::epsilon() > 0);
 static_assert(tested::numeric_limits<double>::infinity() > tested::numeric_limits<double>::max());
+#if defined(__SIZEOF_INT128__)
+static_assert(tested::numeric_limits<__int128>::is_specialized);
+static_assert(tested::numeric_limits<__int128>::digits == 127);
+static_assert(tested::numeric_limits<unsigned __int128>::digits == 128);
+static_assert(tested::numeric_limits<__int128>::min() < 0);
+#endif
 
 #ifndef FTL_REPLACE_STL
 template<class T>

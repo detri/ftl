@@ -947,7 +947,12 @@ struct pointer_difference<Pointer, void_t<typename Pointer::difference_type>> {
 };
 } // namespace detail
 
-template <class Pointer, class = void> struct pointer_traits {};
+#ifndef FTL_POINTER_TRAITS_DECLARED
+template <class Pointer, class = void> struct pointer_traits;
+#define FTL_POINTER_TRAITS_DECLARED 1
+#endif
+
+template <class Pointer, class> struct pointer_traits {};
 
 template <class Pointer>
 struct pointer_traits<Pointer,

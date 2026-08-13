@@ -116,8 +116,12 @@ struct is_library_pair_like<tuple<T...>> : true_type {};
 template<class T, size_t Size>
 struct is_library_pair_like<array<T, Size>> : bool_constant<Size == 2> {};
 
+template<class>
+struct is_subrange : false_type {};
+
 template<class P>
 concept pair_like = is_library_pair_like<remove_cvref_t<P>>::value &&
+    !is_subrange<remove_cvref_t<P>>::value &&
     requires(P&& value) {
         requires tuple_size_v<remove_cvref_t<P>> == 2;
         get<0>(static_cast<P&&>(value));
@@ -139,6 +143,41 @@ inline constexpr bool pair_dangles_v =
 #else
     false;
 #endif
+
+template<class T>
+concept comparison_integer =
+    is_integral_v<T> &&
+    !is_same_v<remove_cv_t<T>, bool> &&
+    !is_same_v<remove_cv_t<T>, char> &&
+    !is_same_v<remove_cv_t<T>, wchar_t> &&
+    !is_same_v<remove_cv_t<T>, char8_t> &&
+    !is_same_v<remove_cv_t<T>, char16_t> &&
+    !is_same_v<remove_cv_t<T>, char32_t> &&
+    requires { typename make_unsigned<T>::type; };
+
+template<class T, class U>
+    requires three_way_comparable_with<T, U> ||
+             requires(const T& left, const U& right) {
+                 bool(left < right);
+                 bool(right < left);
+             }
+constexpr auto synth_three_way(const T& left, const U& right) {
+    if constexpr (three_way_comparable_with<T, U>) {
+        return compare_three_way{}(left, right);
+    } else {
+        if (left < right) {
+            return weak_ordering::less;
+        }
+        if (right < left) {
+            return weak_ordering::greater;
+        }
+        return weak_ordering::equivalent;
+    }
+}
+
+template<class T, class U>
+using synth_three_way_result_t =
+    decltype(synth_three_way(declval<T&>(), declval<U&>()));
 
 template<class T, class U>
 constexpr void adl_swap(T&& left, U&& right)
@@ -507,12 +546,12 @@ template<class T1, class T2, class U1, class U2>
 constexpr auto operator<=>(const pair<T1, T2>& left,
                            const pair<U1, U2>& right) {
     using category = common_comparison_category_t<
-        decltype(compare_three_way{}(left.first, right.first)),
-        decltype(compare_three_way{}(left.second, right.second))>;
-    if (category result = compare_three_way{}(left.first, right.first);
+        detail::synth_three_way_result_t<T1, U1>,
+        detail::synth_three_way_result_t<T2, U2>>;
+    if (category result = detail::synth_three_way(left.first, right.first);
         result != 0)
         return result;
-    return category(compare_three_way{}(left.second, right.second));
+    return category(detail::synth_three_way(left.second, right.second));
 }
 
 template<class T1, class T2>
@@ -649,8 +688,7 @@ constexpr underlying_type_t<Enum> to_underlying(Enum value) noexcept {
     return static_cast<underlying_type_t<Enum>>(value);
 }
 
-template<class T, class U>
-    requires (is_integral_v<T> && is_integral_v<U>)
+template<detail::comparison_integer T, detail::comparison_integer U>
 constexpr bool cmp_equal(T left, U right) noexcept {
     if constexpr (is_signed_v<T> == is_signed_v<U>)
         return left == right;
@@ -660,14 +698,12 @@ constexpr bool cmp_equal(T left, U right) noexcept {
         return right < 0 ? false : left == make_unsigned_t<U>(right);
 }
 
-template<class T, class U>
-    requires (is_integral_v<T> && is_integral_v<U>)
+template<detail::comparison_integer T, detail::comparison_integer U>
 constexpr bool cmp_not_equal(T left, U right) noexcept {
     return !cmp_equal(left, right);
 }
 
-template<class T, class U>
-    requires (is_integral_v<T> && is_integral_v<U>)
+template<detail::comparison_integer T, detail::comparison_integer U>
 constexpr bool cmp_less(T left, U right) noexcept {
     if constexpr (is_signed_v<T> == is_signed_v<U>)
         return left < right;
@@ -677,26 +713,22 @@ constexpr bool cmp_less(T left, U right) noexcept {
         return right >= 0 && left < make_unsigned_t<U>(right);
 }
 
-template<class T, class U>
-    requires (is_integral_v<T> && is_integral_v<U>)
+template<detail::comparison_integer T, detail::comparison_integer U>
 constexpr bool cmp_greater(T left, U right) noexcept {
     return cmp_less(right, left);
 }
 
-template<class T, class U>
-    requires (is_integral_v<T> && is_integral_v<U>)
+template<detail::comparison_integer T, detail::comparison_integer U>
 constexpr bool cmp_less_equal(T left, U right) noexcept {
     return !cmp_less(right, left);
 }
 
-template<class T, class U>
-    requires (is_integral_v<T> && is_integral_v<U>)
+template<detail::comparison_integer T, detail::comparison_integer U>
 constexpr bool cmp_greater_equal(T left, U right) noexcept {
     return !cmp_less(left, right);
 }
 
-template<class Result, class T>
-    requires (is_integral_v<Result> && is_integral_v<T>)
+template<detail::comparison_integer Result, detail::comparison_integer T>
 constexpr bool in_range(T value) noexcept {
     using unsigned_result = make_unsigned_t<Result>;
     constexpr unsigned_result maximum =

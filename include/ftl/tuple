@@ -291,6 +291,7 @@ public:
     requires(
         !detail::is_tuple<remove_cvref_t<TupleLike>>::value &&
         !detail::is_pair<remove_cvref_t<TupleLike>>::value &&
+        !detail::is_subrange<remove_cvref_t<TupleLike>>::value &&
         detail::is_tuple_source<remove_cvref_t<TupleLike>>::value &&
         tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(Types) &&
         tuple_like_constructible<TupleLike>(index_sequence_for<Types...>{}) &&
@@ -438,6 +439,7 @@ public:
     requires(
         !detail::is_tuple<remove_cvref_t<TupleLike>>::value &&
         !detail::is_pair<remove_cvref_t<TupleLike>>::value &&
+        !detail::is_subrange<remove_cvref_t<TupleLike>>::value &&
         detail::is_tuple_source<remove_cvref_t<TupleLike>>::value &&
         tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(Types) &&
         tuple_like_constructible<TupleLike>(index_sequence_for<Types...>{}) &&
@@ -485,6 +487,7 @@ public:
   template <class TupleLike>
   constexpr tuple &operator=(TupleLike &&other)
     requires(!detail::is_tuple<remove_cvref_t<TupleLike>>::value &&
+             !detail::is_subrange<remove_cvref_t<TupleLike>>::value &&
              detail::is_tuple_source<remove_cvref_t<TupleLike>>::value &&
              tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(Types) &&
              tuple_like_assignable<TupleLike>(index_sequence_for<Types...>{}))
@@ -497,6 +500,7 @@ public:
   constexpr const tuple &operator=(TupleLike &&other) const
     requires(
         !detail::is_tuple<remove_cvref_t<TupleLike>>::value &&
+        !detail::is_subrange<remove_cvref_t<TupleLike>>::value &&
         detail::is_tuple_source<remove_cvref_t<TupleLike>>::value &&
         tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(Types) &&
         tuple_like_const_assignable<TupleLike>(index_sequence_for<Types...>{}))
@@ -612,11 +616,11 @@ constexpr const T &get(const tuple<Types...> &value) noexcept {
 }
 template <class T, class... Types>
 constexpr T &&get(tuple<Types...> &&value) noexcept {
-  return move(get<T>(value));
+  return static_cast<T &&>(get<T>(value));
 }
 template <class T, class... Types>
 constexpr const T &&get(const tuple<Types...> &&value) noexcept {
-  return move(get<T>(value));
+  return static_cast<const T &&>(get<T>(value));
 }
 
 namespace detail {
@@ -811,6 +815,7 @@ constexpr auto tuple_cat_two(Left &&left, Right &&right, index_sequence<L...>,
 inline constexpr detail::ignore_t ignore{};
 
 template <class F, class Tuple>
+  requires detail::is_tuple_source<remove_cvref_t<Tuple>>::value
 constexpr decltype(auto)
 apply(F &&function, Tuple &&value) noexcept(noexcept(detail::tuple_apply(
     forward<F>(function), forward<Tuple>(value),
@@ -822,7 +827,8 @@ apply(F &&function, Tuple &&value) noexcept(noexcept(detail::tuple_apply(
 
 template <class T, class Tuple>
 constexpr T make_from_tuple(Tuple &&value)
-  requires(detail::make_from_tuple_constructible<T, Tuple>(
+  requires(detail::is_tuple_source<remove_cvref_t<Tuple>>::value &&
+           detail::make_from_tuple_constructible<T, Tuple>(
       make_index_sequence<tuple_size_v<remove_reference_t<Tuple>>>{}))
 {
 #if FTL_HAS_REFERENCE_CONSTRUCTS_FROM_TEMPORARY
@@ -836,12 +842,17 @@ constexpr T make_from_tuple(Tuple &&value)
 }
 
 constexpr tuple<> tuple_cat() { return {}; }
-template <class Tuple> constexpr auto tuple_cat(Tuple &&value) {
+template <class Tuple>
+  requires detail::is_tuple_source<remove_cvref_t<Tuple>>::value
+constexpr auto tuple_cat(Tuple &&value) {
   return detail::tuple_cat_two(
       tuple<>{}, forward<Tuple>(value), index_sequence<>{},
       make_index_sequence<tuple_size_v<remove_reference_t<Tuple>>>{});
 }
 template <class First, class Second, class... Rest>
+  requires(detail::is_tuple_source<remove_cvref_t<First>>::value &&
+           detail::is_tuple_source<remove_cvref_t<Second>>::value &&
+           (detail::is_tuple_source<remove_cvref_t<Rest>>::value && ...))
 constexpr auto tuple_cat(First &&first, Second &&second, Rest &&...rest) {
   auto joined = detail::tuple_cat_two(
       forward<First>(first), forward<Second>(second),

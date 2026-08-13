@@ -246,9 +246,13 @@ template<size_t Index = 0, class Variant, class Function,
 constexpr R variant_dispatch(Variant&& value, Function&& function) {
     using plain = remove_reference_t<Variant>;
     if constexpr (Index < variant_size_v<plain>) {
-        if (value.index() == Index)
+        if (value.index() == Index) {
+            static_assert(is_same_v<
+                          R, invoke_result_t<Function,
+                               decltype(get<Index>(declval<Variant>()))>>);
             return invoke(forward<Function>(function),
                           get<Index>(forward<Variant>(value)));
+        }
         return variant_dispatch<Index + 1>(forward<Variant>(value),
                                            forward<Function>(function));
     } else {
@@ -381,9 +385,16 @@ public:
         else if (active == other.active)
             detail::variant_copy_assign_at(active, storage, other.storage);
         else {
-            destroy();
-            detail::variant_copy_construct_at(other.active, storage, other.storage);
-            active = other.active;
+            detail::variant_dispatch_indexed(
+                other, [this, &other](auto index, const auto& value) {
+                    using selected = remove_cvref_t<decltype(value)>;
+                    if constexpr (is_nothrow_copy_constructible_v<selected> ||
+                                  !is_nothrow_move_constructible_v<selected>) {
+                        emplace<index.value>(value);
+                    } else {
+                        *this = variant(other);
+                    }
+                });
         }
         return *this;
     }
@@ -413,6 +424,7 @@ public:
     template<class T, class Selected = detail::variant_selection<T&&, Types...>>
     constexpr variant& operator=(T&& value)
         requires (Selected::count == 1 &&
+                  is_constructible_v<detail::variant_selected_t<Selected, Types...>, T> &&
                   is_assignable_v<detail::variant_selected_t<Selected, Types...>&, T>) {
         if (active == Selected::value)
             detail::variant_get<Selected::value>(storage) = forward<T>(value);
@@ -428,12 +440,17 @@ public:
             forward<Args>(args)...);
     }
     template<class T, class U, class... Args>
-    constexpr T& emplace(initializer_list<U> values, Args&&... args) {
+    constexpr T& emplace(initializer_list<U> values, Args&&... args)
+        requires (detail::variant_type_count<T, Types...> == 1 &&
+                  is_constructible_v<T, initializer_list<U>&, Args...>) {
         return emplace<detail::variant_type_index<T, Types...>::value>(
             values, forward<Args>(args)...);
     }
     template<size_t Index, class... Args>
-    constexpr detail::variant_nth_t<Index, Types...>& emplace(Args&&... args) {
+        requires (Index < sizeof...(Types) &&
+                  is_constructible_v<detail::variant_nth_t<Index, Types...>,
+                                     Args...>)
+    constexpr auto& emplace(Args&&... args) {
         destroy();
         if constexpr ((is_trivially_copyable_v<Types> && ...))
             storage = detail::variant_storage<Types...>(
@@ -445,8 +462,10 @@ public:
         return detail::variant_get<Index>(storage);
     }
     template<size_t Index, class U, class... Args>
-    constexpr detail::variant_nth_t<Index, Types...>&
-    emplace(initializer_list<U> values, Args&&... args) {
+        requires (Index < sizeof...(Types) &&
+                  is_constructible_v<detail::variant_nth_t<Index, Types...>,
+                                     initializer_list<U>&, Args...>)
+    constexpr auto& emplace(initializer_list<U> values, Args&&... args) {
         destroy();
         if constexpr ((is_trivially_copyable_v<Types> && ...))
             storage = detail::variant_storage<Types...>(
@@ -472,10 +491,33 @@ public:
             detail::variant_dispatch_indexed(*this, [&other](auto index, auto& value) {
                 detail::variant_swap(value, get<index.value>(other));
             });
+        } else if (valueless_by_exception()) {
+            if (!other.valueless_by_exception()) {
+                *this = move(other);
+                other.destroy();
+            }
+        } else if (other.valueless_by_exception()) {
+            other = move(*this);
+            destroy();
         } else {
-            variant temporary(move(*this));
-            *this = move(other);
-            other = move(temporary);
+            detail::variant_dispatch_indexed(
+                *this, [this, &other](auto, auto& left_value) {
+                    using left_type = remove_cvref_t<decltype(left_value)>;
+                    detail::variant_dispatch_indexed(
+                        other, [this, &other](auto, auto& right_value) {
+                            using right_type =
+                                remove_cvref_t<decltype(right_value)>;
+                            if constexpr (
+                                is_nothrow_move_constructible_v<right_type> ||
+                                !is_nothrow_move_constructible_v<left_type>) {
+                                variant temporary(move(other));
+                                other = move(*this);
+                                *this = move(temporary);
+                            } else {
+                                other.swap(*this);
+                            }
+                        });
+                });
         }
     }
 
@@ -504,6 +546,27 @@ struct variant_size<variant<Types...>> : integral_constant<size_t, sizeof...(Typ
 template<class T> struct variant_size<const T> : variant_size<T> {};
 template<class T> struct variant_size<volatile T> : variant_size<T> {};
 template<class T> struct variant_size<const volatile T> : variant_size<T> {};
+
+namespace detail {
+template<class... Types>
+constexpr variant<Types...>& as_variant(variant<Types...>& value) noexcept {
+    return value;
+}
+template<class... Types>
+constexpr const variant<Types...>&
+as_variant(const variant<Types...>& value) noexcept {
+    return value;
+}
+template<class... Types>
+constexpr variant<Types...>&& as_variant(variant<Types...>&& value) noexcept {
+    return move(value);
+}
+template<class... Types>
+constexpr const variant<Types...>&&
+as_variant(const variant<Types...>&& value) noexcept {
+    return move(value);
+}
+}
 template<size_t Index, class... Types>
 struct variant_alternative<Index, variant<Types...>> {
     static_assert(Index < sizeof...(Types));
@@ -592,8 +655,9 @@ constexpr bool holds_alternative(const variant<Types...>& value) noexcept {
 
 template<class Function, class Variant>
 constexpr decltype(auto) visit(Function&& function, Variant&& value) {
-    if (value.valueless_by_exception()) detail::throw_bad_variant_access();
-    return detail::variant_dispatch(forward<Variant>(value),
+    auto&& actual = detail::as_variant(forward<Variant>(value));
+    if (actual.valueless_by_exception()) detail::throw_bad_variant_access();
+    return detail::variant_dispatch(forward<decltype(actual)>(actual),
                                     forward<Function>(function));
 }
 template<class Function, class Variant, class... Variants>

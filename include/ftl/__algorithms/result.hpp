@@ -144,6 +144,8 @@ template <class T> struct min_max_result {
   }
 };
 
+template <class T> using minmax_result = min_max_result<T>;
+
 template <class T> struct in_found_result {
   FTL_NO_UNIQUE_ADDRESS T in;
   bool found;

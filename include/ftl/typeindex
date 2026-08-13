@@ -24,6 +24,18 @@ public:
     [[nodiscard]] bool operator==(const type_index& other) const noexcept {
         return *info_ == *other.info_;
     }
+    [[nodiscard]] bool operator<(const type_index& other) const noexcept {
+        return info_->before(*other.info_);
+    }
+    [[nodiscard]] bool operator>(const type_index& other) const noexcept {
+        return other < *this;
+    }
+    [[nodiscard]] bool operator<=(const type_index& other) const noexcept {
+        return !(*this > other);
+    }
+    [[nodiscard]] bool operator>=(const type_index& other) const noexcept {
+        return !(*this < other);
+    }
     [[nodiscard]] strong_ordering operator<=>(const type_index& other) const noexcept {
         if (*this == other) return strong_ordering::equal;
         return info_->before(*other.info_) ? strong_ordering::less

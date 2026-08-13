@@ -1,11 +1,13 @@
 #ifdef FTL_REPLACE_STL
 #include <array>
+#include <format>
 #include <memory>
 #include <queue>
 #include <type_traits>
 namespace tested = std;
 #else
 #include <ftl/array>
+#include <ftl/format>
 #include <ftl/memory>
 #include <ftl/queue>
 #include <ftl/type_traits>
@@ -14,6 +16,14 @@ namespace tested = ftl;
 
 static_assert(tested::uses_allocator_v<tested::queue<int>, tested::allocator<int>>);
 static_assert(tested::uses_allocator_v<tested::priority_queue<int>, tested::allocator<int>>);
+struct fake_queue_allocator {
+  using value_type = int;
+  int *allocate(tested::size_t);
+};
+template<class A> concept queue_allocator_guide = requires(int *first, A allocator) {
+  tested::queue(first, first, allocator);
+};
+static_assert(!queue_allocator_guide<fake_queue_allocator>);
 
 bool ftl_test() {
   tested::array<int, 3> values{3, 1, 4};
@@ -24,8 +34,10 @@ bool ftl_test() {
   first.pop();
   tested::queue second(tested::from_range, values);
   if (!(second == tested::queue(tested::from_range, values))) return false;
+  if (tested::format("{}", second) != "[3, 1, 4]") return false;
 
   tested::priority_queue heap(tested::from_range, values);
+  if (tested::format("{}", heap).empty()) return false;
   if (heap.top() != 4) return false;
   heap.push(9);
   heap.emplace(2);

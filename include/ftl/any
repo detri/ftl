@@ -29,6 +29,10 @@ public:
 namespace detail {
 template<class T> inline unsigned char any_type_token;
 
+template<class T> struct is_in_place_type_specialization : false_type {};
+template<class T>
+struct is_in_place_type_specialization<in_place_type_t<T>> : true_type {};
+
 [[noreturn]] inline void throw_bad_any_cast() {
 #if FTL_HAS_EXCEPTIONS
     throw bad_any_cast{};
@@ -42,7 +46,7 @@ class any {
     struct base {
         virtual ~base() = default;
         [[nodiscard]] virtual base* clone() const = 0;
-#if defined(_CPPRTTI) || defined(__GXX_RTTI)
+#if FTL_HAS_RTTI
         [[nodiscard]] virtual const type_info& type() const noexcept = 0;
 #endif
         [[nodiscard]] virtual const void* token() const noexcept = 0;
@@ -56,7 +60,7 @@ class any {
         [[nodiscard]] base* clone() const override {
             return new holder(value);
         }
-#if defined(_CPPRTTI) || defined(__GXX_RTTI)
+#if FTL_HAS_RTTI
         [[nodiscard]] const type_info& type() const noexcept override {
             return typeid(T);
         }
@@ -81,7 +85,9 @@ public:
 
     template<class T>
     any(T&& value)
-        requires (!is_same_v<decay_t<T>, any> && valid_value<T>)
+        requires (!is_same_v<decay_t<T>, any> &&
+                  !detail::is_in_place_type_specialization<decay_t<T>>::value &&
+                  valid_value<T>)
         : content(new holder<decay_t<T>>(forward<T>(value))) {}
 
     template<class T, class... Args>
@@ -119,8 +125,8 @@ public:
         requires (is_copy_constructible_v<decay_t<T>> &&
                   is_constructible_v<decay_t<T>, Args...>) {
         using U = decay_t<T>;
-        any replacement(in_place_type<U>, forward<Args>(args)...);
-        swap(replacement);
+        reset();
+        content = new holder<U>(forward<Args>(args)...);
         return static_cast<holder<U>*>(content)->value;
     }
 
@@ -130,8 +136,8 @@ public:
                   is_constructible_v<decay_t<T>, initializer_list<U>&,
                                      Args...>) {
         using V = decay_t<T>;
-        any replacement(in_place_type<V>, values, forward<Args>(args)...);
-        swap(replacement);
+        reset();
+        content = new holder<V>(values, forward<Args>(args)...);
         return static_cast<holder<V>*>(content)->value;
     }
 
@@ -144,11 +150,13 @@ public:
         other.content = temporary;
     }
     [[nodiscard]] bool has_value() const noexcept { return content; }
-#if defined(_CPPRTTI) || defined(__GXX_RTTI)
     [[nodiscard]] const type_info& type() const noexcept {
+#if FTL_HAS_RTTI
         return content ? content->type() : typeid(void);
-    }
+#else
+        terminate();
 #endif
+    }
 
 private:
     template<class T> friend T* any_cast(any*) noexcept;
@@ -175,7 +183,7 @@ const T* any_cast(const any* operand) noexcept {
     using U = remove_cv_t<T>;
     if (!operand || !operand->content)
         return nullptr;
-#if defined(_CPPRTTI) || defined(__GXX_RTTI)
+#if FTL_HAS_RTTI
     if (operand->type() != typeid(U)) return nullptr;
 #else
     if (operand->content->token() != &detail::any_type_token<U>) return nullptr;

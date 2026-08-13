@@ -12,6 +12,20 @@ struct error : tested::exception {
     const char* what() const noexcept override { return "error"; }
 };
 
+struct private_nested : private tested::nested_exception {
+    virtual ~private_nested() = default;
+};
+struct nested_left : tested::nested_exception {};
+struct nested_right : tested::nested_exception {};
+struct ambiguous_nested : nested_left, nested_right {};
+
+static_assert(requires(const private_nested& value) {
+    tested::rethrow_if_nested(value);
+});
+static_assert(requires(const ambiguous_nested& value) {
+    tested::rethrow_if_nested(value);
+});
+
 bool exception_ptr_works() {
     tested::exception_ptr pointer;
     try {

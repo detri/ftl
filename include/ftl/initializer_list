@@ -15,8 +15,19 @@
 #endif
 namespace std {
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#define FTL_INITIALIZER_LIST_NO_SPECIALIZATIONS \
+    [[msvc::no_specializations("specializing initializer_list is forbidden")]]
+#elif defined(__has_cpp_attribute) && \
+    __has_cpp_attribute(_Clang::__no_specializations__)
+#define FTL_INITIALIZER_LIST_NO_SPECIALIZATIONS \
+    [[_Clang::__no_specializations__("specializing initializer_list is forbidden")]]
+#else
+#define FTL_INITIALIZER_LIST_NO_SPECIALIZATIONS
+#endif
+
 template<class T>
-class initializer_list {
+class FTL_INITIALIZER_LIST_NO_SPECIALIZATIONS initializer_list {
 public:
     using value_type      = T;
     using reference       = const T&;
@@ -72,6 +83,7 @@ constexpr const T* end(initializer_list<T> values) noexcept {
 }
 
 } // namespace std
+#undef FTL_INITIALIZER_LIST_NO_SPECIALIZATIONS
 #endif
 
 #ifndef FTL_REPLACE_STL

@@ -88,6 +88,10 @@ FTL_INTEGER_LIMITS(long);
 FTL_INTEGER_LIMITS(unsigned long);
 FTL_INTEGER_LIMITS(long long);
 FTL_INTEGER_LIMITS(unsigned long long);
+#if defined(__SIZEOF_INT128__)
+FTL_INTEGER_LIMITS(__int128);
+FTL_INTEGER_LIMITS(unsigned __int128);
+#endif
 #undef FTL_INTEGER_LIMITS
 
 template<> struct numeric_limits<bool> {

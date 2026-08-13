@@ -25,6 +25,41 @@ static_assert(!tested::in_range<unsigned char>(256));
 static_assert(!tested::in_range<unsigned>(-1));
 static_assert(tested::in_range<signed char>(-128));
 static_assert(!tested::in_range<signed char>(128));
+
+template <class T>
+concept comparison_integer = requires(T input) {
+  tested::cmp_equal(input, input);
+  tested::in_range<int>(input);
+};
+
+static_assert(comparison_integer<signed char>);
+static_assert(comparison_integer<unsigned char>);
+static_assert(!comparison_integer<bool>);
+static_assert(!comparison_integer<char>);
+static_assert(!comparison_integer<wchar_t>);
+static_assert(!comparison_integer<char8_t>);
+static_assert(!comparison_integer<char16_t>);
+static_assert(!comparison_integer<char32_t>);
+
+#if defined(__SIZEOF_INT128__)
+static_assert(comparison_integer<__int128>);
+static_assert(comparison_integer<unsigned __int128>);
+#endif
+
+struct legacy_ordered {
+  int value;
+
+  friend constexpr bool operator==(legacy_ordered, legacy_ordered) = default;
+
+  friend constexpr bool operator<(legacy_ordered left,
+                                  legacy_ordered right) {
+    return left.value < right.value;
+  }
+};
+
+static_assert(tested::pair<legacy_ordered, int>{{1}, 0} <
+              tested::pair<legacy_ordered, int>{{2}, 0});
+
 static_assert(tested::make_index_sequence<4>::size() == 4);
 static_assert(tested::is_same_v<tested::make_index_sequence<3>,
                                 tested::index_sequence<0, 1, 2>>);

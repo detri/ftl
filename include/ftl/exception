@@ -381,7 +381,9 @@ template<class T>
 template<class T>
 #if FTL_HAS_RTTI
 void rethrow_if_nested(const T& value) {
-    if constexpr (is_polymorphic_v<T>) {
+    if constexpr (is_polymorphic_v<T> && requires(const T *pointer) {
+                      dynamic_cast<const nested_exception *>(pointer);
+                  }) {
 #if defined(_MSC_VER) || __has_builtin(__builtin_addressof)
         const auto* nested =
             dynamic_cast<const nested_exception*>(

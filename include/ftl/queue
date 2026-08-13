@@ -27,11 +27,17 @@
 FTL_BEGIN_NAMESPACE
 
 namespace detail {
-template<class A> concept adaptor_allocator = requires(A& a, size_t n) {
-  typename A::value_type;
-  { a.allocate(n) };
-};
+template<class A> concept adaptor_allocator =
+  requires { typename A::value_type; } && copy_constructible<A> &&
+  equality_comparable<A> &&
+  requires(A& a, typename allocator_traits<A>::size_type n,
+           typename allocator_traits<A>::pointer p) {
+    { a.allocate(n) } -> same_as<typename allocator_traits<A>::pointer>;
+    a.deallocate(p, n);
+  };
 }
+
+template<class T, class charT> struct formatter;
 
 template<class T, class Container = deque<T>> class queue {
   static_assert(is_same_v<T, typename Container::value_type>);
@@ -79,6 +85,7 @@ public:
   template<class U, class C> friend bool operator<=(const queue<U, C>&, const queue<U, C>&);
   template<class U, class C> friend bool operator>=(const queue<U, C>&, const queue<U, C>&);
   template<class U, three_way_comparable C> friend compare_three_way_result_t<C> operator<=>(const queue<U, C>&, const queue<U, C>&);
+  template<class, class> friend struct formatter;
 };
 template<class C> requires (!detail::adaptor_allocator<C>) queue(C) -> queue<typename C::value_type, C>;
 template<input_iterator I> queue(I, I) -> queue<typename iterator_traits<I>::value_type>;
@@ -110,6 +117,7 @@ protected:
   Container c;
   Compare comp;
 public:
+  template<class, class> friend struct formatter;
   priority_queue() : priority_queue(Compare()) {}
   explicit priority_queue(const Compare& compare) : priority_queue(compare, Container()) {}
   priority_queue(const Compare& compare, const Container& cont) : c(cont), comp(compare) { make_heap(c.begin(), c.end(), comp); }

@@ -12,6 +12,8 @@ namespace detail {
 
 template <class Compare>
 concept transparent_compare = requires { typename Compare::is_transparent; };
+template <class Allocator>
+concept ordered_allocator_like = requires { typename Allocator::value_type; };
 
 template <class Key> struct set_key {
   const Key &operator()(const Key &value) const noexcept { return value; }
@@ -36,6 +38,8 @@ public:
 
 template <class Key, class T, class Compare, class Allocator, bool Multi>
 class ordered_map_base {
+  template <class, class, class, class, bool>
+  friend class ordered_map_base;
 protected:
   using tree_type = associative_tree<pair<const Key, T>, Key, map_key<Key, T>,
                                      Compare, Allocator, Multi>;
@@ -46,7 +50,17 @@ public:
   using mapped_type = T;
   using value_type = pair<const Key, T>;
   using key_compare = Compare;
-  using value_compare = ordered_value_compare<Key, Compare>;
+  class value_compare {
+    friend class ordered_map_base;
+  protected:
+    explicit value_compare(Compare compare) : compare_(move(compare)) {}
+  public:
+    bool operator()(const value_type &left, const value_type &right) const {
+      return compare_(left.first, right.first);
+    }
+  private:
+    Compare compare_;
+  };
   using allocator_type = Allocator;
   using pointer = typename allocator_traits<Allocator>::pointer;
   using const_pointer = typename allocator_traits<Allocator>::const_pointer;
@@ -75,6 +89,10 @@ public:
       : tree_(compare, allocator) {
     insert(first, last);
   }
+  template <input_iterator InputIterator>
+  ordered_map_base(InputIterator first, InputIterator last,
+                   const type_identity_t<Allocator> &allocator)
+      : ordered_map_base(first, last, Compare(), allocator) {}
   template <ranges::input_range Range>
   ordered_map_base(from_range_t, Range &&range,
                    const Compare &compare = Compare(),
@@ -82,10 +100,18 @@ public:
       : tree_(compare, allocator) {
     insert_range(static_cast<Range &&>(range));
   }
+  template <ranges::input_range Range>
+  ordered_map_base(from_range_t, Range &&range,
+                   const type_identity_t<Allocator> &allocator)
+      : ordered_map_base(from_range, static_cast<Range &&>(range), Compare(),
+                         allocator) {}
   ordered_map_base(initializer_list<value_type> values,
                    const Compare &compare = Compare(),
                    const Allocator &allocator = Allocator())
       : ordered_map_base(values.begin(), values.end(), compare, allocator) {}
+  ordered_map_base(initializer_list<value_type> values,
+                   const type_identity_t<Allocator> &allocator)
+      : ordered_map_base(values.begin(), values.end(), Compare(), allocator) {}
   ordered_map_base(const ordered_map_base &) = default;
   ordered_map_base(ordered_map_base &&) = default;
   ordered_map_base(const ordered_map_base &other, const Allocator &allocator)
@@ -258,6 +284,11 @@ public:
   }
   void merge(ordered_map_base &other) { tree_.merge(other.tree_); }
   void merge(ordered_map_base &&other) { merge(other); }
+  template <class OtherCompare, bool OtherMulti>
+  void merge_from(
+      ordered_map_base<Key, T, OtherCompare, Allocator, OtherMulti> &other) {
+    tree_.merge(other.tree_);
+  }
 
   key_compare key_comp() const { return tree_.key_comp(); }
   value_compare value_comp() const { return value_compare(key_comp()); }
@@ -307,6 +338,8 @@ public:
 
 template <class Key, class Compare, class Allocator, bool Multi>
 class ordered_set_base {
+  template <class, class, class, bool>
+  friend class ordered_set_base;
 protected:
   using tree_type =
       associative_tree<Key, Key, set_key<Key>, Compare, Allocator, Multi>;
@@ -345,6 +378,10 @@ public:
       : tree_(compare, allocator) {
     insert(first, last);
   }
+  template <input_iterator InputIterator>
+  ordered_set_base(InputIterator first, InputIterator last,
+                   const type_identity_t<Allocator> &allocator)
+      : ordered_set_base(first, last, Compare(), allocator) {}
   template <ranges::input_range Range>
   ordered_set_base(from_range_t, Range &&range,
                    const Compare &compare = Compare(),
@@ -352,10 +389,18 @@ public:
       : tree_(compare, allocator) {
     insert_range(static_cast<Range &&>(range));
   }
+  template <ranges::input_range Range>
+  ordered_set_base(from_range_t, Range &&range,
+                   const type_identity_t<Allocator> &allocator)
+      : ordered_set_base(from_range, static_cast<Range &&>(range), Compare(),
+                         allocator) {}
   ordered_set_base(initializer_list<value_type> values,
                    const Compare &compare = Compare(),
                    const Allocator &allocator = Allocator())
       : ordered_set_base(values.begin(), values.end(), compare, allocator) {}
+  ordered_set_base(initializer_list<value_type> values,
+                   const type_identity_t<Allocator> &allocator)
+      : ordered_set_base(values.begin(), values.end(), Compare(), allocator) {}
   ordered_set_base(const ordered_set_base &) = default;
   ordered_set_base(ordered_set_base &&) = default;
   ordered_set_base(const ordered_set_base &other, const Allocator &allocator)
@@ -444,6 +489,11 @@ public:
   }
   void merge(ordered_set_base &other) { tree_.merge(other.tree_); }
   void merge(ordered_set_base &&other) { merge(other); }
+  template <class OtherCompare, bool OtherMulti>
+  void merge_from(
+      ordered_set_base<Key, OtherCompare, Allocator, OtherMulti> &other) {
+    tree_.merge(other.tree_);
+  }
   key_compare key_comp() const { return tree_.key_comp(); }
   value_compare value_comp() const { return tree_.key_comp(); }
   iterator find(const Key &key) const { return tree_.find(key); }

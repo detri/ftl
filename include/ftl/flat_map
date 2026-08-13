@@ -44,7 +44,16 @@ namespace detail {
 template <class Compare>
 concept flat_transparent_compare = requires { typename Compare::is_transparent; };
 template <class Allocator>
-concept flat_allocator_like = requires { typename Allocator::value_type; };
+concept flat_allocator_like =
+    requires { typename Allocator::value_type; } &&
+    copy_constructible<Allocator> && equality_comparable<Allocator> &&
+    requires(Allocator &allocator,
+             typename allocator_traits<Allocator>::size_type size,
+             typename allocator_traits<Allocator>::pointer pointer) {
+      { allocator.allocate(size) } ->
+          same_as<typename allocator_traits<Allocator>::pointer>;
+      allocator.deallocate(pointer, size);
+    };
 [[noreturn]] inline void flat_map_range_failure() {
 #if FTL_HAS_EXCEPTIONS
   throw out_of_range("flat_map");
@@ -441,19 +450,14 @@ public:
       return insert(static_cast<Pair &&>(value)).first;
   }
   template <input_iterator I> void insert(I first, I last) {
-    for (; first != last; ++first)
-      insert(*first);
+    insert_bulk(first, last, false);
   }
   template <class Tag, input_iterator I>
     requires((is_same_v<Tag, sorted_unique_t> && !Multi) ||
              (is_same_v<Tag, sorted_equivalent_t> && Multi))
-  void insert(Tag, I first, I last) {
-    for (; first != last; ++first)
-      insert(*first);
-  }
+  void insert(Tag, I first, I last) { insert_bulk(first, last, true); }
   template <ranges::input_range R> void insert_range(R &&range) {
-    for (auto &&value : range)
-      insert(static_cast<decltype(value) &&>(value));
+    insert(ranges::begin(range), ranges::end(range));
   }
   void insert(initializer_list<value_type> values) {
     insert(values.begin(), values.end());
@@ -728,6 +732,45 @@ public:
   }
 
 protected:
+  template <input_iterator I>
+  void insert_bulk(I first, I last, bool incoming_is_sorted) {
+    const auto old_size = keys_.size();
+    append_sorted(first, last);
+    containers source{move(keys_), move(values_)};
+    vector<size_type> incoming;
+    incoming.reserve(source.keys.size() - old_size);
+    for (size_type index = old_size; index < source.keys.size(); ++index)
+      incoming.push_back(index);
+    if (!incoming_is_sorted)
+      FTL_FLAT_NAMESPACE::sort(
+          incoming.begin(), incoming.end(), [&](size_type left, size_type right) {
+            return compare_(source.keys[left], source.keys[right]);
+          });
+    if constexpr (requires { keys_.reserve(source.keys.size()); })
+      keys_.reserve(source.keys.size());
+    if constexpr (requires { values_.reserve(source.values.size()); })
+      values_.reserve(source.values.size());
+
+    size_type left = 0;
+    auto right = incoming.begin();
+    const auto append = [this, &source](size_type index) {
+      if constexpr (!Multi)
+        if (!keys_.empty() && equivalent(keys_.back(), source.keys[index]))
+          return;
+      keys_.push_back(move(source.keys[index]));
+      values_.push_back(move(source.values[index]));
+    };
+    while (left != old_size && right != incoming.end()) {
+      if (compare_(source.keys[*right], source.keys[left]))
+        append(*right++);
+      else
+        append(left++);
+    }
+    while (left != old_size)
+      append(left++);
+    while (right != incoming.end())
+      append(*right++);
+  }
   template <input_iterator I> void append_sorted(I first, I last) {
     for (; first != last; ++first) {
       keys_.push_back((*first).first);
@@ -821,6 +864,10 @@ class flat_map : public detail::flat_map_base<Key, T, Compare, KeyContainer,
 public:
   using base::base;
   using base::operator=;
+  flat_map &operator=(initializer_list<typename base::value_type> values) {
+    base::operator=(values);
+    return *this;
+  }
   using typename base::key_type;
   using typename base::mapped_type;
   mapped_type &operator[](const key_type &key) {
@@ -878,6 +925,10 @@ class flat_multimap
 public:
   using base::base;
   using base::operator=;
+  flat_multimap &operator=(initializer_list<typename base::value_type> values) {
+    base::operator=(values);
+    return *this;
+  }
 };
 template <class KC, class MC, class C = less<typename KC::value_type>>
   requires(!detail::flat_allocator_like<C>)
@@ -993,7 +1044,9 @@ bool operator==(const flat_multimap<K, T, C, KC, MC> &left,
 template <class C> auto flat_map_compare(const C &left, const C &right) {
   return lexicographical_compare_three_way(left.begin(), left.end(),
                                            right.begin(), right.end(),
-                                           compare_three_way{});
+                                           [](const auto &a, const auto &b) {
+                                             return detail::synth_three_way(a, b);
+                                           });
 }
 template <class K, class T, class C, class KC, class MC>
 auto operator<=>(const flat_map<K, T, C, KC, MC> &left,

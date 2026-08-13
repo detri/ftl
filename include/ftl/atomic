@@ -1013,6 +1013,8 @@ T atomic_dispatch_load(const volatile T *value, memory_order order) noexcept {
 template <class T>
 void atomic_dispatch_store(volatile T *value, T desired,
                            memory_order order) noexcept {
+  atomic_clear_non_value_bits(desired);
+
   if constexpr (atomic_native_lock_free_v<T>) {
     atomic_store_object(value, desired, order);
   } else {
@@ -1023,6 +1025,8 @@ void atomic_dispatch_store(volatile T *value, T desired,
 template <class T>
 T atomic_dispatch_exchange(volatile T *value, T desired,
                            memory_order order) noexcept {
+  atomic_clear_non_value_bits(desired);
+
   if constexpr (atomic_native_lock_free_v<T>) {
     return atomic_exchange_object(value, desired, order);
   } else {
@@ -1034,6 +1038,8 @@ template <class T>
 bool atomic_dispatch_compare_exchange(volatile T *value, T &expected, T desired,
                                       bool weak, memory_order success,
                                       memory_order failure) noexcept {
+  atomic_clear_non_value_bits(desired);
+
   if constexpr (!atomic_native_lock_free_v<T>) {
     return atomic_locked_compare_exchange(value, expected, desired);
   } else if constexpr (!atomic_might_have_non_value_bits_v<T> ||
@@ -1272,7 +1278,10 @@ public:
   constexpr atomic() noexcept(is_nothrow_default_constructible_v<T>)
       : value_() {}
 
-  constexpr atomic(T desired) noexcept : value_(desired) {}
+  constexpr atomic(T desired) noexcept : value_(desired) {
+    if (!__builtin_is_constant_evaluated())
+      detail::atomic_clear_non_value_bits(value_);
+  }
 
   atomic(const atomic &) = delete;
   atomic &operator=(const atomic &) = delete;

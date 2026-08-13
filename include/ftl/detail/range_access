@@ -568,13 +568,17 @@ concept member_data = requires(T &value) {
 template <class T>
 concept iterator_data =
     contiguous_iterator<iterator_t<T>> &&
-    requires(T &value) { range_access_addressof(*ranges::begin(value)); };
+    requires(T &value) {
+      FTL_RANGE_ACCESS_NAMESPACE::detail::iterator_to_address(
+          ranges::begin(value));
+    };
 
 template <class T> consteval bool data_noexcept() {
   if constexpr (member_data<T>) {
     return noexcept(declval<T &>().data());
   } else {
-    return noexcept(range_access_addressof(*ranges::begin(declval<T &>())));
+    return noexcept(FTL_RANGE_ACCESS_NAMESPACE::detail::iterator_to_address(
+        ranges::begin(declval<T &>())));
   }
 }
 
@@ -591,7 +595,8 @@ struct data_fn {
     if constexpr (member_data<U>) {
       return value.data();
     } else {
-      return range_access_addressof(*ranges::begin(value));
+      return FTL_RANGE_ACCESS_NAMESPACE::detail::iterator_to_address(
+          ranges::begin(value));
     }
   }
 };

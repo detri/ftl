@@ -301,7 +301,7 @@ public:
 
   template <class... Args> constexpr reference emplace_back(Args &&...args) {
     if (last_ == end_)
-      grow_for(1);
+      return reallocate_emplace_back(forward<Args>(args)...);
     construct_value(last_, forward<Args>(args)...);
     ++last_;
     return back();
@@ -407,13 +407,49 @@ private:
   }
   constexpr void grow_for(size_type count) {
     check_add(count);
+    reallocate_exact(grown_capacity(count));
+  }
+  [[nodiscard]] constexpr size_type grown_capacity(size_type count) const {
     const size_type required = size() + count;
     size_type grown = capacity() + capacity() / 2;
     if (grown < required)
       grown = required;
     if (grown > max_size())
       grown = max_size();
-    reallocate_exact(grown);
+    return grown;
+  }
+  template <class... Args>
+  constexpr reference reallocate_emplace_back(Args &&...args) {
+    check_add(1);
+    const size_type old_size = size();
+    const size_type new_capacity = grown_capacity(1);
+    pointer replacement = traits::allocate(allocator_, new_capacity);
+    pointer current = replacement;
+    bool appended = false;
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      // Construct the new element while references into the old vector remain
+      // valid, then relocate the old range before committing the allocation.
+      construct_value(replacement + static_cast<difference_type>(old_size),
+                      forward<Args>(args)...);
+      appended = true;
+      for (pointer source = first_; source != last_; ++source, ++current)
+        construct_value(current, move_if_noexcept(*source));
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      destroy(replacement, current);
+      if (appended)
+        destroy_value(replacement + static_cast<difference_type>(old_size));
+      traits::deallocate(allocator_, replacement, new_capacity);
+      throw;
+    }
+#endif
+    release();
+    first_ = replacement;
+    last_ = replacement + static_cast<difference_type>(old_size + 1);
+    end_ = replacement + static_cast<difference_type>(new_capacity);
+    return back();
   }
   constexpr void reallocate_exact(size_type count) {
     if (count > max_size())
@@ -442,6 +478,12 @@ private:
     end_ = replacement + static_cast<difference_type>(count);
   }
   constexpr void append_default(size_type count) {
+    if (count > capacity() - size()) {
+      reallocate_append(count, [](vector &owner, pointer place) {
+        owner.construct_value(place);
+      });
+      return;
+    }
     const bool owned_before = first_ != pointer{};
     reserve_for(count);
     pointer original = last_;
@@ -463,6 +505,12 @@ private:
 #endif
   }
   constexpr void append_fill(size_type count, const T &value) {
+    if (count > capacity() - size()) {
+      reallocate_append(count, [&value](vector &owner, pointer place) {
+        owner.construct_value(place, value);
+      });
+      return;
+    }
     const bool owned_before = first_ != pointer{};
     reserve_for(count);
     pointer original = last_;
@@ -482,6 +530,39 @@ private:
       throw;
     }
 #endif
+  }
+  template <class Construct>
+  constexpr void reallocate_append(size_type count, Construct construct) {
+    check_add(count);
+    if (count == 0)
+      return;
+    const size_type old_size = size();
+    const size_type new_capacity = grown_capacity(count);
+    pointer replacement = traits::allocate(allocator_, new_capacity);
+    pointer old_current = replacement;
+    pointer appended_first = replacement + static_cast<difference_type>(old_size);
+    pointer appended_current = appended_first;
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      // Build the appended range first so a fill value that aliases an
+      // existing element remains valid throughout its construction.
+      for (size_type index = 0; index < count; ++index, ++appended_current)
+        construct(*this, appended_current);
+      for (pointer source = first_; source != last_; ++source, ++old_current)
+        construct_value(old_current, move_if_noexcept(*source));
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      destroy(replacement, old_current);
+      destroy(appended_first, appended_current);
+      traits::deallocate(allocator_, replacement, new_capacity);
+      throw;
+    }
+#endif
+    release();
+    first_ = replacement;
+    last_ = replacement + static_cast<difference_type>(old_size + count);
+    end_ = replacement + static_cast<difference_type>(new_capacity);
   }
   template <input_iterator InputIterator>
   constexpr void append_iterators(InputIterator first, InputIterator last) {
@@ -617,6 +698,8 @@ public:
 
   class reference {
   public:
+    using __ftl_vector_bool_reference = void;
+
     constexpr reference(const reference &) noexcept = default;
     constexpr ~reference() = default;
     constexpr operator bool() const noexcept { return (*block_ & mask_) != 0; }
@@ -1099,7 +1182,9 @@ template <class Allocator> struct hash<vector<bool, Allocator>> {
   constexpr size_t
   operator()(const vector<bool, Allocator> &values) const noexcept {
     return static_cast<size_t>(ftl_rapidhash::rapidhash_with_seed(
-        values.storage_.data(), values.storage_.size(), values.size_));
+        values.storage_.data(),
+        values.storage_.size() * sizeof(typename vector<bool, Allocator>::block_type),
+        values.size_));
   }
 };
 

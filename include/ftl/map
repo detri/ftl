@@ -9,6 +9,7 @@
 #include <iterator>
 #include <memory>
 #include <memory_resource>
+#include <optional>
 #include <ranges>
 #include <tuple>
 #include <type_traits>
@@ -23,6 +24,7 @@
 #include <ftl/iterator>
 #include <ftl/memory>
 #include <ftl/memory_resource>
+#include <ftl/optional>
 #include <ftl/ranges>
 #include <ftl/tuple>
 #include <ftl/type_traits>
@@ -50,6 +52,9 @@ namespace detail {
 }
 } // namespace detail
 
+template <class Key, class T, class Compare, class Allocator> class map;
+template <class Key, class T, class Compare, class Allocator> class multimap;
+
 template <class Key, class T, class Compare = less<Key>,
           class Allocator = allocator<pair<const Key, T>>>
 class map : public detail::ordered_map_base<Key, T, Compare, Allocator, false> {
@@ -57,9 +62,29 @@ class map : public detail::ordered_map_base<Key, T, Compare, Allocator, false> {
 
 public:
   using base::base;
+  using base::merge;
   using base::operator=;
   using typename base::key_type;
   using typename base::mapped_type;
+
+  map &operator=(initializer_list<typename base::value_type> values) {
+    base::operator=(values);
+    return *this;
+  }
+  template <class OtherCompare>
+  void merge(map<Key, T, OtherCompare, Allocator> &source) {
+    using source_base = detail::ordered_map_base<Key, T, OtherCompare, Allocator, false>;
+    this->template merge_from<OtherCompare, false>(static_cast<source_base &>(source));
+  }
+  template <class OtherCompare>
+  void merge(map<Key, T, OtherCompare, Allocator> &&source) { merge(source); }
+  template <class OtherCompare>
+  void merge(multimap<Key, T, OtherCompare, Allocator> &source) {
+    using source_base = detail::ordered_map_base<Key, T, OtherCompare, Allocator, true>;
+    this->template merge_from<OtherCompare, true>(static_cast<source_base &>(source));
+  }
+  template <class OtherCompare>
+  void merge(multimap<Key, T, OtherCompare, Allocator> &&source) { merge(source); }
 
   mapped_type &operator[](const key_type &key) {
     return this->try_emplace(key).first->second;
@@ -89,7 +114,26 @@ class multimap
 
 public:
   using base::base;
+  using base::merge;
   using base::operator=;
+  multimap &operator=(initializer_list<typename base::value_type> values) {
+    base::operator=(values);
+    return *this;
+  }
+  template <class OtherCompare>
+  void merge(map<Key, T, OtherCompare, Allocator> &source) {
+    using source_base = detail::ordered_map_base<Key, T, OtherCompare, Allocator, false>;
+    this->template merge_from<OtherCompare, false>(static_cast<source_base &>(source));
+  }
+  template <class OtherCompare>
+  void merge(map<Key, T, OtherCompare, Allocator> &&source) { merge(source); }
+  template <class OtherCompare>
+  void merge(multimap<Key, T, OtherCompare, Allocator> &source) {
+    using source_base = detail::ordered_map_base<Key, T, OtherCompare, Allocator, true>;
+    this->template merge_from<OtherCompare, true>(static_cast<source_base &>(source));
+  }
+  template <class OtherCompare>
+  void merge(multimap<Key, T, OtherCompare, Allocator> &&source) { merge(source); }
 };
 
 template <class InputIterator,
@@ -97,20 +141,81 @@ template <class InputIterator,
               typename iterator_traits<InputIterator>::value_type::first_type>,
           class Allocator =
               allocator<typename iterator_traits<InputIterator>::value_type>>
+  requires(!detail::ordered_allocator_like<Compare>)
 map(InputIterator, InputIterator, Compare = Compare(), Allocator = Allocator())
     -> map<remove_const_t<
                typename iterator_traits<InputIterator>::value_type::first_type>,
            typename iterator_traits<InputIterator>::value_type::second_type,
            Compare, Allocator>;
+template <class InputIterator, detail::ordered_allocator_like Allocator>
+map(InputIterator, InputIterator, Allocator)
+    -> map<remove_const_t<
+               typename iterator_traits<InputIterator>::value_type::first_type>,
+           typename iterator_traits<InputIterator>::value_type::second_type,
+           less<remove_const_t<typename iterator_traits<InputIterator>::value_type::first_type>>,
+           Allocator>;
 template <
     ranges::input_range Range,
     class Compare =
         less<remove_const_t<typename ranges::range_value_t<Range>::first_type>>,
     class Allocator = allocator<ranges::range_value_t<Range>>>
+  requires(!detail::ordered_allocator_like<Compare>)
 map(from_range_t, Range &&, Compare = Compare(), Allocator = Allocator())
     -> map<remove_const_t<typename ranges::range_value_t<Range>::first_type>,
            typename ranges::range_value_t<Range>::second_type, Compare,
            Allocator>;
+template <ranges::input_range Range, detail::ordered_allocator_like Allocator>
+map(from_range_t, Range &&, Allocator)
+    -> map<remove_const_t<typename ranges::range_value_t<Range>::first_type>,
+           typename ranges::range_value_t<Range>::second_type,
+           less<remove_const_t<typename ranges::range_value_t<Range>::first_type>>,
+           Allocator>;
+template <class Key, class T, class Compare = less<remove_const_t<Key>>,
+          class Allocator = allocator<pair<const remove_const_t<Key>, T>>>
+  requires(!detail::ordered_allocator_like<Compare>)
+map(initializer_list<pair<Key, T>>, Compare = Compare(),
+    Allocator = Allocator())
+    -> map<remove_const_t<Key>, T, Compare, Allocator>;
+template <class Key, class T, detail::ordered_allocator_like Allocator>
+map(initializer_list<pair<Key, T>>, Allocator)
+    -> map<remove_const_t<Key>, T, less<remove_const_t<Key>>, Allocator>;
+
+template <class InputIterator,
+          class Compare = less<remove_const_t<typename iterator_traits<InputIterator>::value_type::first_type>>,
+          class Allocator = allocator<typename iterator_traits<InputIterator>::value_type>>
+  requires(!detail::ordered_allocator_like<Compare>)
+multimap(InputIterator, InputIterator, Compare = Compare(), Allocator = Allocator())
+    -> multimap<remove_const_t<typename iterator_traits<InputIterator>::value_type::first_type>,
+                typename iterator_traits<InputIterator>::value_type::second_type,
+                Compare, Allocator>;
+template <class InputIterator, detail::ordered_allocator_like Allocator>
+multimap(InputIterator, InputIterator, Allocator)
+    -> multimap<remove_const_t<typename iterator_traits<InputIterator>::value_type::first_type>,
+                typename iterator_traits<InputIterator>::value_type::second_type,
+                less<remove_const_t<typename iterator_traits<InputIterator>::value_type::first_type>>,
+                Allocator>;
+template <ranges::input_range Range,
+          class Compare = less<remove_const_t<typename ranges::range_value_t<Range>::first_type>>,
+          class Allocator = allocator<ranges::range_value_t<Range>>>
+  requires(!detail::ordered_allocator_like<Compare>)
+multimap(from_range_t, Range &&, Compare = Compare(), Allocator = Allocator())
+    -> multimap<remove_const_t<typename ranges::range_value_t<Range>::first_type>,
+                typename ranges::range_value_t<Range>::second_type, Compare,
+                Allocator>;
+template <ranges::input_range Range, detail::ordered_allocator_like Allocator>
+multimap(from_range_t, Range &&, Allocator)
+    -> multimap<remove_const_t<typename ranges::range_value_t<Range>::first_type>,
+                typename ranges::range_value_t<Range>::second_type,
+                less<remove_const_t<typename ranges::range_value_t<Range>::first_type>>,
+                Allocator>;
+template <class Key, class T, class Compare = less<remove_const_t<Key>>,
+          class Allocator = allocator<pair<const remove_const_t<Key>, T>>>
+  requires(!detail::ordered_allocator_like<Compare>)
+multimap(initializer_list<pair<Key, T>>, Compare = Compare(), Allocator = Allocator())
+    -> multimap<remove_const_t<Key>, T, Compare, Allocator>;
+template <class Key, class T, detail::ordered_allocator_like Allocator>
+multimap(initializer_list<pair<Key, T>>, Allocator)
+    -> multimap<remove_const_t<Key>, T, less<remove_const_t<Key>>, Allocator>;
 
 template <class Key, class T, class Compare, class Allocator>
 bool operator==(const map<Key, T, Compare, Allocator> &left,
@@ -123,7 +228,9 @@ auto operator<=>(const map<Key, T, Compare, Allocator> &left,
                  const map<Key, T, Compare, Allocator> &right) {
   return lexicographical_compare_three_way(left.begin(), left.end(),
                                            right.begin(), right.end(),
-                                           compare_three_way{});
+                                           [](const auto &a, const auto &b) {
+                                             return detail::synth_three_way(a, b);
+                                           });
 }
 template <class Key, class T, class Compare, class Allocator>
 bool operator==(const multimap<Key, T, Compare, Allocator> &left,
@@ -136,7 +243,9 @@ auto operator<=>(const multimap<Key, T, Compare, Allocator> &left,
                  const multimap<Key, T, Compare, Allocator> &right) {
   return lexicographical_compare_three_way(left.begin(), left.end(),
                                            right.begin(), right.end(),
-                                           compare_three_way{});
+                                           [](const auto &a, const auto &b) {
+                                             return detail::synth_three_way(a, b);
+                                           });
 }
 template <class Container>
 void swap(Container &left,
