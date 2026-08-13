@@ -1,20 +1,61 @@
 // Freestanding Template Library
 // SPDX-License-Identifier: MIT
+
 #ifndef FTL_CASSERT_HEADER
 #define FTL_CASSERT_HEADER
 
-#undef assert
-#ifdef NDEBUG
-#define assert(E) ((void)0)
-#elif defined(_WIN32)
-extern "C" void _assert(const char*, const char*, unsigned);
-#define assert(E) ((E) ? (void)0 : _assert(#E, __FILE__, __LINE__))
+/*
+ * The platform assertion entry points only need to be declared once.
+ *
+ * The assert macro itself deliberately lives outside this include guard:
+ * N4950 requires it to be redefined from the current state of NDEBUG
+ * every time <cassert> is included.
+ */
+
+#if defined(_WIN32)
+
+extern "C" void _assert(const char *, const char *, unsigned);
+
 #elif defined(__APPLE__)
-extern "C" void __assert_rtn(const char*, const char*, int, const char*);
-#define assert(E) ((E) ? (void)0 : __assert_rtn(__func__, __FILE__, __LINE__, #E))
+
+extern "C" void __assert_rtn(const char *, const char *, int, const char *);
+
 #else
-extern "C" [[noreturn]] void __assert_fail(const char*, const char*, unsigned, const char*) noexcept;
-#define assert(E) ((E) ? (void)0 : __assert_fail(#E, __FILE__, __LINE__, __func__))
+
+extern "C" [[noreturn]]
+void __assert_fail(const char *, const char *, unsigned,
+                   const char *) noexcept;
+
 #endif
+
+#endif // FTL_CASSERT_HEADER
+
+/*
+ * [assertions.assert]
+ *
+ * assert must be redefined according to the current state of NDEBUG on
+ * every inclusion of <cassert>.
+ */
+
+#undef assert
+
+#ifdef NDEBUG
+
+#define assert(E) ((void)0)
+
+#elif defined(_WIN32)
+
+#define assert(E)                                                             \
+  ((E) ? (void)0 : _assert(#E, __FILE__, __LINE__))
+
+#elif defined(__APPLE__)
+
+#define assert(E)                                                             \
+  ((E) ? (void)0 : __assert_rtn(__func__, __FILE__, __LINE__, #E))
+
+#else
+
+#define assert(E)                                                             \
+  ((E) ? (void)0 : __assert_fail(#E, __FILE__, __LINE__, __func__))
 
 #endif

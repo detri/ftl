@@ -10,11 +10,17 @@ namespace ftl {
 #endif
 
 using clock_t = long;
+
 #if defined(_WIN32)
 using time_t = long long;
 #else
 using time_t = long;
 #endif
+
+struct timespec {
+  time_t tv_sec;
+  long tv_nsec;
+};
 
 struct tm {
   int tm_sec;

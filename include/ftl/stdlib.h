@@ -1,4 +1,34 @@
+// Freestanding Template Library
+// SPDX-License-Identifier: MIT
+#ifndef FTL_STDLIB_H_HEADER
+#define FTL_STDLIB_H_HEADER
+
+#ifdef FTL_REPLACE_STL
 #include <cstdlib>
-using div_t = std::div_t;
-using ldiv_t = std::ldiv_t;
-using lldiv_t = std::lldiv_t;
+#define FTL_STDLIB_NAMESPACE std
+#else
+#include <ftl/cstdlib>
+#define FTL_STDLIB_NAMESPACE ftl
+#endif
+
+using FTL_STDLIB_NAMESPACE::size_t;
+
+using FTL_STDLIB_NAMESPACE::div_t;
+using FTL_STDLIB_NAMESPACE::ldiv_t;
+using FTL_STDLIB_NAMESPACE::lldiv_t;
+
+using FTL_STDLIB_NAMESPACE::abs;
+using FTL_STDLIB_NAMESPACE::labs;
+using FTL_STDLIB_NAMESPACE::llabs;
+
+using FTL_STDLIB_NAMESPACE::div;
+using FTL_STDLIB_NAMESPACE::ldiv;
+using FTL_STDLIB_NAMESPACE::lldiv;
+
+#if defined(_WIN32)
+using FTL_STDLIB_NAMESPACE::aligned_alloc;
+#endif
+
+#undef FTL_STDLIB_NAMESPACE
+
+#endif // FTL_STDLIB_H_HEADER
