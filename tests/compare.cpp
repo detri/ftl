@@ -272,6 +272,41 @@ static_assert(tested::weak_order(negative_quiet_nan_one, quiet_nan_one) < 0);
 static_assert(tested::partial_order(quiet_nan_one, 0.0f) ==
               tested::partial_ordering::unordered);
 
+static_assert(tested::strong_ordering::less < 0);
+static_assert(tested::strong_ordering::equal == 0);
+static_assert(tested::strong_ordering::greater > 0);
+
+static_assert(0 > tested::strong_ordering::less);
+static_assert(0 == tested::strong_ordering::equal);
+static_assert(0 < tested::strong_ordering::greater);
+
+static_assert(tested::weak_ordering::less < 0);
+static_assert(tested::weak_ordering::equivalent == 0);
+static_assert(tested::weak_ordering::greater > 0);
+
+static_assert(0 > tested::weak_ordering::less);
+static_assert(0 == tested::weak_ordering::equivalent);
+static_assert(0 < tested::weak_ordering::greater);
+
+static_assert(tested::partial_ordering::less < 0);
+static_assert(tested::partial_ordering::equivalent == 0);
+static_assert(tested::partial_ordering::greater > 0);
+
+static_assert(0 > tested::partial_ordering::less);
+static_assert(0 == tested::partial_ordering::equivalent);
+static_assert(0 < tested::partial_ordering::greater);
+
+static_assert(tested::partial_ordering::unordered != 0);
+static_assert(!(tested::partial_ordering::unordered < 0));
+static_assert(!(tested::partial_ordering::unordered > 0));
+static_assert(!(tested::partial_ordering::unordered <= 0));
+static_assert(!(tested::partial_ordering::unordered >= 0));
+
+static_assert(!(0 < tested::partial_ordering::unordered));
+static_assert(!(0 > tested::partial_ordering::unordered));
+static_assert(!(0 <= tested::partial_ordering::unordered));
+static_assert(!(0 >= tested::partial_ordering::unordered));
+
 struct weak_precedence {
   int value;
 
