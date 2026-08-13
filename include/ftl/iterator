@@ -1448,6 +1448,22 @@ public:
     return current == sentinel;
   }
 
+template <detail::not_a_const_iterator CI>
+  requires(
+      constant_iterator<CI> &&
+      convertible_to<const Iterator &, CI>)
+constexpr operator CI() const & {
+  return current;
+}
+
+template <detail::not_a_const_iterator CI>
+  requires(
+      constant_iterator<CI> &&
+      convertible_to<Iterator, CI>)
+constexpr operator CI() && {
+  return FTL_ITER_NS::move(current);
+}
+
   constexpr bool operator<(const basic_const_iterator &right) const
     requires random_access_iterator<Iterator>
   {

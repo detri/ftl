@@ -16,7 +16,7 @@ using mutable_iterator = tested::basic_const_iterator<int *>;
 
 using constant_iterator = tested::basic_const_iterator<const int *>;
 
-static_assert(tested::totally_ordered_with<int*, const int*>);
+static_assert(tested::totally_ordered_with<int *, const int *>);
 
 template <class T>
 concept has_iterator_category = requires { typename T::iterator_category; };
@@ -128,6 +128,12 @@ static_assert(tested::convertible_to<int *, mutable_iterator>);
 
 static_assert(tested::convertible_to<mutable_iterator, constant_iterator>);
 
+static_assert(tested::convertible_to<const mutable_iterator &, const int *>);
+
+static_assert(tested::convertible_to<mutable_iterator, const int *>);
+
+static_assert(tested::totally_ordered_with<const int *, mutable_iterator>);
+
 static_assert(
     tested::same_as<
         decltype(tested::declval<const mutable_iterator &>().operator->()),
@@ -149,9 +155,7 @@ static_assert(
 static_assert(tested::same_as<tested::common_reference_t<const int &, int &>,
                               const int &>);
 
-static_assert(tested::totally_ordered_with<
-    const int *,
-    mutable_iterator>);
+static_assert(tested::totally_ordered_with<const int *, mutable_iterator>);
 
 static_assert(requires(mutable_iterator mutable_value,
                        constant_iterator constant_value, int *mutable_pointer,
