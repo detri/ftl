@@ -355,6 +355,10 @@ static consteval bool compare_three_way_noexcept() {
     }
 }
 
+template<class T>
+constexpr partial_ordering
+float_partial_order(T left, T right) noexcept;
+
 } // namespace detail
 
 struct compare_three_way {
@@ -368,10 +372,12 @@ struct compare_three_way {
 #endif
     constexpr auto operator()(T&& left, U&& right) const
         noexcept(detail::compare_three_way_noexcept<T, U>()) {
+
         if constexpr (detail::builtin_pointer_three_way<T, U>) {
             return detail::pointer_total_order(
                 static_cast<T&&>(left),
                 static_cast<U&&>(right));
+
 #ifndef FTL_REPLACE_STL
         } else if constexpr (
             detail::builtin_arithmetic_three_way<T, U>) {
@@ -380,22 +386,14 @@ struct compare_three_way {
                 is_floating_point_v<decay_t<T>> ||
                 is_floating_point_v<decay_t<U>>) {
 
-                if (static_cast<T&&>(left) <
-                    static_cast<U&&>(right)) {
-                    return partial_ordering::less;
-                }
+                using common_type =
+                    common_type_t<decay_t<T>, decay_t<U>>;
 
-                if (static_cast<T&&>(left) >
-                    static_cast<U&&>(right)) {
-                    return partial_ordering::greater;
-                }
-
-                if (static_cast<T&&>(left) ==
-                    static_cast<U&&>(right)) {
-                    return partial_ordering::equivalent;
-                }
-
-                return partial_ordering::unordered;
+                return detail::float_partial_order(
+                    static_cast<common_type>(
+                        static_cast<T&&>(left)),
+                    static_cast<common_type>(
+                        static_cast<U&&>(right)));
             } else {
                 if (static_cast<T&&>(left) <
                     static_cast<U&&>(right)) {
@@ -505,108 +503,291 @@ struct float_order_bits;
 template<>
 struct float_order_bits<float> {
     using type = unsigned int;
+
     static_assert(sizeof(type) == sizeof(float));
-    static constexpr type sign = type(1) << 31;
-    static constexpr type mask = ~type(0);
+
+    static constexpr type sign =
+        type(1) << 31;
+
+    static constexpr type exponent =
+        type(0xff) << 23;
+
+    static constexpr type fraction =
+        (type(1) << 23) - 1;
+
+    static constexpr type mask =
+        ~type(0);
 };
 
 template<>
 struct float_order_bits<double> {
     using type = unsigned long long;
+
     static_assert(sizeof(type) == sizeof(double));
-    static constexpr type sign = type(1) << 63;
-    static constexpr type mask = ~type(0);
+
+    static constexpr type sign =
+        type(1) << 63;
+
+    static constexpr type exponent =
+        type(0x7ff) << 52;
+
+    static constexpr type fraction =
+        (type(1) << 52) - 1;
+
+    static constexpr type mask =
+        ~type(0);
 };
 
 template<>
 struct float_order_bits<long double> {
 #if defined(_MSC_VER) || __SIZEOF_LONG_DOUBLE__ == 8
+
     using type = unsigned long long;
-    static constexpr type sign = type(1) << 63;
-    static constexpr type mask = ~type(0);
-#elif defined(__SIZEOF_INT128__) && __SIZEOF_LONG_DOUBLE__ == 16
+
+    static constexpr type sign =
+        type(1) << 63;
+
+    static constexpr type exponent =
+        type(0x7ff) << 52;
+
+    static constexpr type fraction =
+        (type(1) << 52) - 1;
+
+    static constexpr type mask =
+        ~type(0);
+
+#elif defined(__SIZEOF_INT128__) && \
+      __SIZEOF_LONG_DOUBLE__ == 16
+
     using type = unsigned __int128;
-    struct representation { unsigned char bytes[16]; };
-    static constexpr type sign = type(1) << 79;
-    static constexpr type mask = (type(1) << 80) - 1;
+
+    struct representation {
+        unsigned char bytes[16];
+    };
+
+    static constexpr type sign =
+        type(1) << 79;
+
+    static constexpr type exponent =
+        type(0x7fff) << 64;
+
+    /*
+     * x87 extended precision has an explicit integer bit
+     * at bit 63. The fraction field is bits 0..62.
+     */
+    static constexpr type fraction =
+        (type(1) << 63) - 1;
+
+    static constexpr type mask =
+        (type(1) << 80) - 1;
+
 #else
 #error "FTL requires a supported long double representation"
 #endif
+
     static_assert(sizeof(type) == sizeof(long double));
 };
 
 template<class T>
-constexpr strong_ordering float_strong_order(T left, T right) noexcept {
+constexpr typename float_order_bits<T>::type
+float_raw_bits(T value) noexcept {
     using traits = float_order_bits<T>;
     using bits = typename traits::type;
-    bits left_bits;
-    bits right_bits;
-#if !defined(_MSC_VER) && defined(__SIZEOF_INT128__) && \
+
+#if !defined(_MSC_VER) && \
+    defined(__SIZEOF_INT128__) && \
     __SIZEOF_LONG_DOUBLE__ == 16
+
     if constexpr (is_same_v<T, long double>) {
-        const auto left_bytes =
-            __builtin_bit_cast(typename traits::representation, left);
-        const auto right_bytes =
-            __builtin_bit_cast(typename traits::representation, right);
-        left_bits = 0;
-        right_bits = 0;
+        const auto bytes =
+            __builtin_bit_cast(
+                typename traits::representation,
+                value);
+
+        bits result = 0;
+
         for (unsigned index = 0; index < 10; ++index) {
-            left_bits |= bits(left_bytes.bytes[index]) << (index * 8);
-            right_bits |= bits(right_bytes.bytes[index]) << (index * 8);
+            result |=
+                bits(bytes.bytes[index]) <<
+                (index * 8);
         }
+
+        return result & traits::mask;
     } else
 #endif
     {
-        left_bits = __builtin_bit_cast(bits, left) & traits::mask;
-        right_bits = __builtin_bit_cast(bits, right) & traits::mask;
+        return __builtin_bit_cast(bits, value) &
+               traits::mask;
     }
-    const bits left_key = left_bits & traits::sign
-        ? (~left_bits & traits::mask) : (left_bits | traits::sign);
-    const bits right_key = right_bits & traits::sign
-        ? (~right_bits & traits::mask) : (right_bits | traits::sign);
-    if (left_key < right_key) return strong_ordering::less;
-    if (left_key > right_key) return strong_ordering::greater;
+}
+
+template<class T>
+constexpr bool
+float_is_nan_bits(
+    typename float_order_bits<T>::type value) noexcept {
+
+    using traits = float_order_bits<T>;
+
+    return
+        (value & traits::exponent) ==
+            traits::exponent &&
+        (value & traits::fraction) != 0;
+}
+
+template<class T>
+constexpr bool
+float_is_zero_bits(
+    typename float_order_bits<T>::type value) noexcept {
+
+    using traits = float_order_bits<T>;
+
+    return (value & ~traits::sign) == 0;
+}
+
+template<class T>
+constexpr bool
+float_sign_bit(
+    typename float_order_bits<T>::type value) noexcept {
+
+    return
+        (value & float_order_bits<T>::sign) != 0;
+}
+
+template<class T>
+constexpr strong_ordering
+float_strong_order(T left, T right) noexcept {
+    using traits = float_order_bits<T>;
+    using bits = typename traits::type;
+
+    const bits left_bits =
+        float_raw_bits(left);
+
+    const bits right_bits =
+        float_raw_bits(right);
+
+    const bits left_key =
+        left_bits & traits::sign
+            ? (~left_bits & traits::mask)
+            : (left_bits | traits::sign);
+
+    const bits right_key =
+        right_bits & traits::sign
+            ? (~right_bits & traits::mask)
+            : (right_bits | traits::sign);
+
+    if (left_key < right_key) {
+        return strong_ordering::less;
+    }
+
+    if (left_key > right_key) {
+        return strong_ordering::greater;
+    }
+
     return strong_ordering::equal;
 }
 
 template<class T>
-constexpr weak_ordering float_weak_order(T left, T right) noexcept {
-    if (left < right) {
-        return weak_ordering::less;
+constexpr weak_ordering
+float_weak_order(T left, T right) noexcept {
+    const auto left_bits =
+        float_raw_bits(left);
+
+    const auto right_bits =
+        float_raw_bits(right);
+
+    const bool left_nan =
+        float_is_nan_bits<T>(left_bits);
+
+    const bool right_nan =
+        float_is_nan_bits<T>(right_bits);
+
+    /*
+     * IEC 60559 weak ordering:
+     *
+     *   all negative NaNs
+     *   ...
+     *   -0 == +0
+     *   ...
+     *   all positive NaNs
+     */
+    if (left_nan || right_nan) {
+        const bool left_negative =
+            float_sign_bit<T>(left_bits);
+
+        const bool right_negative =
+            float_sign_bit<T>(right_bits);
+
+        if (left_nan && right_nan) {
+            if (left_negative == right_negative) {
+                return weak_ordering::equivalent;
+            }
+
+            return left_negative
+                ? weak_ordering::less
+                : weak_ordering::greater;
+        }
+
+        if (left_nan) {
+            return left_negative
+                ? weak_ordering::less
+                : weak_ordering::greater;
+        }
+
+        return right_negative
+            ? weak_ordering::greater
+            : weak_ordering::less;
     }
 
-    if (left > right) {
-        return weak_ordering::greater;
-    }
-
-    if (left == right) {
-        // In particular, -0.0 and +0.0 belong to one equivalence class.
+    if (float_is_zero_bits<T>(left_bits) &&
+        float_is_zero_bits<T>(right_bits)) {
         return weak_ordering::equivalent;
     }
 
-    // At least one operand is NaN.
-    const bool left_nan = left != left;
-    const bool right_nan = right != right;
+    const strong_ordering result =
+        float_strong_order(left, right);
 
-    const int left_nan_class =
-        left_nan
-            ? (float_strong_order(left, T(0)) < 0 ? -1 : 1)
-            : 0;
-
-    const int right_nan_class =
-        right_nan
-            ? (float_strong_order(right, T(0)) < 0 ? -1 : 1)
-            : 0;
-
-    if (left_nan_class < right_nan_class) {
+    if (result < 0) {
         return weak_ordering::less;
     }
 
-    if (left_nan_class > right_nan_class) {
+    if (result > 0) {
         return weak_ordering::greater;
     }
 
     return weak_ordering::equivalent;
+}
+
+template<class T>
+constexpr partial_ordering
+float_partial_order(T left, T right) noexcept {
+    const auto left_bits =
+        float_raw_bits(left);
+
+    const auto right_bits =
+        float_raw_bits(right);
+
+    if (float_is_nan_bits<T>(left_bits) ||
+        float_is_nan_bits<T>(right_bits)) {
+        return partial_ordering::unordered;
+    }
+
+    if (float_is_zero_bits<T>(left_bits) &&
+        float_is_zero_bits<T>(right_bits)) {
+        return partial_ordering::equivalent;
+    }
+
+    const strong_ordering result =
+        float_strong_order(left, right);
+
+    if (result < 0) {
+        return partial_ordering::less;
+    }
+
+    if (result > 0) {
+        return partial_ordering::greater;
+    }
+
+    return partial_ordering::equivalent;
 }
 
 struct strong_order_fn {
@@ -755,49 +936,64 @@ private:
     static consteval bool call_is_noexcept() {
         if constexpr (adl_partial_order<T, U>) {
             return noexcept(
-                call_partial_order(declval<T>(), declval<U>()));
+                call_partial_order(
+                    declval<T>(),
+                    declval<U>()));
+        } else if constexpr (
+            is_floating_point_v<decay_t<T>>) {
+            return true;
         } else if constexpr (requires {
             partial_ordering(
                 compare_three_way{}(
                     declval<T>(),
                     declval<U>()));
         }) {
-            return noexcept(partial_ordering(
-                compare_three_way{}(
-                    declval<T>(),
-                    declval<U>())));
+            return noexcept(
+                partial_ordering(
+                    compare_three_way{}(
+                        declval<T>(),
+                        declval<U>())));
         } else {
-            return noexcept(partial_ordering(
-                weak_order(
-                    declval<T>(),
-                    declval<U>())));
+            return noexcept(
+                partial_ordering(
+                    weak_order(
+                        declval<T>(),
+                        declval<U>())));
         }
     }
 
 public:
     template<class T, class U>
-        requires same_as<decay_t<T>, decay_t<U>> &&
-                 (
-                     adl_partial_order<T, U> ||
-                     requires(T&& left, U&& right) {
-                         partial_ordering(
-                             compare_three_way{}(
-                                 static_cast<T&&>(left),
-                                 static_cast<U&&>(right)));
-                     } ||
-                     requires(T&& left, U&& right) {
-                         partial_ordering(
-                             weak_order(
-                                 static_cast<T&&>(left),
-                                 static_cast<U&&>(right)));
-                     }
-                 )
+        requires
+            same_as<decay_t<T>, decay_t<U>> &&
+            (
+                adl_partial_order<T, U> ||
+                is_floating_point_v<decay_t<T>> ||
+                requires(T&& left, U&& right) {
+                    partial_ordering(
+                        compare_three_way{}(
+                            static_cast<T&&>(left),
+                            static_cast<U&&>(right)));
+                } ||
+                requires(T&& left, U&& right) {
+                    partial_ordering(
+                        weak_order(
+                            static_cast<T&&>(left),
+                            static_cast<U&&>(right)));
+                }
+            )
     constexpr partial_ordering
     operator()(T&& left, U&& right) const
         noexcept(call_is_noexcept<T, U>()) {
 
         if constexpr (adl_partial_order<T, U>) {
             return call_partial_order(
+                static_cast<T&&>(left),
+                static_cast<U&&>(right));
+        } else if constexpr (
+            is_floating_point_v<decay_t<T>>) {
+
+            return float_partial_order(
                 static_cast<T&&>(left),
                 static_cast<U&&>(right));
         } else if constexpr (requires {
