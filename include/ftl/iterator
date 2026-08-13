@@ -1329,7 +1329,8 @@ template <input_iterator Iterator>
 class basic_const_iterator
     : public detail::basic_const_iterator_category<Iterator> {
 private:
-  template <input_iterator> friend class basic_const_iterator;
+  template <input_iterator>
+  friend class basic_const_iterator;
 
   Iterator current{};
 
@@ -1370,9 +1371,13 @@ public:
   constexpr basic_const_iterator(T &&iterator)
       : current(static_cast<T &&>(iterator)) {}
 
-  constexpr const Iterator &base() const & noexcept { return current; }
+  constexpr const Iterator &base() const & noexcept {
+    return current;
+  }
 
-  constexpr Iterator base() && { return FTL_ITER_NS::move(current); }
+  constexpr Iterator base() && {
+    return FTL_ITER_NS::move(current);
+  }
 
   constexpr reference operator*() const {
     return static_cast<reference>(*current);
@@ -1390,7 +1395,9 @@ public:
     return *this;
   }
 
-  constexpr void operator++(int) { ++current; }
+  constexpr void operator++(int) {
+    ++current;
+  }
 
   constexpr basic_const_iterator operator++(int)
     requires forward_iterator<Iterator>
@@ -1411,7 +1418,7 @@ public:
     requires bidirectional_iterator<Iterator>
   {
     auto copy = *this;
-    --current;
+    --*this;
     return copy;
   }
 
@@ -1441,23 +1448,29 @@ public:
     return current == sentinel;
   }
 
-template <class CI>
-  requires(
-      detail::not_a_const_iterator<CI> &&
-      constant_iterator<CI> &&
-      convertible_to<const Iterator &, CI>)
-constexpr operator CI() const & {
-  return current;
-}
+  /*
+   * P2836R1 / C++23 DR:
+   * basic_const_iterator follows conversions provided by its
+   * underlying iterator when the destination is itself a
+   * constant iterator.
+   */
+  template <class CI>
+    requires(
+        detail::not_a_const_iterator<CI> &&
+        constant_iterator<CI> &&
+        convertible_to<const Iterator &, CI>)
+  constexpr operator CI() const & {
+    return current;
+  }
 
-template <class CI>
-  requires(
-      detail::not_a_const_iterator<CI> &&
-      constant_iterator<CI> &&
-      convertible_to<Iterator, CI>)
-constexpr operator CI() && {
-  return FTL_ITER_NS::move(current);
-}
+  template <class CI>
+    requires(
+        detail::not_a_const_iterator<CI> &&
+        constant_iterator<CI> &&
+        convertible_to<Iterator, CI>)
+  constexpr operator CI() && {
+    return FTL_ITER_NS::move(current);
+  }
 
   constexpr bool operator<(const basic_const_iterator &right) const
     requires random_access_iterator<Iterator>
@@ -1485,7 +1498,8 @@ constexpr operator CI() && {
 
   constexpr auto operator<=>(const basic_const_iterator &right) const
 #ifdef FTL_REPLACE_STL
-    requires(random_access_iterator<Iterator> && three_way_comparable<Iterator>)
+    requires(random_access_iterator<Iterator> &&
+             three_way_comparable<Iterator>)
 #else
     requires random_access_iterator<Iterator>
 #endif
@@ -1497,12 +1511,29 @@ constexpr operator CI() && {
 #endif
   }
 
+  /*
+   * The heterogeneous relational overloads normally have the
+   * specified form:
+   *
+   *     return current op right;
+   *
+   * When right is another basic_const_iterator specialization,
+   * compare its underlying iterator directly. This avoids the
+   * comparison-rewrite/ADL recursion encountered by MSVC while
+   * preserving the adaptor's specified observable comparison.
+   */
   template <class I>
     requires(detail::different_from<I, basic_const_iterator> &&
              random_access_iterator<Iterator> &&
              totally_ordered_with<Iterator, I>)
   constexpr bool operator<(const I &right) const {
-    return current < right;
+    if constexpr (
+        detail::is_basic_const_iterator<
+            remove_cvref_t<I>>::value) {
+      return current < right.base();
+    } else {
+      return current < right;
+    }
   }
 
   template <class I>
@@ -1510,7 +1541,13 @@ constexpr operator CI() && {
              random_access_iterator<Iterator> &&
              totally_ordered_with<Iterator, I>)
   constexpr bool operator>(const I &right) const {
-    return current > right;
+    if constexpr (
+        detail::is_basic_const_iterator<
+            remove_cvref_t<I>>::value) {
+      return current > right.base();
+    } else {
+      return current > right;
+    }
   }
 
   template <class I>
@@ -1518,7 +1555,13 @@ constexpr operator CI() && {
              random_access_iterator<Iterator> &&
              totally_ordered_with<Iterator, I>)
   constexpr bool operator<=(const I &right) const {
-    return current <= right;
+    if constexpr (
+        detail::is_basic_const_iterator<
+            remove_cvref_t<I>>::value) {
+      return current <= right.base();
+    } else {
+      return current <= right;
+    }
   }
 
   template <class I>
@@ -1526,10 +1569,16 @@ constexpr operator CI() && {
              random_access_iterator<Iterator> &&
              totally_ordered_with<Iterator, I>)
   constexpr bool operator>=(const I &right) const {
-    return current >= right;
+    if constexpr (
+        detail::is_basic_const_iterator<
+            remove_cvref_t<I>>::value) {
+      return current >= right.base();
+    } else {
+      return current >= right;
+    }
   }
 
-template <class I>
+  template <class I>
     requires(
         detail::different_from<I, basic_const_iterator> &&
         random_access_iterator<Iterator> &&
@@ -1537,67 +1586,104 @@ template <class I>
 #ifdef FTL_REPLACE_STL
         && three_way_comparable_with<Iterator, I>
 #else
-        && requires(const Iterator& left, const I& other) {
+        && requires(const Iterator &left, const I &other) {
              left <=> other;
            }
 #endif
     )
-constexpr auto operator<=>(const I& right) const {
+  constexpr auto operator<=>(const I &right) const {
     return current <=> right;
-}
+  }
 
-  template <class I>
-    requires(detail::not_a_const_iterator<I> &&
-             random_access_iterator<Iterator> &&
-             totally_ordered_with<Iterator, I>)
-  friend constexpr bool operator<(const I &left,
-                                  const basic_const_iterator &right) {
+  /*
+   * Make the RHS specialization a deduced parameter constrained
+   * back to this Iterator specialization. This avoids the
+   * cross-specialization hidden-friend recursion described by
+   * the basic_const_iterator comparison DR work.
+   */
+  template <class I, class J
+#if defined(_MSC_VER) && !defined(__clang__)
+            , Iterator * = nullptr
+#endif
+            >
+    requires(
+        detail::not_a_const_iterator<I> &&
+        same_as<J, Iterator> &&
+        random_access_iterator<Iterator> &&
+        totally_ordered_with<Iterator, I>)
+  friend constexpr bool
+  operator<(const I &left,
+            const basic_const_iterator<J> &right) {
     return left < right.current;
   }
 
-  template <class I>
-    requires(detail::not_a_const_iterator<I> &&
-             random_access_iterator<Iterator> &&
-             totally_ordered_with<Iterator, I>)
-  friend constexpr bool operator>(const I &left,
-                                  const basic_const_iterator &right) {
+  template <class I, class J
+#if defined(_MSC_VER) && !defined(__clang__)
+            , Iterator * = nullptr
+#endif
+            >
+    requires(
+        detail::not_a_const_iterator<I> &&
+        same_as<J, Iterator> &&
+        random_access_iterator<Iterator> &&
+        totally_ordered_with<Iterator, I>)
+  friend constexpr bool
+  operator>(const I &left,
+            const basic_const_iterator<J> &right) {
     return left > right.current;
   }
 
-  template <class I>
-    requires(detail::not_a_const_iterator<I> &&
-             random_access_iterator<Iterator> &&
-             totally_ordered_with<Iterator, I>)
-  friend constexpr bool operator<=(const I &left,
-                                   const basic_const_iterator &right) {
+  template <class I, class J
+#if defined(_MSC_VER) && !defined(__clang__)
+            , Iterator * = nullptr
+#endif
+            >
+    requires(
+        detail::not_a_const_iterator<I> &&
+        same_as<J, Iterator> &&
+        random_access_iterator<Iterator> &&
+        totally_ordered_with<Iterator, I>)
+  friend constexpr bool
+  operator<=(const I &left,
+             const basic_const_iterator<J> &right) {
     return left <= right.current;
   }
 
-  template <class I>
-    requires(detail::not_a_const_iterator<I> &&
-             random_access_iterator<Iterator> &&
-             totally_ordered_with<Iterator, I>)
-  friend constexpr bool operator>=(const I &left,
-                                   const basic_const_iterator &right) {
+  template <class I, class J
+#if defined(_MSC_VER) && !defined(__clang__)
+            , Iterator * = nullptr
+#endif
+            >
+    requires(
+        detail::not_a_const_iterator<I> &&
+        same_as<J, Iterator> &&
+        random_access_iterator<Iterator> &&
+        totally_ordered_with<Iterator, I>)
+  friend constexpr bool
+  operator>=(const I &left,
+             const basic_const_iterator<J> &right) {
     return left >= right.current;
   }
 
   friend constexpr basic_const_iterator
-  operator+(const basic_const_iterator &iterator, difference_type offset)
+  operator+(const basic_const_iterator &iterator,
+            difference_type offset)
     requires random_access_iterator<Iterator>
   {
     return basic_const_iterator(iterator.current + offset);
   }
 
   friend constexpr basic_const_iterator
-  operator+(difference_type offset, const basic_const_iterator &iterator)
+  operator+(difference_type offset,
+            const basic_const_iterator &iterator)
     requires random_access_iterator<Iterator>
   {
     return basic_const_iterator(iterator.current + offset);
   }
 
   friend constexpr basic_const_iterator
-  operator-(const basic_const_iterator &iterator, difference_type offset)
+  operator-(const basic_const_iterator &iterator,
+            difference_type offset)
     requires random_access_iterator<Iterator>
   {
     return basic_const_iterator(iterator.current - offset);
@@ -1605,7 +1691,8 @@ constexpr auto operator<=>(const I& right) const {
 
   template <class Sentinel>
     requires sized_sentinel_for<Sentinel, Iterator>
-  constexpr difference_type operator-(const Sentinel &right) const {
+  constexpr difference_type
+  operator-(const Sentinel &right) const {
     return current - right;
   }
 
@@ -1613,14 +1700,18 @@ constexpr auto operator<=>(const I& right) const {
     requires(detail::not_a_const_iterator<Sentinel> &&
              sized_sentinel_for<Sentinel, Iterator>)
   friend constexpr difference_type
-  operator-(const Sentinel &left, const basic_const_iterator &right) {
+  operator-(const Sentinel &left,
+            const basic_const_iterator &right) {
     return left - right.current;
   }
 
   friend constexpr rvalue_reference
-  iter_move(const basic_const_iterator &iterator) noexcept(noexcept(
-      static_cast<rvalue_reference>(ranges::iter_move(iterator.current)))) {
-    return static_cast<rvalue_reference>(ranges::iter_move(iterator.current));
+  iter_move(const basic_const_iterator &iterator)
+      noexcept(noexcept(
+          static_cast<rvalue_reference>(
+              ranges::iter_move(iterator.current)))) {
+    return static_cast<rvalue_reference>(
+        ranges::iter_move(iterator.current));
   }
 };
 
