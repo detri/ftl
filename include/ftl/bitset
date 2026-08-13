@@ -404,48 +404,63 @@ constexpr bitset<N> operator^(const bitset<N> &left,
 }
 
 template <class Character, class Traits, size_t N>
-basic_istream<Character, Traits> &operator>>(basic_istream<Character, Traits> &input,
-                                             bitset<N> &value) {
+basic_istream<Character, Traits> &
+operator>>(basic_istream<Character, Traits> &input, bitset<N> &value) {
   typename basic_istream<Character, Traits>::sentry guard(input);
   if (!guard)
     return input;
 
+#if FTL_HAS_EXCEPTIONS
   try {
+#endif
     basic_string<Character, Traits> characters;
     auto *buffer = input.rdbuf();
     const Character zero = input.widen('0');
     const Character one = input.widen('1');
     typename basic_istream<Character, Traits>::iostate state =
         basic_istream<Character, Traits>::goodbit;
+
     while (characters.size() < N) {
       const typename Traits::int_type current = buffer->sgetc();
+
       if (Traits::eq_int_type(current, Traits::eof())) {
         state |= basic_istream<Character, Traits>::eofbit;
         break;
       }
+
       const Character character = Traits::to_char_type(current);
       if (!Traits::eq(character, zero) && !Traits::eq(character, one))
         break;
+
       characters.push_back(character);
       static_cast<void>(buffer->sbumpc());
     }
 
-    if constexpr (N != 0)
+    if constexpr (N != 0) {
       if (characters.empty())
         state |= basic_istream<Character, Traits>::failbit;
+    }
+
     value = bitset<N>(characters);
+
     if (state != basic_istream<Character, Traits>::goodbit)
       input.setstate(state);
+
+#if FTL_HAS_EXCEPTIONS
   } catch (...) {
     const bool rethrow =
         (input.exceptions() & basic_istream<Character, Traits>::badbit) != 0;
+
     try {
       input.setstate(basic_istream<Character, Traits>::badbit);
     } catch (...) {
     }
+
     if (rethrow)
       throw;
   }
+#endif
+
   return input;
 }
 
