@@ -311,20 +311,66 @@ else ()
             -fno-exceptions
     )
 endif ()
-add_ftl_freestanding_link_check(random_freestanding_link
-        checks/random_freestanding_link.cpp)
-add_ftl_freestanding_link_check(valarray_freestanding_link
-        checks/valarray_freestanding_link.cpp)
+add_ftl_freestanding_link_check(
+        random_freestanding_link
+        checks/random_freestanding_link.cpp
+)
+add_ftl_freestanding_link_check(
+        valarray_freestanding_link
+        checks/valarray_freestanding_link.cpp
+)
+
 if (MSVC)
-    target_compile_options(ftl_check_random_freestanding_link PRIVATE /O2 /GS-)
-    target_compile_options(ftl_check_valarray_freestanding_link PRIVATE /O2 /GS-)
+    target_compile_options(
+            ftl_check_random_freestanding_link
+            PRIVATE
+            /O2
+            /GS-
+    )
+    target_compile_options(
+            ftl_check_valarray_freestanding_link
+            PRIVATE
+            /O2
+            /GS-
+    )
+elseif (APPLE)
+    target_compile_options(
+            ftl_check_random_freestanding_link
+            PRIVATE
+            -ffunction-sections
+            -fdata-sections
+            -fno-exceptions
+            -fno-stack-protector
+    )
+    target_link_options(
+            ftl_check_random_freestanding_link
+            PRIVATE
+            "LINKER:-dead_strip"
+    )
+    target_compile_options(
+            ftl_check_valarray_freestanding_link
+            PRIVATE
+            -fno-stack-protector
+    )
 else ()
-    target_compile_options(ftl_check_random_freestanding_link PRIVATE
-            -ffunction-sections -fdata-sections -fno-exceptions
-            -fno-stack-protector)
-    target_link_options(ftl_check_random_freestanding_link PRIVATE
-            "LINKER:--gc-sections")
-    target_compile_options(ftl_check_valarray_freestanding_link PRIVATE -fno-stack-protector)
+    target_compile_options(
+            ftl_check_random_freestanding_link
+            PRIVATE
+            -ffunction-sections
+            -fdata-sections
+            -fno-exceptions
+            -fno-stack-protector
+    )
+    target_link_options(
+            ftl_check_random_freestanding_link
+            PRIVATE
+            "LINKER:--gc-sections"
+    )
+    target_compile_options(
+            ftl_check_valarray_freestanding_link
+            PRIVATE
+            -fno-stack-protector
+    )
 endif ()
 add_ftl_freestanding_link_check(deque_freestanding_link
         checks/deque_freestanding_link.cpp)
