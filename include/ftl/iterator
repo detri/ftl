@@ -1448,30 +1448,6 @@ public:
     return current == sentinel;
   }
 
-  /*
-   * P2836R1 / C++23 DR:
-   * basic_const_iterator follows conversions provided by its
-   * underlying iterator when the destination is itself a
-   * constant iterator.
-   */
-  template <class CI>
-    requires(
-        detail::not_a_const_iterator<CI> &&
-        constant_iterator<CI> &&
-        convertible_to<const Iterator &, CI>)
-  constexpr operator CI() const & {
-    return current;
-  }
-
-  template <class CI>
-    requires(
-        detail::not_a_const_iterator<CI> &&
-        constant_iterator<CI> &&
-        convertible_to<Iterator, CI>)
-  constexpr operator CI() && {
-    return FTL_ITER_NS::move(current);
-  }
-
   constexpr bool operator<(const basic_const_iterator &right) const
     requires random_access_iterator<Iterator>
   {
@@ -1522,61 +1498,41 @@ public:
    * comparison-rewrite/ADL recursion encountered by MSVC while
    * preserving the adaptor's specified observable comparison.
    */
-  template <class I>
-    requires(detail::different_from<I, basic_const_iterator> &&
-             random_access_iterator<Iterator> &&
-             totally_ordered_with<Iterator, I>)
-  constexpr bool operator<(const I &right) const {
-    if constexpr (
-        detail::is_basic_const_iterator<
-            remove_cvref_t<I>>::value) {
-      return current < right.base();
-    } else {
-      return current < right;
-    }
-  }
+template <class I>
+  requires(
+      detail::different_from<I, basic_const_iterator> &&
+      random_access_iterator<Iterator> &&
+      totally_ordered_with<Iterator, I>)
+constexpr bool operator<(const I &right) const {
+  return current < right;
+}
 
-  template <class I>
-    requires(detail::different_from<I, basic_const_iterator> &&
-             random_access_iterator<Iterator> &&
-             totally_ordered_with<Iterator, I>)
-  constexpr bool operator>(const I &right) const {
-    if constexpr (
-        detail::is_basic_const_iterator<
-            remove_cvref_t<I>>::value) {
-      return current > right.base();
-    } else {
-      return current > right;
-    }
-  }
+template <class I>
+  requires(
+      detail::different_from<I, basic_const_iterator> &&
+      random_access_iterator<Iterator> &&
+      totally_ordered_with<Iterator, I>)
+constexpr bool operator>(const I &right) const {
+  return current > right;
+}
 
-  template <class I>
-    requires(detail::different_from<I, basic_const_iterator> &&
-             random_access_iterator<Iterator> &&
-             totally_ordered_with<Iterator, I>)
-  constexpr bool operator<=(const I &right) const {
-    if constexpr (
-        detail::is_basic_const_iterator<
-            remove_cvref_t<I>>::value) {
-      return current <= right.base();
-    } else {
-      return current <= right;
-    }
-  }
+template <class I>
+  requires(
+      detail::different_from<I, basic_const_iterator> &&
+      random_access_iterator<Iterator> &&
+      totally_ordered_with<Iterator, I>)
+constexpr bool operator<=(const I &right) const {
+  return current <= right;
+}
 
-  template <class I>
-    requires(detail::different_from<I, basic_const_iterator> &&
-             random_access_iterator<Iterator> &&
-             totally_ordered_with<Iterator, I>)
-  constexpr bool operator>=(const I &right) const {
-    if constexpr (
-        detail::is_basic_const_iterator<
-            remove_cvref_t<I>>::value) {
-      return current >= right.base();
-    } else {
-      return current >= right;
-    }
-  }
+template <class I>
+  requires(
+      detail::different_from<I, basic_const_iterator> &&
+      random_access_iterator<Iterator> &&
+      totally_ordered_with<Iterator, I>)
+constexpr bool operator>=(const I &right) const {
+  return current >= right;
+}
 
   template <class I>
     requires(
@@ -1601,69 +1557,69 @@ public:
    * cross-specialization hidden-friend recursion described by
    * the basic_const_iterator comparison DR work.
    */
-  template <class I, class J
+template <
+    detail::not_a_const_iterator I,
+    same_as<Iterator> J
 #if defined(_MSC_VER) && !defined(__clang__)
-            , Iterator * = nullptr
+    , Iterator * = nullptr
 #endif
-            >
-    requires(
-        detail::not_a_const_iterator<I> &&
-        same_as<J, Iterator> &&
-        random_access_iterator<Iterator> &&
-        totally_ordered_with<Iterator, I>)
-  friend constexpr bool
-  operator<(const I &left,
-            const basic_const_iterator<J> &right) {
-    return left < right.current;
-  }
+    >
+  requires(
+      random_access_iterator<Iterator> &&
+      totally_ordered_with<Iterator, I>)
+friend constexpr bool
+operator<(const I &left,
+          const basic_const_iterator<J> &right) {
+  return left < right.current;
+}
 
-  template <class I, class J
+template <
+    detail::not_a_const_iterator I,
+    same_as<Iterator> J
 #if defined(_MSC_VER) && !defined(__clang__)
-            , Iterator * = nullptr
+    , Iterator * = nullptr
 #endif
-            >
-    requires(
-        detail::not_a_const_iterator<I> &&
-        same_as<J, Iterator> &&
-        random_access_iterator<Iterator> &&
-        totally_ordered_with<Iterator, I>)
-  friend constexpr bool
-  operator>(const I &left,
-            const basic_const_iterator<J> &right) {
-    return left > right.current;
-  }
+    >
+  requires(
+      random_access_iterator<Iterator> &&
+      totally_ordered_with<Iterator, I>)
+friend constexpr bool
+operator>(const I &left,
+          const basic_const_iterator<J> &right) {
+  return left > right.current;
+}
 
-  template <class I, class J
+template <
+    detail::not_a_const_iterator I,
+    same_as<Iterator> J
 #if defined(_MSC_VER) && !defined(__clang__)
-            , Iterator * = nullptr
+    , Iterator * = nullptr
 #endif
-            >
-    requires(
-        detail::not_a_const_iterator<I> &&
-        same_as<J, Iterator> &&
-        random_access_iterator<Iterator> &&
-        totally_ordered_with<Iterator, I>)
-  friend constexpr bool
-  operator<=(const I &left,
-             const basic_const_iterator<J> &right) {
-    return left <= right.current;
-  }
+    >
+  requires(
+      random_access_iterator<Iterator> &&
+      totally_ordered_with<Iterator, I>)
+friend constexpr bool
+operator<=(const I &left,
+           const basic_const_iterator<J> &right) {
+  return left <= right.current;
+}
 
-  template <class I, class J
+template <
+    detail::not_a_const_iterator I,
+    same_as<Iterator> J
 #if defined(_MSC_VER) && !defined(__clang__)
-            , Iterator * = nullptr
+    , Iterator * = nullptr
 #endif
-            >
-    requires(
-        detail::not_a_const_iterator<I> &&
-        same_as<J, Iterator> &&
-        random_access_iterator<Iterator> &&
-        totally_ordered_with<Iterator, I>)
-  friend constexpr bool
-  operator>=(const I &left,
-             const basic_const_iterator<J> &right) {
-    return left >= right.current;
-  }
+    >
+  requires(
+      random_access_iterator<Iterator> &&
+      totally_ordered_with<Iterator, I>)
+friend constexpr bool
+operator>=(const I &left,
+           const basic_const_iterator<J> &right) {
+  return left >= right.current;
+}
 
   friend constexpr basic_const_iterator
   operator+(const basic_const_iterator &iterator,
