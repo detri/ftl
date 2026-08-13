@@ -63,34 +63,15 @@ platform-specific behavior.
 Finding a defect during an audit does not require fixing it immediately. Record
 the defect, mark the unit **FAILED**, and continue remediation separately.
 
-## Known failures from conformance pass 1
-
-These facilities were already known to be nonconforming at
-`798e52c498f5630ecdc03c92456b99a1ff95aa97`. They have not yet undergone their
-dedicated exhaustive certification audit.
-
-| Header        | Status     | Known issue summary                                                                                                   |
-|---------------|------------|-----------------------------------------------------------------------------------------------------------------------|
-| `<generator>` | **FAILED** | Normal-mode `elements_of` range `yield_value` implementation hole.                                                    |
-| `<ostream>`   | **FAILED** | Missing C++23 ostream print family.                                                                                   |
-| `<variant>`   | **FAILED** | Assignment exception semantics, participation constraints, `visit`, and other interface drift.                        |
-| `<any>`       | **FAILED** | Incorrect `emplace` exception-state semantics and constructor constraint drift.                                       |
-| `<optional>`  | **FAILED** | `or_else` participation constraints are incomplete.                                                                   |
-| `<expected>`  | **FAILED** | `emplace`, `swap`, and monadic constraint/noexcept defects.                                                           |
-| `<string>`    | **FAILED** | `resize_and_overwrite` invokes the operation with the wrong value category and accepts an overly broad result domain. |
-
-
-These entries record known failures only. They do not mean the rest of each
-header has been exhaustively audited.
-
 ## Large-header subdivision
 
-Large facilities are certified incrementally rather than as one indivisible
-header.
+Large facilities were audited by coherent standard subunits rather than as one
+indivisible header. Their ledger status is the aggregate of every required
+subunit.
 
 ### `<ranges>`
 
-Subunits will be added as they are audited, for example:
+The completed review covers:
 
 - range access
 - range concepts and requirements
@@ -103,7 +84,7 @@ Subunits will be added as they are audited, for example:
 
 ### `<algorithm>`
 
-Subunits will follow the standard's organization, including:
+The completed review follows the standard's organization, including:
 
 - algorithm result types
 - non-modifying sequence operations
@@ -3590,6 +3571,67 @@ The sequential implementation of policy reductions/scans is permitted by the
 execution-policy latitude. No separate material library-quality defect was
 identified in this header.
 
+### Audit record: `<memory>` utilities, allocators, and ownership
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 20.2--20.3, 20.6--20.7, 20.9--20.11
+
+Reviewed address/alignment and explicit-lifetime utilities, uses-allocator
+construction, pointer and allocator traits, `allocator`, unique/shared/weak
+ownership, casts, deleter access, owner ordering, atomic smart pointers,
+`make`/`allocate` factories including arrays and overwrite variants, and
+`out_ptr`/`inout_ptr` adaptation.
+
+Certification fails because:
+
+1. `start_lifetime_as` and `start_lifetime_as_array` are only
+   `reinterpret_cast`s. They do not perform the implicit object creation,
+   representation copying, or lifetime-start operation specified by 20.2.6,
+   so use on storage that does not already contain live `T` objects remains
+   undefined despite the advertised C++23 facility.
+2. Non-array `unique_ptr` converting assignment tests convertibility from
+   `U*` instead of `unique_ptr<U, E>::pointer`, rejecting or accepting the
+   wrong fancy-pointer specializations. Its member and non-member `swap` also
+   expose a conditional exception specification instead of the required
+   unconditional `noexcept` contract.
+3. Converting `shared_ptr` and `weak_ptr` operations use only conversion between
+   the two `element_type*` types. This loses the standard's bounded/unbounded
+   array compatibility rules and, for example, admits conversions from an
+   unknown-bound owner to an incompatible known-bound specialization.
+4. Construction of a `shared_ptr` from `unique_ptr` releases the source inside
+   a delegating-constructor argument list. If another argument evaluation (such
+   as moving a throwing deleter) fails after `release()`, no owner remains to
+   reclaim the pointer. Related raw-pointer construction can call a deleter
+   after it has been moved from when control-block construction throws, rather
+   than guaranteeing the specified cleanup with the supplied deleter.
+5. Every array `allocate_shared` and `allocate_shared_for_overwrite` overload
+   discards its allocator argument and delegates to `make_shared`. Storage is
+   obtained with ordinary `new`/`operator new`, so allocator selection,
+   construction, and deallocation requirements are all violated. The manual
+   value-filled array paths additionally multiply `sizeof(element) * count`
+   without overflow checking and use unaligned `operator new` for potentially
+   over-aligned elements.
+6. `owner_before` compares unrelated control-block pointers with built-in `<`.
+   That comparison has no required total ordering for unrelated objects and
+   therefore does not provide the implementation-defined strict weak ownership
+   ordering required across shared and weak pointers.
+7. `allocator<T>::allocate` uses a constant-evaluation `new T[count]` path only
+   for trivially default-constructible `T`. For other object types it directly
+   calls `::operator new`, which is not a permitted constant-expression
+   allocation in this context, despite the C++23 `constexpr` allocator
+   contract.
+
+Library-quality observations:
+
+- Ordinary raw-pointer `shared_ptr` construction always allocates a separate
+  virtual control block, and destruction/deallocation always dispatch through
+  virtual functions. This is conventional for erased deleters but leaves no
+  small/control-block pooling path for common default-deleter ownership.
+- Atomic shared/weak pointers serialize all operations on a per-object lock;
+  this is conforming because they report `is_lock_free() == false`, but provides
+  no lock-free fast path on platforms with double-width atomics.
+
 ### Audit record: `<memory>` specialized algorithms
 
 **Status:** FAILED
@@ -3628,24 +3670,39 @@ Additional defects found in the implemented classic surface:
 
 No separate material library-quality defect was identified in this subunit.
 
-### Audit record: `<cstdlib>` C library algorithms
+### Audit record: `<cstdlib>` / `<stdlib.h>`
 
 **Status:** FAILED
 **Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
-**Applicable clauses:** 16.4.2.5, 17.2.2, 27.12; ISO/IEC 9899:2018 7.22.5
+**Applicable clauses:** 16.4.2.5, 17.2.2, 17.5, 20.2.12, 23.5.6,
+27.12, 28.5.10, 28.7.2; ISO/IEC 9899:2018 7.22
 
-This record covers the `bsearch` and `qsort` portion of `<cstdlib>` only.
+The complete macro/type inventory, termination and environment functions,
+allocation, numeric and multibyte conversions, C algorithms, low-quality random
+number generator, arithmetic overloads, and C compatibility exports were
+reviewed.
 
-FTL imports one pair of C-runtime declarations whose comparator parameter has
-C language linkage. C++23 specifies an additional overload of each function
-whose comparator has C++ language linkage, and requires exceptions from that
-comparator to propagate. Those C++-linkage overload declarations are absent.
-On implementations that distinguish the two function types this is a direct
-synopsis omission; merely importing the C-runtime function cannot supply it.
+Certification fails because:
+
+1. FTL imports one pair of C-runtime `bsearch`/`qsort` declarations whose
+   comparator parameter has C language linkage. C++23 specifies an additional
+   overload of each function whose comparator has C++ language linkage, and
+   requires exceptions from that comparator to propagate. Those overloads are
+   absent on implementations that distinguish the function types. The dual
+   C/C++-linkage `atexit` and `at_quick_exit` handler overloads are likewise not
+   supplied.
+2. The required floating-point `abs` overload is absent from `<cstdlib>`.
+   Only the three integral overloads are declared; the floating overload exists
+   separately in `<cmath>`, which this header neither includes nor re-exports.
+3. Except for MSVC namespace wrappers, `atexit` and `at_quick_exit` are imported
+   from declarations lacking the required `noexcept`. On Apple, `abort`,
+   `_Exit`, and `quick_exit` also deliberately omit their required `noexcept`
+   specifications, so the public function types do not match the synopsis.
 
 The C-linkage overloads otherwise delegate their search/sort semantics and
-complex object-representation handling to the platform runtime. No separate
-material library-quality defect was identified in this subunit.
+complex object-representation handling to the platform runtime. The allocation,
+conversion, and low-quality random facilities similarly delegate where
+appropriate. No separate material library-quality defect was identified.
 
 ### Audit record: `<cfenv>` / `<fenv.h>`
 
@@ -4041,84 +4098,1027 @@ locale's alternative representations.
 
 No separate material library-quality defect was identified in this subunit.
 
+### Audit record: `<locale>` localization library
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 16.4.6.10, 30.1--30.4, D.27
+
+Reviewed locale identity, naming, composition and category replacement; facet
+ownership and lookup; classic and named ctype, codecvt, numeric punctuation,
+numeric conversion and collation; time parsing/formatting; monetary punctuation
+and conversion; message catalogs; standard specializations and convenience
+interfaces. The native named-locale boundaries and RapidHash-based collation
+hashing were included in the review.
+
+Certification fails because:
+
+1. The process-global C++ locale is a plain shared pointer. Default locale
+   construction reads it while `locale::global` replaces and releases it with
+   no lock or atomic publication. Concurrent calls therefore have a data race
+   and can retain a state after another thread has freed it, contrary to the
+   library-wide data-race requirements.
+2. Both classic and named `time_get` perform case-sensitive weekday and month
+   matching, while the required parsing is case-insensitive. The classic
+   matcher accepts only its exact English capitalization.
+3. `time_get_byname` overrides localized month and weekday names but not the
+   locale's date order, date format, time format, AM/PM form, or `E`/`O`
+   alternatives. Its inherited `%x`, `%X`, `%c`, and related operations remain
+   fixed C-locale layouts for every named locale.
+4. `money_get` consumes thousands separators whenever grouping is nonempty but
+   never records or verifies their placement against `moneypunct::grouping()`.
+   C++23 requires optional separators, when present, to be checked after all
+   format components have been read and to set `failbit` when misplaced.
+5. The `long double` monetary overload copies at most 511 parsed digits into a
+   fixed buffer and treats conversion of that prefix as success. Valid longer
+   monetary sequences therefore silently produce the value of a truncated
+   input. Conversely `money_put(long double)` formats into a fixed 512-byte
+   buffer and silently emits a truncated prefix for finite `long double`
+   values whose integral representation is longer.
+6. The C++23 deprecated `<locale>` surface is incomplete: class templates
+   `wstring_convert` and `wbuffer_convert` are entirely absent. Deprecation does
+   not remove these required interfaces from the C++23 library.
+
+Library-quality observation: `has_facet` and `use_facet` linearly scan a vector
+of facet-ID pointers on every call. Stream numeric, monetary, time, formatting,
+and character operations repeatedly pay this search; assigning each
+`locale::id` an index would provide the conventional constant-time hot path.
+The collation hash itself does use RapidHash over either the source range or
+the named locale's transformed collation key and is not a quality finding.
+
+### Audit record: `<codecvt>` deprecated Unicode conversion facets
+
+**Status:** CERTIFIED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, D.26
+
+The deprecated C++23 header synopsis, `codecvt_mode`, and the
+`codecvt_utf8`, `codecvt_utf16`, and `codecvt_utf8_utf16` templates were
+checked for Unicode scalar validation, UCS versus UTF-16 element semantics,
+maximum-code enforcement, header generation/consumption, byte order,
+incremental state, partial/error positioning, `length`, `encoding`,
+`always_noconv`, and `max_length`. The audited implementation matches the
+required C++23 surface and behavior. No material library-quality defect was
+identified.
+
+### Audit record: `<clocale>` / `<locale.h>`
+
+**Status:** CERTIFIED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 17.14.2, 30.5; ISO/IEC 9899:2018 7.11
+
+The C and C++ header spellings expose the platform-ABI category macros,
+complete platform-layout `lconv`, and C-linked `setlocale` and `localeconv`.
+Namespace placement, replacement routing, C-runtime ownership, and the
+platform-specific glibc, UCRT/BSD, and Darwin field ordering were reviewed.
+The surface matches the supported C++23 targets. No material library-quality
+defect was identified.
+
+### Audit record: `<iosfwd>` / `<ios>` iostream foundations
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 16.4.6.10, 31.2--31.5
+
+The forward declaration and alias inventory, positioning types, `ios_base`
+flags/state/modes, failures, callbacks, locale and format state, extensible
+storage, `copyfmt`, `basic_ios`, manipulators, error reporting, and move/swap
+contracts were reviewed.
+
+Certification fails in the allocation-failure path of `ios_base::iword` and
+`pword`. Both return references to process-wide static fallback objects after
+setting `badbit`, and reset those objects on each failure. Failures on distinct
+stream objects can consequently race and overwrite one another's referenced
+values, violating the required independence/data-race guarantees for distinct
+stream objects. The fallback storage must at least be isolated per stream or
+per thread for the lifetime promised by the storage functions.
+
+No separate material library-quality defect was identified in this subunit.
+
+### Audit record: `<streambuf>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 31.6
+
+Reviewed the full public/protected interface, locale handling, copy/assignment
+and swap, get/put area access, buffering and positioning, bulk and scalar
+transfer, putback, and default virtual-function behavior.
+
+Certification fails because protected `basic_streambuf::swap` exchanges only
+the six get/put pointers and leaves each object's locale unchanged. C++23
+requires it to exchange all data members; this includes the locale established
+by `pubimbue`. Derived stream-buffer swaps therefore retain the wrong locale
+while exchanging the associated character areas.
+
+Library-quality observation: the default `xsgetn` and `xsputn` implementations
+perform one virtual/scalar character operation per element even when a get or
+put area contains a contiguous run. Bulk-copying available runs before falling
+back to `underflow`/`overflow` would avoid substantial virtual-dispatch and
+branch overhead without changing customization semantics.
+
+### Audit record: `<istream>` / `<ostream>` formatted and unformatted I/O
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 31.7.1--31.7.2, 31.7.5--31.7.7
+
+Reviewed sentries, formatted arithmetic and character/string operations,
+stream-buffer transfer, every unformatted input/output member, character-array
+constraints, rvalue forwarding operators, positioning, manipulators, `gcount`,
+state transitions, and the required exception-catching/rethrow rules.
+
+Certification fails because the implementation generally calls stream-buffer
+virtual functions and locale facets directly, without the exception-catching
+protocol required for formatted and unformatted I/O. For example `get`,
+`getline`, `ignore`, `peek`, `read`, `readsome`, `putback`, `unget`, `sync`,
+`put`, `write`, `flush`, and positioning operations allow an exception from a
+custom buffer to escape without first setting `badbit`; formatted numeric
+operations have the same problem for throwing facets. The standard requires
+these functions to record the appropriate stream state and rethrow only when
+the exception mask requests it. The stream-buffer insertion overload contains
+a one-off catch path, but even that records `failbit` where its specified
+exception path requires `badbit`.
+
+No separate material library-quality defect was identified beyond the
+stream-buffer scalar-transfer issue recorded in the preceding unit.
+
+### Audit record: `<iomanip>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 31.7.3, 31.7.8--31.7.9
+
+The flag/base/fill/precision/width manipulators, monetary and time
+manipulators, and all quoted input/output overloads were reviewed. The direct
+manipulator and quoted surfaces match their C++23 interfaces, but certification
+fails because `get_money`, `put_money`, `get_time`, and `put_time` expose the
+nonconforming locale facets recorded for `<locale>` and do not supply the
+formatted-I/O exception/state protocol missing from the stream layer. Thus
+mis-grouped monetary input is accepted, named time formats remain C-locale,
+long monetary values truncate, and throwing facets can escape without the
+required stream state.
+
+Library-quality observation: quoted output always constructs a complete
+escaped temporary string before inserting it, adding an avoidable allocation
+and copy for an operation that can compute padding and emit delimiters/escapes
+directly.
+
+### Audit record: `<print>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 22.14, 31.7.4, 31.7.10
+
+The complete C++23 FILE/stdout, variadic/type-erased, Unicode/non-Unicode, and
+newline overload inventory is present. FILE error translation, terminal
+detection, Windows UTF-16 console conversion, redirected/POSIX byte output,
+and the feature-test macro were reviewed. Certification nevertheless inherits
+`<format>`'s missing extended-arithmetic formatter participation, so otherwise
+valid print calls for implementation-provided extended integer and floating
+types are rejected.
+
+Library-quality observation: every call first materializes the complete result
+in an allocating `string`; `println` may then reallocate merely to append its
+newline. Direct formatting to a buffered FILE sink would reduce peak memory,
+copies, and latency for large output.
+
+### Audit record: `<sstream>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 31.8
+
+Reviewed the complete allocator-aware constructor and `str` overload sets,
+view access, open modes, high-water tracking, get/put areas, growth, putback,
+seeking, moves, swaps, and all three owning stream wrappers.
+
+Certification fails because rebuilding the put area narrows its `size_t` put
+position to `int` for `pbump`. A valid string buffer whose put position exceeds
+`INT_MAX` therefore acquires an incorrect pointer after construction, growth,
+seek, move, swap, or `str` replacement. The public sequence size is expressed
+in `streamsize`/`size_t`; the protected `int` interface does not license
+narrowing valid large buffers, so the implementation must advance in safe
+chunks or otherwise preserve the full position. Extreme seek arithmetic also
+computes `base + offset` in signed `off_type` before checking the range, allowing
+undefined overflow instead of returning the failure position.
+
+The owning streams additionally inherit the base stream-buffer locale-swap and
+formatted/unformatted exception-state failures. No separate material
+library-quality defect was identified.
+
+### Audit record: `<spanstream>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 31.9
+
+The C++23 span-buffer and input/output/bidirectional wrapper synopses, borrowed
+read-only input adaptation, modes, span replacement/observation, positioning,
+move, swap, and feature-test macro were reviewed. Certification fails for the
+same unchecked `size_t`-to-`int` put-position narrowing and signed seek-addition
+overflow as `<sstream>`. Spans can legally exceed `INT_MAX`, and valid positions
+must not be corrupted merely because `basic_streambuf::pbump` takes `int`.
+The wrappers also inherit the shared locale-swap and stream exception-state
+defects. No separate material library-quality defect was identified.
+
+### Audit record: `<fstream>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 31.10
+
+Reviewed file-buffer ownership, open-mode mapping including `noreplace`, close
+and codecvt unshift, buffering, narrow/wide input and output, putback,
+read/write direction changes, locale state, seeking, move/swap, filesystem-path
+overloads, and the three owning file-stream wrappers.
+
+Certification fails because:
+
+1. File positioning is implemented with `fseek` and `ftell` and narrows every
+   `streamoff` to `long`. On supported 64-bit Windows, `long` is 32 bits, so
+   valid offsets and file positions beyond that range are truncated or fail.
+   The standard stream position types are not limited to the platform's
+   32-bit `long` interface.
+2. Update streams do not track and perform the required synchronization or
+   positioning transition when changing between input and output. The
+   implementation directly alternates `fgetc` and `fwrite`/`fputc` on one C
+   update stream, which violates the C stream sequencing requirements and can
+   produce undefined or stale-position behavior.
+3. Wide-character `pbackfail` accepts only values at most `0x7f` and pushes a
+   single byte with `ungetc`. It cannot restore a non-ASCII character's external
+   multibyte sequence or conversion state, so ordinary successful wide input
+   cannot be put back as required even when it is the immediately preceding
+   character.
+
+The wrappers also inherit the stream-buffer locale-swap and stream
+exception-state failures. Library-quality observation: wide bulk output loops
+through the full virtual conversion/write path one character at a time rather
+than converting useful blocks, multiplying facet lookup and C-runtime calls.
+
+### Audit record: `<syncstream>` and synchronized-output manipulators
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 31.7.7, 31.11
+
+Reviewed synchronized-buffer construction, allocator propagation, pending
+output, emission/flush state, wrapped-buffer lock identity, move/swap and
+destruction; `basic_osyncstream`; and `emit_on_flush`, `noemit_on_flush`, and
+`flush_emit`.
+
+Certification fails because:
+
+1. The three synchronized-output manipulators in `<ostream>` are stubs.
+   `emit_on_flush` and `noemit_on_flush` never change a wrapped `basic_syncbuf`,
+   and `flush_emit` merely calls `flush` instead of requesting and immediately
+   performing emission.
+2. `basic_osyncstream::emit` directly calls `sb_.emit()` without behaving as an
+   unformatted output function. It does not construct a sentry and does not
+   catch an exception from the wrapped buffer, set `badbit`, and apply the
+   stream's exception mask as required.
+3. The inherited protected buffer swap again leaves the locale behind while
+   exchanging synchronized-buffer state.
+
+Library-quality observation: lock identity is maintained by an append-only
+process-global vector of individually heap-allocated entries. Every previously
+seen wrapped-buffer address leaks permanently, and each first lookup scans all
+prior addresses. A lifetime-safe keyed registry or lock ownership associated
+with the wrapped buffer would avoid unbounded memory and lookup growth.
+
+### Audit record: `<iostream>` standard stream objects
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 31.2.4, 31.4
+
+Reviewed object definitions and initialization lifetime, required ties and
+`unitbuf`, shared standard-error buffers, C-stream synchronization, final
+flushing, narrow/wide buffer behavior, putback, and concurrent access.
+
+Certification fails because:
+
+1. The wide standard buffers are ASCII byte adapters. Wide output rejects every
+   value above `0x7f`, and wide input reads one raw byte as one `wchar_t` rather
+   than performing the associated C stream's multibyte/wide conversion.
+   `wcin`, `wcout`, `wcerr`, and `wclog` therefore cannot provide ordinary
+   locale-sensitive wide I/O.
+2. Synchronized standard-stream operations have no stream-level locking.
+   Although individual C FILE calls may be internally synchronized, formatted
+   operations also read and modify shared C++ stream state such as width and
+   error flags outside those calls. Concurrent insertions/extractions can race,
+   contrary to the explicit thread-safety guarantee for the synchronized eight
+   standard stream objects.
+
+The objects additionally inherit the general formatted/unformatted exception
+state defects. No separate material library-quality defect was identified.
+
+### Audit record: `<filesystem>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 31.12, D.29
+
+Reviewed path construction and conversion, pathname parsing/decomposition,
+iteration and hashing, status and directory-entry caching, directory iterators,
+recursive traversal, error reporting, and the filesystem operation set against
+the supported Windows and POSIX native backends.
+
+Certification fails because:
+
+1. The template path constructors, assignments, appends, and concatenations are
+   constrained only by incidental expressions such as `source.data()` or
+   `iterator_traits<It>::value_type`. They accept sources outside the specified
+   encoded-character `Source`/iterator domain and do not provide the required
+   participation constraints.
+2. Native Windows pathname decomposition recognizes only `/` as a directory
+   separator. A native path such as `C:\\dir\\file` consequently has a drive
+   root-name but no root-directory and is reported as relative, while its
+   filename and parent decomposition retain the backslashes as ordinary
+   characters. `make_preferred()` cannot repair this because normalization is
+   empty and `preferred_separator` is unconditionally `/`.
+3. Several overloads that report through `error_code&` allocate outside a
+   catch boundary. For example, `absolute`, `canonical`, `current_path`, and
+   `read_symlink` construct allocating strings/paths after the native call, and
+   `weakly_canonical`, `create_directories`, `remove_all`, `relative`,
+   `proximate`, and `copy` perform further allocating operations. Allocation
+   failure can therefore escape instead of being reported through `ec` as
+   required by the filesystem error-reporting rules.
+4. `directory_iterator::open` constructs each yielded `directory_entry` through
+   its refreshing path constructor. That constructor directly calls
+   `refresh(error_code&)`, contrary to the explicit requirement that directory
+   iterator constructors and non-const members not directly or indirectly call
+   any `directory_entry` refresh function. The native enumeration callback's
+   already available file-kind information is discarded.
+5. `copy` silently returns success when its source resolves to
+   `file_type::not_found`: `status` clears `ec` for that status, after which the
+   early `!exists(source)` return leaves `ec` clear. Copying a nonexistent source
+   is required to report an error.
+
+Library-quality observations:
+
+- `hash_value(path)` uses a handwritten byte-at-a-time FNV-1a-style hash even
+  though the repository already provides RapidHash. This leaves a public hash
+  specialization on a materially weaker, slower ad-hoc primitive.
+- Path comparison, iteration, and hashing repeatedly rescan the pathname to
+  rediscover components; iterator construction also snapshots the complete
+  directory into a heap-allocated vector and refreshes every entry eagerly.
+  Large paths and directories therefore incur avoidable superlinear scanning,
+  allocation, metadata calls, and latency before the first result.
+
+### Audit record: `<cstdio>` / `<stdio.h>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 16.4.6.10, 31.13.1; C 7.21
+
+Reviewed the complete synopsis and compatibility namespace, standard streams,
+file lifecycle and buffering, byte I/O, positioning, temporary files, error
+state, formatted output, and formatted input against the C17 facilities adopted
+by C++23.
+
+Certification fails because:
+
+1. Formatted floating output and input use locale-independent `to_chars` and
+   `from_chars` with a literal `.` radix character. They neither emit nor
+   recognize the active C locale's decimal-point character as required by the
+   `fprintf` and `fscanf` families.
+2. The `l`-qualified `%c` and `%s` conversions do not perform the required
+   multibyte/wide-character conversions with an initial conversion state.
+   Scanning merely casts each input byte to `wchar_t`; the corresponding output
+   path likewise narrows wide code units instead of using the active multibyte
+   encoding. Valid non-ASCII text therefore fails even in a UTF-8 locale.
+3. Floating formatting and scanning are capped by fixed 512-byte local arrays.
+   A valid large field precision is reported as failure or truncated to 511
+   input characters rather than processing the requested conversion subject to
+   the API's ordinary output-size and resource limits.
+4. `fgetpos` stores an `mbstate_t`, but `fsetpos` ignores that saved state and
+   restores only the byte offset. Positioning a multibyte-oriented stream does
+   not restore the parse state represented by `fpos_t`.
+5. In normal FTL namespace mode, `<ftl/cstdio>` defines `stdin`, `stdout`, and
+   `stderr` only when `FTL_REPLACE_STL` is active. The header's own synopsis is
+   therefore missing the three required standard-stream macros unless an
+   unrelated vendor header happened to define them first.
+
+Library-quality observation: floating conversions are routed through fixed
+stack buffers and then copied to the destination sink. A growable/direct sink
+would both remove the artificial precision ceiling and avoid the extra staging
+copy.
+
+### Audit record: `<cinttypes>` / `<inttypes.h>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 17.4.1, 31.13.2; C 7.8
+
+The `imaxdiv_t`, constexpr arithmetic functions, four conversion functions,
+PRI/SCN macro families, conditional type-width spellings, and compatibility
+header exposure are complete for the supported data models. Certification
+nevertheless fails because the header includes and exposes the already-audited
+`<cstdint>` model whose greatest-width integer types and associated limits are
+incorrect when the implementation provides wider extended integers. No
+separate material library-quality defect was identified.
+
+### Audit record: `<regex>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 16.4.6.15, 32
+
+Reviewed constants and errors, `regex_traits`, all six grammars, parsing and
+matching, `basic_regex`, sub-matches and results, formatting/replacement,
+algorithm overloads, and both iterator types.
+
+Certification fails because:
+
+1. `basic_regex` defaults its move constructor and move assignment across the
+   pattern, traits object, compiled-program vectors, and scalar `valid_` flag.
+   Moving transfers the vectors but copies `valid_`, leaving the source marked
+   valid with an empty compiled program. A subsequent match on this supposedly
+   valid-but-unspecified moved-from object indexes the empty instruction array;
+   the required valid moved-from state is not preserved.
+2. The mandated unconditional `noexcept` move operations directly move an
+   arbitrary user-supplied `traits_type`. A traits type can meet the regex-traits
+   requirements while having a throwing move operation; that exception causes
+   termination instead of the library providing the specified non-throwing
+   `basic_regex` move.
+3. `basic_regex::swap` is implemented as three whole-object moves. Its cost and
+   exception behavior therefore include arbitrary `traits_type` move operations
+   and cannot meet the specified constant-time complexity for all conforming
+   traits specializations.
+
+Library-quality observations:
+
+- Every match/search first copies the entire bidirectional target range into a
+  newly allocated contiguous string. Search then restarts the VM at each
+  candidate offset, and result construction walks from the original iterator
+  once per capture to reconstruct positions. This adds avoidable allocation and
+  repeated traversal before returning iterator-based results.
+- `sub_match` comparisons materialize complete temporary strings rather than
+  comparing their iterator ranges directly.
+
+### Audit record: `<atomic>` / `<stdatomic.h>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 17.3.2, 33.5
+
+Reviewed memory orders and fences, generic/integral/floating/pointer atomics,
+`atomic_ref`, flags, lock-free properties and aliases, value-representation
+comparison, waiting/notification, free-function APIs, smart-pointer
+specializations, and the C compatibility header.
+
+Certification fails because the integral atomic specialization is selected
+through the repository's incomplete `is_integral_v`. Implementation-provided
+extended integer types such as GCC and Clang `__int128` therefore instantiate
+only the generic atomic interface and omit the required integral `fetch_add`,
+`fetch_sub`, bitwise fetch operations, and compound operators. The associated
+constraints and free functions inherit the same missing participation.
+
+Library-quality observations:
+
+- Non-lock-free object operations and indirect waits share fixed arrays of only
+  64 process-global cache-line buckets. Hash collisions serialize unrelated
+  atomics; because a proxy bucket cannot identify which object a waiter belongs
+  to, even `notify_one` must increment shared state and wake every waiter in the
+  bucket.
+- On Apple systems where the weak-imported address-wait functions are absent,
+  the implementation still classifies 4- and 8-byte waits as directly
+  supported. The platform wait then returns immediately and `atomic::wait`
+  busy-spins until the value changes instead of falling back to a blocking proxy.
+
+### Audit record: `<stop_token>`
+
+**Status:** CERTIFIED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 33.3
+
+The stop state/source/token ownership model, source counting, request
+linearization, callback registration and immediate invocation, callback
+execution ordering, cross-thread destruction wait, same-thread self-destruction
+escape, comparisons, swaps, constraints, and feature-test surface match C++23.
+No material library-quality defect was identified.
+
+### Audit record: `<thread>` / `jthread`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 33.2.4, 33.4
+
+Thread identity and ownership, construction/invocation, join/detach failure
+handling, native handles, `jthread` stop-token dispatch and destruction, thread
+ID formatting/hashing, and `this_thread` operations were reviewed.
+
+Certification fails because `this_thread::sleep_for` first applies
+`ceil<nanoseconds>` to the complete positive duration and then converts the
+result to `uint64_t`. A sufficiently large but representable duration overflows
+the signed `nanoseconds::rep`; the resulting non-positive value makes the
+function return immediately instead of blocking for at least the requested
+relative timeout. The inherited duration conversion/classification defects
+also apply to implementation-provided extended representation types.
+
+Library-quality observation: every newly launched thread requires a separate
+heap allocation for its decayed invocation tuple, even where the native launch
+backend could carry a small inline start record or consume caller-owned startup
+storage synchronously.
+
+### Audit record: mutexes, locks, and condition variables
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Headers:** `<mutex>`, `<shared_mutex>`, `<condition_variable>`
+**Applicable clauses:** 16.4.2.5, 33.2.4--33.2.5, 33.6--33.7
+
+Reviewed basic, recursive, timed, and shared mutex state machines; generic
+`lock`/`try_lock`; guard, scoped, unique, and shared ownership wrappers;
+`call_once`; ordinary, arbitrary-lock, timed, predicate, and stop-token
+condition waits; notification; and thread-exit notification.
+
+Certification fails because the required native-handle surface is absent.
+`mutex`, `recursive_mutex`, `timed_mutex`, `recursive_timed_mutex`,
+`shared_mutex`, and `shared_timed_mutex` provide neither their
+implementation-defined `native_handle_type` nor `native_handle()`. The same two
+required members are missing from `condition_variable`. Programs using the
+standard interoperation interfaces therefore fail at the synopsis level.
+
+Timed lock and wait overloads additionally inherit the recorded chrono
+extended-representation classification failures. No separate material
+library-quality defect was identified in the locking algorithms.
+
+### Audit record: `<semaphore>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 33.8
+
+The counter bounds, release/acquire synchronization, spurious `try_acquire`
+permission, timeout/release race closure, aliases, and feature-test surface
+match C++23 for supported duration representations. Certification fails because
+the timed overloads inherit chrono's rejection/misclassification of
+implementation-provided extended representation types. No separate material
+library-quality defect was identified.
+
+### Audit record: `<latch>`
+
+**Status:** CERTIFIED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 33.9
+
+Maximum count, construction, countdown synchronization, waiting,
+`arrive_and_wait`, deleted ownership operations, and the feature-test surface
+match C++23. No material library-quality defect was identified.
+
+### Audit record: `<barrier>`
+
+**Status:** CERTIFIED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 33.10
+
+Arrival tokens, phase accounting, completion invocation and ordering, waiting,
+drop behavior, constraints, maximum count, and the C++23 feature-test value
+match the relaxed phase-completion specification.
+
+Library-quality observation: all arrivals serialize on one internal mutex, and
+the last arrival executes the arbitrary completion function while retaining
+that mutex. This makes a highly contended barrier a centralized scalability
+bottleneck and lengthens every blocked arrival by the completion duration.
+
+### Audit record: `<future>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 33.2.4, 33.10
+
+Reviewed error codes/exceptions, shared-state readiness and abandonment,
+futures and shared futures, promises and thread-exit publication,
+`packaged_task`, allocator use, deferred and asynchronous launch, result and
+exception transfer, timed waiting, and last-reference worker synchronization.
+
+Certification fails because:
+
+1. The `packaged_task` converting constructor checks
+   `is_invocable_r_v<R, F&, ArgTypes...>` instead of the stored callable type
+   `decay_t<F>&`. In particular, a const source object whose non-const callable
+   copy is invocable is rejected even though decay-copying it produces the exact
+   callable object on which the task is specified to invoke.
+2. `future::wait_for`, `shared_future::wait_for`, and corresponding absolute
+   waits inherit chrono's rejection/misclassification of implementation-provided
+   extended duration representation types.
+
+Library-quality observation: each `packaged_task` allocates its shared state and
+its virtual callable model separately, with no small-callable storage. Even a
+function pointer therefore requires two heap allocations and an indirect
+virtual call per invocation.
+
+### Audit record: `<stdexcept>`
+
+**Status:** CERTIFIED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 17.7, 19.2
+
+The complete logic/runtime exception hierarchy, string and C-string
+constructors, virtual destruction, non-throwing copy/assignment, stable shared
+message ownership, and `what()` behavior match C++23. No material
+library-quality defect was identified.
+
+### Audit record: `<system_error>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 19.5
+
+Reviewed categories, codes and conditions, enum customization, comparisons,
+messages, `system_error`, standard `errc`, and hash support.
+
+Certification fails on Windows because `system_category` treats native Win32
+error numbers as though they were C `errno` values. `message()` passes them to
+`strerror`, and `default_error_condition()` maps a value to `generic_category`
+merely when the same integer occurs anywhere in `errc`. Win32 values require
+platform message lookup and an explicit semantic mapping; numeric coincidence
+can currently produce both incorrect text and false equivalence (for example,
+Win32 error 5 is access denied, not generic `errc` value 5).
+
+No separate material library-quality defect was identified. The code and
+condition hash specializations correctly combine category identity and value
+with RapidHash.
+
+### Audit record: `<generator>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 26.8
+
+The template mandates, reference/value relationships, view and input-iterator
+surface, coroutine lifetime, active recursive-yield stack, exception transfer,
+allocator-aware frame allocation, promise operations, range flattening, and
+PMR alias were reviewed in both namespace modes.
+
+Certification fails because the general
+`yield_value(ranges::elements_of<R, Alloc>)` overload has no definition in
+normal FTL namespace mode. Its body is compiled only under
+`FTL_REPLACE_STL`; normal mode leaves a declaration ending in a semicolon.
+Consequently, a valid `co_yield ranges::elements_of(range)` selects the
+required overload but cannot instantiate its deduced return type, making the
+ordinary public-header mode unusable for non-generator recursive ranges.
+
+No separate material library-quality defect was identified.
+
+### Audit record: `<stacktrace>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 19.6
+
+The entry value model and queries, capture overloads, allocator-aware storage,
+const iteration, comparison, swapping, string and stream conversion,
+formatting, PMR aliases, and RapidHash-based hash support were reviewed.
+
+Certification fails because every capture is unconditionally limited to 128
+frames. The no-argument `current()` is specified in terms of the available
+stacktrace of the complete current evaluation, and `current(skip)` is specified
+as a suffix of that trace; neither overload permits an arbitrary 128-frame
+truncation. The bounded overload also mishandles skipping on POSIX: it asks
+`backtrace` for only `min(max_depth, 128)` entries and then removes `skip + 1`
+from that already-short result, rather than capturing enough entries to return
+up to `max_depth` frames after the skipped prefix. Any positive skip therefore
+reduces the requested result length, and a skip at least as large as the fixed
+capture count always produces an empty trace even when deeper frames exist.
+
+Library-quality observation: entries never attempt symbol or debug-information
+lookup. `description()` and `source_file()` are always empty,
+`source_line()` is always zero, and user-facing conversion prints only a raw
+address. Although unavailable information may be represented this way, the
+facility discards the principal diagnostic value expected from a stacktrace on
+platforms where symbolization is available.
+
+### Audit record: `<strstream>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, D.15
+
+The deprecated buffer constructors and ownership states, freezing, dynamic
+growth, putback, seeking, legacy input/output/combined stream wrappers, and
+their buffer accessors were reviewed.
+
+Certification fails because:
+
+1. `strstreambuf` omits the required `underflow()` override. Ordinary writes
+   that fit the current put area advance `pptr()` without updating the stored
+   get-area high-water mark, and the inherited base implementation reports EOF
+   instead of extending `egptr()` up to the current write position. Characters
+   successfully written to a dynamic or combined stream can therefore remain
+   unreadable through its input sequence.
+2. The constructor taking `gnext_arg`, `n`, and non-null `pbeg_arg` must call
+   `setg(gnext_arg, gnext_arg, pbeg_arg)` and
+   `setp(pbeg_arg, pbeg_arg + N)`. The implementation instead establishes the
+   put area as `[gnext_arg, gnext_arg + N)` and bumps its current pointer to
+   `pbeg_arg`. This gives the wrong `pbase()`, `epptr()`, `pcount()`, and output
+   extent whenever the two pointers differ.
+3. In the absence of user allocation callbacks, dynamic array growth is
+   specified in terms of `new char[n]` and `delete[]`. The implementation uses
+   `malloc` and `free`, bypassing replaceable allocation functions, the new
+   handler, and the required C++ array-allocation behavior.
+
+Library-quality observation: dynamic growth uses unchecked doubling and copies
+the complete old capacity rather than only the initialized/high-water portion.
+Large buffers can wrap the capacity calculation, while normal growth needlessly
+copies unused storage.
+
+### Audit record: `<ctime>` / `<time.h>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 17.2.2, 17.14; ISO/IEC 9899:2018 7.27
+
+The C time types/macros, process and calendar clocks, UTC acquisition, broken
+down time conversion, text conversion, formatting, namespace placement, and C
+compatibility exports were reviewed.
+
+Certification fails because:
+
+1. `difftime` evaluates `end - beginning` in `time_t` before conversion to
+   `double`. Opposite-extreme signed values overflow even though `difftime`
+   exists to express the elapsed seconds in its floating result without
+   requiring a representable `time_t` subtraction.
+2. The handwritten `gmtime` arithmetic can overflow for extreme negative
+   `time_t` values when the floored day count is multiplied back by 86400. It
+   also narrows an unrestricted civil year into `tm_year` without detecting
+   that the result is not representable as `int`; the C conversion is required
+   to return a null pointer when the result cannot be represented.
+3. `timespec_get` uses signed remainder directly for `tv_nsec`. If the system
+   time is before the epoch, the remainder is negative rather than normalized
+   into the required nanosecond subsecond range with a correspondingly adjusted
+   `tv_sec`.
+4. The private public support header `<__c_time_types.hpp>` defines `tm` with
+   only the nine standard fields, then passes that object to the native POSIX
+   `mktime` and `strftime` ABIs through erased `void*` declarations. The
+   supported glibc and Darwin `struct tm` layouts append native timezone fields.
+   The runtime can read or write beyond the FTL object (notably for `%z`/`%Z`
+   and normalization), causing both incorrect time-zone behavior and an
+   out-of-bounds ABI violation.
+
+No separate material library-quality defect was identified.
+
+### Audit record: assertions and C compatibility utility headers
+
+**Status:** MIXED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Headers:** `<cassert>`, `<assert.h>`, `<cerrno>`, `<errno.h>`, `<csetjmp>`,
+`<setjmp.h>`, `<csignal>`, `<signal.h>`, `<iso646.h>`, `<stdalign.h>`,
+`<stdbool.h>`
+**Applicable clauses:** 16.4.2.5, 17.2.2, 17.3.2, 17.12--17.13, C.6,
+D.13; ISO/IEC 9899:2018 7.2, 7.5, 7.13, 7.14
+
+The assertion macro's repeated-inclusion/NDEBUG behavior, error macros and
+thread-local lvalue, jump-buffer surface, signal types/functions/macros,
+alternative-token compatibility header, and deprecated C compatibility macros
+were reviewed for each supported platform.
+
+`<cassert>` / `<assert.h>`, `<csetjmp>` / `<setjmp.h>`, `<iso646.h>`,
+`<stdalign.h>`, and `<stdbool.h>` are certified. The assertion header correctly
+keeps its macro definition outside the include guard; the jump buffer storage
+is sufficiently sized and aligned for the supported x86-64 Windows and Linux
+ABIs; the empty alternative-token header and deprecated compatibility macros
+match their C++23 specifications.
+
+`<cerrno>` / `<errno.h>` fail on macOS because `EILSEQ` is hard-coded to the
+Linux value 84 for every non-Windows platform; Darwin's C runtime uses 92.
+Code comparing delegated runtime failures with the macro therefore observes a
+different condition.
+
+`<csignal>` / `<signal.h>` fail on Windows because `SIGABRT` is hard-coded to
+the POSIX value 6. The supported Microsoft CRT defines `SIGABRT` as 22, so the
+header passes the wrong signal number to its delegated `signal` and `raise`
+functions.
+
+No separate material library-quality defect was identified.
+
+### Audit record: `<version>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 10.1, 15.5, 16.4.2.5, 17.3.2
+
+The complete macro name/value inventory was mechanically compared with the
+C++23 `<version>` synopsis and with feature-test definitions emitted by the
+other public headers. The intentionally absent `__cpp_lib_modules` macro is
+consistent with `ROADMAP.md`'s explicit exclusion of named standard-library
+modules from FTL's current product boundary; all other present synopsis values
+match exactly.
+
+Certification fails because the library violates the synopsis's cross-header
+consistency rule for `__cpp_lib_ranges`: `<version>` correctly reports
+`202302L`, while including `<ranges>` alone reports only `202110L`. The latter
+value advertises an older revision even though `<ranges>` is explicitly one of
+the corresponding headers for the C++23 value.
+
+The additional implementation-reserved
+`__cpp_lib_uses_allocator_construction` macro is not treated as a defect. No
+separate material library-quality defect was identified.
+
+### Audit record: `<memory_resource>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 20.4
+
+The resource base protocol, default/new-delete/null resources,
+`polymorphic_allocator`, equality, allocation overflow handling, and
+uses-allocator construction were reviewed together with both pool resources
+and the monotonic resource.
+
+Certification fails because:
+
+1. The pool resources merely retain and linearly reuse individual upstream
+   allocations. Both members of `pool_options` are ignored: no effective
+   defaults replace zero in `options()`, `max_blocks_per_chunk` never controls
+   replenishment, and allocations above `largest_required_pool_block` are not
+   passed through as non-pooled allocations. This does not implement the
+   option-controlled pooling behavior required by 20.4.5.
+2. When `monotonic_buffer_resource` exhausts its current buffer, it allocates
+   exactly the requested block and returns it without making that allocation
+   the new current buffer. It has no `next_buffer_size` state or growth factor,
+   so every subsequent request that does not fit the original buffer performs
+   another upstream allocation, contrary to 20.4.6. Constructors taking an
+   `initial_size` also allocate immediately even though the specified initial
+   state has a null current buffer and uses that value for the first lazily
+   acquired buffer.
+
+Library-quality observations:
+
+- Each new pooled block causes two upstream allocations, one for the block and
+  another for a linked-list metadata node, and allocation/deallocation scan the
+  complete list. The nominal pool therefore lacks both chunk amortization and
+  size-class lookup.
+- `synchronized_pool_resource` protects every operation with an unbounded tight
+  `atomic<bool>` exchange loop. A preempted holder makes all contenders consume
+  CPU continuously, with no blocking wait, backoff, yield, or fairness.
+
+### Audit record: `<scoped_allocator>`
+
+**Status:** FAILED
+**Audited at:** `798e52c498f5630ecdc03c92456b99a1ff95aa97`
+**Applicable clauses:** 16.4.2.5, 20.5
+
+The recursive allocator representation, rebinding, allocation forwarding,
+uses-allocator construction, copy selection, comparisons, propagation traits,
+and constructor surface were reviewed.
+
+Certification fails because the copy-assignment, move-assignment, and swap
+propagation member types combine the outer and inner allocator traits with
+logical AND. Each is required to be `true_type` when the corresponding trait is
+true for *any* allocator in the outer/inner set, so these must use logical OR.
+Containers using a mixed propagation stack consequently observe the wrong
+allocator propagation contract. The converting constructors also omit their
+specified `is_constructible_v` constraints, allowing overload participation to
+depend on hard instantiation failure instead of the required constrained
+interface.
+
+No separate material library-quality defect was identified.
+
+## Audit closure evidence
+
+The audit inventory and ledger were closed against the public tree at
+`798e52c498f5630ecdc03c92456b99a1ff95aa97` as follows:
+
+- All 137 files directly under `include/ftl` have an exact `<header>` or
+  explicitly named support-unit entry in the Header ledger. Grouped rows are
+  used only for C compatibility wrappers or facilities whose requirements are
+  shared across multiple headers.
+- All 185 feature-test macro names/values in the C++23 `<version>` synopsis were
+  mechanically compared with `<version>`. Excluding the deliberately
+  out-of-scope named-modules advertisement, every supplied value matches. All
+  270 synopsis mappings from a macro to another public FTL header were then
+  checked directly; the sole mismatch is the recorded `__cpp_lib_ranges`
+  value in `<ranges>`.
+- Focused normal and `FTL_REPLACE_STL` tests covering the final substantive
+  audit set (`<csetjmp>`, `<ctime>`, `<version>`, `<scoped_allocator>`,
+  `<memory_resource>`, `<generator>`, `<stacktrace>`, and `<strstream>`) passed
+  in the canonical MSVC, Clang-CL, WSL GCC, and WSL Clang build folders. These
+  tests corroborate the supported baseline behavior; they do not negate
+  standard requirements outside their assertions, which remain recorded as
+  failures above.
+- `git diff --check` is clean. The audit changed documentation only, so no full
+  build/test closure was required after the focused evidence runs.
+
 ## Header ledger
 
-| Header / unit        | Status        | Audited at                                 | ISO clauses                                                 | Notes                                                                                                                                                                                                                                        |
-|----------------------|---------------|--------------------------------------------|-------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `<cstddef>`          | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.3, 16.4.3.2, 16.4.6.2, 17.2.1, 17.2.3–17.2.5, 17.3.2 | `byte` integral constraints are too narrow on implementations where extended integer types such as `__int128` satisfy `is_integral_v`.                                                                                                       |
-| `<initializer_list>` | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 9.4.5, 16.4.6.2, 16.4.6.5, 17.10                            | Explicit and partial specializations of `initializer_list` are not prohibited as required by 17.10.2.                                                                                                                                        |
-| `<cstdint>`          | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 6.8.2, 16.4.6.2, 17.4.1; ISO/IEC 9899:2018 7.20             | Limit-macro expression-type defects; greatest-width integer handling stops at 64 bits; pointer limits and integer-constant suffixes assume a 64-bit data model.                                                                              |
-| `<limits>`           | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 6.8.2–6.8.3, 17.3.3–17.3.5                                  | Missing extended-integer specializations; incorrect integral `traps`; integer `digits` assumes 8-bit padding-free representations; floating implementation properties are hard-coded.                                                        |
-| `<climits>`          | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 6.8.2, 7.3.7, 17.3.6; ISO/IEC 9899:2018 5.2.4.2.1           | GCC/Clang `UCHAR_MAX`/`USHRT_MAX` have incorrect promoted types; `MB_LEN_MAX` is hard-coded below the maximum supported by the delegated glibc multibyte runtime.                                                                            |
-| `<cfloat>`           | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 17.3.7; ISO/IEC 9899:2018 5.2.4.2.2                         | Complete C++23 floating-point implementation-property macro surface matches the supported compiler implementations.                                                                                                                          |
-| `<stdfloat>`         | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 5.13.4, 6.8.3, 15.11, 17.4.2                                | Conditional extended floating-point aliases exactly follow the implementation-provided `__STDCPP_*` facilities and corresponding standard literal types.                                                                                     |
-| `<source_location>`  | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.8                                              | Call-site capture semantics, observers, special-member requirements, feature-test macro, and freestanding surface match C++23.                                                                                                               |
-| `<coroutine>`        | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 9.5.4, 16.4.2.5, 17.12                                      | Coroutine traits, handles, builtin frame/promise interaction, comparison/hash support, no-op coroutine, trivial awaitables, feature-test macro, and freestanding surface match C++23.                                                        |
-| `<cstdarg>`          | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 7.6.1.3, 16.4.2.5, 17.13.2; ISO/IEC 9899:2018 7.16          | Handwritten MSVC `va_arg` does not implement indirect aggregate passing and assumes an x64-style 8-byte argument layout on every MSVC architecture.                                                                                          |
-| `<new>`              | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 6.7.3, 6.7.5.5, 16.4.2.5, 17.6                              | `launder` is not a compiler lifetime/optimization barrier on MSVC or clang-cl; hardware interference sizes assume a universal 64-byte lower bound without constraining target architectures.                                                 |
-| `<typeinfo>`         | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 7.6.1.7–7.6.1.8, 16.4.2.5, 17.7                             | MSVC normal mode defines independent `ftl::bad_cast` and `ftl::bad_typeid` classes rather than aliases to the runtime RTTI exception types, so they do not catch exceptions produced by failed `dynamic_cast` and null-polymorphic `typeid`. |
-| `<exception>`        | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 14.6, 16.4.2.5, 17.9                                        | `rethrow_if_nested` forms a `dynamic_cast` for every polymorphic type and therefore fails to provide the required no-op behavior when `nested_exception` is an inaccessible or ambiguous base.                                               |
-| `<compare>`          | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 7.6.8, 11.10.3, 16.3.3.3.5, 17.11, 22.10.8.8                | Normal-mode `compare_three_way` incorrectly synthesizes legacy comparisons; weak/partial-order CPO dispatch and floating semantics are incorrect; fallback CPO constraints are too strong; pointer total-order semantics are missing.        |
-| `<concepts>`         | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.3.2, 18.1–18.7                                 | `same_as` lacks the required symmetric subsumption because its two `is_same_v` operands are distinct atomic constraints; arithmetic concepts also inherit `<type_traits>`'s missing extended-integer recognition.                            |
-
-| `<type_traits>`      | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 6.8, 16.4.2.5, 16.4.4.3, 17.13.5, 21.3, 22.10.4             | Extended integers are not recognized; copy/move convenience traits are ill-formed for non-referenceable types; `is_swappable_with` omits array swap from its lookup context.                                                               |
-
-| `<ratio>`            | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 21.4                                             | Arithmetic facilities have the wrong trait-class-plus-`_t` interface; comparison trait classes are missing; invalid most-negative arguments are accepted; conditional SI aliases never appear.                                             |
-
-| `<utility>`          | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 16.4.4.3, 17.13.5, 21.2, 22.2â€“22.3               | Integer comparisons accept forbidden character and boolean types and miss extended integers; array `swap` is unconstrained; pair ordering does not use `synth-three-way`; dangling prevention is conditional; `subrange` is accepted. |
-| `<tuple>`            | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 20.2.8.1, 22.4                                   | `subrange` is incorrectly accepted by constructors/assignment; tuple is not uses-allocator-aware; type-based rvalue `get` fails for reference elements; tuple algorithms are over-broad; dangling checks are conditional.             |
-| `<optional>`         | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.11, 22.5                                      | Legacy relational overloads are missing; `or_else` is unconstrained; `transform` rejects immovable results; three-way comparison participation is too broad; volatile hash enablement is wrong.                                            |
-| `<variant>`          | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.11, 22.6                                      | Copy assignment and swap have wrong exception-state behavior; converting assignment and `emplace` participation are wrong; `visit` coerces heterogeneous results and rejects derived variants; comparison inherits ordering defects.   |
-| `<any>`              | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.7, 22.7                                       | `emplace` preserves the old value on failure instead of becoming empty; the value constructor accepts in-place tags; `type()` is conditionally absent. Every value is heap allocated rather than using small-object storage.             |
-| `<expected>`         | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 22.8                                             | `emplace` has wrong `noexcept`; swap participation and rollback are incorrect; monadic result relationships are incomplete; mapped immovable results are rejected; state-changing assignment guarantees drift.                         |
-| `<bitset>`           | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 22.9                                             | The proxy's required private default constructor is absent; the pointer constructor is overconstrained; formatted extraction bypasses required stream error-state handling when internal operations throw.                              |
-| `<functional>`       | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.11, 22.10                                     | `bind<R>` ignores `R`; classic bind mishandles wrapper value categories; `function` constraints, no-allocation cases, RTTI surface, and static-callable deduction drift; hashes enable cv keys and hash raw floats. Quality: no SBO and fake quadratic Boyer-Moore searchers. |
-| `<typeindex>`        | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 22.11                                            | The four explicitly required legacy relational member functions are absent; expression rewriting through `<=>` does not supply their named member interfaces.                                                                           |
-| `<execution>`        | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 22.12                                            | Complete policy-type, trait, global-object, feature-test, and namespace surface matches C++23; policy-taking algorithm semantics remain scoped to their owning algorithm headers.                                                          |
-| `<charconv>`         | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 22.13                                            | Integer conversions omit exact overloads for implementation-provided extended signed and unsigned integer types; the ordinary integer and floating conversion engines otherwise match the audited C++23 surface.                       |
-| `<format>`           | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 22.14                                            | Extended arithmetic formatter coverage inherits incomplete type classification. Quality: output-iterator and size operations materialize a complete intermediate string instead of formatting/counting directly.                      |
-| `<bit>`              | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 22.15                                            | Extended signed/unsigned integer participation is missing. Quality: runtime population/count-zero/byte-swap primitives use scalar loops instead of available compiler intrinsics.                                                         |
-| `<string_view>` / character traits | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 23.2--23.3                              | Complete traits and string-view surface matches C++23. Quality: non-byte view hashes pass character count rather than representation byte count to RapidHash, creating avoidable collision clusters.                                    |
-| `<string>`            | **FAILED**   | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 23.4, D.25                                       | `resize_and_overwrite` callback/result semantics drift; deprecated `reserve()` is absent; copy allocator propagation and throwing-traits guarantees are wrong; floating conversions ignore the C locale. Quality: wide hashes use character count as byte count. |
-| `<cctype>`            | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 17.14.2, 23.5.1; ISO/IEC 9899:2018 7.4                    | Complete C-linked classification and case-conversion surface delegates semantics, input-domain handling, and active-locale behavior to the supported platform C runtime.                                                                 |
-| `<cwctype>`           | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 17.14.4, 23.5.2; ISO/IEC 9899:2018 7.30.2                  | Wide classification, descriptors, and transforms are hard-coded to ASCII instead of following the active C locale; `WEOF` is an `unsigned int` expression rather than a `wint_t` constant.                                             |
-| `<cstring>`           | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 17.14.4, 23.5.3; ISO/IEC 9899:2018 7.24                    | `strcoll` and `strxfrm` ignore the active C collation locale. Quality: builtin suppression forces byte loops for memory primitives, and `strstr` is a naive quadratic search.                                                            |
-| `<cwchar>`            | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 17.14.4, 23.5.4--23.5.6; ISO/IEC 9899:2018 7.29           | Multibyte conversion and wide I/O are ASCII-only; numeric parsing, collation, and time formatting ignore active locales; `WEOF` has the wrong expression type. Quality: scalar primitives and naive search.                         |
-| `<cuchar>`            | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 17.14.5, 23.5.5--23.5.6; ISO/IEC 9899:2018 7.28           | Conversion is ASCII-only and ignores the active multibyte locale; `mbrtoc8`/`mbrtoc16` lack staged `size_t(-3)` output; reverse conversion rejects completed valid non-ASCII scalars.                                                       |
-| `<array>`             | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2, 24.3.2, 24.3.7                          | Comparison accepts an arbitrary syntactically valid spaceship result instead of applying `synth-three-way`, so permitted element types with an unrelated `<=>` result make array comparison ill-formed.                                      |
-| `<vector>`            | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2, 24.3.6, 24.3.11--24.3.12               | Growth commits before appended construction, breaking exception guarantees and self-aliasing insertion; the bool-proxy formatter is missing. Quality: packed hashing passes blocks as bytes.                                                |
-| `<deque>`             | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2, 24.3.3, 24.3.8                         | Throwing construction can leak installed blocks/elements; failure while growing the block map leaks a newly allocated block; middle modifiers move from the source before success and break required rollback.                              |
-| `<forward_list>`      | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2, 24.3.4, 24.3.9                         | Throwing construction leaks linked nodes; multi-element insertions partially commit instead of rolling back; a throwing sort comparison can disconnect and lose nodes rather than preserving every element.                                |
-| `<list>`              | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2, 24.3.5, 24.3.10                        | Throwing construction leaks linked nodes; multi-element insertions partially commit instead of rolling back; a throwing sort comparison destroys the detached half instead of preserving every element.                                   |
-| `<set>`               | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2, 24.4.3, 24.4.6--24.4.7                 | Comparator exceptions leak nodes; merge variants and allocator-only construction are incomplete; inherited assignment returns the base; hints and legacy comparison fallback fail complexity/interface requirements; node handles overconstrain allocators. |
-| `<map>`               | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2, 24.4.2, 24.4.4--24.4.5                 | Shared tree/node leaks; merge and allocator-only overload sets are incomplete; inherited assignment and `value_compare` have wrong interfaces; hints and fallback ordering fail; node handles impose invalid allocator assumptions.          |
-| `<unordered_set>`     | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2.8, 24.5.3, 24.5.6--24.5.7               | Hash/equality/growth exceptions leak nodes; node insertion and merge lose ownership; overloads and node allocator semantics drift; equality uses key-equivalence counts instead of element equality. Quality: unmixed power-of-two bucketing. |
-| `<unordered_map>`     | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2.8, 24.5.2, 24.5.4--24.5.5               | Throwing hash-table operations leak nodes; merge/constructor/assignment interfaces are incomplete; multimap equality does not compare group multiplicities; node allocator semantics drift. Quality: unmixed power-of-two bucketing.       |
-| `<queue>`             | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.6.2, 24.6.6--24.6.7, 24.6.13              | Queue and priority-queue formatters are missing; allocator deduction guides are underconstrained; default underlying containers carry the recorded deque/vector exception and ownership defects.                                            |
-| `<stack>`             | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.6.3, 24.6.8, 24.6.13                       | The required adaptor formatter is absent; allocator deduction guides accept non-allocators; the default deque-backed specialization inherits deque's exception-safety/resource failures.                                                      |
-| `<flat_set>`          | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.6.5, 24.6.11--24.6.12                     | Range and sorted insertion are quadratic instead of meeting `N + M log M`/linear bounds; inherited assignment and fallback ordering drift; allocator guide detection/inventory is incomplete.                                                 |
-| `<flat_map>`          | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.6.4, 24.6.9--24.6.10                      | Range and sorted insertion violate required complexity; inherited assignment and synthesized ordering drift; allocator guides are incomplete/underconstrained; default storage inherits vector failure behavior.                              |
-| `<span>`              | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.7.2                                       | Complete fixed/dynamic span construction, deduction, subviews, observation, iteration, borrowed-view enablement, and object-representation byte views match C++23 and the freestanding surface.                                                |
-| `<mdspan>`            | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.7.3                                       | Extents' index-type mandate inherits incomplete integral classification, rejecting implementation-provided extended signed and unsigned integer types throughout the mdspan facility.                                                        |
-| `<iterator>` / range access | **FAILED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 25.2--25.7                                  | Concept expression checks, contiguous addressing, proxy `iter_swap`, legacy primitive dispatch, common-iterator state/proxies/safety, adaptor constraints/categories, comparison-mode parity, and extended integer range sizing are defective. |
-| `<ranges>`            | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 26.2--26.7                                  | View concepts and operations inherit iterator CPO/category defects; integer-like range sizing rejects extended integers; `views::counted` can select the wrong result; proxy swapping and comparison participation differ by mode.             |
-| `<algorithm>`         | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 27.2--27.8                                  | Missing `ranges::minmax_result`; proxy swapping, indirect-readability constraints, legacy category dispatch, and default three-way comparison inherit shared defects. Quality: stable algorithms never use adaptive auxiliary storage.          |
-| `<numeric>`           | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 27.9--27.10                                 | `gcd`/`lcm` reject extended integers; pointer `midpoint` relies on potentially unrepresentable pointer subtraction; ranges iota and generalized operations inherit iterator classification defects.                                         |
-| `<memory>` specialized algorithms | **FAILED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 27.11                                    | The complete C++23 ranges raw-memory surface is absent; classic destruction wrongly terminates throwing destructors; default construction chooses the dereference type instead of `value_type`; `construct_at` adds `noexcept`.              |
-| `<cstdlib>` C algorithms | **FAILED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.2.2, 27.12; ISO/IEC 9899:2018 7.22.5 | The required `bsearch` and `qsort` overloads accepting C++-language-linkage comparator functions are absent; only the imported C-runtime comparator signatures are declared.                                                                  |
-| `<cfenv>` / `<fenv.h>` | **FAILED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 28.3; ISO/IEC 9899:2018 7.6              | `feraiseexcept` only writes sticky flags and does not trigger enabled floating-point traps; `feupdateenv` inherits this failure when re-raising saved exceptions.                                                                              |
-| `<complex>`           | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 28.2, 28.4                                  | Converting assignment is missing; arithmetic convenience overloads reject extended arithmetic types; stream insertion does not reproduce `copyfmt` state. Quality: multiplication has avoidable overflow/NaN behavior.                       |
-| `<random>`            | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 28.2, 28.5                                  | Extended integer/floating template arguments are rejected; `generate_canonical` can round to `1`; seed-sequence participation is too weak. Quality: bitwise modular arithmetic, linear discard, linear discrete sampling, and discarded caches. |
-| `<valarray>`          | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 28.2, 28.6                                  | Throwing construction leaks storage; empty `end` performs null-pointer arithmetic; shifts narrow sizes to `long long`; value construction incorrectly requires default construction. Quality: eager expression and selector allocation.       |
-| `<numbers>`           | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 28.8                                        | The complete constant inventory and supported-format values match, but variable templates reject implementation-provided extended floating-point types through incomplete type classification.                                               |
-| `<cmath>` core        | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 28.2, 28.7.1--28.7.5; C 7.12              | Extended overloads/ranks and evaluation typedefs are wrong; constexpr remainder reduction overflows; Clang `fma` is unfused; quiet comparisons can raise invalid; sign inspection assumes fixed layouts.                                      |
-| `<cmath>` special functions | **FAILED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 28.7.6                                   | Extended arithmetic overloads are missing; beta can turn finite or underflowing results into NaN through overflowing log-gamma arithmetic. Quality: unscaled forward recurrence harms large-order stability.                                 |
-| `<chrono>` duration/time/clock core | **FAILED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 29.2--29.7                         | Duration comparison maps NaNs to equivalent and loses custom ordering categories; extended floating reps are misclassified; `is_clock` checks only name existence; ratio defects propagate into periods and conversions.                       |
-| `<chrono>` calendar / `hh_mm_ss` | **FAILED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 29.8--29.10                         | Calendar arithmetic can overflow before modular reduction; year arithmetic narrows too late; extended floating durations are misclassified and take the truncating integral subseconds path.                                                  |
-| `<chrono>` UTC/TAI/GPS/file clocks and conversion | **FAILED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 29.7.3--29.7.6, 29.7.10, 29.11.8 | `clock_cast` is declared without its specified availability constraint, so detection contexts accept impossible conversions that later hard-error through body `static_assert`s. |
-| `<chrono>` time-zone database / `zoned_time` | **FAILED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 29.11.1--29.11.7, 29.11.9 | Name-taking `zoned_time` constructors test only that `zoned_traits::locate_zone` exists, not the standard's required constructibility from its result and the remaining arguments. |
-| `<chrono>` formatting | **FAILED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 22.14, 29.12 | Rejects valid chrono specs beginning with a literal; localized `%p`/`%r` and `E`/`O` alternatives remain C-locale output; extended floating duration precision is rejected. Quality: all output is staged through an allocating string. |
-| `<chrono>` parsing | **FAILED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 29.13 | Locale-dependent `%c`, `%x`, `%X`, and `%r` use fixed C-locale layouts, and most `E`/`O` alternative numeric representations are ignored. |
+| Header / unit                                                 | Status        | Audited at                                 | ISO clauses                                                             | Notes                                                                                                                                                                                                                                                                                                                                      |
+|---------------------------------------------------------------|---------------|--------------------------------------------|-------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `<cstddef>` / `<stddef.h>`                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.3, 16.4.3.2, 16.4.6.2, 17.2.1, 17.2.3–17.2.5, 17.3.2             | `byte` integral constraints are too narrow on implementations where extended integer types such as `__int128` satisfy `is_integral_v`; the C wrapper faithfully re-exports the affected type surface.                                                                                                                                      |
+| `<version>`                                                   | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 10.1, 16.4.2.5, 17.3.2                                                  | `<version>` reports `__cpp_lib_ranges == 202302L` while the corresponding `<ranges>` header alone reports the obsolete `202110L` value. Named library modules and `__cpp_lib_modules` are explicitly outside FTL's declared product boundary.                                                                                              |
+| `<initializer_list>`                                          | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 9.4.5, 16.4.6.2, 16.4.6.5, 17.10                                        | Explicit and partial specializations of `initializer_list` are not prohibited as required by 17.10.2.                                                                                                                                                                                                                                      |
+| `<cstdint>` / `<stdint.h>`                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 6.8.2, 16.4.6.2, 17.4.1; ISO/IEC 9899:2018 7.20                         | Limit-macro expression-type defects; greatest-width integer handling stops at 64 bits; pointer limits and integer-constant suffixes assume a 64-bit data model.                                                                                                                                                                            |
+| `<limits>`                                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 6.8.2–6.8.3, 17.3.3–17.3.5                                              | Missing extended-integer specializations; incorrect integral `traps`; integer `digits` assumes 8-bit padding-free representations; floating implementation properties are hard-coded.                                                                                                                                                      |
+| `<climits>` / `<limits.h>`                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 6.8.2, 7.3.7, 17.3.6; ISO/IEC 9899:2018 5.2.4.2.1                       | GCC/Clang `UCHAR_MAX`/`USHRT_MAX` have incorrect promoted types; `MB_LEN_MAX` is hard-coded below the maximum supported by the delegated glibc multibyte runtime.                                                                                                                                                                          |
+| `<cfloat>` / `<float.h>`                                      | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 17.3.7; ISO/IEC 9899:2018 5.2.4.2.2                                     | Complete C++23 floating-point implementation-property macro surface and its C compatibility wrapper match the supported compiler implementations.                                                                                                                                                                                          |
+| `<stdfloat>`                                                  | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 5.13.4, 6.8.3, 15.11, 17.4.2                                            | Conditional extended floating-point aliases exactly follow the implementation-provided `__STDCPP_*` facilities and corresponding standard literal types.                                                                                                                                                                                   |
+| `<source_location>`                                           | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.8                                                          | Call-site capture semantics, observers, special-member requirements, feature-test macro, and freestanding surface match C++23.                                                                                                                                                                                                             |
+| `<coroutine>`                                                 | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 9.5.4, 16.4.2.5, 17.12                                                  | Coroutine traits, handles, builtin frame/promise interaction, comparison/hash support, no-op coroutine, trivial awaitables, feature-test macro, and freestanding surface match C++23.                                                                                                                                                      |
+| `<cstdarg>` / `<stdarg.h>`                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 7.6.1.3, 16.4.2.5, 17.13.2; ISO/IEC 9899:2018 7.16                      | Handwritten MSVC `va_arg` does not implement indirect aggregate passing and assumes an x64-style 8-byte argument layout on every MSVC architecture; the C wrapper inherits it.                                                                                                                                                             |
+| `<cassert>` / `<assert.h>`                                    | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.12; C 7.2                                                  | Repeated inclusion redefines `assert` from the current `NDEBUG` state; enabled evaluation and platform diagnostic termination paths match the required macro behavior.                                                                                                                                                                     |
+| `<cerrno>` / `<errno.h>`                                      | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.13.3; C 7.5                                                | The non-Windows branch hard-codes Linux `EILSEQ == 84`; Darwin uses 92, so macOS runtime failures do not match the public macro.                                                                                                                                                                                                           |
+| `<csetjmp>` / `<setjmp.h>`                                    | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.13.4; C 7.13                                               | Macro/function placement, jump-buffer storage, and non-local return surface match the supported x86-64 platform ABIs.                                                                                                                                                                                                                      |
+| `<csignal>` / `<signal.h>`                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.13.5; C 7.14                                               | `SIGABRT` is fixed at POSIX value 6 on Windows, but the delegated Microsoft CRT uses 22.                                                                                                                                                                                                                                                   |
+| `<iso646.h>`                                                  | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | C.6                                                                     | Correctly empty in C++, where the alternative tokens are keywords and no C macros are supplied.                                                                                                                                                                                                                                            |
+| `<stdalign.h>` / `<stdbool.h>`                                | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | D.13; C 7.15, 7.18                                                      | The deprecated “is defined” compatibility macros are present with value 1, without redefining C++ keywords.                                                                                                                                                                                                                                |
+| `<new>`                                                       | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 6.7.3, 6.7.5.5, 16.4.2.5, 17.6                                          | `launder` is not a compiler lifetime/optimization barrier on MSVC or clang-cl; hardware interference sizes assume a universal 64-byte lower bound without constraining target architectures.                                                                                                                                               |
+| `<typeinfo>`                                                  | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 7.6.1.7–7.6.1.8, 16.4.2.5, 17.7                                         | MSVC normal mode defines independent `ftl::bad_cast` and `ftl::bad_typeid` classes rather than aliases to the runtime RTTI exception types, so they do not catch exceptions produced by failed `dynamic_cast` and null-polymorphic `typeid`.                                                                                               |
+| `<exception>`                                                 | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 14.6, 16.4.2.5, 17.9                                                    | `rethrow_if_nested` forms a `dynamic_cast` for every polymorphic type and therefore fails to provide the required no-op behavior when `nested_exception` is an inaccessible or ambiguous base.                                                                                                                                             |
+| `<compare>`                                                   | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 7.6.8, 11.10.3, 16.3.3.3.5, 17.11, 22.10.8.8                            | Normal-mode `compare_three_way` incorrectly synthesizes legacy comparisons; weak/partial-order CPO dispatch and floating semantics are incorrect; fallback CPO constraints are too strong; pointer total-order semantics are missing.                                                                                                      |
+| `<concepts>`                                                  | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.3.2, 18.1–18.7                                             | `same_as` lacks the required symmetric subsumption because its two `is_same_v` operands are distinct atomic constraints; arithmetic concepts also inherit `<type_traits>`'s missing extended-integer recognition.                                                                                                                          |
+| `<type_traits>`                                               | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 6.8, 16.4.2.5, 16.4.4.3, 17.13.5, 21.3, 22.10.4                         | Extended integers are not recognized; copy/move convenience traits are ill-formed for non-referenceable types; `is_swappable_with` omits array swap from its lookup context.                                                                                                                                                               |
+| `<ratio>`                                                     | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 21.4                                                          | Arithmetic facilities have the wrong trait-class-plus-`_t` interface; comparison trait classes are missing; invalid most-negative arguments are accepted; conditional SI aliases never appear.                                                                                                                                             |
+| `<utility>`                                                   | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 16.4.4.3, 17.13.5, 21.2, 22.2â€“22.3                          | Integer comparisons accept forbidden character and boolean types and miss extended integers; array `swap` is unconstrained; pair ordering does not use `synth-three-way`; dangling prevention is conditional; `subrange` is accepted.                                                                                                      |
+| `<tuple>`                                                     | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 20.2.8.1, 22.4                                                | `subrange` is incorrectly accepted by constructors/assignment; tuple is not uses-allocator-aware; type-based rvalue `get` fails for reference elements; tuple algorithms are over-broad; dangling checks are conditional.                                                                                                                  |
+| `<optional>`                                                  | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.11, 22.5                                                   | Legacy relational overloads are missing; `or_else` is unconstrained; `transform` rejects immovable results; three-way comparison participation is too broad; volatile hash enablement is wrong.                                                                                                                                            |
+| `<variant>`                                                   | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.11, 22.6                                                   | Copy assignment and swap have wrong exception-state behavior; converting assignment and `emplace` participation are wrong; `visit` coerces heterogeneous results and rejects derived variants; comparison inherits ordering defects.                                                                                                       |
+| `<any>`                                                       | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.7, 22.7                                                    | `emplace` preserves the old value on failure instead of becoming empty; the value constructor accepts in-place tags; `type()` is conditionally absent. Every value is heap allocated rather than using small-object storage.                                                                                                               |
+| `<expected>`                                                  | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 22.8                                                          | `emplace` has wrong `noexcept`; swap participation and rollback are incorrect; monadic result relationships are incomplete; mapped immovable results are rejected; state-changing assignment guarantees drift.                                                                                                                             |
+| `<bitset>`                                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 22.9                                                          | The proxy's required private default constructor is absent; the pointer constructor is overconstrained; formatted extraction bypasses required stream error-state handling when internal operations throw.                                                                                                                                 |
+| `<functional>`                                                | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.11, 22.10                                                  | `bind<R>` ignores `R`; classic bind mishandles wrapper value categories; `function` constraints, no-allocation cases, RTTI surface, and static-callable deduction drift; hashes enable cv keys and hash raw floats. Quality: no SBO and fake quadratic Boyer-Moore searchers.                                                              |
+| `<typeindex>`                                                 | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 22.11                                                         | The four explicitly required legacy relational member functions are absent; expression rewriting through `<=>` does not supply their named member interfaces.                                                                                                                                                                              |
+| `<execution>`                                                 | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 22.12                                                         | Complete policy-type, trait, global-object, feature-test, and namespace surface matches C++23; policy-taking algorithm semantics remain scoped to their owning algorithm headers.                                                                                                                                                          |
+| `<charconv>`                                                  | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 22.13                                                         | Integer conversions omit exact overloads for implementation-provided extended signed and unsigned integer types; the ordinary integer and floating conversion engines otherwise match the audited C++23 surface.                                                                                                                           |
+| `<format>`                                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 22.14                                                         | Extended arithmetic formatter coverage inherits incomplete type classification. Quality: output-iterator and size operations materialize a complete intermediate string instead of formatting/counting directly.                                                                                                                           |
+| `<bit>`                                                       | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 22.15                                                         | Extended signed/unsigned integer participation is missing. Quality: runtime population/count-zero/byte-swap primitives use scalar loops instead of available compiler intrinsics.                                                                                                                                                          |
+| `<string_view>` / character traits                            | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 23.2--23.3                                                    | Complete traits and string-view surface matches C++23. Quality: non-byte view hashes pass character count rather than representation byte count to RapidHash, creating avoidable collision clusters.                                                                                                                                       |
+| `<string>`                                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 23.4, D.25                                                    | `resize_and_overwrite` callback/result semantics drift; deprecated `reserve()` is absent; copy allocator propagation and throwing-traits guarantees are wrong; floating conversions ignore the C locale. Quality: wide hashes use character count as byte count.                                                                           |
+| `<cctype>` / `<ctype.h>`                                      | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 17.14.2, 23.5.1; ISO/IEC 9899:2018 7.4                                  | Complete C-linked classification and case-conversion surface delegates semantics, input-domain handling, and active-locale behavior to the supported platform C runtime.                                                                                                                                                                   |
+| `<cwctype>` / `<wctype.h>`                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 17.14.4, 23.5.2; ISO/IEC 9899:2018 7.30.2                               | Wide classification, descriptors, and transforms are hard-coded to ASCII instead of following the active C locale; `WEOF` is an `unsigned int` expression rather than a `wint_t` constant.                                                                                                                                                 |
+| `<cstring>` / `<string.h>`                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 17.14.4, 23.5.3; ISO/IEC 9899:2018 7.24                                 | `strcoll` and `strxfrm` ignore the active C collation locale. Quality: builtin suppression forces byte loops for memory primitives, and `strstr` is a naive quadratic search.                                                                                                                                                              |
+| `<cwchar>` / `<wchar.h>`                                      | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 17.14.4, 23.5.4--23.5.6; ISO/IEC 9899:2018 7.29                         | Multibyte conversion and wide I/O are ASCII-only; numeric parsing, collation, and time formatting ignore active locales; `WEOF` has the wrong expression type. Quality: scalar primitives and naive search.                                                                                                                                |
+| `<cuchar>` / `<uchar.h>`                                      | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 17.14.5, 23.5.5--23.5.6; ISO/IEC 9899:2018 7.28                         | Conversion is ASCII-only and ignores the active multibyte locale; `mbrtoc8`/`mbrtoc16` lack staged `size_t(-3)` output; reverse conversion rejects completed valid non-ASCII scalars.                                                                                                                                                      |
+| `<array>`                                                     | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2, 24.3.2, 24.3.7                                          | Comparison accepts an arbitrary syntactically valid spaceship result instead of applying `synth-three-way`, so permitted element types with an unrelated `<=>` result make array comparison ill-formed.                                                                                                                                    |
+| `<vector>`                                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2, 24.3.6, 24.3.11--24.3.12                                | Growth commits before appended construction, breaking exception guarantees and self-aliasing insertion; the bool-proxy formatter is missing. Quality: packed hashing passes blocks as bytes.                                                                                                                                               |
+| `<deque>`                                                     | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2, 24.3.3, 24.3.8                                          | Throwing construction can leak installed blocks/elements; failure while growing the block map leaks a newly allocated block; middle modifiers move from the source before success and break required rollback.                                                                                                                             |
+| `<forward_list>`                                              | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2, 24.3.4, 24.3.9                                          | Throwing construction leaks linked nodes; multi-element insertions partially commit instead of rolling back; a throwing sort comparison can disconnect and lose nodes rather than preserving every element.                                                                                                                                |
+| `<list>`                                                      | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2, 24.3.5, 24.3.10                                         | Throwing construction leaks linked nodes; multi-element insertions partially commit instead of rolling back; a throwing sort comparison destroys the detached half instead of preserving every element.                                                                                                                                    |
+| `<set>`                                                       | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2, 24.4.3, 24.4.6--24.4.7                                  | Comparator exceptions leak nodes; merge variants and allocator-only construction are incomplete; inherited assignment returns the base; hints and legacy comparison fallback fail complexity/interface requirements; node handles overconstrain allocators.                                                                                |
+| `<map>`                                                       | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2, 24.4.2, 24.4.4--24.4.5                                  | Shared tree/node leaks; merge and allocator-only overload sets are incomplete; inherited assignment and `value_compare` have wrong interfaces; hints and fallback ordering fail; node handles impose invalid allocator assumptions.                                                                                                        |
+| `<unordered_set>`                                             | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2.8, 24.5.3, 24.5.6--24.5.7                                | Hash/equality/growth exceptions leak nodes; node insertion and merge lose ownership; overloads and node allocator semantics drift; equality uses key-equivalence counts instead of element equality. Quality: unmixed power-of-two bucketing.                                                                                              |
+| `<unordered_map>`                                             | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.2.8, 24.5.2, 24.5.4--24.5.5                                | Throwing hash-table operations leak nodes; merge/constructor/assignment interfaces are incomplete; multimap equality does not compare group multiplicities; node allocator semantics drift. Quality: unmixed power-of-two bucketing.                                                                                                       |
+| `<queue>`                                                     | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.6.2, 24.6.6--24.6.7, 24.6.13                               | Queue and priority-queue formatters are missing; allocator deduction guides are underconstrained; default underlying containers carry the recorded deque/vector exception and ownership defects.                                                                                                                                           |
+| `<stack>`                                                     | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.6.3, 24.6.8, 24.6.13                                       | The required adaptor formatter is absent; allocator deduction guides accept non-allocators; the default deque-backed specialization inherits deque's exception-safety/resource failures.                                                                                                                                                   |
+| `<flat_set>`                                                  | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.6.5, 24.6.11--24.6.12                                      | Range and sorted insertion are quadratic instead of meeting `N + M log M`/linear bounds; inherited assignment and fallback ordering drift; allocator guide detection/inventory is incomplete.                                                                                                                                              |
+| `<flat_map>`                                                  | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.6.4, 24.6.9--24.6.10                                       | Range and sorted insertion violate required complexity; inherited assignment and synthesized ordering drift; allocator guides are incomplete/underconstrained; default storage inherits vector failure behavior.                                                                                                                           |
+| `<span>`                                                      | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.7.2                                                        | Complete fixed/dynamic span construction, deduction, subviews, observation, iteration, borrowed-view enablement, and object-representation byte views match C++23 and the freestanding surface.                                                                                                                                            |
+| `<mdspan>`                                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 24.7.3                                                        | Extents' index-type mandate inherits incomplete integral classification, rejecting implementation-provided extended signed and unsigned integer types throughout the mdspan facility.                                                                                                                                                      |
+| `<iterator>` / range access                                   | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 25.2--25.7                                                    | Concept expression checks, contiguous addressing, proxy `iter_swap`, legacy primitive dispatch, common-iterator state/proxies/safety, adaptor constraints/categories, comparison-mode parity, and extended integer range sizing are defective.                                                                                             |
+| `<ranges>`                                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 26.2--26.7                                                    | View concepts and operations inherit iterator CPO/category defects; integer-like range sizing rejects extended integers; `views::counted` can select the wrong result; proxy swapping and comparison participation differ by mode.                                                                                                         |
+| `<generator>`                                                 | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 26.8                                                          | The general `yield_value(elements_of<R, Alloc>)` definition is compiled only in replacement mode; normal namespace mode leaves it declaration-only and cannot flatten valid non-generator input ranges.                                                                                                                                    |
+| `<algorithm>`                                                 | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 27.2--27.8                                                    | Missing `ranges::minmax_result`; proxy swapping, indirect-readability constraints, legacy category dispatch, and default three-way comparison inherit shared defects. Quality: stable algorithms never use adaptive auxiliary storage.                                                                                                     |
+| `<numeric>`                                                   | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 27.9--27.10                                                   | `gcd`/`lcm` reject extended integers; pointer `midpoint` relies on potentially unrepresentable pointer subtraction; ranges iota and generalized operations inherit iterator classification defects.                                                                                                                                        |
+| `<memory>`                                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 20.2--20.3, 20.6--20.7, 20.9--20.11, 27.11                    | Lifetime-start functions are casts only; smart-pointer conversion/swap/exception ownership rules drift; array `allocate_shared` ignores allocators; owner ordering is not total; nontrivial constexpr allocator use fails. The complete C++23 ranges raw-memory surface is also absent and classic algorithms have exception/type defects. |
+| `<memory_resource>`                                           | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 20.4                                                          | Pool options never affect behavior or report effective defaults; the pool is individual-allocation retention rather than chunk replenishment; monotonic growth never adopts or grows newly acquired buffers. Quality: two upstream allocations and linear scans per fresh pooled block; tight spinlock synchronization.                    |
+| `<scoped_allocator>`                                          | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 20.5                                                          | Recursive propagation traits use AND instead of the required “true for any allocator” OR, and converting constructors omit their specified `is_constructible_v` constraints.                                                                                                                                                               |
+| `<cstdlib>` / `<stdlib.h>`                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.2.2, 17.5, 20.2.12, 23.5.6, 27.12, 28.5.10, 28.7.2; C 7.22 | C++-linkage algorithm/handler overloads and floating `abs` are absent; termination registration lacks required `noexcept`, as do several Apple termination imports.                                                                                                                                                                        |
+| `<cfenv>` / `<fenv.h>`                                        | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 28.3; ISO/IEC 9899:2018 7.6                                   | `feraiseexcept` only writes sticky flags and does not trigger enabled floating-point traps; `feupdateenv` inherits this failure when re-raising saved exceptions.                                                                                                                                                                          |
+| `<complex>` / `<complex.h>`                                   | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 28.2, 28.4                                                    | Converting assignment is missing; arithmetic convenience overloads reject extended arithmetic types; stream insertion does not reproduce `copyfmt` state. Quality: multiplication has avoidable overflow/NaN behavior.                                                                                                                     |
+| `<random>`                                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 28.2, 28.5                                                    | Extended integer/floating template arguments are rejected; `generate_canonical` can round to `1`; seed-sequence participation is too weak. Quality: bitwise modular arithmetic, linear discard, linear discrete sampling, and discarded caches.                                                                                            |
+| `<valarray>`                                                  | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 28.2, 28.6                                                    | Throwing construction leaks storage; empty `end` performs null-pointer arithmetic; shifts narrow sizes to `long long`; value construction incorrectly requires default construction. Quality: eager expression and selector allocation.                                                                                                    |
+| `<numbers>`                                                   | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 28.8                                                          | The complete constant inventory and supported-format values match, but variable templates reject implementation-provided extended floating-point types through incomplete type classification.                                                                                                                                             |
+| `<cmath>` / `<math.h>` / `<tgmath.h>` core                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 28.2, 28.7.1--28.7.5; C 7.12                                  | Extended overloads/ranks and evaluation typedefs are wrong; constexpr remainder reduction overflows; Clang `fma` is unfused; quiet comparisons can raise invalid; sign inspection assumes fixed layouts.                                                                                                                                   |
+| `<cmath>` special functions                                   | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 28.7.6                                                        | Extended arithmetic overloads are missing; beta can turn finite or underflowing results into NaN through overflowing log-gamma arithmetic. Quality: unscaled forward recurrence harms large-order stability.                                                                                                                               |
+| `<chrono>` duration/time/clock core                           | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 29.2--29.7                                                    | Duration comparison maps NaNs to equivalent and loses custom ordering categories; extended floating reps are misclassified; `is_clock` checks only name existence; ratio defects propagate into periods and conversions.                                                                                                                   |
+| `<chrono>` calendar / `hh_mm_ss`                              | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 29.8--29.10                                                   | Calendar arithmetic can overflow before modular reduction; year arithmetic narrows too late; extended floating durations are misclassified and take the truncating integral subseconds path.                                                                                                                                               |
+| `<chrono>` UTC/TAI/GPS/file clocks and conversion             | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 29.7.3--29.7.6, 29.7.10, 29.11.8                              | `clock_cast` is declared without its specified availability constraint, so detection contexts accept impossible conversions that later hard-error through body `static_assert`s.                                                                                                                                                           |
+| `<chrono>` time-zone database / `zoned_time`                  | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 29.11.1--29.11.7, 29.11.9                                     | Name-taking `zoned_time` constructors test only that `zoned_traits::locate_zone` exists, not the standard's required constructibility from its result and the remaining arguments.                                                                                                                                                         |
+| `<chrono>` formatting                                         | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 22.14, 29.12                                                  | Rejects valid chrono specs beginning with a literal; localized `%p`/`%r` and `E`/`O` alternatives remain C-locale output; extended floating duration precision is rejected. Quality: all output is staged through an allocating string.                                                                                                    |
+| `<chrono>` parsing                                            | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 29.13                                                         | Locale-dependent `%c`, `%x`, `%X`, and `%r` use fixed C-locale layouts, and most `E`/`O` alternative numeric representations are ignored.                                                                                                                                                                                                  |
+| `<locale>`                                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 16.4.6.10, 30.1--30.4, D.27                                   | Global-locale access races; time parsing is case-sensitive and named date/time layouts remain C-locale; monetary grouping is not validated; fixed conversion buffers truncate long values; `wstring_convert`/`wbuffer_convert` are absent. Quality: facet lookup is linear; collation hashing correctly uses RapidHash.                    |
+| `<codecvt>`                                                   | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, D.26                                                          | Deprecated Unicode facet inventory, UCS/UTF-16 distinctions, modes, limits, state, headers, byte order, result positioning, and observers match C++23.                                                                                                                                                                                     |
+| `<clocale>` / `<locale.h>`                                    | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.14.2, 30.5; C 7.11                                         | Complete category macros, platform-layout `lconv`, and C-linked `setlocale`/`localeconv` surface match the supported platform ABIs.                                                                                                                                                                                                        |
+| `<iosfwd>` / `<ios>`                                          | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 16.4.6.10, 31.2--31.5                                         | `iword`/`pword` allocation failures return shared process-wide fallback references, allowing distinct stream objects and threads to overwrite/race each other's storage.                                                                                                                                                                   |
+| `<streambuf>`                                                 | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 31.6                                                          | Protected `basic_streambuf::swap` fails to exchange locales. Quality: default bulk transfer loops through scalar virtual operations instead of copying available contiguous runs.                                                                                                                                                          |
+| `<istream>` / `<ostream>`                                     | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 31.7.1--31.7.2, 31.7.5--31.7.7                                | Most formatted/unformatted operations fail to catch buffer/facet exceptions, set `badbit`, and conditionally rethrow; stream-buffer insertion records `failbit` instead of `badbit`.                                                                                                                                                       |
+| `<iomanip>`                                                   | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 31.7.3, 31.7.8--31.7.9                                        | Monetary/time manipulators inherit locale parsing, truncation, and exception-state defects. Quality: quoted output constructs a complete escaped temporary.                                                                                                                                                                                |
+| `<print>`                                                     | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 22.14, 31.7.4, 31.7.10                                        | Complete print/println/vprint interface and terminal routing, but extended arithmetic calls inherit formatter rejection. Quality: every call stages the whole result in a string, and `println` may reallocate for one newline.                                                                                                            |
+| `<sstream>`                                                   | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 31.8                                                          | Put positions above `INT_MAX` are narrowed through `pbump(int)`, and seek addition can overflow before validation; wrappers inherit locale-swap and exception-state failures.                                                                                                                                                              |
+| `<strstream>`                                                 | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, D.15                                                          | Missing `underflow` hides newly written characters; external-buffer construction establishes the wrong put area; default growth uses `malloc`/`free` instead of `new[]`/`delete[]`. Quality: unchecked capacity doubling and full-capacity copies.                                                                                         |
+| `<spanstream>`                                                | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 31.9                                                          | Large span put positions narrow to `int`, seek addition can overflow before validation, and wrappers inherit shared buffer/stream defects.                                                                                                                                                                                                 |
+| `<fstream>`                                                   | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 31.10                                                         | Positions narrow to 32-bit `long` on Windows; update streams omit required read/write transitions; wide putback rejects non-ASCII multibyte sequences. Quality: wide bulk output converts one character at a time.                                                                                                                         |
+| `<syncstream>`                                                | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 31.7.7, 31.11                                                 | Emit manipulators are stubs; `osyncstream::emit` omits sentry/exception-state semantics; swap inherits locale loss. Quality: the global lock registry leaks and first lookup is linear.                                                                                                                                                    |
+| `<iostream>`                                                  | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 31.2.4, 31.4                                                  | Wide standard streams are ASCII byte adapters; synchronized standard stream operations lack locking around shared C++ formatting/error state; shared exception-state defects propagate.                                                                                                                                                    |
+| `<filesystem>`                                                | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 31.12, D.29                                                   | Path source constraints, Windows-native decomposition, non-throwing error reporting, directory-iterator refresh rules, and missing-source copy errors are defective. Quality: ad-hoc FNV hashing despite RapidHash, repeated path rescans, and eager whole-directory snapshots.                                                            |
+| `<cstdio>` / `<stdio.h>`                                      | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 16.4.6.10, 31.13.1; C 7.21                                    | Formatted numeric I/O ignores the C locale; wide conversions are byte casts; fixed 512-byte arrays cap precision; `fsetpos` drops conversion state; normal mode omits standard-stream macros.                                                                                                                                              |
+| `<cinttypes>` / `<inttypes.h>`                                | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.4.1, 31.13.2; C 7.8                                        | The direct C++23 inventory matches the supported data models, but the included `<cstdint>` greatest-width integer model and associated limits remain nonconforming for wider extended integers.                                                                                                                                            |
+| `<ctime>` / `<time.h>`                                        | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.2.2, 17.14; C 7.27                                         | `difftime` can overflow before conversion; handwritten `gmtime` overflows/narrows; pre-epoch `timespec_get` can produce negative nanoseconds; the shortened POSIX `tm` ABI can cause native runtime out-of-bounds access.                                                                                                                  |
+| `<__c_file_types.hpp>` / `<__c_wide_types.hpp>` support units | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.2.2, 17.14.4                                               | The opaque C stream handle and implementation-defined owned multibyte state/wide integer types correctly support their parent headers; conversion algorithm defects are recorded under `<cuchar>` and `<cwchar>`.                                                                                                                          |
+| `<__c_time_types.hpp>` support unit                           | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.14; C 7.27                                                 | Its nine-field `tm` object is passed to glibc/Darwin APIs whose ABI appends timezone fields, permitting out-of-bounds runtime reads/writes and breaking `%z`/`%Z`.                                                                                                                                                                         |
+| `<regex>`                                                     | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 16.4.6.15, 32                                                 | Defaulted moves leave the source marked valid after moving out its program; custom traits break non-throwing moves and constant-time swap. Quality: whole-input copies, repeated capture traversal, and allocating sub-match comparisons.                                                                                                  |
+| `<atomic>` / `<stdatomic.h>`                                  | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.3.2, 33.5                                                  | Extended integers miss the integral atomic specialization and its arithmetic/bitwise operations. Quality: 64 shared fallback buckets serialize unrelated objects and Apple weak-import fallback can busy-spin.                                                                                                                             |
+| `<stop_token>`                                                | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 33.3                                                          | Stop-state ownership, request linearization, callback registration/execution/destruction, constraints, comparisons, and swaps match C++23.                                                                                                                                                                                                 |
+| `<thread>` / `jthread`                                        | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 33.2.4, 33.4                                                  | Large positive `sleep_for` durations can overflow nanoseconds and return immediately; extended duration reps inherit chrono classification failures. Quality: every launch heap-allocates its invocation tuple.                                                                                                                            |
+| `<mutex>` / `<shared_mutex>` / `<condition_variable>`         | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 33.2.4--33.2.5, 33.6--33.7                                    | Every native-backed mutex type and `condition_variable` omits required `native_handle_type`/`native_handle()` interfaces; timed operations inherit chrono extended-representation defects.                                                                                                                                                 |
+| `<semaphore>`                                                 | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 33.8                                                          | Core counting and wakeup semantics match, but timed acquisition inherits chrono's rejection/misclassification of extended duration representation types.                                                                                                                                                                                   |
+| `<latch>`                                                     | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 33.9                                                          | Count, synchronization, waiting, arrival, maximum, ownership, and feature-test semantics match C++23.                                                                                                                                                                                                                                      |
+| `<barrier>`                                                   | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 33.10                                                         | Phase, arrival-token, completion, wait, drop, maximum, and feature-test semantics match C++23. Quality: every arrival and the completion serialize under one mutex.                                                                                                                                                                        |
+| `<future>`                                                    | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 33.2.4, 33.10                                                 | `packaged_task` tests the source rather than stored decayed callable's invocability; timed waits inherit chrono extended-representation failures. Quality: two allocations and virtual dispatch per packaged task.                                                                                                                         |
+| `<stdexcept>`                                                 | **CERTIFIED** | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 17.7, 19.2                                                    | Complete exception hierarchy and shared stable-message semantics match C++23, including non-throwing copy and assignment.                                                                                                                                                                                                                  |
+| `<system_error>`                                              | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 19.5                                                          | Windows system-category messages and default conditions incorrectly interpret Win32 error numbers as `errno`/`errc` numbers. Hash support correctly uses RapidHash.                                                                                                                                                                        |
+| `<stacktrace>`                                                | **FAILED**    | `798e52c498f5630ecdc03c92456b99a1ff95aa97` | 16.4.2.5, 19.6                                                          | Capture is capped at 128 frames; POSIX bounded capture subtracts `skip` from an already depth-limited request and can return too few or no frames. Quality: entries never symbolize addresses or expose available source information.                                                                                                      |
 
 ## Audit policy
 
