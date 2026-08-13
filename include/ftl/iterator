@@ -1511,21 +1511,22 @@ public:
     return current >= right;
   }
 
-  template <class I>
-    requires(detail::different_from<I, basic_const_iterator> &&
-             random_access_iterator<Iterator> &&
-             totally_ordered_with<Iterator, I>
+template <class I>
+    requires(
+        detail::different_from<I, basic_const_iterator> &&
+        random_access_iterator<Iterator> &&
+        totally_ordered_with<Iterator, I>
 #ifdef FTL_REPLACE_STL
-             && three_way_comparable_with<Iterator, I>
-#endif
-             )
-  constexpr auto operator<=>(const I &right) const {
-#ifdef FTL_REPLACE_STL
-    return current <=> right;
+        && three_way_comparable_with<Iterator, I>
 #else
-    return compare_three_way{}(current, right);
+        && requires(const Iterator& left, const I& other) {
+             left <=> other;
+           }
 #endif
-  }
+    )
+constexpr auto operator<=>(const I& right) const {
+    return current <=> right;
+}
 
   template <class I>
     requires(detail::not_a_const_iterator<I> &&
