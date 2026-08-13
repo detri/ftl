@@ -12,6 +12,45 @@ struct value {
     friend constexpr bool operator==(const value&, const value&) = default;
 };
 
+struct legacy_ordered {
+    int number;
+    friend constexpr bool operator==(legacy_ordered, legacy_ordered) = default;
+    friend constexpr bool operator!=(legacy_ordered a, legacy_ordered b) {
+        return a.number != b.number;
+    }
+    friend constexpr bool operator<(legacy_ordered a, legacy_ordered b) {
+        return a.number < b.number;
+    }
+    friend constexpr bool operator>(legacy_ordered a, legacy_ordered b) {
+        return a.number > b.number;
+    }
+    friend constexpr bool operator<=(legacy_ordered a, legacy_ordered b) {
+        return a.number <= b.number;
+    }
+    friend constexpr bool operator>=(legacy_ordered a, legacy_ordered b) {
+        return a.number >= b.number;
+    }
+};
+
+struct immovable {
+    int number;
+    constexpr explicit immovable(int input) : number(input) {}
+    immovable(const immovable&) = delete;
+    immovable(immovable&&) = delete;
+};
+
+struct not_callable {};
+
+template<class O>
+concept has_const_or_else = requires(const O& value) {
+    value.or_else(not_callable{});
+};
+
+template<class O>
+concept has_rvalue_or_else = requires(O value) {
+    tested::move(value).or_else(not_callable{});
+};
+
 constexpr bool value_optional_works() {
     tested::optional<value> item;
     if (item || item.value_or(value{3}).number != 3)
@@ -45,8 +84,27 @@ constexpr bool monadic_optional_works() {
     return doubled == 6 && chained == 4 && fallback == 5;
 }
 
+constexpr bool legacy_comparisons_work() {
+    tested::optional<legacy_ordered> one{legacy_ordered{1}};
+    tested::optional<legacy_ordered> two{legacy_ordered{2}};
+    legacy_ordered value_two{2};
+    return one != two && one < two && two > one && one <= two && two >= one &&
+           one != value_two && value_two != one && one < value_two &&
+           value_two > one && one <= value_two && value_two >= one;
+}
+
+constexpr bool immovable_transform_works() {
+    tested::optional<int> source{7};
+    auto result = source.transform([](int input) { return immovable{input}; });
+    return result->number == 7;
+}
+
 static_assert(reference_optional_works());
 static_assert(monadic_optional_works());
+static_assert(legacy_comparisons_work());
+static_assert(immovable_transform_works());
+static_assert(!has_const_or_else<tested::optional<int>>);
+static_assert(!has_rvalue_or_else<tested::optional<int>>);
 static_assert(tested::is_trivially_copyable_v<tested::optional<int&>>);
 static_assert(tested::is_trivially_copyable_v<tested::optional<int>>);
 static_assert(tested::optional<int>{1} < tested::optional<int>{2});

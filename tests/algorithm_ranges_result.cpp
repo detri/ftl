@@ -50,6 +50,8 @@ static_assert(
     tested::is_aggregate_v<tested::ranges::in_out_out_result<int, int, int>>);
 
 static_assert(tested::is_aggregate_v<tested::ranges::min_max_result<int>>);
+static_assert(tested::is_same_v<tested::ranges::minmax_result<int>,
+                                tested::ranges::min_max_result<int>>);
 
 static_assert(tested::is_aggregate_v<tested::ranges::in_found_result<int>>);
 

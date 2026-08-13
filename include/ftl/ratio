@@ -80,6 +80,8 @@ template <intmax_t Left, intmax_t Right> struct ratio_checked_add {
 
 template <intmax_t N, intmax_t D = 1> class ratio {
   static_assert(D != 0, "ratio denominator cannot be zero");
+  static_assert(N != INTMAX_MIN && D != INTMAX_MIN,
+                "ratio arguments must have representable absolute values");
   static constexpr auto divisor =
       detail::ratio_gcd(detail::ratio_abs(N), detail::ratio_abs(D));
 
@@ -92,7 +94,9 @@ public:
   using type = ratio<num, den>;
 };
 
-template <class R1, class R2> struct ratio_multiply {
+namespace detail {
+
+template <class R1, class R2> struct ratio_multiply_impl {
 private:
   static constexpr auto g1 =
       detail::ratio_gcd(detail::ratio_abs(R1::num), detail::ratio_abs(R2::den));
@@ -106,17 +110,14 @@ public:
             detail::ratio_checked_multiply<R1::den / intmax_t(g2),
                                            R2::den / intmax_t(g1)>::value>;
 };
-template <class R1, class R2>
-using ratio_multiply_t = typename ratio_multiply<R1, R2>::type;
 
-template <class R1, class R2> struct ratio_divide {
+template <class R1, class R2> struct ratio_divide_impl {
   static_assert(R2::num != 0, "cannot divide by a zero ratio");
-  using type = ratio_multiply_t<R1, ratio<R2::den, R2::num>>;
+  using type = typename ratio_multiply_impl<
+      R1, ratio<R2::den, R2::num>>::type;
 };
-template <class R1, class R2>
-using ratio_divide_t = typename ratio_divide<R1, R2>::type;
 
-template <class R1, class R2> struct ratio_add {
+template <class R1, class R2> struct ratio_add_impl {
 private:
   static constexpr auto g = detail::ratio_gcd(R1::den, R2::den);
   static constexpr auto left =
@@ -130,32 +131,70 @@ public:
   using type = ratio<numerator, detail::ratio_checked_multiply<
                                     R1::den, R2::den / intmax_t(g)>::value>;
 };
-template <class R1, class R2>
-using ratio_add_t = typename ratio_add<R1, R2>::type;
 
 template <class R1, class R2>
-struct ratio_subtract : ratio_add<R1, ratio<-R2::num, R2::den>> {};
-template <class R1, class R2>
-using ratio_subtract_t = typename ratio_subtract<R1, R2>::type;
+struct ratio_subtract_impl
+    : ratio_add_impl<R1, ratio<-R2::num, R2::den>> {};
+
+} // namespace detail
 
 template <class R1, class R2>
-inline constexpr bool ratio_equal_v = R1::num == R2::num && R1::den == R2::den;
+using ratio_multiply = typename detail::ratio_multiply_impl<R1, R2>::type;
+
 template <class R1, class R2>
-inline constexpr bool ratio_not_equal_v = !ratio_equal_v<R1, R2>;
+using ratio_divide = typename detail::ratio_divide_impl<R1, R2>::type;
+
 template <class R1, class R2>
-inline constexpr bool ratio_less_v =
-    R1::num < 0 && R2::num >= 0   ? true
-    : R1::num >= 0 && R2::num < 0 ? false
-    : R1::num < 0
-        ? detail::ratio_less_unsigned(detail::ratio_abs(R2::num), R2::den,
-                                      detail::ratio_abs(R1::num), R1::den)
-        : detail::ratio_less_unsigned(R1::num, R1::den, R2::num, R2::den);
+using ratio_add = typename detail::ratio_add_impl<R1, R2>::type;
+
 template <class R1, class R2>
-inline constexpr bool ratio_less_equal_v = !ratio_less_v<R2, R1>;
+using ratio_subtract = typename detail::ratio_subtract_impl<R1, R2>::type;
+
 template <class R1, class R2>
-inline constexpr bool ratio_greater_v = ratio_less_v<R2, R1>;
+using ratio_multiply_t = ratio_multiply<R1, R2>;
 template <class R1, class R2>
-inline constexpr bool ratio_greater_equal_v = !ratio_less_v<R1, R2>;
+using ratio_divide_t = ratio_divide<R1, R2>;
+template <class R1, class R2>
+using ratio_add_t = ratio_add<R1, R2>;
+template <class R1, class R2>
+using ratio_subtract_t = ratio_subtract<R1, R2>;
+
+template <class R1, class R2>
+struct ratio_equal
+    : bool_constant<R1::num == R2::num && R1::den == R2::den> {};
+template <class R1, class R2>
+struct ratio_not_equal : bool_constant<!ratio_equal<R1, R2>::value> {};
+template <class R1, class R2>
+struct ratio_less
+    : bool_constant<
+          R1::num < 0 && R2::num >= 0   ? true
+          : R1::num >= 0 && R2::num < 0 ? false
+          : R1::num < 0
+              ? detail::ratio_less_unsigned(detail::ratio_abs(R2::num),
+                                            R2::den,
+                                            detail::ratio_abs(R1::num),
+                                            R1::den)
+              : detail::ratio_less_unsigned(R1::num, R1::den, R2::num,
+                                            R2::den)> {};
+template <class R1, class R2>
+struct ratio_less_equal : bool_constant<!ratio_less<R2, R1>::value> {};
+template <class R1, class R2>
+struct ratio_greater : ratio_less<R2, R1> {};
+template <class R1, class R2>
+struct ratio_greater_equal : bool_constant<!ratio_less<R1, R2>::value> {};
+
+template <class R1, class R2>
+inline constexpr bool ratio_equal_v = ratio_equal<R1, R2>::value;
+template <class R1, class R2>
+inline constexpr bool ratio_not_equal_v = ratio_not_equal<R1, R2>::value;
+template <class R1, class R2>
+inline constexpr bool ratio_less_v = ratio_less<R1, R2>::value;
+template <class R1, class R2>
+inline constexpr bool ratio_less_equal_v = ratio_less_equal<R1, R2>::value;
+template <class R1, class R2>
+inline constexpr bool ratio_greater_v = ratio_greater<R1, R2>::value;
+template <class R1, class R2>
+inline constexpr bool ratio_greater_equal_v = ratio_greater_equal<R1, R2>::value;
 
 using atto = ratio<1, 1000000000000000000LL>;
 using femto = ratio<1, 1000000000000000LL>;

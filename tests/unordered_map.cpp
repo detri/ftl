@@ -69,6 +69,12 @@ static_assert(!noexcept(
     tested::declval<tested::unordered_map<int, int, throwing_hash,
                                          throwing_equal> &&>()));
 bool ftl_test() {
+  {
+    tested::unordered_multimap<int, int> left{{1, 1}, {1, 1}};
+    tested::unordered_multimap<int, int> right{{1, 1}, {1, 2}};
+    if (left == right) return false;
+  }
+
   tested::unordered_map<int, int> values{{1, 10}, {2, 20}, {2, 99}};
   if (values.size() != 2 || values.at(1) != 10)
     return false;

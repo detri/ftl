@@ -22,8 +22,13 @@
 #define FTL_UINT32 unsigned int
 #define FTL_INT64 long long
 #define FTL_UINT64 unsigned long long
+#if defined(_WIN64)
 #define FTL_INTPTR long long
 #define FTL_UINTPTR unsigned long long
+#else
+#define FTL_INTPTR int
+#define FTL_UINTPTR unsigned int
+#endif
 #else
 #define FTL_INT8 __INT8_TYPE__
 #define FTL_UINT8 __UINT8_TYPE__
@@ -88,7 +93,10 @@ using uint_fast64_t = unsigned long;
 
 using intptr_t = FTL_INTPTR;
 using uintptr_t = FTL_UINTPTR;
-#if defined(__APPLE__)
+#if defined(__SIZEOF_INT128__)
+using intmax_t = __int128;
+using uintmax_t = unsigned __int128;
+#elif defined(__APPLE__)
 using intmax_t = long;
 using uintmax_t = unsigned long;
 #else
@@ -101,10 +109,10 @@ FTL_CSTDINT_END_NAMESPACE
 #ifndef INT8_MIN
 #define INT8_MIN (-127 - 1)
 #define INT8_MAX 127
-#define UINT8_MAX 255U
+#define UINT8_MAX 255
 #define INT16_MIN (-32767 - 1)
 #define INT16_MAX 32767
-#define UINT16_MAX 65535U
+#define UINT16_MAX 65535
 #define INT32_MIN (-2147483647 - 1)
 #define INT32_MAX 2147483647
 #define UINT32_MAX 4294967295U
@@ -159,12 +167,30 @@ FTL_CSTDINT_END_NAMESPACE
 #define UINT_FAST64_MAX __UINT_FAST64_MAX__
 #endif
 
+#if defined(__SIZEOF_INT128__)
+#define UINTMAX_MAX ((unsigned __int128)-1)
+#define INTMAX_MAX ((__int128)(UINTMAX_MAX >> 1))
+#define INTMAX_MIN (-INTMAX_MAX - 1)
+#else
 #define INTMAX_MIN INT64_MIN
 #define INTMAX_MAX INT64_MAX
 #define UINTMAX_MAX UINT64_MAX
+#endif
+#if defined(_MSC_VER)
+#if defined(_WIN64)
 #define INTPTR_MIN INT64_MIN
 #define INTPTR_MAX INT64_MAX
 #define UINTPTR_MAX UINT64_MAX
+#else
+#define INTPTR_MIN INT32_MIN
+#define INTPTR_MAX INT32_MAX
+#define UINTPTR_MAX UINT32_MAX
+#endif
+#else
+#define INTPTR_MIN (-__INTPTR_MAX__ - 1)
+#define INTPTR_MAX __INTPTR_MAX__
+#define UINTPTR_MAX __UINTPTR_MAX__
+#endif
 
 #if defined(_MSC_VER)
 #define PTRDIFF_MIN INT64_MIN
@@ -213,12 +239,45 @@ FTL_CSTDINT_END_NAMESPACE
 #define INTMAX_C(value) value##L
 #define UINTMAX_C(value) value##UL
 #else
-#define INT64_C(value) value##L
-#define UINT64_C(value) value##UL
-#define INTMAX_C(value) value##L
-#define UINTMAX_C(value) value##UL
+#define INT64_C(value) __INT64_C(value)
+#define UINT64_C(value) __UINT64_C(value)
+#if defined(__SIZEOF_INT128__)
+#define INTMAX_C(value) ((__int128)(value))
+#define UINTMAX_C(value) ((unsigned __int128)(value))
+#else
+#define INTMAX_C(value) __INTMAX_C(value)
+#define UINTMAX_C(value) __UINTMAX_C(value)
+#endif
 #endif
 #endif // INT8_MIN
+
+/* These macros must describe FTL's typedefs even when a hosted C header was
+ * included earlier in normal namespace mode. */
+#undef UINT8_MAX
+#undef UINT16_MAX
+#define UINT8_MAX 255
+#define UINT16_MAX 65535
+#undef UINT_LEAST8_MAX
+#undef UINT_LEAST16_MAX
+#define UINT_LEAST8_MAX UINT8_MAX
+#define UINT_LEAST16_MAX UINT16_MAX
+#if defined(_MSC_VER)
+#undef UINT_FAST8_MAX
+#define UINT_FAST8_MAX UINT8_MAX
+#endif
+
+#if defined(__SIZEOF_INT128__)
+#undef INTMAX_MIN
+#undef INTMAX_MAX
+#undef UINTMAX_MAX
+#define UINTMAX_MAX ((unsigned __int128)-1)
+#define INTMAX_MAX ((__int128)(UINTMAX_MAX >> 1))
+#define INTMAX_MIN (-INTMAX_MAX - 1)
+#undef INTMAX_C
+#undef UINTMAX_C
+#define INTMAX_C(value) ((__int128)(value))
+#define UINTMAX_C(value) ((unsigned __int128)(value))
+#endif
 
 #undef FTL_INT8
 #undef FTL_UINT8

@@ -28,6 +28,11 @@ void __stosb(
 
 #endif
 
+extern "C" {
+int strcoll(const char *, const char *);
+decltype(sizeof(0)) strxfrm(char *, const char *, decltype(sizeof(0)));
+}
+
 #ifdef FTL_REPLACE_STL
 namespace std {
 #else
@@ -248,15 +253,7 @@ inline int strcmp(const char* s1, const char* s2) {
     return 0;
 }
 
-/*
- * FTL currently provides only the C locale semantics here.
- *
- * When <clocale>/<locale> acquires additional locale support, strcoll and
- * strxfrm must be wired into the active collation locale.
- */
-inline int strcoll(const char* s1, const char* s2) {
-    return strcmp(s1, s2);
-}
+using ::strcoll;
 
 FTL_CSTRING_NO_BUILTIN
 inline int strncmp(const char* s1, const char* s2, size_t n) {
@@ -280,34 +277,7 @@ inline int strncmp(const char* s1, const char* s2, size_t n) {
     return 0;
 }
 
-/*
- * In the C locale, the identity transformation satisfies the required
- * relationship between strcoll and strcmp.
- */
-FTL_CSTRING_NO_BUILTIN
-inline size_t strxfrm(char* s1, const char* s2, size_t n) {
-    size_t length = 0;
-
-    while (s2[length] != '\0') {
-        ++length;
-    }
-
-    if (n == 0) {
-        return length;
-    }
-
-    if (length < n) {
-        for (size_t index = 0; index <= length; ++index) {
-            s1[index] = s2[index];
-        }
-    } else {
-        for (size_t index = 0; index < n; ++index) {
-            s1[index] = s2[index];
-        }
-    }
-
-    return length;
-}
+using ::strxfrm;
 
 FTL_CSTRING_NO_BUILTIN
 inline const void* memchr(const void* s, int c, size_t n) {

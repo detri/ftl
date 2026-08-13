@@ -9,6 +9,7 @@
 #include <iterator>
 #include <memory>
 #include <memory_resource>
+#include <optional>
 #include <ranges>
 #include <type_traits>
 #include <utility>
@@ -22,6 +23,7 @@
 #include <ftl/iterator>
 #include <ftl/memory>
 #include <ftl/memory_resource>
+#include <ftl/optional>
 #include <ftl/ranges>
 #include <ftl/type_traits>
 #include <ftl/utility>
@@ -31,6 +33,9 @@
 
 FTL_BEGIN_NAMESPACE
 
+template <class Key, class Compare, class Allocator> class set;
+template <class Key, class Compare, class Allocator> class multiset;
+
 template <class Key, class Compare = less<Key>,
           class Allocator = allocator<Key>>
 class set : public detail::ordered_set_base<Key, Compare, Allocator, false> {
@@ -38,7 +43,26 @@ class set : public detail::ordered_set_base<Key, Compare, Allocator, false> {
 
 public:
   using base::base;
+  using base::merge;
   using base::operator=;
+  set &operator=(initializer_list<Key> values) {
+    base::operator=(values);
+    return *this;
+  }
+  template <class OtherCompare>
+  void merge(set<Key, OtherCompare, Allocator> &source) {
+    using source_base = detail::ordered_set_base<Key, OtherCompare, Allocator, false>;
+    this->template merge_from<OtherCompare, false>(static_cast<source_base &>(source));
+  }
+  template <class OtherCompare>
+  void merge(set<Key, OtherCompare, Allocator> &&source) { merge(source); }
+  template <class OtherCompare>
+  void merge(multiset<Key, OtherCompare, Allocator> &source) {
+    using source_base = detail::ordered_set_base<Key, OtherCompare, Allocator, true>;
+    this->template merge_from<OtherCompare, true>(static_cast<source_base &>(source));
+  }
+  template <class OtherCompare>
+  void merge(multiset<Key, OtherCompare, Allocator> &&source) { merge(source); }
 };
 
 template <class Key, class Compare = less<Key>,
@@ -49,7 +73,26 @@ class multiset
 
 public:
   using base::base;
+  using base::merge;
   using base::operator=;
+  multiset &operator=(initializer_list<Key> values) {
+    base::operator=(values);
+    return *this;
+  }
+  template <class OtherCompare>
+  void merge(set<Key, OtherCompare, Allocator> &source) {
+    using source_base = detail::ordered_set_base<Key, OtherCompare, Allocator, false>;
+    this->template merge_from<OtherCompare, false>(static_cast<source_base &>(source));
+  }
+  template <class OtherCompare>
+  void merge(set<Key, OtherCompare, Allocator> &&source) { merge(source); }
+  template <class OtherCompare>
+  void merge(multiset<Key, OtherCompare, Allocator> &source) {
+    using source_base = detail::ordered_set_base<Key, OtherCompare, Allocator, true>;
+    this->template merge_from<OtherCompare, true>(static_cast<source_base &>(source));
+  }
+  template <class OtherCompare>
+  void merge(multiset<Key, OtherCompare, Allocator> &&source) { merge(source); }
 };
 
 template <
@@ -57,14 +100,59 @@ template <
     class Compare = less<typename iterator_traits<InputIterator>::value_type>,
     class Allocator =
         allocator<typename iterator_traits<InputIterator>::value_type>>
+  requires(!detail::ordered_allocator_like<Compare>)
 set(InputIterator, InputIterator, Compare = Compare(), Allocator = Allocator())
     -> set<typename iterator_traits<InputIterator>::value_type, Compare,
            Allocator>;
+template <class InputIterator, detail::ordered_allocator_like Allocator>
+set(InputIterator, InputIterator, Allocator)
+    -> set<typename iterator_traits<InputIterator>::value_type,
+           less<typename iterator_traits<InputIterator>::value_type>, Allocator>;
 template <ranges::input_range Range,
           class Compare = less<ranges::range_value_t<Range>>,
           class Allocator = allocator<ranges::range_value_t<Range>>>
+  requires(!detail::ordered_allocator_like<Compare>)
 set(from_range_t, Range &&, Compare = Compare(), Allocator = Allocator())
     -> set<ranges::range_value_t<Range>, Compare, Allocator>;
+template <ranges::input_range Range, detail::ordered_allocator_like Allocator>
+set(from_range_t, Range &&, Allocator)
+    -> set<ranges::range_value_t<Range>, less<ranges::range_value_t<Range>>,
+           Allocator>;
+template <class Key, class Compare = less<Key>,
+          class Allocator = allocator<Key>>
+  requires(!detail::ordered_allocator_like<Compare>)
+set(initializer_list<Key>, Compare = Compare(), Allocator = Allocator())
+    -> set<Key, Compare, Allocator>;
+template <class Key, detail::ordered_allocator_like Allocator>
+set(initializer_list<Key>, Allocator) -> set<Key, less<Key>, Allocator>;
+
+template <class InputIterator,
+          class Compare = less<typename iterator_traits<InputIterator>::value_type>,
+          class Allocator = allocator<typename iterator_traits<InputIterator>::value_type>>
+  requires(!detail::ordered_allocator_like<Compare>)
+multiset(InputIterator, InputIterator, Compare = Compare(), Allocator = Allocator())
+    -> multiset<typename iterator_traits<InputIterator>::value_type, Compare,
+                Allocator>;
+template <class InputIterator, detail::ordered_allocator_like Allocator>
+multiset(InputIterator, InputIterator, Allocator)
+    -> multiset<typename iterator_traits<InputIterator>::value_type,
+                less<typename iterator_traits<InputIterator>::value_type>, Allocator>;
+template <ranges::input_range Range,
+          class Compare = less<ranges::range_value_t<Range>>,
+          class Allocator = allocator<ranges::range_value_t<Range>>>
+  requires(!detail::ordered_allocator_like<Compare>)
+multiset(from_range_t, Range &&, Compare = Compare(), Allocator = Allocator())
+    -> multiset<ranges::range_value_t<Range>, Compare, Allocator>;
+template <ranges::input_range Range, detail::ordered_allocator_like Allocator>
+multiset(from_range_t, Range &&, Allocator)
+    -> multiset<ranges::range_value_t<Range>, less<ranges::range_value_t<Range>>,
+                Allocator>;
+template <class Key, class Compare = less<Key>, class Allocator = allocator<Key>>
+  requires(!detail::ordered_allocator_like<Compare>)
+multiset(initializer_list<Key>, Compare = Compare(), Allocator = Allocator())
+    -> multiset<Key, Compare, Allocator>;
+template <class Key, detail::ordered_allocator_like Allocator>
+multiset(initializer_list<Key>, Allocator) -> multiset<Key, less<Key>, Allocator>;
 
 template <class Container>
 bool ordered_set_equal(const Container &left, const Container &right) {
@@ -85,7 +173,9 @@ template <class Container>
 auto ordered_set_compare(const Container &left, const Container &right) {
   return lexicographical_compare_three_way(left.begin(), left.end(),
                                            right.begin(), right.end(),
-                                           compare_three_way{});
+                                           [](const auto &a, const auto &b) {
+                                             return detail::synth_three_way(a, b);
+                                           });
 }
 template <class Key, class Compare, class Allocator>
 auto operator<=>(const set<Key, Compare, Allocator> &left,

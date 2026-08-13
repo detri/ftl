@@ -55,6 +55,10 @@
 
 FTL_BEGIN_NAMESPACE
 
+template <class T, class Container> class queue;
+template <class T, class Container, class Compare> class priority_queue;
+template <class T, class Container> class stack;
+
 class format_error : public runtime_error {
 public:
   explicit format_error(const string &what_arg)
@@ -2026,6 +2030,30 @@ template <class charT>
   requires detail::format_character_type_v<charT>
 struct formatter<bool, charT> : detail::boolean_formatter<charT> {};
 
+template <class T>
+concept __ftl_vector_bool_reference =
+    requires { typename remove_cv_t<T>::__ftl_vector_bool_reference; };
+
+template <class T, class charT>
+  requires(detail::format_character_type_v<charT> &&
+           __ftl_vector_bool_reference<T>)
+struct formatter<T, charT> {
+private:
+  formatter<bool, charT> underlying_;
+
+public:
+  template <class ParseContext>
+  constexpr typename ParseContext::iterator parse(ParseContext &context) {
+    return underlying_.parse(context);
+  }
+
+  template <class FormatContext>
+  typename FormatContext::iterator format(const T &reference,
+                                           FormatContext &context) const {
+    return underlying_.format(static_cast<bool>(reference), context);
+  }
+};
+
 template <class charT>
   requires detail::format_character_type_v<charT>
 struct formatter<charT *, charT> : detail::string_formatter_base<charT> {
@@ -2989,6 +3017,72 @@ template <ranges::input_range R, class charT>
           formattable<ranges::range_reference_t<R>, charT>
 struct formatter<R, charT>
     : detail::range_default_formatter<format_kind<R>, R, charT> {};
+
+template <class T, class Container, class charT>
+  requires formattable<Container, charT>
+struct formatter<queue<T, Container>, charT> {
+private:
+  using maybe_const_container = detail::format_maybe_const_t<Container, charT>;
+  using adaptor = queue<T, Container>;
+  using maybe_const_adaptor =
+      conditional_t<is_const_v<maybe_const_container>, const adaptor, adaptor>;
+  formatter<ranges::ref_view<maybe_const_container>, charT> underlying_;
+public:
+  template <class ParseContext>
+  constexpr typename ParseContext::iterator parse(ParseContext &context) {
+    return underlying_.parse(context);
+  }
+  template <class FormatContext>
+  typename FormatContext::iterator format(maybe_const_adaptor &value,
+                                           FormatContext &context) const {
+    ranges::ref_view<maybe_const_container> view(value.c);
+    return underlying_.format(view, context);
+  }
+};
+
+template <class T, class Container, class Compare, class charT>
+  requires formattable<Container, charT>
+struct formatter<priority_queue<T, Container, Compare>, charT> {
+private:
+  using maybe_const_container = detail::format_maybe_const_t<Container, charT>;
+  using adaptor = priority_queue<T, Container, Compare>;
+  using maybe_const_adaptor =
+      conditional_t<is_const_v<maybe_const_container>, const adaptor, adaptor>;
+  formatter<ranges::ref_view<maybe_const_container>, charT> underlying_;
+public:
+  template <class ParseContext>
+  constexpr typename ParseContext::iterator parse(ParseContext &context) {
+    return underlying_.parse(context);
+  }
+  template <class FormatContext>
+  typename FormatContext::iterator format(maybe_const_adaptor &value,
+                                           FormatContext &context) const {
+    ranges::ref_view<maybe_const_container> view(value.c);
+    return underlying_.format(view, context);
+  }
+};
+
+template <class T, class Container, class charT>
+  requires formattable<Container, charT>
+struct formatter<stack<T, Container>, charT> {
+private:
+  using maybe_const_container = detail::format_maybe_const_t<Container, charT>;
+  using adaptor = stack<T, Container>;
+  using maybe_const_adaptor =
+      conditional_t<is_const_v<maybe_const_container>, const adaptor, adaptor>;
+  formatter<ranges::ref_view<maybe_const_container>, charT> underlying_;
+public:
+  template <class ParseContext>
+  constexpr typename ParseContext::iterator parse(ParseContext &context) {
+    return underlying_.parse(context);
+  }
+  template <class FormatContext>
+  typename FormatContext::iterator format(maybe_const_adaptor &value,
+                                           FormatContext &context) const {
+    ranges::ref_view<maybe_const_container> view(value.c);
+    return underlying_.format(view, context);
+  }
+};
 
 namespace detail {
 

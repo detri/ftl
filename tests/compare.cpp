@@ -91,6 +91,14 @@ static_assert(tested::compare_strong_order_fallback(legacy_ordered{1},
 
 static_assert(noexcept(tested::compare_strong_order_fallback(1, 2)));
 
+template <class T, class U>
+concept can_compare_three_way = requires(T &&left, U &&right) {
+  tested::compare_three_way{}(static_cast<T &&>(left),
+                              static_cast<U &&>(right));
+};
+
+static_assert(!can_compare_three_way<legacy_ordered, legacy_ordered>);
+
 struct partial_custom {
   int value;
 
@@ -251,4 +259,156 @@ static_assert(!tested::common_reference_with<const comparison_left &,
 static_assert(tested::three_way_comparable_with<
               comparison_left, comparison_right, tested::strong_ordering>);
 
-bool ftl_test() { return true; }
+constexpr float negative_quiet_nan_one = __builtin_bit_cast(float, 0xffc00001u);
+
+static_assert(tested::weak_order(-0.0f, +0.0f) ==
+              tested::weak_ordering::equivalent);
+
+static_assert(tested::weak_order(quiet_nan_one, quiet_nan_two) ==
+              tested::weak_ordering::equivalent);
+
+static_assert(tested::weak_order(negative_quiet_nan_one, quiet_nan_one) < 0);
+
+static_assert(tested::partial_order(quiet_nan_one, 0.0f) ==
+              tested::partial_ordering::unordered);
+
+static_assert(tested::strong_ordering::less < 0);
+static_assert(tested::strong_ordering::equal == 0);
+static_assert(tested::strong_ordering::greater > 0);
+
+static_assert(0 > tested::strong_ordering::less);
+static_assert(0 == tested::strong_ordering::equal);
+static_assert(0 < tested::strong_ordering::greater);
+
+static_assert(tested::weak_ordering::less < 0);
+static_assert(tested::weak_ordering::equivalent == 0);
+static_assert(tested::weak_ordering::greater > 0);
+
+static_assert(0 > tested::weak_ordering::less);
+static_assert(0 == tested::weak_ordering::equivalent);
+static_assert(0 < tested::weak_ordering::greater);
+
+static_assert(tested::partial_ordering::less < 0);
+static_assert(tested::partial_ordering::equivalent == 0);
+static_assert(tested::partial_ordering::greater > 0);
+
+static_assert(0 > tested::partial_ordering::less);
+static_assert(0 == tested::partial_ordering::equivalent);
+static_assert(0 < tested::partial_ordering::greater);
+
+static_assert(tested::partial_ordering::unordered != 0);
+static_assert(!(tested::partial_ordering::unordered < 0));
+static_assert(!(tested::partial_ordering::unordered > 0));
+static_assert(!(tested::partial_ordering::unordered <= 0));
+static_assert(!(tested::partial_ordering::unordered >= 0));
+
+static_assert(!(0 < tested::partial_ordering::unordered));
+static_assert(!(0 > tested::partial_ordering::unordered));
+static_assert(!(0 <= tested::partial_ordering::unordered));
+static_assert(!(0 >= tested::partial_ordering::unordered));
+
+struct weak_precedence {
+  int value;
+
+  friend constexpr bool operator==(weak_precedence, weak_precedence) = default;
+
+  friend constexpr tested::weak_ordering
+  operator<=>(weak_precedence left, weak_precedence right) noexcept {
+    if (left.value < right.value) {
+      return tested::weak_ordering::less;
+    }
+
+    if (left.value > right.value) {
+      return tested::weak_ordering::greater;
+    }
+
+    return tested::weak_ordering::equivalent;
+  }
+
+  friend constexpr tested::strong_ordering
+  strong_order(weak_precedence, weak_precedence) noexcept {
+    // Deliberately disagrees with operator<=>.
+    return tested::strong_ordering::greater;
+  }
+};
+
+static_assert(tested::weak_order(weak_precedence{1}, weak_precedence{2}) < 0);
+
+struct partial_precedence {
+  int value;
+
+  friend constexpr bool operator==(partial_precedence,
+                                   partial_precedence) = default;
+
+  friend constexpr tested::partial_ordering
+  operator<=>(partial_precedence left, partial_precedence right) noexcept {
+    if (left.value < right.value) {
+      return tested::partial_ordering::less;
+    }
+
+    if (left.value > right.value) {
+      return tested::partial_ordering::greater;
+    }
+
+    return tested::partial_ordering::equivalent;
+  }
+
+  friend constexpr tested::weak_ordering
+  weak_order(partial_precedence, partial_precedence) noexcept {
+    // Deliberately disagrees with operator<=>.
+    return tested::weak_ordering::greater;
+  }
+};
+
+static_assert(tested::partial_order(partial_precedence{1},
+                                    partial_precedence{2}) < 0);
+
+struct minimal_fallback_order {
+  int value;
+
+  friend constexpr bool operator==(minimal_fallback_order left,
+                                   minimal_fallback_order right) noexcept {
+    return left.value == right.value;
+  }
+
+  friend constexpr bool operator<(minimal_fallback_order left,
+                                  minimal_fallback_order right) noexcept {
+    return left.value < right.value;
+  }
+};
+
+static_assert(!tested::totally_ordered<minimal_fallback_order>);
+
+static_assert(tested::compare_strong_order_fallback(minimal_fallback_order{1},
+                                                    minimal_fallback_order{2}) <
+              0);
+
+static_assert(tested::compare_weak_order_fallback(minimal_fallback_order{1},
+                                                  minimal_fallback_order{2}) <
+              0);
+
+static_assert(tested::compare_partial_order_fallback(
+                  minimal_fallback_order{2}, minimal_fallback_order{1}) > 0);
+
+bool ftl_test() {
+  int left = 0;
+  int right = 0;
+
+  const auto left_right = tested::compare_three_way{}(&left, &right);
+
+  const auto right_left = tested::compare_three_way{}(&right, &left);
+
+  if (left_right == 0 || right_left == 0) {
+    return false;
+  }
+
+  if ((left_right < 0) != (right_left > 0)) {
+    return false;
+  }
+
+  if ((left_right > 0) != (right_left < 0)) {
+    return false;
+  }
+
+  return tested::compare_three_way{}(&left, &left) == 0;
+}

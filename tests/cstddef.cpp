@@ -61,6 +61,9 @@ static_assert(tested::to_integer<unsigned>(compound_byte_operations) == 2);
 static_assert(byte_shift<int> && byte_conversion<int>);
 static_assert(!byte_shift<float> && !byte_conversion<float>);
 static_assert(!byte_shift<integer_like> && !byte_conversion<integer_like>);
+#if defined(__SIZEOF_INT128__)
+static_assert(byte_shift<__int128> && byte_conversion<__int128>);
+#endif
 static_assert(offsetof(layout, value) == 4);
 static_assert(alignof(tested::max_align_t) >= alignof(long double));
 static_assert(alignof(tested::max_align_t) >= alignof(void*));

@@ -143,17 +143,17 @@ public:
 
   deque() : deque(Allocator()) {}
   explicit deque(const Allocator& a) : allocator_(a), blocks_(map_allocator(a)) {}
-  explicit deque(size_type n, const Allocator& a = Allocator()) : deque(a) { append_default(n); }
-  deque(size_type n, const T& value, const Allocator& a = Allocator()) : deque(a) { append_fill(n, value); }
-  template<input_iterator I> deque(I first, I last, const Allocator& a = Allocator()) : deque(a) { append_iterators(first, last); }
+  explicit deque(size_type n, const Allocator& a = Allocator()) : deque(a) { initialize([&] { append_default(n); }); }
+  deque(size_type n, const T& value, const Allocator& a = Allocator()) : deque(a) { initialize([&] { append_fill(n, value); }); }
+  template<input_iterator I> deque(I first, I last, const Allocator& a = Allocator()) : deque(a) { initialize([&] { append_iterators(first, last); }); }
   template<detail::deque_compatible_range<T> R>
-  deque(from_range_t, R&& range, const Allocator& a = Allocator()) : deque(a) { append_range(static_cast<R&&>(range)); }
-  deque(const deque& other) : deque(traits::select_on_container_copy_construction(other.allocator_)) { append_iterators(other.begin(), other.end()); }
+  deque(from_range_t, R&& range, const Allocator& a = Allocator()) : deque(a) { initialize([&] { append_range(static_cast<R&&>(range)); }); }
+  deque(const deque& other) : deque(traits::select_on_container_copy_construction(other.allocator_)) { initialize([&] { append_iterators(other.begin(), other.end()); }); }
   deque(deque&& other) noexcept : allocator_(move(other.allocator_)), blocks_(move(other.blocks_)), front_slot_(exchange(other.front_slot_, 0)), size_(exchange(other.size_, 0)), origin_(exchange(other.origin_, 0)) {}
   deque(const deque& other, const type_identity_t<Allocator>& a) : deque(other.begin(), other.end(), a) {}
   deque(deque&& other, const type_identity_t<Allocator>& a) : deque(a) {
     if (allocator_ == other.allocator_) steal(other);
-    else { append_iterators(make_move_iterator(other.begin()), make_move_iterator(other.end())); other.clear(); }
+    else { initialize([&] { append_iterators(make_move_iterator(other.begin()), make_move_iterator(other.end())); }); other.clear(); }
   }
   deque(initializer_list<T> values, const Allocator& a = Allocator()) : deque(values.begin(), values.end(), a) {}
   ~deque() { release(); }
@@ -232,9 +232,9 @@ public:
     if (index == 0) { emplace_front(forward<Args>(args)...); return begin(); }
     if (index == size_) { emplace_back(forward<Args>(args)...); return end() - 1; }
     T value(forward<Args>(args)...); deque replacement(allocator_);
-    replacement.append_iterators(make_move_iterator(begin()), make_move_iterator(begin() + static_cast<difference_type>(index)));
+    replacement.append_existing(begin(), begin() + static_cast<difference_type>(index));
     replacement.emplace_back(move(value));
-    replacement.append_iterators(make_move_iterator(begin() + static_cast<difference_type>(index)), make_move_iterator(end()));
+    replacement.append_existing(begin() + static_cast<difference_type>(index), end());
     swap_storage(replacement); return begin() + static_cast<difference_type>(index);
   }
   void push_front(const T& value) { emplace_front(value); }
@@ -267,8 +267,8 @@ public:
     if (!index) { for (size_type i = 0; i < count; ++i) pop_front(); return begin(); }
     if (index + count == size_) { for (size_type i = 0; i < count; ++i) pop_back(); return end(); }
     deque replacement(allocator_);
-    replacement.append_iterators(make_move_iterator(begin()), make_move_iterator(begin() + static_cast<difference_type>(index)));
-    replacement.append_iterators(make_move_iterator(begin() + static_cast<difference_type>(index + count)), make_move_iterator(end()));
+    replacement.append_existing(begin(), begin() + static_cast<difference_type>(index));
+    replacement.append_existing(begin() + static_cast<difference_type>(index + count), end());
     swap_storage(replacement); return begin() + static_cast<difference_type>(index);
   }
   void swap(deque& other) noexcept(traits::is_always_equal::value) {
@@ -285,7 +285,15 @@ private:
   void check_add(size_type n) const { if (n > max_size() - size_) detail::deque_length_failure(); }
   void ensure_back() {
     const auto slot = front_slot_ + size_;
-    if (slot / block_size() == blocks_.size()) blocks_.push_back(traits::allocate(allocator_, block_size()));
+    if (slot / block_size() == blocks_.size()) {
+      block_pointer block = traits::allocate(allocator_, block_size());
+#if FTL_HAS_EXCEPTIONS
+      try { blocks_.push_back(block); }
+      catch (...) { traits::deallocate(allocator_, block, block_size()); throw; }
+#else
+      blocks_.push_back(block);
+#endif
+    }
   }
   void ensure_front() {
     if (front_slot_) return;
@@ -299,6 +307,7 @@ private:
     front_slot_ = block_size();
   }
   template<input_iterator I> void append_iterators(I first, I last) { for (; first != last; ++first) emplace_back(*first); }
+  template<class I> void append_existing(I first, I last) { for (; first != last; ++first) emplace_back(move_if_noexcept(*first)); }
   void append_default(size_type n) { check_add(n); while (n--) emplace_back(); }
   void append_fill(size_type n, const T& value) { check_add(n); while (n--) emplace_back(value); }
   iterator insert_values(size_type index, deque& inserted) {
@@ -306,14 +315,22 @@ private:
     if (index == size_) { for (auto& value : inserted) emplace_back(move(value)); return begin() + static_cast<difference_type>(index); }
     if (index == 0) { for (auto it = inserted.rbegin(); it != inserted.rend(); ++it) emplace_front(move(*it)); return begin(); }
     deque replacement(allocator_);
-    replacement.append_iterators(make_move_iterator(begin()), make_move_iterator(begin() + static_cast<difference_type>(index)));
+    replacement.append_existing(begin(), begin() + static_cast<difference_type>(index));
     replacement.append_iterators(make_move_iterator(inserted.begin()), make_move_iterator(inserted.end()));
-    replacement.append_iterators(make_move_iterator(begin() + static_cast<difference_type>(index)), make_move_iterator(end()));
+    replacement.append_existing(begin() + static_cast<difference_type>(index), end());
     swap_storage(replacement); return begin() + static_cast<difference_type>(index);
   }
   void release() noexcept {
     clear(); for (auto block : blocks_) traits::deallocate(allocator_, block, block_size());
     blocks_.clear(); front_slot_ = 0;
+  }
+  template<class Operation> void initialize(Operation operation) {
+#if FTL_HAS_EXCEPTIONS
+    try { operation(); }
+    catch (...) { release(); throw; }
+#else
+    operation();
+#endif
   }
   void steal(deque& other) {
     blocks_ = move(other.blocks_); front_slot_ = exchange(other.front_slot_, 0);

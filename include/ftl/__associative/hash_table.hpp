@@ -4,18 +4,83 @@
 FTL_BEGIN_NAMESPACE
 namespace detail {
 
+template <class Value> struct hash_table_node {
+  hash_table_node *next{};
+  hash_table_node *previous{};
+  hash_table_node *bucket_next{};
+  size_t hash{};
+  Value value;
+  template <class... Args>
+  explicit hash_table_node(Args &&...args) : value(forward<Args>(args)...) {}
+};
+
+template <class Value, class Key, class Allocator> class hash_node_handle {
+  using node = hash_table_node<Value>;
+  using value_traits = allocator_traits<Allocator>;
+  using node_allocator = typename value_traits::template rebind_alloc<node>;
+  using node_traits = allocator_traits<node_allocator>;
+  node *value_{};
+  optional<Allocator> allocator_;
+  template <class, class, class, class, class, class, bool>
+  friend class hash_table;
+  hash_node_handle(node *value, const Allocator &allocator)
+      : value_(value), allocator_(in_place, allocator) {}
+public:
+  using allocator_type = Allocator;
+  using value_type = Value;
+  hash_node_handle() noexcept = default;
+  hash_node_handle(hash_node_handle &&other) noexcept
+      : value_(exchange(other.value_, nullptr)), allocator_(move(other.allocator_)) {
+    other.allocator_.reset();
+  }
+  hash_node_handle &operator=(hash_node_handle &&other) noexcept {
+    if (this != &other) {
+      reset();
+      value_ = exchange(other.value_, nullptr);
+      if (!allocator_ || value_traits::propagate_on_container_move_assignment::value)
+        allocator_ = move(other.allocator_);
+      other.allocator_.reset();
+    }
+    return *this;
+  }
+  hash_node_handle(const hash_node_handle &) = delete;
+  hash_node_handle &operator=(const hash_node_handle &) = delete;
+  ~hash_node_handle() { reset(); }
+  [[nodiscard]] bool empty() const noexcept { return !value_; }
+  explicit operator bool() const noexcept { return value_ != nullptr; }
+  allocator_type get_allocator() const { return *allocator_; }
+  value_type &value() const { return value_->value; }
+  auto &key() const requires requires(Value &item) { item.first; } {
+    return const_cast<Key &>(value_->value.first);
+  }
+  auto &mapped() const requires requires(Value &item) { item.second; } {
+    return value_->value.second;
+  }
+  void swap(hash_node_handle &other) noexcept(
+      value_traits::propagate_on_container_swap::value ||
+      value_traits::is_always_equal::value) {
+    FTL_ASSOCIATIVE_NAMESPACE::swap(value_, other.value_);
+    if constexpr (value_traits::propagate_on_container_swap::value)
+      FTL_ASSOCIATIVE_NAMESPACE::swap(allocator_, other.allocator_);
+  }
+private:
+  void reset() noexcept {
+    if (!value_) return;
+    node_allocator allocator(*allocator_);
+    auto pointer = pointer_traits<typename node_traits::pointer>::pointer_to(*value_);
+    node_traits::destroy(allocator, value_);
+    node_traits::deallocate(allocator, pointer, 1);
+    value_ = nullptr;
+    allocator_.reset();
+  }
+};
+
 template <class Value, class Key, class KeyOfValue, class Hash, class Equal,
           class Allocator, bool Multi>
 class hash_table {
-  struct node {
-    node *next{};
-    node *previous{};
-    node *bucket_next{};
-    size_t hash{};
-    Value value;
-    template <class... Args>
-    explicit node(Args &&...args) : value(forward<Args>(args)...) {}
-  };
+  using node = hash_table_node<Value>;
+  template <class, class, class, class, class, class, bool>
+  friend class hash_table;
   using value_traits = allocator_traits<Allocator>;
   using node_allocator = typename value_traits::template rebind_alloc<node>;
   using node_traits = allocator_traits<node_allocator>;
@@ -103,60 +168,7 @@ public:
   using local_iterator = basic_local_iterator<false>;
   using const_local_iterator = basic_local_iterator<true>;
 
-  class node_type {
-    node *value_{};
-    FTL_NO_UNIQUE_ADDRESS Allocator allocator_{};
-    friend class hash_table;
-    node_type(node *value, const Allocator &allocator)
-        : value_(value), allocator_(allocator) {}
-
-  public:
-    node_type() = default;
-    node_type(node_type &&other) noexcept
-        : value_(exchange(other.value_, nullptr)),
-          allocator_(move(other.allocator_)) {}
-    node_type &operator=(node_type &&other) noexcept {
-      if (this != &other) {
-        reset();
-        allocator_ = move(other.allocator_);
-        value_ = exchange(other.value_, nullptr);
-      }
-      return *this;
-    }
-    node_type(const node_type &) = delete;
-    node_type &operator=(const node_type &) = delete;
-    ~node_type() { reset(); }
-    [[nodiscard]] bool empty() const noexcept { return !value_; }
-    explicit operator bool() const noexcept { return value_ != nullptr; }
-    allocator_type get_allocator() const { return allocator_; }
-    value_type &value() const { return value_->value; }
-    auto &key() const
-      requires requires(Value &item) { item.first; }
-    {
-      return const_cast<Key &>(value_->value.first);
-    }
-    auto &mapped() const
-      requires requires(Value &item) { item.second; }
-    {
-      return value_->value.second;
-    }
-    void swap(node_type &other) noexcept {
-      FTL_ASSOCIATIVE_NAMESPACE::swap(value_, other.value_);
-      FTL_ASSOCIATIVE_NAMESPACE::swap(allocator_, other.allocator_);
-    }
-
-  private:
-    void reset() noexcept {
-      if (!value_)
-        return;
-      node_allocator allocator(allocator_);
-      auto pointer =
-          pointer_traits<typename node_traits::pointer>::pointer_to(*value_);
-      node_traits::destroy(allocator, value_);
-      node_traits::deallocate(allocator, pointer, 1);
-      value_ = nullptr;
-    }
-  };
+  using node_type = hash_node_handle<Value, Key, Allocator>;
 
   struct insert_return_type {
     iterator position;
@@ -182,11 +194,11 @@ public:
       : hash_table(other.bucket_count(), other.hash_, other.equal_,
                    value_traits::select_on_container_copy_construction(
                        other.allocator_)) {
-    insert(other.begin(), other.end());
+    initialize([&] { insert(other.begin(), other.end()); });
   }
   hash_table(const hash_table &other, const Allocator &allocator)
       : hash_table(other.bucket_count(), other.hash_, other.equal_, allocator) {
-    insert(other.begin(), other.end());
+    initialize([&] { insert(other.begin(), other.end()); });
   }
   hash_table(hash_table &&other) noexcept
       : buckets_(move(other.buckets_)), first_(exchange(other.first_, nullptr)),
@@ -202,8 +214,8 @@ public:
       last_ = exchange(other.last_, nullptr);
       size_ = exchange(other.size_, 0);
     } else {
-      insert(make_move_iterator(other.begin()),
-             make_move_iterator(other.end()));
+      initialize([&] { insert(make_move_iterator(other.begin()),
+                              make_move_iterator(other.end())); });
       other.clear();
     }
   }
@@ -272,7 +284,13 @@ public:
   }
 
   template <class V> auto insert(V &&value) {
-    return insert_node(make_node(static_cast<V &&>(value)));
+    node *added = make_node(static_cast<V &&>(value));
+#if FTL_HAS_EXCEPTIONS
+    try { return insert_node(added); }
+    catch (...) { destroy_node(added); throw; }
+#else
+    return insert_node(added);
+#endif
   }
   template <class InputIterator>
   void insert(InputIterator first, InputIterator last) {
@@ -280,7 +298,13 @@ public:
       insert(*first);
   }
   template <class... Args> auto emplace(Args &&...args) {
-    return insert_node(make_node(forward<Args>(args)...));
+    node *added = make_node(forward<Args>(args)...);
+#if FTL_HAS_EXCEPTIONS
+    try { return insert_node(added); }
+    catch (...) { destroy_node(added); throw; }
+#else
+    return insert_node(added);
+#endif
   }
   iterator insert(const_iterator, const Value &value) {
     if constexpr (Multi)
@@ -305,15 +329,18 @@ public:
     if constexpr (Multi) {
       if (!handle)
         return end();
-      return insert_node(exchange(handle.value_, nullptr));
+      auto result = insert_node(handle.value_, false);
+      handle.value_ = nullptr;
+      return result;
     } else {
       if (!handle)
         return insert_return_type{end(), false, {}};
       auto found = find(KeyOfValue{}(handle.value_->value));
       if (found != end())
         return insert_return_type{found, false, move(handle)};
-      return insert_return_type{
-          insert_node(exchange(handle.value_, nullptr)).first, true, {}};
+      auto result = insert_node(handle.value_, false);
+      handle.value_ = nullptr;
+      return insert_return_type{result.first, true, {}};
     }
   }
   iterator insert(const_iterator, node_type &&handle) {
@@ -368,15 +395,19 @@ public:
     return found == end() ? node_type{}
                           : node_type(detach(found.current_), allocator_);
   }
-  void merge(hash_table &other) {
-    if (this == &other)
+  template <class OtherHash, class OtherEqual, bool OtherMulti>
+  void merge(hash_table<Value, Key, KeyOfValue, OtherHash, OtherEqual,
+                        Allocator, OtherMulti> &other) {
+    if (static_cast<const void *>(this) == static_cast<const void *>(&other))
       return;
     for (auto current = other.begin(); current != other.end();) {
       auto candidate = current++;
+      insertion_slot slot = prepare_insertion(KeyOfValue{}(*candidate));
       if constexpr (!Multi)
-        if (contains(KeyOfValue{}(*candidate)))
+        if (slot.equivalent)
           continue;
-      insert(other.extract(candidate));
+      node *moved = other.detach_iterator(candidate);
+      attach(moved, slot);
     }
   }
 
@@ -432,7 +463,7 @@ public:
     return count;
   }
   template <class K> size_type bucket(const K &key) const {
-    return bucket_count() ? static_cast<size_type>(hash_(key) % bucket_count())
+    return bucket_count() ? bucket_for(hash_(key), bucket_count())
                           : 0;
   }
   float load_factor() const noexcept {
@@ -457,7 +488,7 @@ public:
     vector<node *, bucket_allocator> replacement(count, nullptr,
                                                  bucket_allocator(allocator_));
     for (node *current = first_; current; current = current->next) {
-      const size_type index = static_cast<size_type>(current->hash % count);
+      const size_type index = bucket_for(current->hash, count);
       current->bucket_next = replacement[index];
       replacement[index] = current;
     }
@@ -470,6 +501,54 @@ public:
   Equal key_eq() const { return equal_; }
 
 private:
+  struct insertion_slot {
+    size_t hash{};
+    size_type index{};
+    node *equivalent{};
+  };
+  insertion_slot prepare_insertion(const Key &key) {
+    insertion_slot result;
+    result.hash = hash_(key);
+    result.equivalent = find_node_hashed(key, result.hash);
+    if constexpr (!Multi)
+      if (result.equivalent)
+        return result;
+    ensure_capacity();
+    result.index = bucket_for(result.hash, bucket_count());
+    return result;
+  }
+  void attach(node *added, insertion_slot slot) noexcept {
+    added->hash = slot.hash;
+    if constexpr (Multi) {
+      if (slot.equivalent) {
+        added->next = slot.equivalent->next;
+        added->previous = slot.equivalent;
+        if (added->next) added->next->previous = added;
+        else last_ = added;
+        slot.equivalent->next = added;
+        added->bucket_next = slot.equivalent->bucket_next;
+        slot.equivalent->bucket_next = added;
+        ++size_;
+        return;
+      }
+    }
+    added->previous = last_;
+    added->next = nullptr;
+    if (last_) last_->next = added;
+    else first_ = added;
+    last_ = added;
+    added->bucket_next = buckets_[slot.index];
+    buckets_[slot.index] = added;
+    ++size_;
+  }
+  template <class Operation> void initialize(Operation operation) {
+#if FTL_HAS_EXCEPTIONS
+    try { operation(); }
+    catch (...) { clear(); throw; }
+#else
+    operation();
+#endif
+  }
   template <class... Args> node *make_node(Args &&...args) {
     node_allocator allocator(allocator_);
     auto storage = node_traits::allocate(allocator, 1);
@@ -493,18 +572,18 @@ private:
     node_traits::destroy(allocator, value);
     node_traits::deallocate(allocator, pointer, 1);
   }
-  auto insert_node(node *added) {
+  auto insert_node(node *added, bool destroy_duplicate = true) {
     added->hash = hash_(KeyOfValue{}(added->value));
     if constexpr (!Multi) {
       if (node *found =
               find_node_hashed(KeyOfValue{}(added->value), added->hash)) {
-        destroy_node(added);
+        if (destroy_duplicate)
+          destroy_node(added);
         return pair<iterator, bool>{iterator(found), false};
       }
     }
     ensure_capacity();
-    const size_type index =
-        static_cast<size_type>(added->hash % bucket_count());
+    const size_type index = bucket_for(added->hash, bucket_count());
     node *equivalent =
         Multi ? find_node_hashed(KeyOfValue{}(added->value), added->hash)
               : nullptr;
@@ -535,14 +614,14 @@ private:
     else
       return pair<iterator, bool>{iterator(added), true};
   }
+  node *detach_iterator(iterator value) { return detach(value.current_); }
   void ensure_capacity() {
     if (!bucket_count() ||
         static_cast<float>(size_ + 1) > max_load_ * bucket_count())
       rehash(bucket_count() ? bucket_count() * 2 : 8);
   }
   node *detach(node *value) {
-    const size_type index =
-        static_cast<size_type>(value->hash % bucket_count());
+    const size_type index = bucket_for(value->hash, bucket_count());
     node **link = &buckets_[index];
     while (*link != value)
       link = &(*link)->bucket_next;
@@ -566,12 +645,28 @@ private:
   node *find_node_hashed(const K &key, size_t hash_value) const {
     if (!bucket_count())
       return nullptr;
-    for (node *current = buckets_[hash_value % bucket_count()]; current;
+    for (node *current = buckets_[bucket_for(hash_value, bucket_count())]; current;
          current = current->bucket_next)
       if (current->hash == hash_value &&
           equal_(KeyOfValue{}(current->value), key))
         return current;
     return nullptr;
+  }
+  static size_type bucket_for(size_t hash_value, size_type count) noexcept {
+    if constexpr (sizeof(size_t) >= 8) {
+      hash_value ^= hash_value >> 33;
+      hash_value *= static_cast<size_t>(0xff51afd7ed558ccdULL);
+      hash_value ^= hash_value >> 33;
+      hash_value *= static_cast<size_t>(0xc4ceb9fe1a85ec53ULL);
+      hash_value ^= hash_value >> 33;
+    } else {
+      hash_value ^= hash_value >> 16;
+      hash_value *= static_cast<size_t>(0x7feb352dU);
+      hash_value ^= hash_value >> 15;
+      hash_value *= static_cast<size_t>(0x846ca68bU);
+      hash_value ^= hash_value >> 16;
+    }
+    return static_cast<size_type>(hash_value % count);
   }
 
   vector<node *, bucket_allocator> buckets_{};

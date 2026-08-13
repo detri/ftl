@@ -4,6 +4,9 @@
 #define FTL_CSTDARG_HEADER
 
 #if defined(_MSC_VER) && !defined(__clang__)
+#if !defined(_M_X64)
+#error FTL native MSVC cstdarg support currently requires the supported x64 target
+#endif
 extern "C" void __cdecl __va_start(char**, ...);
 #ifdef FTL_REPLACE_STL
 namespace std { using va_list = char*; }
@@ -11,7 +14,10 @@ namespace std { using va_list = char*; }
 namespace ftl { using va_list = char*; }
 #endif
 #define va_start(V, P) ((void)__va_start(&(V), P))
-#define va_arg(V, P) (*(P*)(((V) += (sizeof(P) + 7) & ~7) - ((sizeof(P) + 7) & ~7)))
+#define va_arg(V, P)                                                        \
+    ((sizeof(P) > 8 || (sizeof(P) & (sizeof(P) - 1)) != 0)                 \
+         ? **(P**)(((V) += 8) - 8)                                         \
+         : *(P*)(((V) += 8) - 8))
 #define va_copy(D, S) ((void)((D) = (S)))
 #define va_end(V) ((void)((V) = nullptr))
 #else

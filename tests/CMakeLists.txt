@@ -56,7 +56,7 @@ function(add_ftl_test header)
 
         if (mode STREQUAL replace AND
                 header MATCHES
-                "^(regex|string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|locale(_.*)?|codecvt|format|chrono|print|exception|iosfwd|streambuf|ios|istream|istream_view|ostream|complex|random|thread|stacktrace|iostream|fstream|sstream|spanstream|syncstream|iomanip|cstdio|strstream|filesystem|feature_macro_semantics)$")
+                "^(regex|string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|queue|stack|locale(_.*)?|codecvt|format|chrono|print|exception|iosfwd|streambuf|ios|istream|istream_view|ostream|complex|random|thread|stacktrace|iostream|fstream|sstream|spanstream|syncstream|iomanip|cstdio|strstream|filesystem|feature_macro_semantics)$")
             set(ftl_standalone_replace TRUE)
         endif ()
 
@@ -202,6 +202,10 @@ add_ftl_compile_fail_check(compare_rejects_nonzero
         checks/compare_nonzero_compile_fail.cpp)
 add_ftl_compile_fail_check(pair_rejects_dangling_reference
         checks/pair_dangling_compile_fail.cpp)
+add_ftl_compile_fail_check(ratio_rejects_intmax_min_numerator
+        checks/ratio_intmax_min_numerator_compile_fail.cpp)
+add_ftl_compile_fail_check(ratio_rejects_intmax_min_denominator
+        checks/ratio_intmax_min_denominator_compile_fail.cpp)
 add_ftl_compile_fail_check(memory_rejects_invalid_uses_allocator
         checks/memory_uses_allocator_compile_fail.cpp)
 add_ftl_compile_fail_check(any_rejects_move_only
@@ -212,6 +216,8 @@ add_ftl_compile_fail_check(optional_rejects_rvalue_reference
         checks/optional_rejects_rvalue_reference_compile_fail.cpp)
 add_ftl_compile_fail_check(variant_rejects_duplicate_get
         checks/variant_rejects_duplicate_get_compile_fail.cpp)
+add_ftl_compile_fail_check(variant_rejects_mismatched_visit_results
+        checks/variant_mismatched_visit_result_compile_fail.cpp)
 add_ftl_compile_fail_check(span_rejects_const_removal checks/span_rejects_const_removal_compile_fail.cpp)
 add_ftl_compile_fail_check(span_rejects_derived_to_base_array_conversion checks/span_rejects_derived_to_base_array_conversion_compile_fail.cpp)
 add_ftl_compile_fail_check(span_rejects_mismatched_static_extent checks/span_rejects_mismatched_static_extent_compile_fail.cpp)
@@ -305,16 +311,66 @@ else ()
             -fno-exceptions
     )
 endif ()
-add_ftl_freestanding_link_check(random_freestanding_link
-        checks/random_freestanding_link.cpp)
-add_ftl_freestanding_link_check(valarray_freestanding_link
-        checks/valarray_freestanding_link.cpp)
+add_ftl_freestanding_link_check(
+        random_freestanding_link
+        checks/random_freestanding_link.cpp
+)
+add_ftl_freestanding_link_check(
+        valarray_freestanding_link
+        checks/valarray_freestanding_link.cpp
+)
+
 if (MSVC)
-    target_compile_options(ftl_check_random_freestanding_link PRIVATE /O2 /GS-)
-    target_compile_options(ftl_check_valarray_freestanding_link PRIVATE /O2 /GS-)
+    target_compile_options(
+            ftl_check_random_freestanding_link
+            PRIVATE
+            /O2
+            /GS-
+    )
+    target_compile_options(
+            ftl_check_valarray_freestanding_link
+            PRIVATE
+            /O2
+            /GS-
+    )
+elseif (APPLE)
+    target_compile_options(
+            ftl_check_random_freestanding_link
+            PRIVATE
+            -ffunction-sections
+            -fdata-sections
+            -fno-exceptions
+            -fno-stack-protector
+    )
+    target_link_options(
+            ftl_check_random_freestanding_link
+            PRIVATE
+            "LINKER:-dead_strip"
+    )
+    target_compile_options(
+            ftl_check_valarray_freestanding_link
+            PRIVATE
+            -fno-stack-protector
+    )
 else ()
-    target_compile_options(ftl_check_random_freestanding_link PRIVATE -fno-stack-protector)
-    target_compile_options(ftl_check_valarray_freestanding_link PRIVATE -fno-stack-protector)
+    target_compile_options(
+            ftl_check_random_freestanding_link
+            PRIVATE
+            -ffunction-sections
+            -fdata-sections
+            -fno-exceptions
+            -fno-stack-protector
+    )
+    target_link_options(
+            ftl_check_random_freestanding_link
+            PRIVATE
+            "LINKER:--gc-sections"
+    )
+    target_compile_options(
+            ftl_check_valarray_freestanding_link
+            PRIVATE
+            -fno-stack-protector
+    )
 endif ()
 add_ftl_freestanding_link_check(deque_freestanding_link
         checks/deque_freestanding_link.cpp)

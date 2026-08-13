@@ -1240,6 +1240,17 @@ bool ftl_test() {
     }
   }
 
+  if constexpr (sizeof(tested::uintmax_t) == 16) {
+    wchar_t output[64]{};
+    tested::swprintf(output, 64, L"%ju",
+                     static_cast<tested::uintmax_t>(-1));
+
+    if (tested::wcscmp(
+            output, L"340282366920938463463374607431768211455") != 0) {
+      return false;
+    }
+  }
+
   // Narrow and wide character conversion.
   {
     wchar_t output[32]{};

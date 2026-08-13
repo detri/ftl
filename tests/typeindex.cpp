@@ -11,6 +11,16 @@ namespace tested = ftl;
 static_assert(tested::is_copy_constructible_v<tested::type_index>);
 static_assert(tested::is_copy_assignable_v<tested::type_index>);
 static_assert(noexcept(tested::type_index{typeid(int)}));
+using relation = bool (tested::type_index::*)(const tested::type_index&) const
+    noexcept;
+static_assert(tested::is_same_v<decltype(static_cast<relation>(
+                                    &tested::type_index::operator<)), relation>);
+static_assert(tested::is_same_v<decltype(static_cast<relation>(
+                                    &tested::type_index::operator>)), relation>);
+static_assert(tested::is_same_v<decltype(static_cast<relation>(
+                                    &tested::type_index::operator<=)), relation>);
+static_assert(tested::is_same_v<decltype(static_cast<relation>(
+                                    &tested::type_index::operator>=)), relation>);
 
 bool ftl_test() {
     const tested::type_index integer{typeid(int)};

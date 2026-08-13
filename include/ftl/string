@@ -253,8 +253,8 @@ public:
                         propagate_on_container_copy_assignment::value) {
         if (!(allocator_ == other.allocator_)) {
           deallocate();
-          allocator_ = other.allocator_;
         }
+        allocator_ = other.allocator_;
       }
       assign(other.data(), other.size());
     }
@@ -345,9 +345,15 @@ public:
   constexpr void resize(size_type count) { resize(count, Character{}); }
 
   template <class Operation>
+    requires requires(Operation &operation, Character *storage,
+                      size_type count) {
+      requires is_integral_v<remove_cvref_t<decltype(
+          move(operation)(storage, count))>>;
+    }
   constexpr void resize_and_overwrite(size_type count, Operation operation) {
     reserve_exact(count);
-    const size_type result = static_cast<size_type>(operation(data(), count));
+    const size_type result =
+        static_cast<size_type>(move(operation)(data(), count));
     if (result > count)
       FTL_STRING_TRAP();
     set_size(result);
@@ -360,6 +366,7 @@ public:
     if (requested > capacity_)
       reserve_exact(requested);
   }
+  [[deprecated]] constexpr void reserve() { shrink_to_fit(); }
   constexpr void shrink_to_fit() {
     if (size_ == capacity_)
       return;
@@ -440,12 +447,7 @@ public:
     return append(characters, Traits::length(characters));
   }
   constexpr basic_string &append(size_type count, Character character) {
-    if (count == 0)
-      return *this;
-    ensure_additional(count);
-    Traits::assign(data() + size_, count, character);
-    set_size(size_ + count);
-    return *this;
+    return replace(size_, 0, count, character);
   }
   template <class InputIterator>
     requires input_iterator<InputIterator>
@@ -586,9 +588,16 @@ public:
   constexpr basic_string &erase(size_type position = 0, size_type count = npos) {
     check_position(position);
     const size_type removed = minimum(count, size_ - position);
-    Traits::move(data() + position, data() + position + removed,
+    if (removed == 0)
+      return *this;
+    basic_string replacement(allocator_);
+    const size_type result_size = size_ - removed;
+    replacement.reserve_exact(result_size);
+    Traits::copy(replacement.data(), data(), position);
+    Traits::copy(replacement.data() + position, data() + position + removed,
                  size_ - position - removed);
-    set_size(size_ - removed);
+    replacement.set_size(result_size);
+    swap_storage(replacement);
     return *this;
   }
   constexpr iterator erase(const_iterator where) {
@@ -638,12 +647,15 @@ public:
     check_position(position);
     removed = minimum(removed, size_ - position);
     basic_string source(characters, inserted, allocator_);
-    if (inserted > removed)
-      ensure_additional(inserted - removed);
-    Traits::move(data() + position + inserted, data() + position + removed,
-                 size_ - position - removed);
-    Traits::copy(data() + position, source.data(), inserted);
-    set_size(size_ - removed + inserted);
+    basic_string replacement(allocator_);
+    const size_type result_size = size_ - removed + inserted;
+    replacement.reserve_exact(result_size);
+    Traits::copy(replacement.data(), data(), position);
+    Traits::copy(replacement.data() + position, source.data(), inserted);
+    Traits::copy(replacement.data() + position + inserted,
+                 data() + position + removed, size_ - position - removed);
+    replacement.set_size(result_size);
+    swap_storage(replacement);
     return *this;
   }
   constexpr basic_string &replace(size_type position, size_type removed,
@@ -654,12 +666,15 @@ public:
                                   size_type inserted, Character character) {
     check_position(position);
     removed = minimum(removed, size_ - position);
-    if (inserted > removed)
-      ensure_additional(inserted - removed);
-    Traits::move(data() + position + inserted, data() + position + removed,
-                 size_ - position - removed);
-    Traits::assign(data() + position, inserted, character);
-    set_size(size_ - removed + inserted);
+    basic_string replacement(allocator_);
+    const size_type result_size = size_ - removed + inserted;
+    replacement.reserve_exact(result_size);
+    Traits::copy(replacement.data(), data(), position);
+    Traits::assign(replacement.data() + position, inserted, character);
+    Traits::copy(replacement.data() + position + inserted,
+                 data() + position + removed, size_ - position - removed);
+    replacement.set_size(result_size);
+    swap_storage(replacement);
     return *this;
   }
   constexpr basic_string &replace(const_iterator first, const_iterator last,
@@ -1427,7 +1442,7 @@ using wstring = basic_string<wchar_t>;
     constexpr size_t operator()(const basic_string<C, char_traits<C>, A> &v)   \
         const noexcept {                                                       \
       return static_cast<size_t>(                                              \
-          ::ftl_rapidhash::rapidhash(v.data(), v.size()));                     \
+          ::ftl_rapidhash::rapidhash(v.data(), v.size() * sizeof(C)));         \
     }                                                                          \
   }
 FTL_STRING_HASH(char, string);

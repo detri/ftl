@@ -7,6 +7,7 @@
 #include <iterator>
 #include <memory>
 #include <memory_resource>
+#include <optional>
 #include <ranges>
 #include <stdexcept>
 #include <tuple>
@@ -22,6 +23,7 @@
 #include <ftl/iterator>
 #include <ftl/memory>
 #include <ftl/memory_resource>
+#include <ftl/optional>
 #include <ftl/ranges>
 #include <ftl/stdexcept>
 #include <ftl/tuple>
@@ -59,6 +61,11 @@ namespace detail {
 }
 } // namespace detail
 
+template <class Key, class T, class Hash, class Predicate, class Allocator>
+class unordered_map;
+template <class Key, class T, class Hash, class Predicate, class Allocator>
+class unordered_multimap;
+
 template <class Key, class T, class Hash = hash<Key>,
           class Predicate = equal_to<Key>,
           class Allocator = allocator<pair<const Key, T>>>
@@ -69,9 +76,22 @@ class unordered_map : public detail::unordered_map_base<Key, T, Hash, Predicate,
 
 public:
   using base::base;
+  using base::merge;
   using base::operator=;
   using typename base::key_type;
   using typename base::mapped_type;
+  unordered_map &operator=(initializer_list<typename base::value_type> values) { base::operator=(values); return *this; }
+  template <class H, class P>
+  void merge(unordered_map<Key, T, H, P, Allocator> &source) {
+    using source_base = detail::unordered_map_base<Key, T, H, P, Allocator, false>;
+    this->template merge_from<H, P, false>(static_cast<source_base &>(source));
+  }
+  template <class H, class P>
+  void merge(unordered_multimap<Key, T, H, P, Allocator> &source) {
+    using source_base = detail::unordered_map_base<Key, T, H, P, Allocator, true>;
+    this->template merge_from<H, P, true>(static_cast<source_base &>(source));
+  }
+  template <class Source> void merge(Source &&source) requires(!is_lvalue_reference_v<Source>) { merge(source); }
   mapped_type &operator[](const key_type &key) {
     return this->try_emplace(key).first->second;
   }
@@ -103,23 +123,94 @@ class unordered_multimap
 
 public:
   using base::base;
+  using base::merge;
   using base::operator=;
+  unordered_multimap &operator=(initializer_list<typename base::value_type> values) { base::operator=(values); return *this; }
+  template <class H, class P>
+  void merge(unordered_map<Key, T, H, P, Allocator> &source) {
+    using source_base = detail::unordered_map_base<Key, T, H, P, Allocator, false>;
+    this->template merge_from<H, P, false>(static_cast<source_base &>(source));
+  }
+  template <class H, class P>
+  void merge(unordered_multimap<Key, T, H, P, Allocator> &source) {
+    using source_base = detail::unordered_map_base<Key, T, H, P, Allocator, true>;
+    this->template merge_from<H, P, true>(static_cast<source_base &>(source));
+  }
+  template <class Source> void merge(Source &&source) requires(!is_lvalue_reference_v<Source>) { merge(source); }
 };
+
+#define FTL_UNORDERED_MAP_GUIDES(Container)                                      \
+template <class I,                                                              \
+          class K = remove_const_t<typename iterator_traits<I>::value_type::first_type>, \
+          class H = hash<K>, class P = equal_to<K>,                             \
+          class A = allocator<typename iterator_traits<I>::value_type>>         \
+  requires(!detail::unordered_allocator_like<H>)                               \
+Container(I, I, size_t = 0, H = H(), P = P(), A = A())                         \
+  -> Container<K, typename iterator_traits<I>::value_type::second_type, H, P, A>; \
+template <ranges::input_range R,                                                \
+          class K = remove_const_t<typename ranges::range_value_t<R>::first_type>, \
+          class H = hash<K>, class P = equal_to<K>,                             \
+          class A = allocator<ranges::range_value_t<R>>>                        \
+  requires(!detail::unordered_allocator_like<H>)                               \
+Container(from_range_t, R &&, size_t = 0, H = H(), P = P(), A = A())           \
+  -> Container<K, typename ranges::range_value_t<R>::second_type, H, P, A>;     \
+template <class K, class T, class H = hash<remove_const_t<K>>,                  \
+          class P = equal_to<remove_const_t<K>>,                                \
+          class A = allocator<pair<const remove_const_t<K>, T>>>                \
+  requires(!detail::unordered_allocator_like<H>)                               \
+Container(initializer_list<pair<K, T>>, size_t = 0, H = H(), P = P(), A = A()) \
+  -> Container<remove_const_t<K>, T, H, P, A>;                                 \
+template <class I, detail::unordered_allocator_like A>                          \
+Container(I, I, size_t, A)                                                      \
+  -> Container<remove_const_t<typename iterator_traits<I>::value_type::first_type>, \
+               typename iterator_traits<I>::value_type::second_type,            \
+               hash<remove_const_t<typename iterator_traits<I>::value_type::first_type>>, \
+               equal_to<remove_const_t<typename iterator_traits<I>::value_type::first_type>>, A>; \
+template <class I, class H, detail::unordered_allocator_like A>                 \
+Container(I, I, size_t, H, A)                                                   \
+  -> Container<remove_const_t<typename iterator_traits<I>::value_type::first_type>, \
+               typename iterator_traits<I>::value_type::second_type, H,         \
+               equal_to<remove_const_t<typename iterator_traits<I>::value_type::first_type>>, A>; \
+template <ranges::input_range R, detail::unordered_allocator_like A>            \
+Container(from_range_t, R &&, size_t, A)                                        \
+  -> Container<remove_const_t<typename ranges::range_value_t<R>::first_type>,   \
+               typename ranges::range_value_t<R>::second_type,                  \
+               hash<remove_const_t<typename ranges::range_value_t<R>::first_type>>, \
+               equal_to<remove_const_t<typename ranges::range_value_t<R>::first_type>>, A>; \
+template <ranges::input_range R, detail::unordered_allocator_like A>            \
+Container(from_range_t, R &&, A)                                                \
+  -> Container<remove_const_t<typename ranges::range_value_t<R>::first_type>,   \
+               typename ranges::range_value_t<R>::second_type,                  \
+               hash<remove_const_t<typename ranges::range_value_t<R>::first_type>>, \
+               equal_to<remove_const_t<typename ranges::range_value_t<R>::first_type>>, A>; \
+template <ranges::input_range R, class H, detail::unordered_allocator_like A>   \
+Container(from_range_t, R &&, size_t, H, A)                                     \
+  -> Container<remove_const_t<typename ranges::range_value_t<R>::first_type>,   \
+               typename ranges::range_value_t<R>::second_type, H,               \
+               equal_to<remove_const_t<typename ranges::range_value_t<R>::first_type>>, A>; \
+template <class K, class T, detail::unordered_allocator_like A>                 \
+Container(initializer_list<pair<K, T>>, size_t, A)                              \
+  -> Container<remove_const_t<K>, T, hash<remove_const_t<K>>,                   \
+               equal_to<remove_const_t<K>>, A>;                                 \
+template <class K, class T, class H, detail::unordered_allocator_like A>        \
+Container(initializer_list<pair<K, T>>, size_t, H, A)                           \
+  -> Container<remove_const_t<K>, T, H, equal_to<remove_const_t<K>>, A>;
+
+FTL_UNORDERED_MAP_GUIDES(unordered_map)
+FTL_UNORDERED_MAP_GUIDES(unordered_multimap)
+#undef FTL_UNORDERED_MAP_GUIDES
 
 template <class Container>
 bool unordered_map_equal(const Container &left, const Container &right) {
   if (left.size() != right.size())
     return false;
-  for (const auto &value : left) {
-    auto range = right.equal_range(value.first);
-    bool found = false;
-    for (auto current = range.first; current != range.second; ++current)
-      if (*current == value) {
-        found = true;
-        break;
-      }
-    if (!found)
+  for (auto first = left.begin(); first != left.end();) {
+    auto left_group = left.equal_range(first->first);
+    auto right_group = right.equal_range(first->first);
+    if (!is_permutation(left_group.first, left_group.second,
+                        right_group.first, right_group.second))
       return false;
+    first = left_group.second;
   }
   return true;
 }

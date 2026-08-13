@@ -513,6 +513,9 @@ template <class Iterator, class Sentinel, ranges::subrange_kind Kind>
 struct is_library_pair_like<ranges::subrange<Iterator, Sentinel, Kind>>
     : true_type {};
 
+template <class Iterator, class Sentinel, ranges::subrange_kind Kind>
+struct is_subrange<ranges::subrange<Iterator, Sentinel, Kind>> : true_type {};
+
 } // namespace detail
 
 namespace ranges {

@@ -1,7 +1,11 @@
 #ifdef FTL_REPLACE_STL
 #include <climits>
+#include <type_traits>
+namespace tested = std;
 #else
 #include <ftl/climits>
+#include <ftl/type_traits>
+namespace tested = ftl;
 #endif
 
 static_assert(CHAR_BIT >= 8 && SCHAR_MIN < 0 && SCHAR_MAX > 0);
@@ -11,5 +15,12 @@ static_assert(INT_MIN < 0 && INT_MAX > 0 && UINT_MAX >= INT_MAX);
 static_assert(LONG_MIN < 0 && LONG_MAX > 0 && ULONG_MAX >= LONG_MAX);
 static_assert(LLONG_MIN < 0 && LLONG_MAX > 0 && ULLONG_MAX >= LLONG_MAX);
 static_assert(MB_LEN_MAX >= 1);
+#if !defined(_MSC_VER) || defined(__clang__)
+static_assert(tested::is_same_v<decltype(UCHAR_MAX), int>);
+static_assert(tested::is_same_v<decltype(USHRT_MAX), int>);
+#endif
+#if defined(__linux__)
+static_assert(MB_LEN_MAX == 16);
+#endif
 
 bool ftl_test() { return true; }

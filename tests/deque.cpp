@@ -31,6 +31,49 @@ struct counted_deque {
   bool operator<(const counted_deque& other) const { return value < other.value; }
 };
 
+struct deque_allocation_state {
+  inline static int allocations;
+  inline static int deallocations;
+};
+
+template<class T> struct tracked_deque_allocator {
+  using value_type = T;
+  tracked_deque_allocator() = default;
+  template<class U> tracked_deque_allocator(const tracked_deque_allocator<U>&) {}
+  T* allocate(tested::size_t count) {
+    ++deque_allocation_state::allocations;
+    return static_cast<T*>(::operator new(count * sizeof(T)));
+  }
+  void deallocate(T* pointer, tested::size_t) {
+    ++deque_allocation_state::deallocations;
+    ::operator delete(pointer);
+  }
+  template<class U> bool operator==(const tracked_deque_allocator<U>&) const { return true; }
+};
+
+struct throwing_deque_value {
+  inline static int alive;
+  inline static int defaults_before_throw = -1;
+  inline static int moves_before_throw = -1;
+  int value{};
+  throwing_deque_value() {
+    if (defaults_before_throw == 0) throw 1;
+    if (defaults_before_throw > 0) --defaults_before_throw;
+    ++alive;
+  }
+  explicit throwing_deque_value(int input) : value(input) { ++alive; }
+  throwing_deque_value(const throwing_deque_value& other) : value(other.value) { ++alive; }
+  throwing_deque_value(throwing_deque_value&& other) noexcept(false) : value(other.value) {
+    if (moves_before_throw == 0) throw 1;
+    if (moves_before_throw > 0) --moves_before_throw;
+    ++alive;
+    other.value = -1;
+  }
+  throwing_deque_value& operator=(const throwing_deque_value&) = default;
+  throwing_deque_value& operator=(throwing_deque_value&&) = default;
+  ~throwing_deque_value() { --alive; }
+};
+
 struct incomplete_deque;
 struct incomplete_deque_owner { tested::deque<incomplete_deque> values; ~incomplete_deque_owner(); };
 struct incomplete_deque {};
@@ -44,6 +87,37 @@ static_assert(tested::uses_allocator_v<tested::deque<int>, tested::allocator<int
 static_assert(tested::is_same_v<tested::pmr::deque<int>, tested::deque<int, tested::pmr::polymorphic_allocator<int>>>);
 
 bool ftl_test() {
+  {
+    deque_allocation_state::allocations = 0;
+    deque_allocation_state::deallocations = 0;
+    throwing_deque_value::defaults_before_throw = 1;
+    try {
+      tested::deque<throwing_deque_value,
+                    tracked_deque_allocator<throwing_deque_value>> guarded(3);
+      return false;
+    } catch (...) {}
+    throwing_deque_value::defaults_before_throw = -1;
+    if (throwing_deque_value::alive != 0 ||
+        deque_allocation_state::allocations != deque_allocation_state::deallocations)
+      return false;
+  }
+
+  {
+    tested::deque<throwing_deque_value> guarded;
+    guarded.emplace_back(1);
+    guarded.emplace_back(2);
+    guarded.emplace_back(3);
+    throwing_deque_value::moves_before_throw = 1;
+    try {
+      guarded.emplace(guarded.begin() + 1, throwing_deque_value(9));
+      return false;
+    } catch (...) {}
+    throwing_deque_value::moves_before_throw = -1;
+    if (guarded.size() != 3 || guarded[0].value != 1 ||
+        guarded[1].value != 2 || guarded[2].value != 3)
+      return false;
+  }
+
   tested::deque<int> values{2, 3};
   values.push_front(1);
   int& stable = values[1];

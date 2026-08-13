@@ -25,6 +25,23 @@ struct copyable_callable {
   int operator()(int input) const { return value + input; }
 };
 
+struct lvalue_state_callable {
+  constexpr int operator()() & { return 1; }
+  constexpr int operator()() && { return 2; }
+};
+
+struct not_rvalue_constructible_callable {
+  not_rvalue_constructible_callable() = default;
+  not_rvalue_constructible_callable(const not_rvalue_constructible_callable&) =
+      default;
+  not_rvalue_constructible_callable(not_rvalue_constructible_callable&&) =
+      delete;
+  int operator()() const { return 1; }
+};
+
+template<class T>
+concept hash_enabled = requires(T value) { tested::hash<T>{}(value); };
+
 template <class T>
 concept can_ref_temporary = requires { tested::ref(T{}); };
 
@@ -67,6 +84,9 @@ static_assert(tested::bind_front(tested::plus<>{}, 2)(3) == 5);
 static_assert(tested::bind_back(tested::minus<>{}, 2)(7) == 5);
 static_assert(tested::bind(tested::minus<>{}, tested::placeholders::_2,
                            tested::placeholders::_1)(2, 7) == 5);
+static_assert(tested::bind<long>([](int value) { return value; }, 3)() == 3L);
+static_assert((tested::bind<void>([](int) { return 4; }, 3)(), true));
+static_assert(tested::move(tested::bind(lvalue_state_callable{}))() == 1);
 static_assert(tested::mem_fn(&object::add)(object{3}, 2) == 5);
 static_assert(tested::ranges::equal_to{}(2, 2));
 static_assert(tested::ranges::less{}(2, 3));
@@ -75,6 +95,13 @@ static_assert(tested::is_constructible_v<
               decltype([](int value) noexcept { return value; })>);
 static_assert(tested::hash<unsigned>{}(42) ==
               ftl_rapidhash::rapidhash_t<unsigned>{}(42));
+static_assert(!hash_enabled<const int>);
+static_assert(!tested::is_constructible_v<tested::function<int()>,
+              not_rvalue_constructible_callable>);
+#if defined(__cpp_static_call_operator) && __cpp_static_call_operator >= 202207L
+using static_lambda_function = decltype(tested::function([]() static { return 3; }));
+static_assert(tested::is_same_v<static_lambda_function, tested::function<int()>>);
+#endif
 
 static_assert(tested::is_same_v<decltype(tested::less<int>{}(1, 2)), bool>);
 
@@ -120,6 +147,17 @@ bool pointer_total_order_works() {
 }
 
 bool ftl_test() {
+  alignas(long double) unsigned char first_bytes[sizeof(long double)];
+  alignas(long double) unsigned char second_bytes[sizeof(long double)];
+  for (auto& byte : first_bytes) byte = 0x11;
+  for (auto& byte : second_bytes) byte = 0xee;
+  auto* first_long_double = reinterpret_cast<long double*>(first_bytes);
+  auto* second_long_double = reinterpret_cast<long double*>(second_bytes);
+  *first_long_double = 1.25L;
+  *second_long_double = 1.25L;
+  if (tested::hash<long double>{}(*first_long_double) !=
+      tested::hash<long double>{}(*second_long_double))
+    return false;
   tested::function<int(int)> copyable = copyable_callable{3};
   tested::function deduced = [](int input) { return input + 1; };
   if (deduced(1) != 2)

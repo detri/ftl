@@ -24,5 +24,12 @@ template<class T>
 concept has_bit_width = requires(T value) { tested::bit_width(value); };
 static_assert(has_bit_width<unsigned>);
 static_assert(!has_bit_width<wchar_t>);
+#if defined(__SIZEOF_INT128__)
+constexpr unsigned __int128 wide_bit = static_cast<unsigned __int128>(1) << 100;
+static_assert(tested::bit_width(wide_bit) == 101);
+static_assert(tested::popcount(wide_bit | 3) == 3);
+static_assert(tested::byteswap(wide_bit) ==
+              (static_cast<unsigned __int128>(1) << 28));
+#endif
 
 bool ftl_test() { return true; }

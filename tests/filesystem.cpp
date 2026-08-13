@@ -79,7 +79,11 @@ bool ftl_test() {
       tested::hash<fs::path>{}(quoted_path) != fs::hash_value(quoted_path))
     return false;
 
-  fs::path root = fs::path("ftl_filesystem_test");
+#ifdef FTL_REPLACE_STL
+  fs::path root = fs::path("ftl_filesystem_test_replace");
+#else
+  fs::path root = fs::path("ftl_filesystem_test_normal");
+#endif
   tested::error_code ec;
   fs::remove_all(root, ec);
   if (!fs::create_directories(root / "a/b", ec) || ec)

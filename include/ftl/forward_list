@@ -253,21 +253,39 @@ public:
     return emplace_after(p, move(value));
   }
   iterator insert_after(const_iterator p, size_type n, const T &value) {
+    forward_list added(allocator_);
+    auto tail = added.before_begin();
     while (n--)
-      p = emplace_after(p, value);
-    return iterator(p.current_);
+      tail = added.emplace_after(tail, value);
+    if (added.empty())
+      return iterator(p.current_);
+    node_base *last = tail.current_;
+    transfer_after(p.current_, &added.head_, nullptr);
+    return iterator(last);
   }
   template <input_iterator I>
   iterator insert_after(const_iterator p, I first, I last) {
+    forward_list added(allocator_);
+    auto tail = added.before_begin();
     for (; first != last; ++first)
-      p = emplace_after(p, *first);
-    return iterator(p.current_);
+      tail = added.emplace_after(tail, *first);
+    if (added.empty())
+      return iterator(p.current_);
+    node_base *result = tail.current_;
+    transfer_after(p.current_, &added.head_, nullptr);
+    return iterator(result);
   }
   template <detail::forward_list_compatible_range<T> R>
   iterator insert_range_after(const_iterator p, R &&range) {
+    forward_list added(allocator_);
+    auto tail = added.before_begin();
     for (auto &&value : range)
-      p = emplace_after(p, static_cast<decltype(value) &&>(value));
-    return iterator(p.current_);
+      tail = added.emplace_after(tail, static_cast<decltype(value) &&>(value));
+    if (added.empty())
+      return iterator(p.current_);
+    node_base *result = tail.current_;
+    transfer_after(p.current_, &added.head_, nullptr);
+    return iterator(result);
   }
   iterator insert_after(const_iterator p, initializer_list<T> values) {
     return insert_after(p, values.begin(), values.end());
@@ -378,7 +396,7 @@ public:
   }
   void sort() { sort(less<>{}); }
   template <class Compare> void sort(Compare comp) {
-    head_.next = merge_sort(head_.next, comp);
+    merge_sort(head_.next, comp);
   }
   void reverse() noexcept {
     node_base *result{};
@@ -414,8 +432,12 @@ private:
     node_traits::deallocate(a, typename node_traits::pointer(value), 1);
   }
   void insert_default_after(const_iterator p, size_type n) {
+    forward_list added(allocator_);
+    auto tail = added.before_begin();
     while (n--)
-      p = emplace_after(p);
+      tail = added.emplace_after(tail);
+    if (!added.empty())
+      transfer_after(p.current_, &added.head_, nullptr);
   }
   void resize_impl(size_type n, const T *value) {
     auto p = before_begin();
@@ -444,9 +466,9 @@ private:
     position->next = first;
   }
   template <class Compare>
-  static node_base *merge_sort(node_base *first, Compare &comp) {
+  static void merge_sort(node_base *&first, Compare &comp) {
     if (!first || !first->next)
-      return first;
+      return;
     node_base *slow = first;
     node_base *fast = first->next;
     while (fast && fast->next) {
@@ -455,13 +477,26 @@ private:
     }
     node_base *right = slow->next;
     slow->next = nullptr;
-    return merge_nodes(merge_sort(first, comp), merge_sort(right, comp), comp);
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      merge_sort(first, comp);
+      merge_sort(right, comp);
+      merge_nodes(first, right, comp);
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      concatenate(first, right);
+      throw;
+    }
+#endif
   }
   template <class Compare>
-  static node_base *merge_nodes(node_base *left, node_base *right,
-                                Compare &comp) {
+  static void merge_nodes(node_base *&left, node_base *&right, Compare &comp) {
     node_base head;
     node_base *tail = &head;
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
     while (left && right) {
       node_base *&chosen = comp(static_cast<node *>(right)->value,
                                 static_cast<node *>(left)->value)
@@ -469,8 +504,28 @@ private:
                                : left;
       tail = tail->next = exchange(chosen, chosen->next);
     }
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      tail->next = left;
+      concatenate(head.next, right);
+      left = head.next;
+      right = nullptr;
+      throw;
+    }
+#endif
     tail->next = left ? left : right;
-    return head.next;
+    left = head.next;
+    right = nullptr;
+  }
+  static void concatenate(node_base *&left, node_base *&right) noexcept {
+    if (!left) {
+      left = exchange(right, nullptr);
+      return;
+    }
+    node_base *tail = left;
+    while (tail->next)
+      tail = tail->next;
+    tail->next = exchange(right, nullptr);
   }
 
   FTL_NO_UNIQUE_ADDRESS Allocator allocator_;

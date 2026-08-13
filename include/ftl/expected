@@ -31,6 +31,9 @@ struct unexpect_t { explicit unexpect_t() = default; };
 inline constexpr unexpect_t unexpect{};
 
 namespace detail {
+struct expected_invoke_value_tag {};
+struct expected_invoke_error_tag {};
+
 template<class T>
 constexpr void expected_swap(T& left, T& right)
     noexcept(noexcept(swap(left, right))) {
@@ -163,6 +166,23 @@ public:
     using error_type = E;
     using unexpected_type = unexpected<E>;
     template<class U> using rebind = expected<U, error_type>;
+
+private:
+    template<class, class> friend class expected;
+
+    template<class F, class... Args>
+    constexpr explicit expected(detail::expected_invoke_value_tag, F&& f,
+                                Args&&... args)
+        : value_data(invoke(forward<F>(f), forward<Args>(args)...)),
+          has{true} {}
+
+    template<class F, class... Args>
+    constexpr explicit expected(detail::expected_invoke_error_tag, F&& f,
+                                Args&&... args)
+        : error_data(invoke(forward<F>(f), forward<Args>(args)...)),
+          has{false} {}
+
+public:
 
     constexpr expected() requires is_default_constructible_v<T>
         : value_data(), has{true} {}
@@ -376,7 +396,7 @@ public:
         return has ? static_cast<E>(forward<G>(other)) : move(error_data);
     }
 
-    template<class... Args> constexpr T& emplace(Args&&... args)
+    template<class... Args> constexpr T& emplace(Args&&... args) noexcept
         requires is_nothrow_constructible_v<T, Args...> {
         if (has) destroy_at(detail::expected_address(value_data));
         else destroy_at(detail::expected_address(error_data));
@@ -397,11 +417,13 @@ public:
     constexpr void swap(expected& other)
         noexcept(is_nothrow_move_constructible_v<T> && is_nothrow_swappable_v<T> &&
                  is_nothrow_move_constructible_v<E> && is_nothrow_swappable_v<E>)
-        requires (is_swappable_v<T> && is_swappable_v<E> &&
+        requires ((is_nothrow_move_constructible_v<T> ||
+                   is_nothrow_move_constructible_v<E>) &&
+                  is_swappable_v<T> && is_swappable_v<E> &&
                   is_move_constructible_v<T> && is_move_constructible_v<E>) {
         if (has && other.has) detail::expected_swap(value_data, other.value_data);
         else if (!has && !other.has) detail::expected_swap(error_data, other.error_data);
-        else if (has) { expected temporary(move(other)); other.replace_value(move(value_data)); replace_error(move(temporary.error_data)); }
+        else if (has) swap_value_error(other);
         else other.swap(*this);
     }
 
@@ -409,6 +431,8 @@ public:
     template<class F> constexpr auto and_then(F&& f) QUAL { \
         using R = remove_cvref_t<invoke_result_t<F, ARG>>; \
         static_assert(detail::is_expected_v<R>); \
+        static_assert(is_same_v<typename R::error_type, E>); \
+        static_assert(is_constructible_v<R, unexpect_t, ERROR>); \
         return has ? invoke(forward<F>(f), static_cast<ARG>(value_data)) : R(unexpect, static_cast<ERROR>(error_data)); \
     } \
     template<class F> constexpr auto transform(F&& f) QUAL { \
@@ -418,7 +442,7 @@ public:
         if constexpr (is_void_v<U>) { \
             invoke(forward<F>(f), static_cast<ARG>(value_data)); \
             return R(); \
-        } else return R(in_place, invoke(forward<F>(f), static_cast<ARG>(value_data))); \
+        } else return R(detail::expected_invoke_value_tag{}, forward<F>(f), static_cast<ARG>(value_data)); \
     }
     FTL_EXPECTED_MONADIC(&, T&, E&)
     FTL_EXPECTED_MONADIC(const&, const T&, const E&)
@@ -426,15 +450,15 @@ public:
     FTL_EXPECTED_MONADIC(const&&, const T&&, const E&&)
 #undef FTL_EXPECTED_MONADIC
 
-    template<class F> constexpr auto or_else(F&& f) & { using R = remove_cvref_t<invoke_result_t<F, E&>>; return has ? R(in_place, value_data) : invoke(forward<F>(f), error_data); }
-    template<class F> constexpr auto or_else(F&& f) const& { using R = remove_cvref_t<invoke_result_t<F, const E&>>; return has ? R(in_place, value_data) : invoke(forward<F>(f), error_data); }
-    template<class F> constexpr auto or_else(F&& f) && { using R = remove_cvref_t<invoke_result_t<F, E&&>>; return has ? R(in_place, move(value_data)) : invoke(forward<F>(f), move(error_data)); }
-    template<class F> constexpr auto or_else(F&& f) const&& { using R = remove_cvref_t<invoke_result_t<F, const E&&>>; return has ? R(in_place, move(value_data)) : invoke(forward<F>(f), move(error_data)); }
+    template<class F> constexpr auto or_else(F&& f) & { using R = remove_cvref_t<invoke_result_t<F, E&>>; static_assert(detail::is_expected_v<R> && is_same_v<typename R::value_type, T> && is_constructible_v<R, in_place_t, T&>); return has ? R(in_place, value_data) : invoke(forward<F>(f), error_data); }
+    template<class F> constexpr auto or_else(F&& f) const& { using R = remove_cvref_t<invoke_result_t<F, const E&>>; static_assert(detail::is_expected_v<R> && is_same_v<typename R::value_type, T> && is_constructible_v<R, in_place_t, const T&>); return has ? R(in_place, value_data) : invoke(forward<F>(f), error_data); }
+    template<class F> constexpr auto or_else(F&& f) && { using R = remove_cvref_t<invoke_result_t<F, E&&>>; static_assert(detail::is_expected_v<R> && is_same_v<typename R::value_type, T> && is_constructible_v<R, in_place_t, T&&>); return has ? R(in_place, move(value_data)) : invoke(forward<F>(f), move(error_data)); }
+    template<class F> constexpr auto or_else(F&& f) const&& { using R = remove_cvref_t<invoke_result_t<F, const E&&>>; static_assert(detail::is_expected_v<R> && is_same_v<typename R::value_type, T> && is_constructible_v<R, in_place_t, const T&&>); return has ? R(in_place, move(value_data)) : invoke(forward<F>(f), move(error_data)); }
 
-    template<class F> constexpr auto transform_error(F&& f) & { using G = remove_cv_t<invoke_result_t<F, E&>>; return has ? expected<T, G>(in_place, value_data) : expected<T, G>(unexpect, invoke(forward<F>(f), error_data)); }
-    template<class F> constexpr auto transform_error(F&& f) const& { using G = remove_cv_t<invoke_result_t<F, const E&>>; return has ? expected<T, G>(in_place, value_data) : expected<T, G>(unexpect, invoke(forward<F>(f), error_data)); }
-    template<class F> constexpr auto transform_error(F&& f) && { using G = remove_cv_t<invoke_result_t<F, E&&>>; return has ? expected<T, G>(in_place, move(value_data)) : expected<T, G>(unexpect, invoke(forward<F>(f), move(error_data))); }
-    template<class F> constexpr auto transform_error(F&& f) const&& { using G = remove_cv_t<invoke_result_t<F, const E&&>>; return has ? expected<T, G>(in_place, move(value_data)) : expected<T, G>(unexpect, invoke(forward<F>(f), move(error_data))); }
+    template<class F> constexpr auto transform_error(F&& f) & { using G = remove_cv_t<invoke_result_t<F, E&>>; return has ? expected<T, G>(in_place, value_data) : expected<T, G>(detail::expected_invoke_error_tag{}, forward<F>(f), error_data); }
+    template<class F> constexpr auto transform_error(F&& f) const& { using G = remove_cv_t<invoke_result_t<F, const E&>>; return has ? expected<T, G>(in_place, value_data) : expected<T, G>(detail::expected_invoke_error_tag{}, forward<F>(f), error_data); }
+    template<class F> constexpr auto transform_error(F&& f) && { using G = remove_cv_t<invoke_result_t<F, E&&>>; return has ? expected<T, G>(in_place, move(value_data)) : expected<T, G>(detail::expected_invoke_error_tag{}, forward<F>(f), move(error_data)); }
+    template<class F> constexpr auto transform_error(F&& f) const&& { using G = remove_cv_t<invoke_result_t<F, const E&&>>; return has ? expected<T, G>(in_place, move(value_data)) : expected<T, G>(detail::expected_invoke_error_tag{}, forward<F>(f), move(error_data)); }
 
     template<class U, class G>
     friend constexpr bool operator==(const expected& left,
@@ -453,6 +477,48 @@ public:
     }
 
 private:
+    constexpr void swap_value_error(expected& error_holder) {
+        if constexpr (is_nothrow_move_constructible_v<E>) {
+            E temporary(move(error_holder.error_data));
+            destroy_at(detail::expected_address(error_holder.error_data));
+#if FTL_HAS_EXCEPTIONS
+            try {
+#endif
+                construct_at(detail::expected_address(error_holder.value_data),
+                             move(value_data));
+#if FTL_HAS_EXCEPTIONS
+            } catch (...) {
+                construct_at(detail::expected_address(error_holder.error_data),
+                             move(temporary));
+                throw;
+            }
+#endif
+            destroy_at(detail::expected_address(value_data));
+            construct_at(detail::expected_address(error_data), move(temporary));
+        } else {
+            static_assert(is_nothrow_move_constructible_v<T>);
+            T temporary(move(value_data));
+            destroy_at(detail::expected_address(value_data));
+#if FTL_HAS_EXCEPTIONS
+            try {
+#endif
+                construct_at(detail::expected_address(error_data),
+                             move(error_holder.error_data));
+#if FTL_HAS_EXCEPTIONS
+            } catch (...) {
+                construct_at(detail::expected_address(value_data),
+                             move(temporary));
+                throw;
+            }
+#endif
+            destroy_at(detail::expected_address(error_holder.error_data));
+            construct_at(detail::expected_address(error_holder.value_data),
+                         move(temporary));
+        }
+        has = false;
+        error_holder.has = true;
+    }
+
     constexpr void destroy() noexcept {
         if (has) destroy_at(detail::expected_address(value_data));
         else destroy_at(detail::expected_address(error_data));
@@ -523,6 +589,17 @@ public:
     using error_type = E;
     using unexpected_type = unexpected<E>;
     template<class U> using rebind = expected<U, error_type>;
+
+private:
+    template<class, class> friend class expected;
+
+    template<class F, class... Args>
+    constexpr explicit expected(detail::expected_invoke_error_tag, F&& f,
+                                Args&&... args)
+        : error_data(invoke(forward<F>(f), forward<Args>(args)...)),
+          has{false} {}
+
+public:
 
     constexpr expected() noexcept : empty{}, has{true} {}
     constexpr expected(const expected&)
@@ -651,10 +728,14 @@ public:
     template<class F> constexpr auto and_then(F&& f) QUAL { \
         using R = remove_cvref_t<invoke_result_t<F>>; \
         static_assert(detail::is_expected_v<R>); \
+        static_assert(is_same_v<typename R::error_type, E>); \
+        static_assert(is_constructible_v<R, unexpect_t, ERROR>); \
         return has ? invoke(forward<F>(f)) : R(unexpect, static_cast<ERROR>(error_data)); \
     } \
     template<class F> constexpr auto or_else(F&& f) QUAL { \
         using R = remove_cvref_t<invoke_result_t<F, ERROR>>; \
+        static_assert(detail::is_expected_v<R>); \
+        static_assert(is_void_v<typename R::value_type>); \
         return has ? R() : invoke(forward<F>(f), static_cast<ERROR>(error_data)); \
     } \
     template<class F> constexpr auto transform(F&& f) QUAL { \
@@ -662,11 +743,11 @@ public:
         using R = expected<U, E>; \
         if (!has) return R(unexpect, static_cast<ERROR>(error_data)); \
         if constexpr (is_void_v<U>) { invoke(forward<F>(f)); return R(); } \
-        else return R(in_place, invoke(forward<F>(f))); \
+        else return R(detail::expected_invoke_value_tag{}, forward<F>(f)); \
     } \
     template<class F> constexpr auto transform_error(F&& f) QUAL { \
         using G = remove_cv_t<invoke_result_t<F, ERROR>>; \
-        return has ? expected<void, G>() : expected<void, G>(unexpect, invoke(forward<F>(f), static_cast<ERROR>(error_data))); \
+        return has ? expected<void, G>() : expected<void, G>(detail::expected_invoke_error_tag{}, forward<F>(f), static_cast<ERROR>(error_data)); \
     }
     FTL_EXPECTED_VOID_MONADIC(&, E&)
     FTL_EXPECTED_VOID_MONADIC(const&, const E&)

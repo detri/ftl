@@ -124,8 +124,10 @@ public:
   list() : list(Allocator()) {}
   explicit list(const Allocator &a) : allocator_(a) { reset(); }
   explicit list(size_type n, const Allocator &a = Allocator()) : list(a) {
+    list added(allocator_);
     while (n--)
-      emplace_back();
+      added.emplace_back();
+    splice(end(), added);
   }
   list(size_type n, const T &value, const Allocator &a = Allocator())
       : list(a) {
@@ -273,30 +275,35 @@ public:
     return emplace(p, move(value));
   }
   iterator insert(const_iterator p, size_type n, const T &value) {
-    if (!n)
+    list added(allocator_);
+    while (n--)
+      added.emplace_back(value);
+    if (added.empty())
       return iterator(p.current_);
-    iterator result = emplace(p, value);
-    while (--n)
-      emplace(p, value);
+    iterator result = added.begin();
+    splice(p, added);
     return result;
   }
   template <input_iterator I>
   iterator insert(const_iterator p, I first, I last) {
-    if (first == last)
+    list added(allocator_);
+    for (; first != last; ++first)
+      added.emplace_back(*first);
+    if (added.empty())
       return iterator(p.current_);
-    iterator result = emplace(p, *first);
-    while (++first != last)
-      emplace(p, *first);
+    iterator result = added.begin();
+    splice(p, added);
     return result;
   }
   template <detail::list_compatible_range<T> R>
   iterator insert_range(const_iterator p, R &&range) {
-    auto first = ranges::begin(range), last = ranges::end(range);
-    if (first == last)
+    list added(allocator_);
+    for (auto &&value : range)
+      added.emplace_back(static_cast<decltype(value) &&>(value));
+    if (added.empty())
       return iterator(p.current_);
-    iterator result = emplace(p, *first);
-    while (++first != last)
-      emplace(p, *first);
+    iterator result = added.begin();
+    splice(p, added);
     return result;
   }
   iterator insert(const_iterator p, initializer_list<T> values) {
@@ -420,9 +427,18 @@ public:
     auto middle = begin();
     advance(middle, static_cast<difference_type>(size_ / 2));
     right.splice(right.begin(), *this, middle, end());
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
     sort(comp);
     right.sort(comp);
     merge(right, comp);
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      splice(end(), right);
+      throw;
+    }
+#endif
   }
   void reverse() noexcept {
     node_base *p = &head_;

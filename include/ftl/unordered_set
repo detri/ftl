@@ -7,6 +7,7 @@
 #include <iterator>
 #include <memory>
 #include <memory_resource>
+#include <optional>
 #include <ranges>
 #include <type_traits>
 #include <utility>
@@ -20,6 +21,7 @@
 #include <ftl/iterator>
 #include <ftl/memory>
 #include <ftl/memory_resource>
+#include <ftl/optional>
 #include <ftl/ranges>
 #include <ftl/type_traits>
 #include <ftl/utility>
@@ -34,6 +36,10 @@ extern "C" __declspec(selectany) int _fltused = 1;
 #endif
 #endif
 FTL_BEGIN_NAMESPACE
+template <class Key, class Hash, class Predicate, class Allocator>
+class unordered_set;
+template <class Key, class Hash, class Predicate, class Allocator>
+class unordered_multiset;
 template <class Key, class Hash = hash<Key>, class Predicate = equal_to<Key>,
           class Allocator = allocator<Key>>
 class unordered_set : public detail::unordered_set_base<Key, Hash, Predicate,
@@ -43,7 +49,20 @@ class unordered_set : public detail::unordered_set_base<Key, Hash, Predicate,
 
 public:
   using base::base;
+  using base::merge;
   using base::operator=;
+  unordered_set &operator=(initializer_list<Key> values) { base::operator=(values); return *this; }
+  template <class H, class P>
+  void merge(unordered_set<Key, H, P, Allocator> &source) {
+    using source_base = detail::unordered_set_base<Key, H, P, Allocator, false>;
+    this->template merge_from<H, P, false>(static_cast<source_base &>(source));
+  }
+  template <class H, class P>
+  void merge(unordered_multiset<Key, H, P, Allocator> &source) {
+    using source_base = detail::unordered_set_base<Key, H, P, Allocator, true>;
+    this->template merge_from<H, P, true>(static_cast<source_base &>(source));
+  }
+  template <class Source> void merge(Source &&source) requires(!is_lvalue_reference_v<Source>) { merge(source); }
 };
 template <class Key, class Hash = hash<Key>, class Predicate = equal_to<Key>,
           class Allocator = allocator<Key>>
@@ -54,15 +73,84 @@ class unordered_multiset
 
 public:
   using base::base;
+  using base::merge;
   using base::operator=;
+  unordered_multiset &operator=(initializer_list<Key> values) { base::operator=(values); return *this; }
+  template <class H, class P>
+  void merge(unordered_set<Key, H, P, Allocator> &source) {
+    using source_base = detail::unordered_set_base<Key, H, P, Allocator, false>;
+    this->template merge_from<H, P, false>(static_cast<source_base &>(source));
+  }
+  template <class H, class P>
+  void merge(unordered_multiset<Key, H, P, Allocator> &source) {
+    using source_base = detail::unordered_set_base<Key, H, P, Allocator, true>;
+    this->template merge_from<H, P, true>(static_cast<source_base &>(source));
+  }
+  template <class Source> void merge(Source &&source) requires(!is_lvalue_reference_v<Source>) { merge(source); }
 };
+
+#define FTL_UNORDERED_SET_GUIDES(Container)                                      \
+template <class I, class H = hash<typename iterator_traits<I>::value_type>,      \
+          class P = equal_to<typename iterator_traits<I>::value_type>,           \
+          class A = allocator<typename iterator_traits<I>::value_type>>          \
+  requires(!detail::unordered_allocator_like<H>)                                \
+Container(I, I, size_t = 0, H = H(), P = P(), A = A())                          \
+  -> Container<typename iterator_traits<I>::value_type, H, P, A>;                \
+template <ranges::input_range R, class H = hash<ranges::range_value_t<R>>,       \
+          class P = equal_to<ranges::range_value_t<R>>,                          \
+          class A = allocator<ranges::range_value_t<R>>>                         \
+  requires(!detail::unordered_allocator_like<H>)                                \
+Container(from_range_t, R &&, size_t = 0, H = H(), P = P(), A = A())            \
+  -> Container<ranges::range_value_t<R>, H, P, A>;                               \
+template <class T, class H = hash<T>, class P = equal_to<T>,                     \
+          class A = allocator<T>>                                                \
+  requires(!detail::unordered_allocator_like<H>)                                \
+Container(initializer_list<T>, size_t = 0, H = H(), P = P(), A = A())           \
+  -> Container<T, H, P, A>;                                                      \
+template <class I, detail::unordered_allocator_like A>                           \
+Container(I, I, size_t, A)                                                       \
+  -> Container<typename iterator_traits<I>::value_type,                          \
+               hash<typename iterator_traits<I>::value_type>,                    \
+               equal_to<typename iterator_traits<I>::value_type>, A>;            \
+template <class I, class H, detail::unordered_allocator_like A>                  \
+Container(I, I, size_t, H, A)                                                    \
+  -> Container<typename iterator_traits<I>::value_type, H,                       \
+               equal_to<typename iterator_traits<I>::value_type>, A>;            \
+template <ranges::input_range R, detail::unordered_allocator_like A>             \
+Container(from_range_t, R &&, size_t, A)                                         \
+  -> Container<ranges::range_value_t<R>, hash<ranges::range_value_t<R>>,         \
+               equal_to<ranges::range_value_t<R>>, A>;                           \
+template <ranges::input_range R, detail::unordered_allocator_like A>             \
+Container(from_range_t, R &&, A)                                                 \
+  -> Container<ranges::range_value_t<R>, hash<ranges::range_value_t<R>>,         \
+               equal_to<ranges::range_value_t<R>>, A>;                           \
+template <ranges::input_range R, class H, detail::unordered_allocator_like A>    \
+Container(from_range_t, R &&, size_t, H, A)                                      \
+  -> Container<ranges::range_value_t<R>, H,                                      \
+               equal_to<ranges::range_value_t<R>>, A>;                           \
+template <class T, detail::unordered_allocator_like A>                           \
+Container(initializer_list<T>, size_t, A)                                        \
+  -> Container<T, hash<T>, equal_to<T>, A>;                                      \
+template <class T, class H, detail::unordered_allocator_like A>                  \
+Container(initializer_list<T>, size_t, H, A)                                     \
+  -> Container<T, H, equal_to<T>, A>;
+
+FTL_UNORDERED_SET_GUIDES(unordered_set)
+FTL_UNORDERED_SET_GUIDES(unordered_multiset)
+#undef FTL_UNORDERED_SET_GUIDES
+
 template <class Container>
 bool unordered_set_equal(const Container &left, const Container &right) {
   if (left.size() != right.size())
     return false;
-  for (const auto &value : left)
-    if (left.count(value) != right.count(value))
+  for (auto first = left.begin(); first != left.end();) {
+    auto left_group = left.equal_range(*first);
+    auto right_group = right.equal_range(*first);
+    if (!is_permutation(left_group.first, left_group.second,
+                        right_group.first, right_group.second))
       return false;
+    first = left_group.second;
+  }
   return true;
 }
 template <class Key, class Hash, class Predicate, class Allocator>

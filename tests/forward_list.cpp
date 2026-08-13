@@ -28,6 +28,46 @@ struct forward_counted {
   bool operator==(const forward_counted &) const = default;
   bool operator<(const forward_counted &x) const { return value < x.value; }
 };
+
+struct forward_allocation_state {
+  inline static int allocations;
+  inline static int deallocations;
+};
+template<class T> struct tracked_forward_allocator {
+  using value_type = T;
+  tracked_forward_allocator() = default;
+  template<class U> tracked_forward_allocator(const tracked_forward_allocator<U>&) {}
+  T* allocate(tested::size_t count) {
+    ++forward_allocation_state::allocations;
+    return static_cast<T*>(::operator new(count * sizeof(T)));
+  }
+  void deallocate(T* pointer, tested::size_t) {
+    ++forward_allocation_state::deallocations;
+    ::operator delete(pointer);
+  }
+  template<class U> bool operator==(const tracked_forward_allocator<U>&) const { return true; }
+};
+
+struct throwing_forward_value {
+  inline static int alive;
+  inline static int constructions_before_throw = -1;
+  int value{};
+  throwing_forward_value() {
+    if (constructions_before_throw == 0) throw 1;
+    if (constructions_before_throw > 0) --constructions_before_throw;
+    ++alive;
+  }
+  explicit throwing_forward_value(int input) : value(input) { ++alive; }
+  throwing_forward_value(const throwing_forward_value& other) : value(other.value) {
+    if (constructions_before_throw == 0) throw 1;
+    if (constructions_before_throw > 0) --constructions_before_throw;
+    ++alive;
+  }
+  throwing_forward_value(throwing_forward_value&& other) noexcept(false) : value(other.value) { ++alive; }
+  throwing_forward_value& operator=(const throwing_forward_value&) = default;
+  ~throwing_forward_value() { --alive; }
+  bool operator==(const throwing_forward_value&) const = default;
+};
 struct incomplete_forward;
 struct incomplete_forward_owner {
   tested::forward_list<incomplete_forward> values;
@@ -48,6 +88,51 @@ static_assert(
         tested::forward_list<int, tested::pmr::polymorphic_allocator<int>>>);
 
 bool ftl_test() {
+  {
+    forward_allocation_state::allocations = 0;
+    forward_allocation_state::deallocations = 0;
+    throwing_forward_value::constructions_before_throw = 1;
+    try {
+      tested::forward_list<throwing_forward_value,
+          tracked_forward_allocator<throwing_forward_value>> guarded(3);
+      return false;
+    } catch (...) {}
+    throwing_forward_value::constructions_before_throw = -1;
+    if (throwing_forward_value::alive != 0 ||
+        forward_allocation_state::allocations != forward_allocation_state::deallocations)
+      return false;
+  }
+  {
+    tested::forward_list<throwing_forward_value> guarded;
+    guarded.emplace_front(2);
+    guarded.emplace_front(1);
+    throwing_forward_value value(9);
+    throwing_forward_value::constructions_before_throw = 1;
+    try {
+      guarded.insert_after(guarded.before_begin(), 3, value);
+      return false;
+    } catch (...) {}
+    throwing_forward_value::constructions_before_throw = -1;
+    auto current = guarded.begin();
+    if (current++->value != 1 || current++->value != 2 || current != guarded.end())
+      return false;
+  }
+  {
+    tested::forward_list<throwing_forward_value> guarded;
+    for (int value : {1, 4, 2, 3}) guarded.emplace_front(value);
+    int comparisons = 2;
+    try {
+      guarded.sort([&](const auto& left, const auto& right) {
+        if (comparisons-- == 0) throw 1;
+        return left.value < right.value;
+      });
+      return false;
+    } catch (...) {}
+    int count = 0;
+    for (const auto& ignored : guarded) { (void)ignored; ++count; }
+    if (count != 4) return false;
+  }
+
   tested::forward_list<int> values{3, 1, 1, 2};
   auto stable = ++values.begin();
   int *address = &*stable;

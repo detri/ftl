@@ -70,7 +70,13 @@ inline constexpr bool cstddef_integral =
     cstddef_same_as<typename cstddef_remove_cv<T>::type, long> ||
     cstddef_same_as<typename cstddef_remove_cv<T>::type, unsigned long> ||
     cstddef_same_as<typename cstddef_remove_cv<T>::type, long long> ||
-    cstddef_same_as<typename cstddef_remove_cv<T>::type, unsigned long long>;
+    cstddef_same_as<typename cstddef_remove_cv<T>::type, unsigned long long>
+#if defined(__SIZEOF_INT128__)
+    || cstddef_same_as<typename cstddef_remove_cv<T>::type, __int128>
+    || cstddef_same_as<typename cstddef_remove_cv<T>::type,
+                       unsigned __int128>
+#endif
+    ;
 } // namespace detail
 
 template<class Integer>

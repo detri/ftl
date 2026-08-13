@@ -2093,6 +2093,29 @@ inline uintmax_t signed_magnitude(intmax_t value) {
   return uintmax_t{} - unsigned_value;
 }
 
+inline unsigned divide_integer(uintmax_t& value, unsigned divisor) {
+  if constexpr (sizeof(uintmax_t) <= sizeof(unsigned long long)) {
+    const unsigned remainder = static_cast<unsigned>(value % divisor);
+    value /= divisor;
+    return remainder;
+  } else {
+    uintmax_t quotient = 0;
+    unsigned remainder = 0;
+
+    for (unsigned shift = sizeof(uintmax_t) * 8; shift != 0; shift -= 32) {
+      const unsigned limb_shift = shift - 32;
+      const auto limb = static_cast<unsigned>(value >> limb_shift);
+      const unsigned long long combined =
+          (static_cast<unsigned long long>(remainder) << 32) | limb;
+      quotient |= static_cast<uintmax_t>(combined / divisor) << limb_shift;
+      remainder = static_cast<unsigned>(combined % divisor);
+    }
+
+    value = quotient;
+    return remainder;
+  }
+}
+
 inline void append_integer(format_writer &writer, uintmax_t value,
                            bool negative, unsigned base, bool uppercase,
                            bool signed_conversion, format_options options) {
@@ -2103,7 +2126,7 @@ inline void append_integer(format_writer &writer, uintmax_t value,
 
   if (value != 0 || !precision_specified || options.precision != 0) {
     do {
-      const unsigned digit = static_cast<unsigned>(value % base);
+      const unsigned digit = divide_integer(value, base);
 
       if (digit < 10) {
         digits[digit_count++] = static_cast<wchar_t>(L'0' + digit);
@@ -2112,7 +2135,6 @@ inline void append_integer(format_writer &writer, uintmax_t value,
             static_cast<wchar_t>((uppercase ? L'A' : L'a') + digit - 10);
       }
 
-      value /= base;
     } while (value != 0);
   }
 

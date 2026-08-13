@@ -11,8 +11,17 @@
 
 FTL_BEGIN_NAMESPACE
 
-template <class T, class U>
-concept same_as = is_same_v<T, U> && is_same_v<U, T>;
+namespace detail {
+
+template<class T, class U>
+concept same_as_impl = is_same_v<T, U>;
+
+} // namespace detail
+
+template<class T, class U>
+concept same_as =
+    detail::same_as_impl<T, U> &&
+    detail::same_as_impl<U, T>;
 
 template <class Derived, class Base>
 concept derived_from =

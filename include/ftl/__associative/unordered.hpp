@@ -9,6 +9,9 @@
 
 FTL_BEGIN_NAMESPACE
 namespace detail {
+
+template <class Allocator>
+concept unordered_allocator_like = requires { typename Allocator::value_type; };
 template <class Hash, class Equal>
 concept transparent_hash_equal = requires {
   typename Hash::is_transparent;
@@ -26,6 +29,8 @@ template <class Key, class T> struct unordered_map_key {
 template <class Key, class T, class Hash, class Equal, class Allocator,
           bool Multi>
 class unordered_map_base {
+  template <class, class, class, class, class, bool>
+  friend class unordered_map_base;
 protected:
   using table_type =
       hash_table<pair<const Key, T>, Key, unordered_map_key<Key, T>, Hash,
@@ -70,6 +75,17 @@ public:
       : table_(count, hash, equal, allocator) {
     insert(first, last);
   }
+  template <input_iterator I>
+  unordered_map_base(I first, I last, const type_identity_t<Allocator> &allocator)
+      : unordered_map_base(first, last, 0, Hash(), Equal(), allocator) {}
+  template <input_iterator I>
+  unordered_map_base(I first, I last, size_type count,
+                     const type_identity_t<Allocator> &allocator)
+      : unordered_map_base(first, last, count, Hash(), Equal(), allocator) {}
+  template <input_iterator I>
+  unordered_map_base(I first, I last, size_type count, const Hash &hash,
+                     const type_identity_t<Allocator> &allocator)
+      : unordered_map_base(first, last, count, hash, Equal(), allocator) {}
   template <ranges::input_range R>
   unordered_map_base(from_range_t, R &&range, size_type count = 0,
                      const Hash &hash = Hash(), const Equal &equal = Equal(),
@@ -77,11 +93,35 @@ public:
       : table_(count, hash, equal, allocator) {
     insert_range(static_cast<R &&>(range));
   }
+  template <ranges::input_range R>
+  unordered_map_base(from_range_t, R &&range,
+                     const type_identity_t<Allocator> &allocator)
+      : unordered_map_base(from_range, static_cast<R &&>(range), 0, Hash(),
+                           Equal(), allocator) {}
+  template <ranges::input_range R>
+  unordered_map_base(from_range_t, R &&range, size_type count,
+                     const type_identity_t<Allocator> &allocator)
+      : unordered_map_base(from_range, static_cast<R &&>(range), count, Hash(),
+                           Equal(), allocator) {}
+  template <ranges::input_range R>
+  unordered_map_base(from_range_t, R &&range, size_type count, const Hash &hash,
+                     const type_identity_t<Allocator> &allocator)
+      : unordered_map_base(from_range, static_cast<R &&>(range), count, hash,
+                           Equal(), allocator) {}
   unordered_map_base(initializer_list<value_type> values, size_type count = 0,
                      const Hash &hash = Hash(), const Equal &equal = Equal(),
                      const Allocator &allocator = Allocator())
       : unordered_map_base(values.begin(), values.end(), count, hash, equal,
                            allocator) {}
+  unordered_map_base(initializer_list<value_type> values,
+                     const type_identity_t<Allocator> &allocator)
+      : unordered_map_base(values.begin(), values.end(), 0, Hash(), Equal(), allocator) {}
+  unordered_map_base(initializer_list<value_type> values, size_type count,
+                     const type_identity_t<Allocator> &allocator)
+      : unordered_map_base(values.begin(), values.end(), count, Hash(), Equal(), allocator) {}
+  unordered_map_base(initializer_list<value_type> values, size_type count,
+                     const Hash &hash, const type_identity_t<Allocator> &allocator)
+      : unordered_map_base(values.begin(), values.end(), count, hash, Equal(), allocator) {}
   unordered_map_base(const unordered_map_base &) = default;
   unordered_map_base(unordered_map_base &&) = default;
   unordered_map_base(const unordered_map_base &other,
@@ -239,6 +279,11 @@ public:
   }
   void merge(unordered_map_base &other) { table_.merge(other.table_); }
   void merge(unordered_map_base &&other) { merge(other); }
+  template <class OtherHash, class OtherEqual, bool OtherMulti>
+  void merge_from(unordered_map_base<Key, T, OtherHash, OtherEqual, Allocator,
+                                     OtherMulti> &other) {
+    table_.merge(other.table_);
+  }
   iterator find(const Key &key) { return table_.find(key); }
   const_iterator find(const Key &key) const { return table_.find(key); }
   template <class K> iterator find(const K &key) requires transparent_hash_equal<Hash, Equal> { return table_.find(key); }
@@ -294,6 +339,8 @@ public:
 
 template <class Key, class Hash, class Equal, class Allocator, bool Multi>
 class unordered_set_base {
+  template <class, class, class, class, bool>
+  friend class unordered_set_base;
 protected:
   using table_type = hash_table<Key, Key, unordered_set_key<Key>, Hash, Equal,
                                 Allocator, Multi>;
@@ -335,6 +382,17 @@ public:
       : table_(count, hash, equal, allocator) {
     insert(first, last);
   }
+  template <input_iterator I>
+  unordered_set_base(I first, I last, const type_identity_t<Allocator> &allocator)
+      : unordered_set_base(first, last, 0, Hash(), Equal(), allocator) {}
+  template <input_iterator I>
+  unordered_set_base(I first, I last, size_type count,
+                     const type_identity_t<Allocator> &allocator)
+      : unordered_set_base(first, last, count, Hash(), Equal(), allocator) {}
+  template <input_iterator I>
+  unordered_set_base(I first, I last, size_type count, const Hash &hash,
+                     const type_identity_t<Allocator> &allocator)
+      : unordered_set_base(first, last, count, hash, Equal(), allocator) {}
   template <ranges::input_range R>
   unordered_set_base(from_range_t, R &&range, size_type count = 0,
                      const Hash &hash = Hash(), const Equal &equal = Equal(),
@@ -342,11 +400,32 @@ public:
       : table_(count, hash, equal, allocator) {
     insert_range(static_cast<R &&>(range));
   }
+  template <ranges::input_range R>
+  unordered_set_base(from_range_t, R &&range,
+                     const type_identity_t<Allocator> &allocator)
+      : unordered_set_base(from_range, static_cast<R &&>(range), 0, Hash(), Equal(), allocator) {}
+  template <ranges::input_range R>
+  unordered_set_base(from_range_t, R &&range, size_type count,
+                     const type_identity_t<Allocator> &allocator)
+      : unordered_set_base(from_range, static_cast<R &&>(range), count, Hash(), Equal(), allocator) {}
+  template <ranges::input_range R>
+  unordered_set_base(from_range_t, R &&range, size_type count, const Hash &hash,
+                     const type_identity_t<Allocator> &allocator)
+      : unordered_set_base(from_range, static_cast<R &&>(range), count, hash, Equal(), allocator) {}
   unordered_set_base(initializer_list<Key> values, size_type count = 0,
                      const Hash &hash = Hash(), const Equal &equal = Equal(),
                      const Allocator &allocator = Allocator())
       : unordered_set_base(values.begin(), values.end(), count, hash, equal,
                            allocator) {}
+  unordered_set_base(initializer_list<Key> values,
+                     const type_identity_t<Allocator> &allocator)
+      : unordered_set_base(values.begin(), values.end(), 0, Hash(), Equal(), allocator) {}
+  unordered_set_base(initializer_list<Key> values, size_type count,
+                     const type_identity_t<Allocator> &allocator)
+      : unordered_set_base(values.begin(), values.end(), count, Hash(), Equal(), allocator) {}
+  unordered_set_base(initializer_list<Key> values, size_type count,
+                     const Hash &hash, const type_identity_t<Allocator> &allocator)
+      : unordered_set_base(values.begin(), values.end(), count, hash, Equal(), allocator) {}
   unordered_set_base(const unordered_set_base &) = default;
   unordered_set_base(unordered_set_base &&) = default;
   unordered_set_base(const unordered_set_base &other,
@@ -432,6 +511,11 @@ public:
   }
   void merge(unordered_set_base &other) { table_.merge(other.table_); }
   void merge(unordered_set_base &&other) { merge(other); }
+  template <class OtherHash, class OtherEqual, bool OtherMulti>
+  void merge_from(
+      unordered_set_base<Key, OtherHash, OtherEqual, Allocator, OtherMulti> &other) {
+    table_.merge(other.table_);
+  }
   iterator find(const Key &key) const { return table_.find(key); }
   template <class K> iterator find(const K &key) const requires transparent_hash_equal<Hash, Equal> {
     return table_.find(key);

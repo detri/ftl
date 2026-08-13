@@ -21,6 +21,7 @@ struct disabled_callable {
 };
 
 int main() {
+  [[maybe_unused]] auto any_type_observer = &std::any::type;
   constexpr std::array<int, 1> value{42};
   static_assert(value[0] == 42);
   static_assert(std::bitset<8>(0xa5).count() == 4);

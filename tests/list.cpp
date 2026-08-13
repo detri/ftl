@@ -28,6 +28,27 @@ struct list_counted {
   bool operator==(const list_counted &) const = default;
   bool operator<(const list_counted &x) const { return value < x.value; }
 };
+struct list_allocation_state { inline static int allocations; inline static int deallocations; };
+template<class T> struct tracked_list_allocator {
+  using value_type = T;
+  tracked_list_allocator() = default;
+  template<class U> tracked_list_allocator(const tracked_list_allocator<U>&) {}
+  T* allocate(tested::size_t n) { ++list_allocation_state::allocations; return static_cast<T*>(::operator new(n * sizeof(T))); }
+  void deallocate(T* p, tested::size_t) { ++list_allocation_state::deallocations; ::operator delete(p); }
+  template<class U> bool operator==(const tracked_list_allocator<U>&) const { return true; }
+};
+struct throwing_list_value {
+  inline static int alive;
+  inline static int constructions_before_throw = -1;
+  int value{};
+  throwing_list_value() { if (constructions_before_throw == 0) throw 1; if (constructions_before_throw > 0) --constructions_before_throw; ++alive; }
+  explicit throwing_list_value(int v) : value(v) { ++alive; }
+  throwing_list_value(const throwing_list_value& x) : value(x.value) { if (constructions_before_throw == 0) throw 1; if (constructions_before_throw > 0) --constructions_before_throw; ++alive; }
+  throwing_list_value(throwing_list_value&& x) noexcept(false) : value(x.value) { ++alive; }
+  throwing_list_value& operator=(const throwing_list_value&) = default;
+  ~throwing_list_value() { --alive; }
+  bool operator==(const throwing_list_value&) const = default;
+};
 struct incomplete_list;
 struct incomplete_list_owner {
   tested::list<incomplete_list> values;
@@ -48,6 +69,33 @@ static_assert(tested::is_same_v<
               tested::list<int, tested::pmr::polymorphic_allocator<int>>>);
 
 bool ftl_test() {
+  {
+    list_allocation_state::allocations = list_allocation_state::deallocations = 0;
+    throwing_list_value::constructions_before_throw = 1;
+    try { tested::list<throwing_list_value, tracked_list_allocator<throwing_list_value>> guarded(3); return false; }
+    catch (...) {}
+    throwing_list_value::constructions_before_throw = -1;
+    if (throwing_list_value::alive != 0 || list_allocation_state::allocations != list_allocation_state::deallocations) return false;
+  }
+  {
+    tested::list<throwing_list_value> guarded;
+    guarded.emplace_back(1); guarded.emplace_back(2);
+    throwing_list_value value(9);
+    throwing_list_value::constructions_before_throw = 1;
+    try { guarded.insert(guarded.begin(), 3, value); return false; }
+    catch (...) {}
+    throwing_list_value::constructions_before_throw = -1;
+    if (guarded.size() != 2 || guarded.front().value != 1 || guarded.back().value != 2) return false;
+  }
+  {
+    tested::list<throwing_list_value> guarded;
+    for (int value : {1, 4, 2, 3}) guarded.emplace_back(value);
+    int comparisons = 2;
+    try { guarded.sort([&](const auto& l, const auto& r) { if (comparisons-- == 0) throw 1; return l.value < r.value; }); return false; }
+    catch (...) {}
+    if (guarded.size() != 4) return false;
+  }
+
   tested::list<int> values{3, 1, 1, 2};
   auto stable = ++values.begin();
   int *address = &*stable;

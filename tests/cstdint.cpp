@@ -38,8 +38,10 @@ FTL_SAME_CSTDINT_TYPE(int_fast64_t);
 FTL_SAME_CSTDINT_TYPE(uint_fast64_t);
 FTL_SAME_CSTDINT_TYPE(intptr_t);
 FTL_SAME_CSTDINT_TYPE(uintptr_t);
+#if !defined(__SIZEOF_INT128__)
 FTL_SAME_CSTDINT_TYPE(intmax_t);
 FTL_SAME_CSTDINT_TYPE(uintmax_t);
+#endif
 #undef FTL_SAME_CSTDINT_TYPE
 #endif
 
@@ -72,10 +74,16 @@ static_assert(INT_LEAST8_MIN == INT8_MIN && INT_LEAST64_MAX == INT64_MAX);
 static_assert(UINT_LEAST32_MAX == UINT32_MAX);
 static_assert(INT_FAST8_MIN < 0 && INT_FAST64_MAX >= INT64_MAX);
 static_assert(UINT_FAST16_MAX >= UINT16_MAX);
+#if defined(__SIZEOF_INT128__)
+static_assert(sizeof(tested::intmax_t) == 16);
+static_assert(INTMAX_MIN < INT64_MIN && INTMAX_MAX > INT64_MAX);
+static_assert(UINTMAX_MAX > UINT64_MAX);
+#else
 static_assert(INTMAX_MIN == INT64_MIN && INTMAX_MAX == INT64_MAX);
 static_assert(UINTMAX_MAX == UINT64_MAX);
-static_assert(INTPTR_MIN == INT64_MIN && INTPTR_MAX == INT64_MAX);
-static_assert(UINTPTR_MAX == UINT64_MAX);
+#endif
+static_assert(sizeof(INTPTR_MAX) == sizeof(void*));
+static_assert(sizeof(UINTPTR_MAX) == sizeof(void*));
 static_assert(PTRDIFF_MIN < 0 && PTRDIFF_MAX > 0 && SIZE_MAX >= UINT32_MAX);
 static_assert(SIG_ATOMIC_MIN <= 0 && SIG_ATOMIC_MAX > 0);
 static_assert(WCHAR_MIN <= 0 && WCHAR_MAX > 0);
@@ -91,6 +99,8 @@ static_assert(tested::is_same_v<decltype(INT8_C(1)), int>);
 static_assert(tested::is_same_v<decltype(UINT8_C(1)), int>);
 static_assert(tested::is_same_v<decltype(INT16_C(1)), int>);
 static_assert(tested::is_same_v<decltype(UINT16_C(1)), int>);
+static_assert(tested::is_same_v<decltype(UINT8_MAX), int>);
+static_assert(tested::is_same_v<decltype(UINT16_MAX), int>);
 static_assert(tested::is_same_v<decltype(INT32_C(1)), tested::int_least32_t>);
 static_assert(tested::is_same_v<decltype(UINT32_C(1)), tested::uint_least32_t>);
 static_assert(tested::is_same_v<decltype(INT64_C(1)), tested::int_least64_t>);

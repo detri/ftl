@@ -23,6 +23,21 @@ struct set_transparent_compare {
   bool operator()(int, set_probe) const { return true; }
   bool operator()(set_probe, int) const { return false; }
 };
+struct controlled_set_compare {
+  inline static int comparisons;
+  inline static int before_throw = -1;
+  bool operator()(int left, int right) const {
+    ++comparisons;
+    if (before_throw == 0) throw 1;
+    if (before_throw > 0) --before_throw;
+    return left < right;
+  }
+};
+struct legacy_set_key {
+  int value;
+  friend bool operator==(const legacy_set_key&, const legacy_set_key&) = default;
+  friend bool operator<(const legacy_set_key& a, const legacy_set_key& b) { return a.value < b.value; }
+};
 template <class C>
 concept set_probe_findable = requires(C &c) { c.find(set_probe{}); };
 
@@ -38,8 +53,54 @@ static_assert(set_probe_findable<tested::set<int, set_transparent_compare>>);
 static_assert(
     set_probe_findable<tested::multiset<int, set_transparent_compare>>);
 static_assert(!set_probe_findable<tested::set<int>>);
+static_assert(tested::is_same_v<
+    typename tested::set<int, tested::less<int>>::node_type,
+    typename tested::multiset<int, tested::greater<int>>::node_type>);
+static_assert(tested::is_same_v<
+    decltype(tested::declval<const tested::set<legacy_set_key>&>() <=>
+             tested::declval<const tested::set<legacy_set_key>&>()),
+    tested::weak_ordering>);
+using deduced_set = decltype(tested::set(
+    tested::declval<int *>(), tested::declval<int *>(),
+    tested::declval<tested::allocator<int>>()));
+static_assert(tested::is_same_v<deduced_set, tested::set<int>>);
 
 bool ftl_test() {
+  {
+    tested::set<int, controlled_set_compare> source{1};
+    tested::set<int, controlled_set_compare> destination{2};
+    auto handle = source.extract(1);
+    controlled_set_compare::before_throw = 0;
+    try { destination.insert(tested::move(handle)); return false; }
+    catch (...) {}
+    controlled_set_compare::before_throw = -1;
+    if (!handle || handle.value() != 1) return false;
+  }
+  {
+    tested::multiset<int, tested::greater<int>> source{3, 2, 2, 1};
+    tested::set<int, tested::less<int>> destination{2};
+    destination.merge(source);
+    if (destination != tested::set<int>{1, 2, 3} || source.count(2) != 2)
+      return false;
+  }
+  {
+    tested::set<int> source{1};
+    tested::set<int, controlled_set_compare> destination{2};
+    controlled_set_compare::before_throw = 0;
+    try { destination.merge(source); return false; }
+    catch (...) {}
+    controlled_set_compare::before_throw = -1;
+    if (!source.contains(1) || destination.size() != 1) return false;
+  }
+  {
+    tested::set<int, controlled_set_compare> hinted;
+    auto hint = hinted.end();
+    controlled_set_compare::comparisons = 0;
+    for (int value = 0; value != 20; ++value)
+      hint = hinted.insert(hinted.end(), value);
+    if (controlled_set_compare::comparisons > 40) return false;
+  }
+
   tested::set<int> values{3, 1, 2, 2};
   if (values.size() != 3 || *values.begin() != 1)
     return false;

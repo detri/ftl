@@ -1,6 +1,7 @@
 #ifdef FTL_REPLACE_STL
 #include <array>
 #include <concepts>
+#include <format>
 #include <ranges>
 #include <type_traits>
 #include <utility>
@@ -9,6 +10,7 @@ namespace tested = std;
 #else
 #include <ftl/array>
 #include <ftl/concepts>
+#include <ftl/format>
 #include <ftl/ranges>
 #include <ftl/type_traits>
 #include <ftl/utility>
@@ -28,6 +30,27 @@ struct counted {
   ~counted() { --alive; }
   bool operator==(const counted&) const = default;
   bool operator<(const counted& other) const { return value < other.value; }
+};
+
+struct throwing_value {
+  inline static int constructions_before_throw = -1;
+  int value{};
+  throwing_value() {
+    if (constructions_before_throw == 0)
+      throw 1;
+    if (constructions_before_throw > 0)
+      --constructions_before_throw;
+  }
+  explicit throwing_value(int input) : value(input) {}
+  throwing_value(const throwing_value& other) : value(other.value) {
+    if (constructions_before_throw == 0)
+      throw 1;
+    if (constructions_before_throw > 0)
+      --constructions_before_throw;
+  }
+  throwing_value(throwing_value&& other) noexcept(false) : value(other.value) {}
+  throwing_value& operator=(const throwing_value&) = default;
+  throwing_value& operator=(throwing_value&&) = default;
 };
 
 struct incomplete;
@@ -89,6 +112,36 @@ static_assert(__cpp_lib_constexpr_vector == 201907L);
 static_assert(__cpp_lib_incomplete_container_elements == 201505L);
 
 bool ftl_test() {
+  {
+    tested::vector<int> aliased{1, 2};
+    aliased.shrink_to_fit();
+    aliased.push_back(aliased[0]);
+    if (aliased != tested::vector<int>{1, 2, 1}) return false;
+  }
+
+  {
+    tested::vector<throwing_value> guarded;
+    guarded.emplace_back(7);
+    guarded.shrink_to_fit();
+    const auto old_capacity = guarded.capacity();
+    throwing_value::constructions_before_throw = 0;
+    try {
+      guarded.push_back(guarded[0]);
+      return false;
+    } catch (...) {}
+    if (guarded.size() != 1 || guarded.capacity() != old_capacity ||
+        guarded[0].value != 7) return false;
+
+    throwing_value::constructions_before_throw = 1;
+    try {
+      guarded.resize(3);
+      return false;
+    } catch (...) {}
+    throwing_value::constructions_before_throw = -1;
+    if (guarded.size() != 1 || guarded.capacity() != old_capacity ||
+        guarded[0].value != 7) return false;
+  }
+
   tested::vector<int> values{2, 3};
   values.reserve(20);
   auto data = values.data();
@@ -117,6 +170,7 @@ bool ftl_test() {
   swap(proxy, bits[8]);
   bits.flip();
   const auto copied_bits = bits;
+  if (tested::format("{}", bits.front()) != "true") return false;
   return bits.front() && !bits[8] && bits.capacity() % 8 == 0 &&
          tested::hash<tested::vector<bool>>{}(bits) ==
              tested::hash<tested::vector<bool>>{}(copied_bits);

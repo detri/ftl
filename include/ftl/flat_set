@@ -37,7 +37,16 @@ concept flat_set_transparent_compare = requires {
   typename Compare::is_transparent;
 };
 template <class Allocator>
-concept flat_set_allocator_like = requires { typename Allocator::value_type; };
+concept flat_set_allocator_like =
+    requires { typename Allocator::value_type; } &&
+    copy_constructible<Allocator> && equality_comparable<Allocator> &&
+    requires(Allocator &allocator,
+             typename allocator_traits<Allocator>::size_type size,
+             typename allocator_traits<Allocator>::pointer pointer) {
+      { allocator.allocate(size) } ->
+          same_as<typename allocator_traits<Allocator>::pointer>;
+      allocator.deallocate(pointer, size);
+    };
 template <class Key, class Compare, class Container, bool Multi>
 class flat_set_base {
   static_assert(is_same_v<Key, typename Container::value_type>);
@@ -276,19 +285,14 @@ public:
       return insert(static_cast<K &&>(value)).first;
   }
   template <input_iterator I> void insert(I first, I last) {
-    for (; first != last; ++first)
-      insert(*first);
+    insert_bulk(first, last, false);
   }
   template <class Tag, input_iterator I>
     requires((is_same_v<Tag, sorted_unique_t> && !Multi) ||
              (is_same_v<Tag, sorted_equivalent_t> && Multi))
-  void insert(Tag, I first, I last) {
-    for (; first != last; ++first)
-      insert(*first);
-  }
+  void insert(Tag, I first, I last) { insert_bulk(first, last, true); }
   template <ranges::input_range R> void insert_range(R &&range) {
-    for (auto &&value : range)
-      insert(static_cast<decltype(value) &&>(value));
+    insert(ranges::begin(range), ranges::end(range));
   }
   void insert(initializer_list<Key> values) {
     insert(values.begin(), values.end());
@@ -399,6 +403,37 @@ public:
   }
 
 protected:
+  template <input_iterator I>
+  void insert_bulk(I first, I last, bool incoming_is_sorted) {
+    const auto old_size = container_.size();
+    container_.insert(container_.end(), first, last);
+    auto middle = container_.begin() + static_cast<difference_type>(old_size);
+    if (!incoming_is_sorted)
+      FTL_FLAT_NAMESPACE::sort(middle, container_.end(), compare_);
+
+    Container source(move(container_));
+    if constexpr (requires { container_.reserve(source.size()); })
+      container_.reserve(source.size());
+    auto left = source.begin();
+    auto left_end = source.begin() + static_cast<difference_type>(old_size);
+    auto right = left_end;
+    const auto append = [this](auto &value) {
+      if constexpr (!Multi)
+        if (!container_.empty() && equivalent(container_.back(), value))
+          return;
+      container_.push_back(move(value));
+    };
+    while (left != left_end && right != source.end()) {
+      if (compare_(*right, *left))
+        append(*right++);
+      else
+        append(*left++);
+    }
+    while (left != left_end)
+      append(*left++);
+    while (right != source.end())
+      append(*right++);
+  }
   template <class V> auto insert_value(V &&value) {
     auto position = Multi ? upper_bound(value) : lower_bound(value);
     if constexpr (!Multi) {
@@ -438,6 +473,10 @@ class flat_set
 public:
   using base::base;
   using base::operator=;
+  flat_set &operator=(initializer_list<Key> values) {
+    base::operator=(values);
+    return *this;
+  }
 };
 template <class Key, class Compare = less<Key>,
           class KeyContainer = vector<Key>>
@@ -448,6 +487,10 @@ class flat_multiset
 public:
   using base::base;
   using base::operator=;
+  flat_multiset &operator=(initializer_list<Key> values) {
+    base::operator=(values);
+    return *this;
+  }
 };
 template <class KC, class C = less<typename KC::value_type>>
   requires(!detail::flat_set_allocator_like<C>)
@@ -539,7 +582,9 @@ template <class Container>
 auto flat_set_compare(const Container &left, const Container &right) {
   return lexicographical_compare_three_way(left.begin(), left.end(),
                                            right.begin(), right.end(),
-                                           compare_three_way{});
+                                           [](const auto &a, const auto &b) {
+                                             return detail::synth_three_way(a, b);
+                                           });
 }
 template <class Key, class Compare, class Container>
 auto operator<=>(const flat_set<Key, Compare, Container> &left,

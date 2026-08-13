@@ -19,11 +19,16 @@
 #endif
 FTL_BEGIN_NAMESPACE
 namespace detail {
-template<class A> concept stack_allocator = requires(A& a, size_t n) {
-  typename A::value_type;
-  { a.allocate(n) };
-};
+template<class A> concept stack_allocator =
+  requires { typename A::value_type; } && copy_constructible<A> &&
+  equality_comparable<A> &&
+  requires(A& a, typename allocator_traits<A>::size_type n,
+           typename allocator_traits<A>::pointer p) {
+    { a.allocate(n) } -> same_as<typename allocator_traits<A>::pointer>;
+    a.deallocate(p, n);
+  };
 }
+template<class T, class charT> struct formatter;
 template<class T, class Container = deque<T>> class stack {
   static_assert(is_same_v<T, typename Container::value_type>);
 public:
@@ -67,6 +72,7 @@ public:
   template<class U, class C> friend bool operator<=(const stack<U, C>&, const stack<U, C>&);
   template<class U, class C> friend bool operator>=(const stack<U, C>&, const stack<U, C>&);
   template<class U, three_way_comparable C> friend compare_three_way_result_t<C> operator<=>(const stack<U, C>&, const stack<U, C>&);
+  template<class, class> friend struct formatter;
 };
 template<class C> requires (!detail::stack_allocator<C>) stack(C) -> stack<typename C::value_type, C>;
 template<input_iterator I> stack(I, I) -> stack<typename iterator_traits<I>::value_type>;
