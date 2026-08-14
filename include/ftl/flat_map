@@ -42,7 +42,8 @@ extern "C" void __cdecl __fastfail(unsigned int);
 FTL_BEGIN_NAMESPACE
 namespace detail {
 template <class Compare>
-concept flat_transparent_compare = requires { typename Compare::is_transparent; };
+concept flat_transparent_compare =
+    requires { typename Compare::is_transparent; };
 template <class Allocator>
 concept flat_allocator_like =
     requires { typename Allocator::value_type; } &&
@@ -50,8 +51,9 @@ concept flat_allocator_like =
     requires(Allocator &allocator,
              typename allocator_traits<Allocator>::size_type size,
              typename allocator_traits<Allocator>::pointer pointer) {
-      { allocator.allocate(size) } ->
-          same_as<typename allocator_traits<Allocator>::pointer>;
+      {
+        allocator.allocate(size)
+      } -> same_as<typename allocator_traits<Allocator>::pointer>;
       allocator.deallocate(pointer, size);
     };
 [[noreturn]] inline void flat_map_range_failure() {
@@ -66,6 +68,7 @@ template <class Key, class T, class Compare, class KeyContainer,
 class flat_map_base {
   static_assert(is_same_v<Key, typename KeyContainer::value_type>);
   static_assert(is_same_v<T, typename MappedContainer::value_type>);
+
 public:
   using key_type = Key;
   using mapped_type = T;
@@ -248,8 +251,7 @@ public:
   template <class Allocator>
     requires(uses_allocator_v<KeyContainer, Allocator> &&
              uses_allocator_v<MappedContainer, Allocator>)
-  flat_map_base(initializer_list<value_type> values,
-                const Allocator &allocator)
+  flat_map_base(initializer_list<value_type> values, const Allocator &allocator)
       : flat_map_base(values, Compare(), allocator) {}
   flat_map_base(KeyContainer keys, MappedContainer values,
                 const Compare &compare = Compare())
@@ -455,7 +457,9 @@ public:
   template <class Tag, input_iterator I>
     requires((is_same_v<Tag, sorted_unique_t> && !Multi) ||
              (is_same_v<Tag, sorted_equivalent_t> && Multi))
-  void insert(Tag, I first, I last) { insert_bulk(first, last, true); }
+  void insert(Tag, I first, I last) {
+    insert_bulk(first, last, true);
+  }
   template <ranges::input_range R> void insert_range(R &&range) {
     insert(ranges::begin(range), ranges::end(range));
   }
@@ -571,8 +575,8 @@ public:
     requires(!Multi && flat_transparent_compare<Compare> &&
              is_constructible_v<Key, K &&>)
   {
-    return insert_or_assign(static_cast<K &&>(key),
-                            static_cast<M &&>(value)).first;
+    return insert_or_assign(static_cast<K &&>(key), static_cast<M &&>(value))
+        .first;
   }
   iterator erase(const_iterator position) {
     auto index = position.index_;
@@ -597,7 +601,8 @@ public:
       keys_.erase(keys_.begin() + static_cast<difference_type>(index),
                   keys_.begin() + static_cast<difference_type>(last.index_));
       values_.erase(values_.begin() + static_cast<difference_type>(index),
-                    values_.begin() + static_cast<difference_type>(last.index_));
+                    values_.begin() +
+                        static_cast<difference_type>(last.index_));
 #if FTL_HAS_EXCEPTIONS
     } catch (...) {
       clear();
@@ -640,11 +645,17 @@ public:
     auto found = lower_bound(key);
     return found != end() && equivalent(found->first, key) ? found : end();
   }
-  template <class K> iterator find(const K &key) requires flat_transparent_compare<Compare> {
+  template <class K>
+  iterator find(const K &key)
+    requires flat_transparent_compare<Compare>
+  {
     auto found = lower_bound(key);
     return found != end() && equivalent(found->first, key) ? found : end();
   }
-  template <class K> const_iterator find(const K &key) const requires flat_transparent_compare<Compare> {
+  template <class K>
+  const_iterator find(const K &key) const
+    requires flat_transparent_compare<Compare>
+  {
     auto found = lower_bound(key);
     return found != end() && equivalent(found->first, key) ? found : end();
   }
@@ -652,14 +663,18 @@ public:
     auto range = equal_range(key);
     return static_cast<size_type>(range.second - range.first);
   }
-  template <class K> size_type count(const K &key) const requires flat_transparent_compare<Compare> {
+  template <class K>
+  size_type count(const K &key) const
+    requires flat_transparent_compare<Compare>
+  {
     auto range = equal_range(key);
     return static_cast<size_type>(range.second - range.first);
   }
-  bool contains(const Key &key) const {
-    return find(key) != end();
-  }
-  template <class K> bool contains(const K &key) const requires flat_transparent_compare<Compare> {
+  bool contains(const Key &key) const { return find(key) != end(); }
+  template <class K>
+  bool contains(const K &key) const
+    requires flat_transparent_compare<Compare>
+  {
     return find(key) != end();
   }
   iterator lower_bound(const Key &key) {
@@ -668,10 +683,16 @@ public:
   const_iterator lower_bound(const Key &key) const {
     return const_iterator(this, lower_index(key));
   }
-  template <class K> iterator lower_bound(const K &key) requires flat_transparent_compare<Compare> {
+  template <class K>
+  iterator lower_bound(const K &key)
+    requires flat_transparent_compare<Compare>
+  {
     return iterator(this, lower_index(key));
   }
-  template <class K> const_iterator lower_bound(const K &key) const requires flat_transparent_compare<Compare> {
+  template <class K>
+  const_iterator lower_bound(const K &key) const
+    requires flat_transparent_compare<Compare>
+  {
     return const_iterator(this, lower_index(key));
   }
   iterator upper_bound(const Key &key) {
@@ -680,10 +701,16 @@ public:
   const_iterator upper_bound(const Key &key) const {
     return const_iterator(this, upper_index(key));
   }
-  template <class K> iterator upper_bound(const K &key) requires flat_transparent_compare<Compare> {
+  template <class K>
+  iterator upper_bound(const K &key)
+    requires flat_transparent_compare<Compare>
+  {
     return iterator(this, upper_index(key));
   }
-  template <class K> const_iterator upper_bound(const K &key) const requires flat_transparent_compare<Compare> {
+  template <class K>
+  const_iterator upper_bound(const K &key) const
+    requires flat_transparent_compare<Compare>
+  {
     return const_iterator(this, upper_index(key));
   }
   pair<iterator, iterator> equal_range(const Key &key) {
@@ -692,11 +719,16 @@ public:
   pair<const_iterator, const_iterator> equal_range(const Key &key) const {
     return {lower_bound(key), upper_bound(key)};
   }
-  template <class K> pair<iterator, iterator> equal_range(const K &key) requires flat_transparent_compare<Compare> {
+  template <class K>
+  pair<iterator, iterator> equal_range(const K &key)
+    requires flat_transparent_compare<Compare>
+  {
     return {lower_bound(key), upper_bound(key)};
   }
   template <class K>
-  pair<const_iterator, const_iterator> equal_range(const K &key) const requires flat_transparent_compare<Compare> {
+  pair<const_iterator, const_iterator> equal_range(const K &key) const
+    requires flat_transparent_compare<Compare>
+  {
     return {lower_bound(key), upper_bound(key)};
   }
   key_compare key_comp() const { return compare_; }
@@ -721,8 +753,8 @@ public:
 #if FTL_HAS_EXCEPTIONS
     try {
 #endif
-    keys_ = move(keys);
-    values_ = move(values);
+      keys_ = move(keys);
+      values_ = move(values);
 #if FTL_HAS_EXCEPTIONS
     } catch (...) {
       clear();
@@ -742,10 +774,11 @@ protected:
     for (size_type index = old_size; index < source.keys.size(); ++index)
       incoming.push_back(index);
     if (!incoming_is_sorted)
-      FTL_FLAT_NAMESPACE::sort(
-          incoming.begin(), incoming.end(), [&](size_type left, size_type right) {
-            return compare_(source.keys[left], source.keys[right]);
-          });
+      FTL_FLAT_NAMESPACE::sort(incoming.begin(), incoming.end(),
+                               [&](size_type left, size_type right) {
+                                 return compare_(source.keys[left],
+                                                 source.keys[right]);
+                               });
     if constexpr (requires { keys_.reserve(source.keys.size()); })
       keys_.reserve(source.keys.size());
     if constexpr (requires { values_.reserve(source.values.size()); })
@@ -832,11 +865,10 @@ protected:
       order.push_back(i);
     if (!FTL_FLAT_NAMESPACE::is_sorted(source.keys.begin(), source.keys.end(),
                                        compare_))
-      FTL_FLAT_NAMESPACE::sort(order.begin(), order.end(),
-                               [&](size_type left, size_type right) {
-                                 return compare_(source.keys[left],
-                                                 source.keys[right]);
-                               });
+      FTL_FLAT_NAMESPACE::sort(
+          order.begin(), order.end(), [&](size_type left, size_type right) {
+            return compare_(source.keys[left], source.keys[right]);
+          });
     if constexpr (requires { keys_.reserve(source.keys.size()); })
       keys_.reserve(source.keys.size());
     if constexpr (requires { values_.reserve(source.values.size()); })
@@ -931,93 +963,193 @@ public:
   }
 };
 template <class KC, class MC, class C = less<typename KC::value_type>>
-  requires(!detail::flat_allocator_like<C>)
+  requires(!detail::flat_allocator_like<KC> &&
+           !detail::flat_allocator_like<MC> &&
+           !detail::flat_allocator_like<C> &&
+           is_invocable_v<const C &, const typename KC::value_type &,
+                          const typename KC::value_type &>)
 flat_map(KC, MC, C = C())
     -> flat_map<typename KC::value_type, typename MC::value_type, C, KC, MC>;
+
 template <class KC, class MC, detail::flat_allocator_like A>
+  requires(!detail::flat_allocator_like<KC> &&
+           !detail::flat_allocator_like<MC> && uses_allocator_v<KC, A> &&
+           uses_allocator_v<MC, A>)
 flat_map(KC, MC, A)
     -> flat_map<typename KC::value_type, typename MC::value_type,
                 less<typename KC::value_type>, KC, MC>;
+
 template <class KC, class MC, class C, detail::flat_allocator_like A>
+  requires(!detail::flat_allocator_like<KC> &&
+           !detail::flat_allocator_like<MC> &&
+           !detail::flat_allocator_like<C> && uses_allocator_v<KC, A> &&
+           uses_allocator_v<MC, A> &&
+           is_invocable_v<const C &, const typename KC::value_type &,
+                          const typename KC::value_type &>)
 flat_map(KC, MC, C, A)
     -> flat_map<typename KC::value_type, typename MC::value_type, C, KC, MC>;
+
 template <class KC, class MC, class C = less<typename KC::value_type>>
-  requires(!detail::flat_allocator_like<C>)
+  requires(!detail::flat_allocator_like<KC> &&
+           !detail::flat_allocator_like<MC> &&
+           !detail::flat_allocator_like<C> &&
+           is_invocable_v<const C &, const typename KC::value_type &,
+                          const typename KC::value_type &>)
 flat_map(sorted_unique_t, KC, MC, C = C())
     -> flat_map<typename KC::value_type, typename MC::value_type, C, KC, MC>;
+
 template <class KC, class MC, detail::flat_allocator_like A>
+  requires(!detail::flat_allocator_like<KC> &&
+           !detail::flat_allocator_like<MC> && uses_allocator_v<KC, A> &&
+           uses_allocator_v<MC, A>)
 flat_map(sorted_unique_t, KC, MC, A)
     -> flat_map<typename KC::value_type, typename MC::value_type,
                 less<typename KC::value_type>, KC, MC>;
+
 template <class KC, class MC, class C, detail::flat_allocator_like A>
+  requires(!detail::flat_allocator_like<KC> &&
+           !detail::flat_allocator_like<MC> &&
+           !detail::flat_allocator_like<C> && uses_allocator_v<KC, A> &&
+           uses_allocator_v<MC, A> &&
+           is_invocable_v<const C &, const typename KC::value_type &,
+                          const typename KC::value_type &>)
 flat_map(sorted_unique_t, KC, MC, C, A)
     -> flat_map<typename KC::value_type, typename MC::value_type, C, KC, MC>;
+
 template <class I, class V = iter_value_t<I>,
           class C = less<remove_const_t<typename V::first_type>>>
-flat_map(I, I, C = C())
-    -> flat_map<remove_const_t<typename V::first_type>,
-                typename V::second_type, C>;
+  requires(!detail::flat_allocator_like<C>)
+flat_map(I, I, C = C()) -> flat_map<remove_const_t<typename V::first_type>,
+                                    typename V::second_type, C>;
+
 template <class I, class V = iter_value_t<I>,
           class C = less<remove_const_t<typename V::first_type>>>
+  requires(!detail::flat_allocator_like<C>)
 flat_map(sorted_unique_t, I, I, C = C())
-    -> flat_map<remove_const_t<typename V::first_type>,
-                typename V::second_type, C>;
+    -> flat_map<remove_const_t<typename V::first_type>, typename V::second_type,
+                C>;
+
 template <ranges::input_range R, class V = ranges::range_value_t<R>,
-          class C = less<remove_const_t<typename V::first_type>>>
-flat_map(from_range_t, R &&, C = C())
-    -> flat_map<remove_const_t<typename V::first_type>,
-                typename V::second_type, C>;
+          class K = remove_const_t<typename V::first_type>,
+          class T = typename V::second_type, class C = less<K>,
+          class A = allocator<byte>>
+  requires(!detail::flat_allocator_like<C> && detail::flat_allocator_like<A>)
+flat_map(from_range_t, R &&, C = C(), A = A()) -> flat_map<
+    K, T, C, vector<K, typename allocator_traits<A>::template rebind_alloc<K>>,
+    vector<T, typename allocator_traits<A>::template rebind_alloc<T>>>;
+
+template <ranges::input_range R, class V = ranges::range_value_t<R>,
+          class K = remove_const_t<typename V::first_type>,
+          class T = typename V::second_type, detail::flat_allocator_like A>
+flat_map(from_range_t, R &&, A) -> flat_map<
+    K, T, less<K>,
+    vector<K, typename allocator_traits<A>::template rebind_alloc<K>>,
+    vector<T, typename allocator_traits<A>::template rebind_alloc<T>>>;
+
 template <class K, class T, class C = less<K>>
+  requires(!detail::flat_allocator_like<C>)
 flat_map(initializer_list<pair<K, T>>, C = C()) -> flat_map<K, T, C>;
+
 template <class K, class T, class C = less<K>>
+  requires(!detail::flat_allocator_like<C>)
 flat_map(sorted_unique_t, initializer_list<pair<K, T>>, C = C())
     -> flat_map<K, T, C>;
 
 template <class KC, class MC, class C = less<typename KC::value_type>>
-  requires(!detail::flat_allocator_like<C>)
+  requires(!detail::flat_allocator_like<KC> &&
+           !detail::flat_allocator_like<MC> &&
+           !detail::flat_allocator_like<C> &&
+           is_invocable_v<const C &, const typename KC::value_type &,
+                          const typename KC::value_type &>)
 flat_multimap(KC, MC, C = C())
     -> flat_multimap<typename KC::value_type, typename MC::value_type, C, KC,
                      MC>;
+
 template <class KC, class MC, detail::flat_allocator_like A>
+  requires(!detail::flat_allocator_like<KC> &&
+           !detail::flat_allocator_like<MC> && uses_allocator_v<KC, A> &&
+           uses_allocator_v<MC, A>)
 flat_multimap(KC, MC, A)
     -> flat_multimap<typename KC::value_type, typename MC::value_type,
                      less<typename KC::value_type>, KC, MC>;
+
 template <class KC, class MC, class C, detail::flat_allocator_like A>
+  requires(!detail::flat_allocator_like<KC> &&
+           !detail::flat_allocator_like<MC> &&
+           !detail::flat_allocator_like<C> && uses_allocator_v<KC, A> &&
+           uses_allocator_v<MC, A> &&
+           is_invocable_v<const C &, const typename KC::value_type &,
+                          const typename KC::value_type &>)
 flat_multimap(KC, MC, C, A)
     -> flat_multimap<typename KC::value_type, typename MC::value_type, C, KC,
                      MC>;
+
 template <class KC, class MC, class C = less<typename KC::value_type>>
-  requires(!detail::flat_allocator_like<C>)
+  requires(!detail::flat_allocator_like<KC> &&
+           !detail::flat_allocator_like<MC> &&
+           !detail::flat_allocator_like<C> &&
+           is_invocable_v<const C &, const typename KC::value_type &,
+                          const typename KC::value_type &>)
 flat_multimap(sorted_equivalent_t, KC, MC, C = C())
     -> flat_multimap<typename KC::value_type, typename MC::value_type, C, KC,
                      MC>;
+
 template <class KC, class MC, detail::flat_allocator_like A>
+  requires(!detail::flat_allocator_like<KC> &&
+           !detail::flat_allocator_like<MC> && uses_allocator_v<KC, A> &&
+           uses_allocator_v<MC, A>)
 flat_multimap(sorted_equivalent_t, KC, MC, A)
     -> flat_multimap<typename KC::value_type, typename MC::value_type,
                      less<typename KC::value_type>, KC, MC>;
+
 template <class KC, class MC, class C, detail::flat_allocator_like A>
+  requires(!detail::flat_allocator_like<KC> &&
+           !detail::flat_allocator_like<MC> &&
+           !detail::flat_allocator_like<C> && uses_allocator_v<KC, A> &&
+           uses_allocator_v<MC, A> &&
+           is_invocable_v<const C &, const typename KC::value_type &,
+                          const typename KC::value_type &>)
 flat_multimap(sorted_equivalent_t, KC, MC, C, A)
     -> flat_multimap<typename KC::value_type, typename MC::value_type, C, KC,
                      MC>;
+
 template <class I, class V = iter_value_t<I>,
           class C = less<remove_const_t<typename V::first_type>>>
+  requires(!detail::flat_allocator_like<C>)
 flat_multimap(I, I, C = C())
     -> flat_multimap<remove_const_t<typename V::first_type>,
                      typename V::second_type, C>;
+
 template <class I, class V = iter_value_t<I>,
           class C = less<remove_const_t<typename V::first_type>>>
+  requires(!detail::flat_allocator_like<C>)
 flat_multimap(sorted_equivalent_t, I, I, C = C())
     -> flat_multimap<remove_const_t<typename V::first_type>,
                      typename V::second_type, C>;
+
 template <ranges::input_range R, class V = ranges::range_value_t<R>,
-          class C = less<remove_const_t<typename V::first_type>>>
-flat_multimap(from_range_t, R &&, C = C())
-    -> flat_multimap<remove_const_t<typename V::first_type>,
-                     typename V::second_type, C>;
+          class K = remove_const_t<typename V::first_type>,
+          class T = typename V::second_type, class C = less<K>,
+          class A = allocator<byte>>
+  requires(!detail::flat_allocator_like<C> && detail::flat_allocator_like<A>)
+flat_multimap(from_range_t, R &&, C = C(), A = A()) -> flat_multimap<
+    K, T, C, vector<K, typename allocator_traits<A>::template rebind_alloc<K>>,
+    vector<T, typename allocator_traits<A>::template rebind_alloc<T>>>;
+
+template <ranges::input_range R, class V = ranges::range_value_t<R>,
+          class K = remove_const_t<typename V::first_type>,
+          class T = typename V::second_type, detail::flat_allocator_like A>
+flat_multimap(from_range_t, R &&, A) -> flat_multimap<
+    K, T, less<K>,
+    vector<K, typename allocator_traits<A>::template rebind_alloc<K>>,
+    vector<T, typename allocator_traits<A>::template rebind_alloc<T>>>;
+
 template <class K, class T, class C = less<K>>
-flat_multimap(initializer_list<pair<K, T>>, C = C())
-    -> flat_multimap<K, T, C>;
+  requires(!detail::flat_allocator_like<C>)
+flat_multimap(initializer_list<pair<K, T>>, C = C()) -> flat_multimap<K, T, C>;
+
 template <class K, class T, class C = less<K>>
+  requires(!detail::flat_allocator_like<C>)
 flat_multimap(sorted_equivalent_t, initializer_list<pair<K, T>>, C = C())
     -> flat_multimap<K, T, C>;
 
@@ -1042,11 +1174,11 @@ bool operator==(const flat_multimap<K, T, C, KC, MC> &left,
   return flat_map_equal(left, right);
 }
 template <class C> auto flat_map_compare(const C &left, const C &right) {
-  return lexicographical_compare_three_way(left.begin(), left.end(),
-                                           right.begin(), right.end(),
-                                           [](const auto &a, const auto &b) {
-                                             return detail::synth_three_way(a, b);
-                                           });
+  return lexicographical_compare_three_way(
+      left.begin(), left.end(), right.begin(), right.end(),
+      [](const auto &a, const auto &b) {
+        return detail::synth_three_way(a, b);
+      });
 }
 template <class K, class T, class C, class KC, class MC>
 auto operator<=>(const flat_map<K, T, C, KC, MC> &left,
