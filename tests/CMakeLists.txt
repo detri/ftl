@@ -108,6 +108,8 @@ function(add_ftl_test header)
 endfunction()
 
 function(add_ftl_compile_fail_check name source)
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+
     try_compile(compiled
             "${CMAKE_CURRENT_BINARY_DIR}/compile-fail/${name}"
             "${CMAKE_CURRENT_SOURCE_DIR}/${source}"
@@ -117,6 +119,7 @@ function(add_ftl_compile_fail_check name source)
             COMPILE_DEFINITIONS FTL_REPLACE_STL
             OUTPUT_VARIABLE output
     )
+
     if (compiled)
         message(FATAL_ERROR "${name} unexpectedly compiled:\n${output}")
     endif ()
@@ -254,6 +257,7 @@ add_ftl_compile_fail_check(flat_set_rejects_mismatched_container
         checks/flat_set_mismatched_container_compile_fail.cpp)
 add_ftl_compile_fail_check(semaphore_rejects_negative_least_max checks/semaphore_negative_least_max_compile_fail.cpp)
 add_ftl_compile_fail_check(barrier_rejects_throwing_completion checks/barrier_throwing_completion_compile_fail.cpp)
+add_ftl_compile_fail_check(numbers_rejects_primary_math_constant checks/numbers_primary_template_compile_fail.cpp)
 add_ftl_standalone_check(feature_macros checks/feature_macros.cpp)
 add_ftl_test(feature_macro_semantics)
 add_test(

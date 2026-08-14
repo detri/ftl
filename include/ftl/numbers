@@ -12,33 +12,77 @@
 FTL_BEGIN_NAMESPACE
 
 namespace numbers {
-namespace detail {
-template <class T> constexpr T constant(long double value) noexcept {
-  static_assert(is_floating_point_v<T>,
-                "mathematical constants require a floating-point type");
-  return static_cast<T>(value);
-}
-} // namespace detail
 
-#define FTL_MATH_CONSTANT(name, value)                                        \
-  template <class T> inline constexpr T name##_v = detail::constant<T>(value); \
+#ifdef __STDCPP_FLOAT128_T__
+
+#define FTL_DETAIL_MATH_STD_FLOAT128(T, value)                                 \
+  if constexpr (is_same_v<remove_cv_t<T>, decltype(0.0f128)>) {                \
+    return static_cast<T>(value##f128);                                        \
+  }
+
+#else
+
+#define FTL_DETAIL_MATH_STD_FLOAT128(T, value)
+
+#endif
+
+#if defined(__SIZEOF_FLOAT128__) && !defined(__STRICT_ANSI__)
+
+#define FTL_DETAIL_MATH_GNU_FLOAT128(T, value)                                 \
+  if constexpr (is_same_v<remove_cv_t<T>, __float128>) {                       \
+    return static_cast<T>(value##Q);                                           \
+  }
+
+#else
+
+#define FTL_DETAIL_MATH_GNU_FLOAT128(T, value)
+
+#endif
+
+#define FTL_MATH_CONSTANT(name, value)                                         \
+  template <class T>                                                           \
+  inline constexpr T name##_v = []() constexpr -> T {                          \
+    static_assert(is_floating_point_v<T>,                                      \
+                  "mathematical constants require a floating-point type");     \
+                                                                               \
+    FTL_DETAIL_MATH_STD_FLOAT128(T, value)                                     \
+    FTL_DETAIL_MATH_GNU_FLOAT128(T, value)                                     \
+                                                                               \
+    return static_cast<T>(value##L);                                           \
+  }();                                                                         \
+                                                                               \
   inline constexpr double name = name##_v<double>
 
-FTL_MATH_CONSTANT(e, 2.718281828459045235360287471352662498L);
-FTL_MATH_CONSTANT(log2e, 1.442695040888963407359924681001892137L);
-FTL_MATH_CONSTANT(log10e, 0.434294481903251827651128918916605082L);
-FTL_MATH_CONSTANT(pi, 3.141592653589793238462643383279502884L);
-FTL_MATH_CONSTANT(inv_pi, 0.318309886183790671537767526745028724L);
-FTL_MATH_CONSTANT(inv_sqrtpi, 0.564189583547756286948079451560772586L);
-FTL_MATH_CONSTANT(ln2, 0.693147180559945309417232121458176568L);
-FTL_MATH_CONSTANT(ln10, 2.302585092994045684017991454684364208L);
-FTL_MATH_CONSTANT(sqrt2, 1.414213562373095048801688724209698079L);
-FTL_MATH_CONSTANT(sqrt3, 1.732050807568877293527446341505872367L);
-FTL_MATH_CONSTANT(inv_sqrt3, 0.577350269189625764509148780501957456L);
-FTL_MATH_CONSTANT(egamma, 0.577215664901532860606512090082402431L);
-FTL_MATH_CONSTANT(phi, 1.618033988749894848204586834365638118L);
+FTL_MATH_CONSTANT(e, 2.718281828459045235360287471352662498);
+
+FTL_MATH_CONSTANT(log2e, 1.442695040888963407359924681001892137);
+
+FTL_MATH_CONSTANT(log10e, 0.434294481903251827651128918916605082);
+
+FTL_MATH_CONSTANT(pi, 3.141592653589793238462643383279502884);
+
+FTL_MATH_CONSTANT(inv_pi, 0.318309886183790671537767526745028724);
+
+FTL_MATH_CONSTANT(inv_sqrtpi, 0.564189583547756286948079451560772586);
+
+FTL_MATH_CONSTANT(ln2, 0.693147180559945309417232121458176568);
+
+FTL_MATH_CONSTANT(ln10, 2.302585092994045684017991454684364208);
+
+FTL_MATH_CONSTANT(sqrt2, 1.414213562373095048801688724209698079);
+
+FTL_MATH_CONSTANT(sqrt3, 1.732050807568877293527446341505872367);
+
+FTL_MATH_CONSTANT(inv_sqrt3, 0.577350269189625764509148780501957456);
+
+FTL_MATH_CONSTANT(egamma, 0.577215664901532860606512090082402431);
+
+FTL_MATH_CONSTANT(phi, 1.618033988749894848204586834365638118);
 
 #undef FTL_MATH_CONSTANT
+#undef FTL_DETAIL_MATH_GNU_FLOAT128
+#undef FTL_DETAIL_MATH_STD_FLOAT128
+
 } // namespace numbers
 
 #if !defined(__cpp_lib_math_constants) || __cpp_lib_math_constants < 201907L
