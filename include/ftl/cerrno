@@ -3,23 +3,262 @@
 #ifndef FTL_CERRNO_HEADER
 #define FTL_CERRNO_HEADER
 
+#ifdef FTL_REPLACE_STL
+#include <__system_error/errno_values.hpp>
+#else
+#include <ftl/__system_error/errno_values.hpp>
+#endif
+
+#ifndef errno
 #if defined(_WIN32)
 extern "C" int* _errno();
 #define errno (*_errno())
 #elif defined(__APPLE__)
 extern "C" int* __error();
 #define errno (*__error())
-#else
+#elif defined(__linux__)
 extern "C" int* __errno_location() noexcept;
 #define errno (*__errno_location())
-#endif
-
-#define EDOM 33
-#define ERANGE 34
-#if defined(_WIN32)
-#define EILSEQ 42
 #else
-#define EILSEQ 84
+#error "FTL errno access is not defined for this platform"
+#endif
 #endif
 
+#ifndef E2BIG
+#define E2BIG FTL_DETAIL_ERRNO_E2BIG
 #endif
+#ifndef EACCES
+#define EACCES FTL_DETAIL_ERRNO_EACCES
+#endif
+#ifndef EADDRINUSE
+#define EADDRINUSE FTL_DETAIL_ERRNO_EADDRINUSE
+#endif
+#ifndef EADDRNOTAVAIL
+#define EADDRNOTAVAIL FTL_DETAIL_ERRNO_EADDRNOTAVAIL
+#endif
+#ifndef EAFNOSUPPORT
+#define EAFNOSUPPORT FTL_DETAIL_ERRNO_EAFNOSUPPORT
+#endif
+#ifndef EAGAIN
+#define EAGAIN FTL_DETAIL_ERRNO_EAGAIN
+#endif
+#ifndef EALREADY
+#define EALREADY FTL_DETAIL_ERRNO_EALREADY
+#endif
+#ifndef EBADF
+#define EBADF FTL_DETAIL_ERRNO_EBADF
+#endif
+#ifndef EBADMSG
+#define EBADMSG FTL_DETAIL_ERRNO_EBADMSG
+#endif
+#ifndef EBUSY
+#define EBUSY FTL_DETAIL_ERRNO_EBUSY
+#endif
+#ifndef ECANCELED
+#define ECANCELED FTL_DETAIL_ERRNO_ECANCELED
+#endif
+#ifndef ECHILD
+#define ECHILD FTL_DETAIL_ERRNO_ECHILD
+#endif
+#ifndef ECONNABORTED
+#define ECONNABORTED FTL_DETAIL_ERRNO_ECONNABORTED
+#endif
+#ifndef ECONNREFUSED
+#define ECONNREFUSED FTL_DETAIL_ERRNO_ECONNREFUSED
+#endif
+#ifndef ECONNRESET
+#define ECONNRESET FTL_DETAIL_ERRNO_ECONNRESET
+#endif
+#ifndef EDEADLK
+#define EDEADLK FTL_DETAIL_ERRNO_EDEADLK
+#endif
+#ifndef EDESTADDRREQ
+#define EDESTADDRREQ FTL_DETAIL_ERRNO_EDESTADDRREQ
+#endif
+#ifndef EDOM
+#define EDOM FTL_DETAIL_ERRNO_EDOM
+#endif
+#ifndef EEXIST
+#define EEXIST FTL_DETAIL_ERRNO_EEXIST
+#endif
+#ifndef EFAULT
+#define EFAULT FTL_DETAIL_ERRNO_EFAULT
+#endif
+#ifndef EFBIG
+#define EFBIG FTL_DETAIL_ERRNO_EFBIG
+#endif
+#ifndef EHOSTUNREACH
+#define EHOSTUNREACH FTL_DETAIL_ERRNO_EHOSTUNREACH
+#endif
+#ifndef EIDRM
+#define EIDRM FTL_DETAIL_ERRNO_EIDRM
+#endif
+#ifndef EILSEQ
+#define EILSEQ FTL_DETAIL_ERRNO_EILSEQ
+#endif
+#ifndef EINPROGRESS
+#define EINPROGRESS FTL_DETAIL_ERRNO_EINPROGRESS
+#endif
+#ifndef EINTR
+#define EINTR FTL_DETAIL_ERRNO_EINTR
+#endif
+#ifndef EINVAL
+#define EINVAL FTL_DETAIL_ERRNO_EINVAL
+#endif
+#ifndef EIO
+#define EIO FTL_DETAIL_ERRNO_EIO
+#endif
+#ifndef EISCONN
+#define EISCONN FTL_DETAIL_ERRNO_EISCONN
+#endif
+#ifndef EISDIR
+#define EISDIR FTL_DETAIL_ERRNO_EISDIR
+#endif
+#ifndef ELOOP
+#define ELOOP FTL_DETAIL_ERRNO_ELOOP
+#endif
+#ifndef EMFILE
+#define EMFILE FTL_DETAIL_ERRNO_EMFILE
+#endif
+#ifndef EMLINK
+#define EMLINK FTL_DETAIL_ERRNO_EMLINK
+#endif
+#ifndef EMSGSIZE
+#define EMSGSIZE FTL_DETAIL_ERRNO_EMSGSIZE
+#endif
+#ifndef ENAMETOOLONG
+#define ENAMETOOLONG FTL_DETAIL_ERRNO_ENAMETOOLONG
+#endif
+#ifndef ENETDOWN
+#define ENETDOWN FTL_DETAIL_ERRNO_ENETDOWN
+#endif
+#ifndef ENETRESET
+#define ENETRESET FTL_DETAIL_ERRNO_ENETRESET
+#endif
+#ifndef ENETUNREACH
+#define ENETUNREACH FTL_DETAIL_ERRNO_ENETUNREACH
+#endif
+#ifndef ENFILE
+#define ENFILE FTL_DETAIL_ERRNO_ENFILE
+#endif
+#ifndef ENOBUFS
+#define ENOBUFS FTL_DETAIL_ERRNO_ENOBUFS
+#endif
+#ifndef ENODEV
+#define ENODEV FTL_DETAIL_ERRNO_ENODEV
+#endif
+#ifndef ENOENT
+#define ENOENT FTL_DETAIL_ERRNO_ENOENT
+#endif
+#ifndef ENOEXEC
+#define ENOEXEC FTL_DETAIL_ERRNO_ENOEXEC
+#endif
+#ifndef ENOLCK
+#define ENOLCK FTL_DETAIL_ERRNO_ENOLCK
+#endif
+#ifndef ENOLINK
+#define ENOLINK FTL_DETAIL_ERRNO_ENOLINK
+#endif
+#ifndef ENOMEM
+#define ENOMEM FTL_DETAIL_ERRNO_ENOMEM
+#endif
+#ifndef ENOMSG
+#define ENOMSG FTL_DETAIL_ERRNO_ENOMSG
+#endif
+#ifndef ENOPROTOOPT
+#define ENOPROTOOPT FTL_DETAIL_ERRNO_ENOPROTOOPT
+#endif
+#ifndef ENOSPC
+#define ENOSPC FTL_DETAIL_ERRNO_ENOSPC
+#endif
+#ifndef ENOSYS
+#define ENOSYS FTL_DETAIL_ERRNO_ENOSYS
+#endif
+#ifndef ENOTCONN
+#define ENOTCONN FTL_DETAIL_ERRNO_ENOTCONN
+#endif
+#ifndef ENOTDIR
+#define ENOTDIR FTL_DETAIL_ERRNO_ENOTDIR
+#endif
+#ifndef ENOTEMPTY
+#define ENOTEMPTY FTL_DETAIL_ERRNO_ENOTEMPTY
+#endif
+#ifndef ENOTRECOVERABLE
+#define ENOTRECOVERABLE FTL_DETAIL_ERRNO_ENOTRECOVERABLE
+#endif
+#ifndef ENOTSOCK
+#define ENOTSOCK FTL_DETAIL_ERRNO_ENOTSOCK
+#endif
+#ifndef ENOTSUP
+#define ENOTSUP FTL_DETAIL_ERRNO_ENOTSUP
+#endif
+#ifndef ENOTTY
+#define ENOTTY FTL_DETAIL_ERRNO_ENOTTY
+#endif
+#ifndef ENXIO
+#define ENXIO FTL_DETAIL_ERRNO_ENXIO
+#endif
+#ifndef EOPNOTSUPP
+#define EOPNOTSUPP FTL_DETAIL_ERRNO_EOPNOTSUPP
+#endif
+#ifndef EOVERFLOW
+#define EOVERFLOW FTL_DETAIL_ERRNO_EOVERFLOW
+#endif
+#ifndef EOWNERDEAD
+#define EOWNERDEAD FTL_DETAIL_ERRNO_EOWNERDEAD
+#endif
+#ifndef EPERM
+#define EPERM FTL_DETAIL_ERRNO_EPERM
+#endif
+#ifndef EPIPE
+#define EPIPE FTL_DETAIL_ERRNO_EPIPE
+#endif
+#ifndef EPROTO
+#define EPROTO FTL_DETAIL_ERRNO_EPROTO
+#endif
+#ifndef EPROTONOSUPPORT
+#define EPROTONOSUPPORT FTL_DETAIL_ERRNO_EPROTONOSUPPORT
+#endif
+#ifndef EPROTOTYPE
+#define EPROTOTYPE FTL_DETAIL_ERRNO_EPROTOTYPE
+#endif
+#ifndef ERANGE
+#define ERANGE FTL_DETAIL_ERRNO_ERANGE
+#endif
+#ifndef EROFS
+#define EROFS FTL_DETAIL_ERRNO_EROFS
+#endif
+#ifndef ESPIPE
+#define ESPIPE FTL_DETAIL_ERRNO_ESPIPE
+#endif
+#ifndef ESRCH
+#define ESRCH FTL_DETAIL_ERRNO_ESRCH
+#endif
+#ifndef ETIMEDOUT
+#define ETIMEDOUT FTL_DETAIL_ERRNO_ETIMEDOUT
+#endif
+#ifndef ETXTBSY
+#define ETXTBSY FTL_DETAIL_ERRNO_ETXTBSY
+#endif
+#ifndef EWOULDBLOCK
+#define EWOULDBLOCK FTL_DETAIL_ERRNO_EWOULDBLOCK
+#endif
+#ifndef EXDEV
+#define EXDEV FTL_DETAIL_ERRNO_EXDEV
+#endif
+
+// C++23 Annex D [depr.cerrno].
+#ifndef ENODATA
+#define ENODATA FTL_DETAIL_ERRNO_ENODATA
+#endif
+#ifndef ENOSR
+#define ENOSR FTL_DETAIL_ERRNO_ENOSR
+#endif
+#ifndef ENOSTR
+#define ENOSTR FTL_DETAIL_ERRNO_ENOSTR
+#endif
+#ifndef ETIME
+#define ETIME FTL_DETAIL_ERRNO_ETIME
+#endif
+
+#endif // FTL_CERRNO_HEADER
