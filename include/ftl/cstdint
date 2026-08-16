@@ -93,15 +93,13 @@ using uint_fast64_t = unsigned long;
 
 using intptr_t = FTL_INTPTR;
 using uintptr_t = FTL_UINTPTR;
-#if defined(__SIZEOF_INT128__)
-using intmax_t = __int128;
-using uintmax_t = unsigned __int128;
-#elif defined(__APPLE__)
-using intmax_t = long;
-using uintmax_t = unsigned long;
+
+#if defined(_MSC_VER)
+using intmax_t = long long;
+using uintmax_t = unsigned long long;
 #else
-using intmax_t = int64_t;
-using uintmax_t = uint64_t;
+using intmax_t = __INTMAX_TYPE__;
+using uintmax_t = __UINTMAX_TYPE__;
 #endif
 
 FTL_CSTDINT_END_NAMESPACE
@@ -167,14 +165,14 @@ FTL_CSTDINT_END_NAMESPACE
 #define UINT_FAST64_MAX __UINT_FAST64_MAX__
 #endif
 
-#if defined(__SIZEOF_INT128__)
-#define UINTMAX_MAX ((unsigned __int128)-1)
-#define INTMAX_MAX ((__int128)(UINTMAX_MAX >> 1))
-#define INTMAX_MIN (-INTMAX_MAX - 1)
-#else
+#if defined(_MSC_VER)
 #define INTMAX_MIN INT64_MIN
 #define INTMAX_MAX INT64_MAX
 #define UINTMAX_MAX UINT64_MAX
+#else
+#define INTMAX_MIN (-__INTMAX_MAX__ - 1)
+#define INTMAX_MAX __INTMAX_MAX__
+#define UINTMAX_MAX __UINTMAX_MAX__
 #endif
 #if defined(_MSC_VER)
 #if defined(_WIN64)
@@ -233,21 +231,11 @@ FTL_CSTDINT_END_NAMESPACE
 #define UINT64_C(value) value##ULL
 #define INTMAX_C(value) value##LL
 #define UINTMAX_C(value) value##ULL
-#elif defined(__APPLE__)
-#define INT64_C(value) value##LL
-#define UINT64_C(value) value##ULL
-#define INTMAX_C(value) value##L
-#define UINTMAX_C(value) value##UL
 #else
 #define INT64_C(value) __INT64_C(value)
 #define UINT64_C(value) __UINT64_C(value)
-#if defined(__SIZEOF_INT128__)
-#define INTMAX_C(value) ((__int128)(value))
-#define UINTMAX_C(value) ((unsigned __int128)(value))
-#else
 #define INTMAX_C(value) __INTMAX_C(value)
 #define UINTMAX_C(value) __UINTMAX_C(value)
-#endif
 #endif
 #endif // INT8_MIN
 
@@ -264,19 +252,6 @@ FTL_CSTDINT_END_NAMESPACE
 #if defined(_MSC_VER)
 #undef UINT_FAST8_MAX
 #define UINT_FAST8_MAX UINT8_MAX
-#endif
-
-#if defined(__SIZEOF_INT128__)
-#undef INTMAX_MIN
-#undef INTMAX_MAX
-#undef UINTMAX_MAX
-#define UINTMAX_MAX ((unsigned __int128)-1)
-#define INTMAX_MAX ((__int128)(UINTMAX_MAX >> 1))
-#define INTMAX_MIN (-INTMAX_MAX - 1)
-#undef INTMAX_C
-#undef UINTMAX_C
-#define INTMAX_C(value) ((__int128)(value))
-#define UINTMAX_C(value) ((unsigned __int128)(value))
 #endif
 
 #undef FTL_INT8
