@@ -51,6 +51,14 @@ public:
     imaginary_ = T{};
     return *this;
   }
+
+  template <class U>
+  constexpr complex &operator=(const complex<U> &other) {
+    real_ = static_cast<T>(other.real());
+    imaginary_ = static_cast<T>(other.imag());
+    return *this;
+  }
+
   constexpr complex &operator+=(const T &value) {
     real_ += value;
     return *this;
