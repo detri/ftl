@@ -123,6 +123,19 @@ static_assert(
                       complex<double>>);
 #endif
 
+bool stream_width_and_fill_apply_to_whole_complex() {
+  complex_output_buffer output;
+  tested::ostream stream(&output);
+
+  stream.fill('#');
+  stream.setf(tested::ios_base::right, tested::ios_base::adjustfield);
+  stream.width(10);
+
+  stream << complex<double>{1.0, 2.0};
+
+  return output.text == "#####(1,2)" && stream.width() == 0;
+}
+
 bool ftl_test() {
   const complex<double> value{3.0, 4.0};
   const auto square_root = tested::sqrt(complex<double>{-1.0, 0.0});
@@ -167,5 +180,6 @@ bool ftl_test() {
          !tested::signbit(infinite_numerator.real()) &&
          tested::signbit(infinite_numerator.imag()) &&
          tested::isnan(nan_quotient.real()) &&
-         tested::isnan(nan_quotient.imag()) && stream_round_trip_works();
+         tested::isnan(nan_quotient.imag()) && stream_round_trip_works() &&
+         stream_width_and_fill_apply_to_whole_complex();
 }
