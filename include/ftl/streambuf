@@ -100,7 +100,9 @@ protected:
     epptr_ = other.epptr_;
     return *this;
   }
+
   void swap(basic_streambuf &other) {
+    swap_value(locale_, other.locale_);
     swap_value(eback_, other.eback_);
     swap_value(gptr_, other.gptr_);
     swap_value(egptr_, other.egptr_);
