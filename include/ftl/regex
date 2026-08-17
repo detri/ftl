@@ -2510,14 +2510,33 @@ public:
   static constexpr flag_type multiline = regex_constants::multiline;
 
   basic_regex() = default;
-  basic_regex(const basic_regex &) = default;
-  basic_regex(basic_regex &&) noexcept = default;
-  basic_regex &operator=(const basic_regex &) = default;
-  basic_regex &operator=(basic_regex &&) noexcept = default;
+
+  basic_regex(const basic_regex &other)
+      : state_(clone_state(other.state_.get())) {}
+
+  basic_regex(basic_regex &&other) noexcept
+      : state_(move(other.state_)) {}
+
+  basic_regex &operator=(const basic_regex &other) {
+    if (this != &other) {
+      auto next = clone_state(other.state_.get());
+      state_ = move(next);
+    }
+
+    return *this;
+  }
+
+  basic_regex &operator=(basic_regex &&other) noexcept {
+    if (this != &other)
+      state_ = move(other.state_);
+
+    return *this;
+  }
 
   explicit basic_regex(const CharT *p, flag_type f = ECMAScript) {
     assign(p, f);
   }
+
   basic_regex(const CharT *p, size_t n, flag_type f = ECMAScript) {
     assign(p, n, f);
   }
@@ -2528,7 +2547,8 @@ public:
     assign(s.begin(), s.end(), f);
   }
 
-  template <class It> basic_regex(It first, It last, flag_type f = ECMAScript) {
+  template <class It>
+  basic_regex(It first, It last, flag_type f = ECMAScript) {
     assign(first, last, f);
   }
 
@@ -2536,7 +2556,9 @@ public:
     assign(il.begin(), il.end(), f);
   }
 
-  basic_regex &operator=(const CharT *p) { return assign(p); }
+  basic_regex &operator=(const CharT *p) {
+    return assign(p);
+  }
 
   template <class ST, class SA>
   basic_regex &operator=(const basic_string<CharT, ST, SA> &s) {
@@ -2547,8 +2569,13 @@ public:
     return assign(il.begin(), il.end());
   }
 
-  basic_regex &assign(const basic_regex &r) {
-    *this = r;
+  basic_regex &assign(const basic_regex &other) {
+    *this = other;
+    return *this;
+  }
+
+  basic_regex &assign(basic_regex &&other) noexcept {
+    *this = move(other);
     return *this;
   }
 
@@ -2556,9 +2583,8 @@ public:
     return assign(p, traits_type::length(p), f);
   }
 
-  basic_regex &assign(basic_regex &&r) noexcept { return *this = move(r); }
-
-  basic_regex &assign(const CharT *p, size_t n, flag_type f = ECMAScript) {
+  basic_regex &assign(const CharT *p, size_t n,
+                      flag_type f = ECMAScript) {
     return assign(p, p + n, f);
   }
 
@@ -2570,64 +2596,113 @@ public:
 
   template <class It>
   basic_regex &assign(It first, It last, flag_type f = ECMAScript) {
-    string_type pat(first, last);
+    string_type pattern(first, last);
 
-    //
-    // The public flag value must remain exactly what the caller supplied.
-    // A missing grammar bit means "use ECMAScript", but it does not mean
-    // that flags() gains the ECMAScript bit.
-    //
-    flag_type nf = detail::normalize_syntax(f);
+    flag_type normalized = detail::normalize_syntax(f);
 
-    detail::rx_parser<CharT, Traits> parser(pat.data(), pat.data() + pat.size(),
-                                            nf, traits_);
+    unique_ptr<state> next(new state{});
+
+    // Assignment/recompilation retains the regex object's current locale.
+    if (state_)
+      next->traits.imbue(state_->traits.getloc());
+
+    detail::rx_parser<CharT, Traits> parser(
+        pattern.data(), pattern.data() + pattern.size(),
+        normalized, next->traits);
 
     int root = parser.parse();
 
-    detail::rx_compiler<CharT, Traits> compiler(parser.nodes(),
-                                                parser.classes(), nf);
+    detail::rx_compiler<CharT, Traits> compiler(
+        parser.nodes(), parser.classes(), normalized);
 
-    auto prog = compiler.compile(root);
+    auto program = compiler.compile(root);
 
-    pattern_ = move(pat);
-    flags_ = f;
-    marks_ = parser.marks();
-    capture_count_ = parser.captures();
-    program_ = move(prog);
-    valid_ = true;
+    next->pattern = move(pattern);
+    next->flags = f;
+    next->marks = parser.marks();
+    next->capture_count = parser.captures();
+    next->program = move(program);
+    next->valid = true;
+
+    // Commit only after construction/compilation has completely succeeded.
+    state_ = move(next);
 
     return *this;
   }
 
-  basic_regex &assign(initializer_list<CharT> il, flag_type f = ECMAScript) {
+  basic_regex &assign(initializer_list<CharT> il,
+                      flag_type f = ECMAScript) {
     return assign(il.begin(), il.end(), f);
   }
 
-  unsigned mark_count() const noexcept { return static_cast<unsigned>(marks_); }
-  flag_type flags() const noexcept { return flags_; }
+  unsigned mark_count() const noexcept {
+    return state_ ? static_cast<unsigned>(state_->marks) : 0;
+  }
+
+  flag_type flags() const noexcept {
+    return state_ ? state_->flags : ECMAScript;
+  }
 
   locale_type imbue(locale_type loc) {
-    locale_type old = traits_.imbue(loc);
-    program_ = {};
-    valid_ = false;
+    if (!state_)
+      state_ = unique_ptr<state>(new state{});
+
+    locale_type old = state_->traits.imbue(loc);
+
+    state_->program = {};
+    state_->valid = false;
+
     return old;
   }
-  locale_type getloc() const { return traits_.getloc(); }
+
+  locale_type getloc() const {
+    if (state_)
+      return state_->traits.getloc();
+
+    traits_type traits{};
+    return traits.getloc();
+  }
 
   void swap(basic_regex &other) {
-    basic_regex tmp(move(other));
-    other = move(*this);
-    *this = move(tmp);
+    // Moving unique_ptrs only: no pattern/program/Traits movement,
+    // allocation, parsing, or traversal.
+    auto temporary = move(state_);
+    state_ = move(other.state_);
+    other.state_ = move(temporary);
   }
 
 private:
-  string_type pattern_;
-  flag_type flags_ = ECMAScript;
-  traits_type traits_{};
-  size_t marks_ = 0;
-  size_t capture_count_ = 0;
-  detail::rx_program<CharT, Traits> program_{};
-  bool valid_ = false;
+  struct state {
+    string_type pattern{};
+    flag_type flags = ECMAScript;
+    traits_type traits{};
+    size_t marks = 0;
+    size_t capture_count = 0;
+    detail::rx_program<CharT, Traits> program{};
+    bool valid = false;
+  };
+
+  static unique_ptr<state> clone_state(const state *source) {
+    if (!source)
+      return {};
+
+    unique_ptr<state> result(new state{});
+
+    // RegexTraits itself is not required to be copyable. Reconstruct a fresh
+    // traits object and transfer the standardized observable traits state.
+    result->traits.imbue(source->traits.getloc());
+
+    result->pattern = source->pattern;
+    result->flags = source->flags;
+    result->marks = source->marks;
+    result->capture_count = source->capture_count;
+    result->program = source->program;
+    result->valid = source->valid;
+
+    return result;
+  }
+
+  unique_ptr<state> state_{};
 
   friend struct detail::regex_access<CharT, Traits>;
 };
@@ -2937,13 +3012,23 @@ namespace detail {
 
 template <class C, class T> struct regex_access {
   static const rx_program<C, T> &program(const basic_regex<C, T> &r) {
-    return r.program_;
+    return r.state_->program;
   }
-  static const T &traits(const basic_regex<C, T> &r) { return r.traits_; }
-  static size_t marks(const basic_regex<C, T> &r) { return r.marks_; }
-  static bool valid(const basic_regex<C, T> &r) { return r.valid_; }
+
+  static const T &traits(const basic_regex<C, T> &r) {
+    return r.state_->traits;
+  }
+
+  static size_t marks(const basic_regex<C, T> &r) {
+    return r.state_ ? r.state_->marks : 0;
+  }
+
+  static bool valid(const basic_regex<C, T> &r) {
+    return r.state_ && r.state_->valid;
+  }
+
   static size_t captures(const basic_regex<C, T> &r) {
-    return r.capture_count_;
+    return r.state_ ? r.state_->capture_count : 0;
   }
 };
 

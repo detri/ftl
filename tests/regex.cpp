@@ -10,6 +10,23 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+struct immobile_regex_traits : tested::regex_traits<char> {
+  immobile_regex_traits() = default;
+
+  immobile_regex_traits(const immobile_regex_traits &) = delete;
+  immobile_regex_traits &operator=(const immobile_regex_traits &) = delete;
+
+  immobile_regex_traits(immobile_regex_traits &&) = delete;
+  immobile_regex_traits &operator=(immobile_regex_traits &&) = delete;
+};
+
+using immobile_regex = tested::basic_regex<char, immobile_regex_traits>;
+
+static_assert(tested::is_copy_constructible_v<immobile_regex>);
+static_assert(tested::is_copy_assignable_v<immobile_regex>);
+static_assert(tested::is_nothrow_move_constructible_v<immobile_regex>);
+static_assert(tested::is_nothrow_move_assignable_v<immobile_regex>);
+
 struct regex4_traits : tested::regex_traits<char> {
   using base = tested::regex_traits<char>;
   using string_type = typename base::string_type;
@@ -1327,6 +1344,83 @@ static bool posix_dot_rejects_nul() {
   return !tested::regex_match(input, input + 1, tested::regex(".", awk));
 }
 
+static bool basic_regex_copy_move_state_works() {
+  immobile_regex original("(a)(b)", tested::regex_constants::ECMAScript |
+                                        tested::regex_constants::icase);
+
+  const auto original_flags = original.flags();
+  const auto original_marks = original.mark_count();
+
+  immobile_regex copied(original);
+
+  if (copied.flags() != original_flags ||
+      copied.mark_count() != original_marks ||
+      !tested::regex_match("AB", copied))
+    return false;
+
+  immobile_regex copy_assigned;
+  copy_assigned = copied;
+
+  if (copy_assigned.flags() != original_flags ||
+      copy_assigned.mark_count() != original_marks ||
+      !tested::regex_match("AB", copy_assigned))
+    return false;
+
+  immobile_regex moved(tested::move(original));
+
+  if (moved.flags() != original_flags || moved.mark_count() != original_marks ||
+      !tested::regex_match("AB", moved))
+    return false;
+
+  // Moved-from object remains a usable regex object.
+  original.assign("x+");
+
+  if (!tested::regex_match("xxx", original))
+    return false;
+
+  immobile_regex move_assigned;
+  move_assigned = tested::move(moved);
+
+  if (move_assigned.flags() != original_flags ||
+      move_assigned.mark_count() != original_marks ||
+      !tested::regex_match("AB", move_assigned))
+    return false;
+
+  // And the move-assignment source remains usable.
+  moved.assign("z");
+
+  return tested::regex_match("z", moved);
+}
+
+static bool basic_regex_swap_works() {
+  immobile_regex left("(ab)+", tested::regex_constants::ECMAScript |
+                                   tested::regex_constants::icase);
+
+  immobile_regex right("(x)(y)(z)", tested::regex_constants::extended);
+
+  const auto left_flags = left.flags();
+  const auto left_marks = left.mark_count();
+  const auto right_flags = right.flags();
+  const auto right_marks = right.mark_count();
+
+  left.swap(right);
+
+  if (left.flags() != right_flags || left.mark_count() != right_marks ||
+      right.flags() != left_flags || right.mark_count() != left_marks)
+    return false;
+
+  if (!tested::regex_match("xyz", left))
+    return false;
+
+  if (!tested::regex_match("ABAB", right))
+    return false;
+
+  // Exercise the required non-member swap as well.
+  tested::swap(left, right);
+
+  return tested::regex_match("ABAB", left) && tested::regex_match("xyz", right);
+}
+
 bool ftl_test() {
   return basic_match() && search_works() && alternation_quantifiers() &&
          classes_and_escapes() && anchors_and_boundaries() && icase_works() &&
@@ -1361,5 +1455,7 @@ bool ftl_test() {
 
          exact_flags_preserved() && unmatched_position_is_end() &&
          ecma_format_numeric_references() &&
-         posix_subexpression_longest_tiebreak() && posix_dot_rejects_nul();
+         posix_subexpression_longest_tiebreak() && posix_dot_rejects_nul()
+
+         && basic_regex_copy_move_state_works() && basic_regex_swap_works();
 }
