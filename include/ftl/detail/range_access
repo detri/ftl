@@ -681,6 +681,17 @@ concept constant_range = input_range<T> && constant_iterator<iterator_t<T>>;
 template <class T>
 concept borrowed_range = range<T> && detail::borrowable_range_argument<T>;
 
+struct dangling {
+  constexpr dangling() noexcept = default;
+
+  template <class... Args>
+  constexpr dangling(Args &&...) noexcept {}
+};
+
+template <range R>
+using borrowed_iterator_t =
+    conditional_t<borrowed_range<R>, iterator_t<R>, dangling>;
+
 // [range.view]
 
 class view_base {};

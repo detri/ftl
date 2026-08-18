@@ -4,14 +4,20 @@
 #define FTL_MEMORY_HEADER
 
 #ifdef FTL_REPLACE_STL
+#include <__algorithms/result.hpp>
 #include <atomic>
+#include <compare>
+#include <iterator>
 #include <new>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 #define FTL_MEMORY_NAMESPACE std
 #else
+#include <ftl/__algorithms/result.hpp>
 #include <ftl/atomic>
+#include <ftl/compare>
+#include <ftl/iterator>
 #include <ftl/new>
 #include <ftl/tuple>
 #include <ftl/type_traits>
@@ -34,9 +40,7 @@ template <class T, class... Args>
   requires requires(T *location, Args &&...args) {
     ::new (static_cast<void *>(location)) T(forward<Args>(args)...);
   }
-constexpr T *
-construct_at(T *location,
-             Args &&...args) noexcept(is_nothrow_constructible_v<T, Args...>);
+constexpr T *construct_at(T *location, Args &&...args);
 
 inline void *align(size_t alignment, size_t size, void *&pointer,
                    size_t &space) {
@@ -69,13 +73,87 @@ using copy_cv_volatile_t =
 
 template <class T, class Void>
 copy_cv_volatile_t<T, Void> *start_lifetime_as(Void *pointer) noexcept {
-  return reinterpret_cast<copy_cv_volatile_t<T, Void> *>(pointer);
+  using result_type = copy_cv_volatile_t<T, Void>;
+
+  static_assert(is_implicit_lifetime_v<T>);
+  static_assert(sizeof(T) != 0);
+
+#if defined(_MSC_VER) && !defined(__clang__)
+
+  /*
+   * MSVC's STL uses the compiler intrinsic directly.
+   * __has_builtin is not a reliable test for this on MSVC.
+   */
+  return __builtin_start_lifetime_as<T>(pointer);
+
+#elif defined(__GNUC__) || defined(__clang__)
+
+  /*
+   * Same compiler-lifetime barrier strategy used by libstdc++.
+   */
+  auto *result = reinterpret_cast<result_type *>(pointer);
+
+  auto *writable = reinterpret_cast<remove_cv_t<result_type> *>(
+      const_cast<void *>(static_cast<const volatile void *>(pointer)));
+
+  __asm__ __volatile__(""
+                       : "=g"(result), "=m"(*writable)
+                       : "0"(result), "m"(*result));
+
+  return result;
+
+#else
+
+#error "FTL start_lifetime_as requires compiler lifetime support"
+
+#endif
 }
 
 template <class T, class Void>
 copy_cv_volatile_t<T, Void> *start_lifetime_as_array(Void *pointer,
-                                                     size_t) noexcept {
-  return reinterpret_cast<copy_cv_volatile_t<T, Void> *>(pointer);
+                                                     size_t count) noexcept {
+  using result_type = copy_cv_volatile_t<T, Void>;
+
+  static_assert(sizeof(T) != 0);
+
+#if defined(_MSC_VER) && !defined(__clang__)
+
+  return __builtin_start_lifetime_as_array<T>(pointer, count);
+
+#elif defined(__GNUC__) || defined(__clang__)
+
+  auto *result = reinterpret_cast<result_type *>(pointer);
+
+  if (count == 0)
+    return result;
+
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wvla-cxx-extension"
+#endif
+
+  auto *readable =
+      (__extension__ reinterpret_cast<result_type(*)[count]>(pointer));
+
+  auto *writable =
+      (__extension__ reinterpret_cast<remove_cv_t<result_type>(*)[count]>(
+          const_cast<void *>(static_cast<const volatile void *>(pointer))));
+
+  __asm__ __volatile__(""
+                       : "=g"(result), "=m"(*writable)
+                       : "0"(result), "m"(*readable));
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+
+  return result;
+
+#else
+
+#error "FTL start_lifetime_as_array requires compiler lifetime support"
+
+#endif
 }
 
 template <class T, class Alloc, class... Args>
@@ -242,32 +320,31 @@ template <class T, class... Args>
   requires requires(T *location, Args &&...args) {
     ::new (static_cast<void *>(location)) T(forward<Args>(args)...);
   }
-constexpr T *
-construct_at(T *location,
-             Args &&...args) noexcept(is_nothrow_constructible_v<T, Args...>) {
+constexpr T *construct_at(T *location, Args &&...args) {
   FTL_MSVC_CONSTEXPR
   return ::new (static_cast<void *>(location)) T(forward<Args>(args)...);
 }
 
-template <class T> constexpr void destroy_at(T *location) noexcept {
-  if constexpr (is_array_v<T>)
+template <class T> constexpr void destroy_at(T *location) {
+  if constexpr (is_array_v<T>) {
     for (auto &element : *location)
       destroy_at(addressof(element));
-  else
+  } else {
     location->~T();
+  }
 }
 
 template <class ForwardIterator>
-constexpr void destroy(ForwardIterator first, ForwardIterator last) noexcept {
+constexpr void destroy(ForwardIterator first, ForwardIterator last) {
   for (; first != last; ++first)
     destroy_at(addressof(*first));
 }
 
 template <class ForwardIterator, class Size>
-constexpr ForwardIterator destroy_n(ForwardIterator first,
-                                    Size count) noexcept {
+constexpr ForwardIterator destroy_n(ForwardIterator first, Size count) {
   for (; count > 0; --count, ++first)
     destroy_at(addressof(*first));
+
   return first;
 }
 
@@ -400,14 +477,16 @@ constexpr ForwardIterator uninitialized_fill_n(ForwardIterator first,
 template <class ForwardIterator>
 constexpr void uninitialized_default_construct(ForwardIterator first,
                                                ForwardIterator last) {
+  using value_type = typename iterator_traits<ForwardIterator>::value_type;
+
   auto current = first;
 
 #if FTL_HAS_EXCEPTIONS
   try {
 #endif
+
     for (; current != last; ++current) {
-      ::new (static_cast<void *>(addressof(*current)))
-          remove_reference_t<decltype(*current)>;
+      ::new (static_cast<void *>(addressof(*current))) value_type;
     }
 
 #if FTL_HAS_EXCEPTIONS
@@ -421,14 +500,16 @@ constexpr void uninitialized_default_construct(ForwardIterator first,
 template <class ForwardIterator, class Size>
 constexpr ForwardIterator
 uninitialized_default_construct_n(ForwardIterator first, Size count) {
+  using value_type = typename iterator_traits<ForwardIterator>::value_type;
+
   auto current = first;
 
 #if FTL_HAS_EXCEPTIONS
   try {
 #endif
+
     for (; count > 0; --count, ++current) {
-      ::new (static_cast<void *>(addressof(*current)))
-          remove_reference_t<decltype(*current)>;
+      ::new (static_cast<void *>(addressof(*current))) value_type;
     }
 
     return current;
@@ -481,6 +562,406 @@ constexpr ForwardIterator uninitialized_value_construct_n(ForwardIterator first,
 #endif
 }
 
+namespace ranges {
+
+namespace detail {
+
+template <class I>
+concept nothrow_input_iterator =
+    input_iterator<I> && is_lvalue_reference_v<iter_reference_t<I>> &&
+    same_as<remove_cvref_t<iter_reference_t<I>>, iter_value_t<I>>;
+
+template <class S, class I>
+concept nothrow_sentinel_for = sentinel_for<S, I>;
+
+template <class I>
+concept nothrow_forward_iterator =
+    nothrow_input_iterator<I> && forward_iterator<I> &&
+    nothrow_sentinel_for<I, I>;
+
+template <class R>
+concept nothrow_input_range =
+    range<R> && nothrow_input_iterator<iterator_t<R>> &&
+    nothrow_sentinel_for<sentinel_t<R>, iterator_t<R>>;
+
+template <class R>
+concept nothrow_forward_range =
+    nothrow_input_range<R> && nothrow_forward_iterator<iterator_t<R>>;
+
+template <class O, class S>
+constexpr void destroy_constructed(O first, S last) noexcept {
+  for (; first != last; ++first)
+    FTL_MEMORY_NAMESPACE::destroy_at(addressof(*first));
+}
+
+} // namespace detail
+
+template <class I, class O>
+using uninitialized_copy_result = in_out_result<I, O>;
+
+template <class I, class O>
+using uninitialized_move_result = in_out_result<I, O>;
+
+struct uninitialized_default_construct_fn {
+  template <detail::nothrow_forward_iterator I,
+            detail::nothrow_sentinel_for<I> S>
+  constexpr I operator()(I first, S last) const {
+    using T = iter_value_t<I>;
+    I current = first;
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      for (; current != last; ++current)
+        ::new (static_cast<void *>(addressof(*current))) T;
+
+      return current;
+
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      detail::destroy_constructed(first, current);
+      throw;
+    }
+#endif
+  }
+
+  template <detail::nothrow_forward_range R>
+  constexpr borrowed_iterator_t<R> operator()(R &&range) const {
+    auto result = (*this)(ranges::begin(range), ranges::end(range));
+    return borrowed_iterator_t<R>{result};
+  }
+};
+
+struct uninitialized_default_construct_n_fn {
+  template <detail::nothrow_forward_iterator I>
+  constexpr I operator()(I first, iter_difference_t<I> count) const {
+    using T = iter_value_t<I>;
+    I current = first;
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      for (; count > 0; --count, ++current)
+        ::new (static_cast<void *>(addressof(*current))) T;
+
+      return current;
+
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      detail::destroy_constructed(first, current);
+      throw;
+    }
+#endif
+  }
+};
+
+struct uninitialized_value_construct_fn {
+  template <detail::nothrow_forward_iterator I,
+            detail::nothrow_sentinel_for<I> S>
+  constexpr I operator()(I first, S last) const {
+    I current = first;
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      for (; current != last; ++current)
+        FTL_MEMORY_NAMESPACE::construct_at(addressof(*current));
+
+      return current;
+
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      detail::destroy_constructed(first, current);
+      throw;
+    }
+#endif
+  }
+
+  template <detail::nothrow_forward_range R>
+  constexpr borrowed_iterator_t<R> operator()(R &&range) const {
+    auto result = (*this)(ranges::begin(range), ranges::end(range));
+    return borrowed_iterator_t<R>{result};
+  }
+};
+
+struct uninitialized_value_construct_n_fn {
+  template <detail::nothrow_forward_iterator I>
+  constexpr I operator()(I first, iter_difference_t<I> count) const {
+    I current = first;
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      for (; count > 0; --count, ++current)
+        FTL_MEMORY_NAMESPACE::construct_at(addressof(*current));
+
+      return current;
+
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      detail::destroy_constructed(first, current);
+      throw;
+    }
+#endif
+  }
+};
+
+struct uninitialized_copy_fn {
+  template <input_iterator I, sentinel_for<I> S1,
+            detail::nothrow_forward_iterator O,
+            detail::nothrow_sentinel_for<O> S2>
+    requires constructible_from<iter_value_t<O>, iter_reference_t<I>>
+  constexpr uninitialized_copy_result<I, O>
+  operator()(I ifirst, S1 ilast, O ofirst, S2 olast) const {
+    O current = ofirst;
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      for (; ifirst != ilast && current != olast; ++ifirst, ++current)
+        FTL_MEMORY_NAMESPACE::construct_at(addressof(*current), *ifirst);
+
+      return {move(ifirst), move(current)};
+
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      detail::destroy_constructed(ofirst, current);
+      throw;
+    }
+#endif
+  }
+
+  template <input_range IR, detail::nothrow_forward_range OR>
+    requires constructible_from<range_value_t<OR>, range_reference_t<IR>>
+  constexpr uninitialized_copy_result<borrowed_iterator_t<IR>,
+                                      borrowed_iterator_t<OR>>
+  operator()(IR &&input, OR &&output) const {
+    auto result = (*this)(ranges::begin(input), ranges::end(input),
+                          ranges::begin(output), ranges::end(output));
+
+    return {
+        borrowed_iterator_t<IR>{result.in},
+        borrowed_iterator_t<OR>{result.out},
+    };
+  }
+};
+
+struct uninitialized_copy_n_fn {
+  template <input_iterator I, detail::nothrow_forward_iterator O,
+            detail::nothrow_sentinel_for<O> S>
+    requires constructible_from<iter_value_t<O>, iter_reference_t<I>>
+  constexpr uninitialized_copy_result<I, O>
+  operator()(I ifirst, iter_difference_t<I> count, O ofirst, S olast) const {
+    O current = ofirst;
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      for (; count > 0 && current != olast; --count, ++ifirst, ++current)
+        FTL_MEMORY_NAMESPACE::construct_at(addressof(*current), *ifirst);
+
+      return {move(ifirst), move(current)};
+
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      detail::destroy_constructed(ofirst, current);
+      throw;
+    }
+#endif
+  }
+};
+
+struct uninitialized_move_fn {
+  template <input_iterator I, sentinel_for<I> S1,
+            detail::nothrow_forward_iterator O,
+            detail::nothrow_sentinel_for<O> S2>
+    requires constructible_from<iter_value_t<O>, iter_rvalue_reference_t<I>>
+  constexpr uninitialized_move_result<I, O>
+  operator()(I ifirst, S1 ilast, O ofirst, S2 olast) const {
+    O current = ofirst;
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      for (; ifirst != ilast && current != olast; ++ifirst, ++current)
+        FTL_MEMORY_NAMESPACE::construct_at(addressof(*current),
+                                           ranges::iter_move(ifirst));
+
+      return {move(ifirst), move(current)};
+
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      detail::destroy_constructed(ofirst, current);
+      throw;
+    }
+#endif
+  }
+
+  template <input_range IR, detail::nothrow_forward_range OR>
+    requires constructible_from<range_value_t<OR>, range_rvalue_reference_t<IR>>
+  constexpr uninitialized_move_result<borrowed_iterator_t<IR>,
+                                      borrowed_iterator_t<OR>>
+  operator()(IR &&input, OR &&output) const {
+    auto result = (*this)(ranges::begin(input), ranges::end(input),
+                          ranges::begin(output), ranges::end(output));
+
+    return {
+        borrowed_iterator_t<IR>{result.in},
+        borrowed_iterator_t<OR>{result.out},
+    };
+  }
+};
+
+struct uninitialized_move_n_fn {
+  template <input_iterator I, detail::nothrow_forward_iterator O,
+            detail::nothrow_sentinel_for<O> S>
+    requires constructible_from<iter_value_t<O>, iter_rvalue_reference_t<I>>
+  constexpr uninitialized_move_result<I, O>
+  operator()(I ifirst, iter_difference_t<I> count, O ofirst, S olast) const {
+    O current = ofirst;
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      for (; count > 0 && current != olast; --count, ++ifirst, ++current)
+        FTL_MEMORY_NAMESPACE::construct_at(addressof(*current),
+                                           ranges::iter_move(ifirst));
+
+      return {move(ifirst), move(current)};
+
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      detail::destroy_constructed(ofirst, current);
+      throw;
+    }
+#endif
+  }
+};
+
+struct uninitialized_fill_fn {
+  template <detail::nothrow_forward_iterator I,
+            detail::nothrow_sentinel_for<I> S, class T>
+    requires constructible_from<iter_value_t<I>, const T &>
+  constexpr I operator()(I first, S last, const T &value) const {
+    I current = first;
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      for (; current != last; ++current)
+        FTL_MEMORY_NAMESPACE::construct_at(addressof(*current), value);
+
+      return current;
+
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      detail::destroy_constructed(first, current);
+      throw;
+    }
+#endif
+  }
+
+  template <detail::nothrow_forward_range R, class T>
+    requires constructible_from<range_value_t<R>, const T &>
+  constexpr borrowed_iterator_t<R> operator()(R &&range, const T &value) const {
+    auto result = (*this)(ranges::begin(range), ranges::end(range), value);
+
+    return borrowed_iterator_t<R>{result};
+  }
+};
+
+struct uninitialized_fill_n_fn {
+  template <detail::nothrow_forward_iterator I, class T>
+    requires constructible_from<iter_value_t<I>, const T &>
+  constexpr I operator()(I first, iter_difference_t<I> count,
+                         const T &value) const {
+    I current = first;
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      for (; count > 0; --count, ++current)
+        FTL_MEMORY_NAMESPACE::construct_at(addressof(*current), value);
+
+      return current;
+
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      detail::destroy_constructed(first, current);
+      throw;
+    }
+#endif
+  }
+};
+
+struct construct_at_fn {
+  template <class T, class... Args>
+    requires requires(T *location, Args &&...args) {
+      FTL_MEMORY_NAMESPACE::construct_at(location, forward<Args>(args)...);
+    }
+  constexpr T *operator()(T *location, Args &&...args) const {
+    return FTL_MEMORY_NAMESPACE::construct_at(location, forward<Args>(args)...);
+  }
+};
+
+struct destroy_at_fn {
+  template <class T> constexpr void operator()(T *location) const noexcept {
+    if constexpr (is_array_v<T>) {
+      for (auto &element : *location)
+        (*this)(addressof(element));
+    } else {
+      location->~T();
+    }
+  }
+};
+
+struct destroy_fn {
+  template <detail::nothrow_input_iterator I, detail::nothrow_sentinel_for<I> S>
+  constexpr I operator()(I first, S last) const noexcept {
+    for (; first != last; ++first)
+      FTL_MEMORY_NAMESPACE::destroy_at(addressof(*first));
+
+    return first;
+  }
+
+  template <detail::nothrow_input_range R>
+  constexpr borrowed_iterator_t<R> operator()(R &&range) const noexcept {
+    auto result = (*this)(ranges::begin(range), ranges::end(range));
+    return borrowed_iterator_t<R>{result};
+  }
+};
+
+struct destroy_n_fn {
+  template <detail::nothrow_input_iterator I>
+  constexpr I operator()(I first, iter_difference_t<I> count) const noexcept {
+    for (; count > 0; --count, ++first)
+      FTL_MEMORY_NAMESPACE::destroy_at(addressof(*first));
+
+    return first;
+  }
+};
+
+inline constexpr uninitialized_default_construct_fn
+    uninitialized_default_construct{};
+inline constexpr uninitialized_default_construct_n_fn
+    uninitialized_default_construct_n{};
+inline constexpr uninitialized_value_construct_fn
+    uninitialized_value_construct{};
+inline constexpr uninitialized_value_construct_n_fn
+    uninitialized_value_construct_n{};
+inline constexpr uninitialized_copy_fn uninitialized_copy{};
+inline constexpr uninitialized_copy_n_fn uninitialized_copy_n{};
+inline constexpr uninitialized_move_fn uninitialized_move{};
+inline constexpr uninitialized_move_n_fn uninitialized_move_n{};
+inline constexpr uninitialized_fill_fn uninitialized_fill{};
+inline constexpr uninitialized_fill_n_fn uninitialized_fill_n{};
+inline constexpr construct_at_fn construct_at{};
+inline constexpr destroy_at_fn destroy_at{};
+inline constexpr destroy_fn destroy{};
+inline constexpr destroy_n_fn destroy_n{};
+
+} // namespace ranges
+
 template <class T, class Deleter = default_delete<T>> class unique_ptr;
 
 template <class T, class Deleter> class unique_ptr {
@@ -519,6 +1000,7 @@ public:
 
   template <class U, class OtherDeleter>
     requires(!is_array_v<U> &&
+             !is_same_v<unique_ptr<U, OtherDeleter>, unique_ptr> &&
              is_convertible_v<typename unique_ptr<U, OtherDeleter>::pointer,
                               pointer> &&
              (is_reference_v<Deleter>
@@ -528,23 +1010,30 @@ public:
       : deleter{forward<OtherDeleter>(other.get_deleter())},
         pointer_value{other.release()} {}
 
-  unique_ptr &operator=(unique_ptr &&other) noexcept
+  constexpr unique_ptr &operator=(unique_ptr &&other) noexcept
     requires is_move_assignable_v<Deleter>
   {
     if (this != addressof(other)) {
       reset(other.release());
+
       deleter = forward<Deleter>(other.deleter);
     }
+
     return *this;
   }
 
   template <class U, class OtherDeleter>
-    requires(!is_array_v<U> && is_convertible_v<U *, pointer> &&
+    requires(!is_array_v<U> &&
+             !is_same_v<unique_ptr<U, OtherDeleter>, unique_ptr> &&
+             is_convertible_v<typename unique_ptr<U, OtherDeleter>::pointer,
+                              pointer> &&
              is_assignable_v<Deleter &, OtherDeleter &&>)
   constexpr unique_ptr &
   operator=(unique_ptr<U, OtherDeleter> &&other) noexcept {
     reset(other.release());
+
     deleter = forward<OtherDeleter>(other.get_deleter());
+
     return *this;
   }
 
@@ -554,6 +1043,7 @@ public:
   }
 
   unique_ptr(const unique_ptr &) = delete;
+
   unique_ptr &operator=(const unique_ptr &) = delete;
 
   constexpr ~unique_ptr() noexcept {
@@ -561,42 +1051,55 @@ public:
       deleter(pointer_value);
   }
 
-  [[nodiscard]] constexpr pointer get() const noexcept { return pointer_value; }
+  [[nodiscard]]
+  constexpr pointer get() const noexcept {
+    return pointer_value;
+  }
 
-  [[nodiscard]] constexpr Deleter &get_deleter() noexcept { return deleter; }
-
-  [[nodiscard]] constexpr const Deleter &get_deleter() const noexcept {
+  [[nodiscard]]
+  constexpr Deleter &get_deleter() noexcept {
     return deleter;
   }
 
-  [[nodiscard]] constexpr explicit operator bool() const noexcept {
+  [[nodiscard]]
+  constexpr const Deleter &get_deleter() const noexcept {
+    return deleter;
+  }
+
+  [[nodiscard]]
+  constexpr explicit operator bool() const noexcept {
     return pointer_value != nullptr;
   }
 
-  [[nodiscard]] constexpr pointer release() noexcept {
+  [[nodiscard]]
+  constexpr pointer release() noexcept {
     return exchange(pointer_value, nullptr);
   }
 
   constexpr void reset(pointer replacement = pointer{}) noexcept {
     pointer old = exchange(pointer_value, replacement);
+
     if (old)
       deleter(old);
   }
 
-  constexpr void swap(unique_ptr &other) noexcept(
-      noexcept(FTL_MEMORY_NAMESPACE::swap(deleter, other.deleter))) {
+  constexpr void swap(unique_ptr &other) noexcept {
     FTL_MEMORY_NAMESPACE::swap(deleter, other.deleter);
+
     FTL_MEMORY_NAMESPACE::swap(pointer_value, other.pointer_value);
   }
 
-  [[nodiscard]] constexpr pointer operator->() const noexcept {
+  [[nodiscard]]
+  constexpr pointer operator->() const noexcept {
     return pointer_value;
   }
 
   constexpr T &operator*() const noexcept { return *pointer_value; }
 
 private:
-  FTL_NO_UNIQUE_ADDRESS Deleter deleter;
+  FTL_NO_UNIQUE_ADDRESS
+  Deleter deleter;
+
   pointer pointer_value;
 };
 
@@ -641,7 +1144,8 @@ public:
         pointer_value{other.release()} {}
 
   template <class U, class OtherDeleter>
-    requires(is_convertible_v<typename unique_ptr<U[], OtherDeleter>::pointer,
+    requires(!is_same_v<unique_ptr<U[], OtherDeleter>, unique_ptr> &&
+             is_convertible_v<typename unique_ptr<U[], OtherDeleter>::pointer,
                               pointer> &&
              is_convertible_v<U (*)[], T (*)[]> &&
              (is_reference_v<Deleter>
@@ -656,20 +1160,25 @@ public:
   {
     if (this != addressof(other)) {
       reset(other.release());
+
       deleter = forward<Deleter>(other.deleter);
     }
+
     return *this;
   }
 
   template <class U, class OtherDeleter>
-    requires(is_convertible_v<typename unique_ptr<U[], OtherDeleter>::pointer,
+    requires(!is_same_v<unique_ptr<U[], OtherDeleter>, unique_ptr> &&
+             is_convertible_v<typename unique_ptr<U[], OtherDeleter>::pointer,
                               pointer> &&
              is_convertible_v<U (*)[], T (*)[]> &&
              is_assignable_v<Deleter &, OtherDeleter &&>)
   constexpr unique_ptr &
   operator=(unique_ptr<U[], OtherDeleter> &&other) noexcept {
     reset(other.release());
+
     deleter = forward<OtherDeleter>(other.get_deleter());
+
     return *this;
   }
 
@@ -679,6 +1188,7 @@ public:
   }
 
   unique_ptr(const unique_ptr &) = delete;
+
   unique_ptr &operator=(const unique_ptr &) = delete;
 
   constexpr ~unique_ptr() noexcept {
@@ -686,19 +1196,28 @@ public:
       deleter(pointer_value);
   }
 
-  [[nodiscard]] constexpr pointer get() const noexcept { return pointer_value; }
+  [[nodiscard]]
+  constexpr pointer get() const noexcept {
+    return pointer_value;
+  }
 
-  [[nodiscard]] constexpr Deleter &get_deleter() noexcept { return deleter; }
-
-  [[nodiscard]] constexpr const Deleter &get_deleter() const noexcept {
+  [[nodiscard]]
+  constexpr Deleter &get_deleter() noexcept {
     return deleter;
   }
 
-  [[nodiscard]] constexpr explicit operator bool() const noexcept {
+  [[nodiscard]]
+  constexpr const Deleter &get_deleter() const noexcept {
+    return deleter;
+  }
+
+  [[nodiscard]]
+  constexpr explicit operator bool() const noexcept {
     return pointer_value != nullptr;
   }
 
-  [[nodiscard]] constexpr pointer release() noexcept {
+  [[nodiscard]]
+  constexpr pointer release() noexcept {
     return exchange(pointer_value, nullptr);
   }
 
@@ -706,26 +1225,30 @@ public:
     requires detail::unique_ptr_array_pointer<U, pointer, T>::value
   constexpr void reset(U replacement) noexcept {
     pointer old = exchange(pointer_value, replacement);
+
     if (old)
       deleter(old);
   }
 
   constexpr void reset(nullptr_t = nullptr) noexcept {
     pointer old = exchange(pointer_value, nullptr);
+
     if (old)
       deleter(old);
   }
 
-  constexpr void swap(unique_ptr &other) noexcept(
-      noexcept(FTL_MEMORY_NAMESPACE::swap(deleter, other.deleter))) {
+  constexpr void swap(unique_ptr &other) noexcept {
     FTL_MEMORY_NAMESPACE::swap(deleter, other.deleter);
+
     FTL_MEMORY_NAMESPACE::swap(pointer_value, other.pointer_value);
   }
 
   constexpr T &operator[](size_t index) const { return pointer_value[index]; }
 
 private:
-  FTL_NO_UNIQUE_ADDRESS Deleter deleter;
+  FTL_NO_UNIQUE_ADDRESS
+  Deleter deleter;
+
   pointer pointer_value;
 };
 
@@ -757,9 +1280,7 @@ template <class T, class... Args>
 void make_unique_for_overwrite(Args &&...) = delete;
 
 template <class T, class D>
-constexpr void
-swap(unique_ptr<T, D> &left,
-     unique_ptr<T, D> &right) noexcept(noexcept(left.swap(right))) {
+constexpr void swap(unique_ptr<T, D> &left, unique_ptr<T, D> &right) noexcept {
   left.swap(right);
 }
 template <class T1, class D1, class T2, class D2>
@@ -897,8 +1418,21 @@ Block *make_control_block(Args &&...args) {
 
 template <class From, class To>
 inline constexpr bool shared_pointer_compatible_v =
-    is_array_v<To> ? is_convertible_v<From (*)[], remove_extent_t<To> (*)[]>
-                   : is_convertible_v<From *, To *>;
+    is_convertible_v<From *, To *> ||
+    (is_bounded_array_v<From> && is_unbounded_array_v<To> &&
+     is_convertible_v<remove_extent_t<From> (*)[],
+                      remove_extent_t<To> (*)[]>);
+
+template <class From, class To>
+inline constexpr bool shared_raw_pointer_compatible_v = [] {
+  if constexpr (!is_array_v<To>) {
+    return is_convertible_v<From *, To *>;
+  } else if constexpr (is_unbounded_array_v<To>) {
+    return is_convertible_v<From (*)[], remove_extent_t<To> (*)[]>;
+  } else {
+    return is_convertible_v<From (*)[extent_v<To>], To *>;
+  }
+}();
 } // namespace detail
 
 template <class T> class weak_ptr;
@@ -1032,37 +1566,41 @@ public:
       terminate();
 #endif
     }
+
     if consteval {
       if constexpr (is_trivially_default_constructible_v<T>)
         return new T[count];
     }
+
     const size_t bytes = count * sizeof(T);
-#if defined(__STDCPP_DEFAULT_NEW_ALIGNMENT__)
+
     if constexpr (alignof(T) > __STDCPP_DEFAULT_NEW_ALIGNMENT__)
       return static_cast<T *>(::operator new(bytes, align_val_t{alignof(T)}));
-#endif
-    return static_cast<T *>(::operator new(bytes));
+    else
+      return static_cast<T *>(::operator new(bytes));
   }
 
-  [[nodiscard]] constexpr allocation_result<T *>
-  allocate_at_least(size_t count) {
-    return {allocate(count), count};
-  }
-
-  constexpr void deallocate(T *pointer, size_t) noexcept {
+  constexpr void deallocate(T *pointer, size_t count) noexcept {
     if consteval {
       if constexpr (is_trivially_default_constructible_v<T>) {
+        /*
+         * constexpr vector destroys its live elements before deallocation.
+         * The storage came from new T[count], so restore T lifetimes across
+         * the whole array before delete[] performs array destruction.
+         */
+        for (size_t index = 0; index < count; ++index)
+          construct_at(pointer + index);
+
         delete[] pointer;
         return;
       }
     }
-#if defined(__STDCPP_DEFAULT_NEW_ALIGNMENT__)
-    if constexpr (alignof(T) > __STDCPP_DEFAULT_NEW_ALIGNMENT__) {
-      ::operator delete(pointer, align_val_t{alignof(T)});
-      return;
-    }
-#endif
-    ::operator delete(pointer);
+
+    if constexpr (alignof(T) > __STDCPP_DEFAULT_NEW_ALIGNMENT__)
+      ::operator delete(pointer, count * sizeof(T),
+                        align_val_t{alignof(T)});
+    else
+      ::operator delete(pointer, count * sizeof(T));
   }
 };
 
@@ -1325,13 +1863,13 @@ public:
   constexpr shared_ptr(nullptr_t) noexcept {}
 
   template <class U>
-    requires detail::shared_pointer_compatible_v<U, T>
+    requires detail::shared_raw_pointer_compatible_v<U, T>
   explicit shared_ptr(U *value)
       : shared_ptr(value, conditional_t<is_array_v<T>, default_delete<U[]>,
                                         default_delete<U>>{}) {}
 
   template <class U, class Deleter>
-    requires(detail::shared_pointer_compatible_v<U, T> &&
+    requires(detail::shared_raw_pointer_compatible_v<U, T> &&
              is_move_constructible_v<Deleter>)
   shared_ptr(U *value, Deleter value_deleter) : pointer_value{value} {
     using block = detail::pointer_control_block<U *, Deleter>;
@@ -1352,7 +1890,7 @@ public:
   }
 
   template <class U, class Deleter, class Allocator>
-    requires detail::shared_pointer_compatible_v<U, T>
+    requires detail::shared_raw_pointer_compatible_v<U, T>
   shared_ptr(U *value, Deleter value_deleter, Allocator allocator)
       : pointer_value(value) {
     using block =
@@ -1394,9 +1932,21 @@ public:
                    allocator) {}
 
   template <class U, class Deleter>
-    requires detail::shared_pointer_compatible_v<U, T>
-  shared_ptr(unique_ptr<U, Deleter> &&other)
-      : shared_ptr(other.release(), move(other.get_deleter())) {}
+    requires(detail::shared_pointer_compatible_v<U, T> &&
+             is_convertible_v<typename unique_ptr<U, Deleter>::pointer,
+                              element_type *>)
+  shared_ptr(unique_ptr<U, Deleter> &&other) {
+    using source_pointer = typename unique_ptr<U, Deleter>::pointer;
+    using block = detail::pointer_control_block<source_pointer, Deleter>;
+
+    source_pointer pointer = other.get();
+
+    control = detail::make_control_block<block>(
+        pointer, forward<Deleter>(other.get_deleter()));
+    pointer_value = static_cast<element_type *>(pointer);
+    other.release();
+    enable_weak_this(pointer_value);
+  }
 
   shared_ptr(const shared_ptr &other) noexcept
       : pointer_value{other.pointer_value}, control{other.control} {
@@ -1405,8 +1955,7 @@ public:
   }
 
   template <class U>
-    requires is_convertible_v<typename shared_ptr<U>::element_type *,
-                              element_type *>
+    requires detail::shared_pointer_compatible_v<U, T>
   shared_ptr(const shared_ptr<U> &other) noexcept
       : pointer_value{other.pointer_value}, control{other.control} {
     if (control)
@@ -1418,8 +1967,7 @@ public:
         control{exchange(other.control, nullptr)} {}
 
   template <class U>
-    requires is_convertible_v<typename shared_ptr<U>::element_type *,
-                              element_type *>
+    requires detail::shared_pointer_compatible_v<U, T>
   shared_ptr(shared_ptr<U> &&other) noexcept
       : pointer_value{exchange(other.pointer_value, nullptr)},
         control{exchange(other.control, nullptr)} {}
@@ -1466,8 +2014,7 @@ public:
   }
 
   template <class U>
-    requires is_convertible_v<typename shared_ptr<U>::element_type *,
-                              element_type *>
+    requires detail::shared_pointer_compatible_v<U, T>
   shared_ptr &operator=(const shared_ptr<U> &other) noexcept {
     shared_ptr(other).swap(*this);
     return *this;
@@ -1479,8 +2026,7 @@ public:
   }
 
   template <class U>
-    requires is_convertible_v<typename shared_ptr<U>::element_type *,
-                              element_type *>
+    requires detail::shared_pointer_compatible_v<U, T>
   shared_ptr &operator=(shared_ptr<U> &&other) noexcept {
     shared_ptr(move(other)).swap(*this);
     return *this;
@@ -1489,15 +2035,19 @@ public:
   void reset() noexcept { shared_ptr{}.swap(*this); }
 
   template <class U>
-    requires detail::shared_pointer_compatible_v<U, T>
+    requires detail::shared_raw_pointer_compatible_v<U, T>
   void reset(U *value) {
     shared_ptr(value).swap(*this);
   }
 
-  template <class U, class Deleter> void reset(U *value, Deleter deleter) {
+  template <class U, class Deleter>
+    requires detail::shared_raw_pointer_compatible_v<U, T>
+  void reset(U *value, Deleter deleter) {
     shared_ptr(value, move(deleter)).swap(*this);
   }
+
   template <class U, class Deleter, class Allocator>
+    requires detail::shared_raw_pointer_compatible_v<U, T>
   void reset(U *value, Deleter deleter, Allocator allocator) {
     shared_ptr(value, move(deleter), allocator).swap(*this);
   }
@@ -1539,11 +2089,12 @@ public:
 
   template <class U>
   bool owner_before(const shared_ptr<U> &other) const noexcept {
-    return control < other.control;
+    return compare_three_way{}(control, other.control) < 0;
   }
+
   template <class U>
   bool owner_before(const weak_ptr<U> &other) const noexcept {
-    return control < other.control;
+    return compare_three_way{}(control, other.control) < 0;
   }
 
   template <class D> D *deleter() const noexcept {
@@ -1574,8 +2125,7 @@ public:
   constexpr weak_ptr() noexcept = default;
 
   template <class U>
-    requires is_convertible_v<typename shared_ptr<U>::element_type *,
-                              element_type *>
+    requires detail::shared_pointer_compatible_v<U, T>
   weak_ptr(const shared_ptr<U> &owner) noexcept
       : pointer_value{owner.pointer_value}, control{owner.control} {
     if (control)
@@ -1589,8 +2139,7 @@ public:
   }
 
   template <class U>
-    requires is_convertible_v<typename weak_ptr<U>::element_type *,
-                              element_type *>
+    requires detail::shared_pointer_compatible_v<U, T>
   weak_ptr(const weak_ptr<U> &other) noexcept
       : pointer_value{other.pointer_value}, control{other.control} {
     if (control)
@@ -1602,8 +2151,7 @@ public:
         control{exchange(other.control, nullptr)} {}
 
   template <class U>
-    requires is_convertible_v<typename weak_ptr<U>::element_type *,
-                              element_type *>
+    requires detail::shared_pointer_compatible_v<U, T>
   weak_ptr(weak_ptr<U> &&other) noexcept
       : pointer_value{exchange(other.pointer_value, nullptr)},
         control{exchange(other.control, nullptr)} {}
@@ -1623,15 +2171,23 @@ public:
     return *this;
   }
 
-  template <class U> weak_ptr &operator=(const weak_ptr<U> &other) noexcept {
+  template <class U>
+    requires detail::shared_pointer_compatible_v<U, T>
+  weak_ptr &operator=(const weak_ptr<U> &other) noexcept {
     weak_ptr(other).swap(*this);
     return *this;
   }
-  template <class U> weak_ptr &operator=(weak_ptr<U> &&other) noexcept {
+
+  template <class U>
+    requires detail::shared_pointer_compatible_v<U, T>
+  weak_ptr &operator=(weak_ptr<U> &&other) noexcept {
     weak_ptr(move(other)).swap(*this);
     return *this;
   }
-  template <class U> weak_ptr &operator=(const shared_ptr<U> &other) noexcept {
+
+  template <class U>
+    requires detail::shared_pointer_compatible_v<U, T>
+  weak_ptr &operator=(const shared_ptr<U> &other) noexcept {
     weak_ptr(other).swap(*this);
     return *this;
   }
@@ -1660,11 +2216,12 @@ public:
 
   template <class U>
   bool owner_before(const shared_ptr<U> &other) const noexcept {
-    return control < other.control;
+    return compare_three_way{}(control, other.control) < 0;
   }
+
   template <class U>
   bool owner_before(const weak_ptr<U> &other) const noexcept {
-    return control < other.control;
+    return compare_three_way{}(control, other.control) < 0;
   }
 
 private:
@@ -1815,24 +2372,19 @@ template <class T> struct hash<shared_ptr<T>> {
 namespace detail {
 
 struct atomic_smart_pointer_access {
-    template<class T>
-    static bool equivalent(
-        const shared_ptr<T>& left,
-        const shared_ptr<T>& right) noexcept {
-        return
-            left.get() == right.get() &&
-            !left.owner_before(right) &&
-            !right.owner_before(left);
-    }
+  template <class T>
+  static bool equivalent(const shared_ptr<T> &left,
+                         const shared_ptr<T> &right) noexcept {
+    return left.get() == right.get() && !left.owner_before(right) &&
+           !right.owner_before(left);
+  }
 
-    template<class T>
-    static bool equivalent(
-        const weak_ptr<T>& left,
-        const weak_ptr<T>& right) noexcept {
-        return
-            left.pointer_value == right.pointer_value &&
-            left.control == right.control;
-    }
+  template <class T>
+  static bool equivalent(const weak_ptr<T> &left,
+                         const weak_ptr<T> &right) noexcept {
+    return left.pointer_value == right.pointer_value &&
+           left.control == right.control;
+  }
 };
 
 template <class Pointer> class atomic_smart_pointer {
@@ -2382,19 +2934,19 @@ FTL_END_NAMESPACE
 #define __cpp_lib_algorithm_iterator_requirements 202207L
 #endif
 
-#if !defined(__cpp_lib_addressof_constexpr) || \
+#if !defined(__cpp_lib_addressof_constexpr) ||                                 \
     __cpp_lib_addressof_constexpr < 201603L
 #undef __cpp_lib_addressof_constexpr
 #define __cpp_lib_addressof_constexpr 201603L
 #endif
 
-#if !defined(__cpp_lib_allocator_traits_is_always_equal) || \
+#if !defined(__cpp_lib_allocator_traits_is_always_equal) ||                    \
     __cpp_lib_allocator_traits_is_always_equal < 201411L
 #undef __cpp_lib_allocator_traits_is_always_equal
 #define __cpp_lib_allocator_traits_is_always_equal 201411L
 #endif
 
-#if !defined(__cpp_lib_atomic_value_initialization) || \
+#if !defined(__cpp_lib_atomic_value_initialization) ||                         \
     __cpp_lib_atomic_value_initialization < 201911L
 #undef __cpp_lib_atomic_value_initialization
 #define __cpp_lib_atomic_value_initialization 201911L
@@ -2405,7 +2957,7 @@ FTL_END_NAMESPACE
 #define __cpp_lib_ranges 202302L
 #endif
 
-#if !defined(__cpp_lib_transparent_operators) || \
+#if !defined(__cpp_lib_transparent_operators) ||                               \
     __cpp_lib_transparent_operators < 201510L
 #undef __cpp_lib_transparent_operators
 #define __cpp_lib_transparent_operators 201510L

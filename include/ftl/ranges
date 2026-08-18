@@ -260,14 +260,6 @@ public:
   }
 };
 
-// [range.dangling]
-
-struct dangling {
-  constexpr dangling() noexcept = default;
-
-  template <class... Args> constexpr dangling(Args &&...) noexcept {}
-};
-
 // [range.elementsof]
 
 template <range R, class Allocator = allocator<byte>> struct elements_of {
@@ -278,10 +270,6 @@ template <range R, class Allocator = allocator<byte>> struct elements_of {
 
 template <class R, class Allocator = allocator<byte>>
 elements_of(R &&, Allocator = Allocator()) -> elements_of<R &&, Allocator>;
-
-template <range R>
-using borrowed_iterator_t =
-    conditional_t<borrowed_range<R>, iterator_t<R>, dangling>;
 
 // [range.subrange]
 
