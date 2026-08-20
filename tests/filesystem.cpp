@@ -10,10 +10,20 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
-#include <cstdio>
+#if !defined(_WIN32)
+extern "C" long write(int, const void *, unsigned long);
+#endif
 
 static bool filesystem_failure(const char *stage) {
-  std::fprintf(stderr, "filesystem regression failed: %s\n", stage);
+#if !defined(_WIN32)
+  unsigned long size = 0;
+  while (stage[size])
+    ++size;
+  write(2, stage, size);
+  write(2, "\n", 1);
+#else
+  (void)stage;
+#endif
   return false;
 }
 
