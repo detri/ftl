@@ -66,6 +66,7 @@ bool ftl_test() {
   }
   if (target.value != "alphabeta")
     return false;
+  target.synchronizations = 0;
 
   {
     tested::osyncstream stream(&target);
