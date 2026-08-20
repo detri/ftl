@@ -915,36 +915,54 @@ template <class T> constexpr bool quiet_isnan(T value) noexcept {
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
 constexpr bool isgreater(Left left, Right right) noexcept {
+#if defined(__clang__) || defined(__GNUC__)
+  if !consteval { return __builtin_isgreater(left, right); }
+#endif
   return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
          left > right;
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
 constexpr bool isgreaterequal(Left left, Right right) noexcept {
+#if defined(__clang__) || defined(__GNUC__)
+  if !consteval { return __builtin_isgreaterequal(left, right); }
+#endif
   return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
          left >= right;
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
 constexpr bool isless(Left left, Right right) noexcept {
+#if defined(__clang__) || defined(__GNUC__)
+  if !consteval { return __builtin_isless(left, right); }
+#endif
   return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
          left < right;
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
 constexpr bool islessequal(Left left, Right right) noexcept {
+#if defined(__clang__) || defined(__GNUC__)
+  if !consteval { return __builtin_islessequal(left, right); }
+#endif
   return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
          left <= right;
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
 constexpr bool islessgreater(Left left, Right right) noexcept {
+#if defined(__clang__) || defined(__GNUC__)
+  if !consteval { return __builtin_islessgreater(left, right); }
+#endif
   return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
          (left < right || left > right);
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
 constexpr bool isunordered(Left left, Right right) noexcept {
+#if defined(__clang__) || defined(__GNUC__)
+  if !consteval { return __builtin_isunordered(left, right); }
+#endif
   return detail::quiet_isnan(left) || detail::quiet_isnan(right);
 }
 
