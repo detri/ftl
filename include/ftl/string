@@ -998,6 +998,12 @@ private:
     pointer replacement = allocator_traits<Allocator>::allocate(
         allocator_, requested + 1);
     Character *raw = FTL_STRING_NAMESPACE::to_address(replacement);
+#if !defined(_MSC_VER) && defined(FTL_REPLACE_STL)
+    if consteval {
+      for (size_type index = 0; index <= requested; ++index)
+        FTL_STRING_NAMESPACE::construct_at(raw + index);
+    }
+#endif
     const size_type old_size = size_;
     Traits::copy(raw, data(), old_size);
     raw[old_size] = Character{};

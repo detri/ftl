@@ -1558,6 +1558,17 @@ public:
 
   template <class U> constexpr allocator(const allocator<U> &) noexcept {}
 
+  template <class U> constexpr void destroy(U *pointer) {
+#if defined(_MSC_VER) || !defined(FTL_REPLACE_STL)
+    if consteval {
+      if constexpr (is_trivially_default_constructible_v<U> &&
+                    is_trivially_destructible_v<U>)
+        return;
+    }
+#endif
+    destroy_at(pointer);
+  }
+
   [[nodiscard]]
 #if defined(_MSC_VER)
   __declspec(allocator)
@@ -1572,7 +1583,7 @@ public:
     }
 
     if consteval {
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) || !defined(FTL_REPLACE_STL)
       if constexpr (is_trivially_default_constructible_v<T>)
         return new T[count];
 #else
@@ -1593,10 +1604,8 @@ public:
 
   constexpr void deallocate(T *pointer, size_t count) noexcept {
     if consteval {
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) || !defined(FTL_REPLACE_STL)
       if constexpr (is_trivially_default_constructible_v<T>) {
-        for (size_t index = 0; index < count; ++index)
-          construct_at(pointer + index);
         delete[] pointer;
         return;
       }
