@@ -894,7 +894,7 @@ constexpr bool signbit(Integer value) noexcept {
 }
 
 namespace detail {
-template <class T> constexpr bool quiet_isnan(T value) noexcept {
+template <class T> constexpr bool quiet_isnan(const T &value) noexcept {
   using type = remove_cv_t<T>;
   if constexpr (is_integral_v<type>) {
     return false;
@@ -914,37 +914,37 @@ template <class T> constexpr bool quiet_isnan(T value) noexcept {
 
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-constexpr bool isgreater(Left left, Right right) noexcept {
+constexpr bool isgreater(const Left &left, const Right &right) noexcept {
   return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
          left > right;
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-constexpr bool isgreaterequal(Left left, Right right) noexcept {
+constexpr bool isgreaterequal(const Left &left, const Right &right) noexcept {
   return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
          left >= right;
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-constexpr bool isless(Left left, Right right) noexcept {
+constexpr bool isless(const Left &left, const Right &right) noexcept {
   return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
          left < right;
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-constexpr bool islessequal(Left left, Right right) noexcept {
+constexpr bool islessequal(const Left &left, const Right &right) noexcept {
   return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
          left <= right;
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-constexpr bool islessgreater(Left left, Right right) noexcept {
+constexpr bool islessgreater(const Left &left, const Right &right) noexcept {
   return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
          (left < right || left > right);
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-constexpr bool isunordered(Left left, Right right) noexcept {
+constexpr bool isunordered(const Left &left, const Right &right) noexcept {
   return detail::quiet_isnan(left) || detail::quiet_isnan(right);
 }
 
