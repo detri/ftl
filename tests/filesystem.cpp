@@ -150,8 +150,13 @@ bool ftl_test() {
     tested::ofstream out(root / "cache.txt");
     out << "cache";
   }
-  fs::directory_entry cached(root / "cache.txt", ec);
-  if (ec || !cached.exists(ec) || ec ||
+  fs::directory_entry cached;
+  for (fs::directory_iterator i(root, ec);
+       !ec && i != fs::directory_iterator(); i.increment(ec)) {
+    if (i->path().filename() == "cache.txt")
+      cached = *i;
+  }
+  if (ec || cached.path().empty() || !cached.exists(ec) || ec ||
       !fs::remove(root / "cache.txt", ec) || ec || !cached.exists(ec) || ec)
     return false;
   cached.refresh(ec);

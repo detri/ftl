@@ -931,25 +931,23 @@ public:
   }
   const filesystem::path &path() const noexcept { return path_; }
   operator const filesystem::path &() const noexcept { return path_; }
-  bool exists() const { return filesystem::exists(status_); }
+  bool exists() const { return filesystem::exists(status()); }
   bool exists(error_code &ec) const noexcept {
-    ec.clear();
-    return filesystem::exists(status_);
+    return filesystem::exists(status(ec));
   }
-  bool is_block_file() const { return filesystem::is_block_file(status_); }
+  bool is_block_file() const { return filesystem::is_block_file(status()); }
   bool is_character_file() const {
-    return filesystem::is_character_file(status_);
+    return filesystem::is_character_file(status());
   }
-  bool is_directory() const { return filesystem::is_directory(status_); }
-  bool is_fifo() const { return filesystem::is_fifo(status_); }
-  bool is_other() const { return filesystem::is_other(status_); }
-  bool is_regular_file() const { return filesystem::is_regular_file(status_); }
-  bool is_socket() const { return filesystem::is_socket(status_); }
-  bool is_symlink() const { return filesystem::is_symlink(symlink_); }
+  bool is_directory() const { return filesystem::is_directory(status()); }
+  bool is_fifo() const { return filesystem::is_fifo(status()); }
+  bool is_other() const { return filesystem::is_other(status()); }
+  bool is_regular_file() const { return filesystem::is_regular_file(status()); }
+  bool is_socket() const { return filesystem::is_socket(status()); }
+  bool is_symlink() const { return filesystem::is_symlink(symlink_status()); }
 #define FTL_FS_ENTRY_PRED(name)                                                \
   bool name(error_code &ec) const noexcept {                                   \
-    ec.clear();                                                                \
-    return filesystem::name(status_);                                          \
+    return filesystem::name(status(ec));                                       \
   }
   FTL_FS_ENTRY_PRED(is_block_file)
   FTL_FS_ENTRY_PRED(is_character_file)
@@ -959,17 +957,27 @@ public:
   FTL_FS_ENTRY_PRED(is_regular_file)
   FTL_FS_ENTRY_PRED(is_socket)
   bool is_symlink(error_code &ec) const noexcept {
-    ec.clear();
-    return filesystem::is_symlink(symlink_);
+    return filesystem::is_symlink(symlink_status(ec));
   }
 #undef FTL_FS_ENTRY_PRED
-  file_status status() const { return status_; }
+  file_status status() const {
+    return status_.type() == file_type::none ? filesystem::status(path_)
+                                             : status_;
+  }
   file_status status(error_code &ec) const noexcept {
+    if (status_.type() == file_type::none)
+      return filesystem::status(path_, ec);
     ec.clear();
     return status_;
   }
-  file_status symlink_status() const { return symlink_; }
+  file_status symlink_status() const {
+    return symlink_.type() == file_type::none
+               ? filesystem::symlink_status(path_)
+               : symlink_;
+  }
   file_status symlink_status(error_code &ec) const noexcept {
+    if (symlink_.type() == file_type::none)
+      return filesystem::symlink_status(path_, ec);
     ec.clear();
     return symlink_;
   }
@@ -989,6 +997,12 @@ public:
   }
 
 private:
+  friend class directory_iterator;
+  directory_entry(filesystem::path p, file_type type) : path_(move(p)) {
+    symlink_ = file_status(type);
+    if (type != file_type::symlink)
+      status_ = symlink_;
+  }
   filesystem::path path_;
   file_status status_, symlink_;
 };
@@ -1447,10 +1461,12 @@ inline void directory_iterator::open(const filesystem::path &p,
       bool allocation_failed;
     } c{&p, values.get(), false};
     detail::native_io_error e;
-    auto add = [](const char *n, detail::native_file_kind, void *x) noexcept {
+    auto add = [](const char *n, detail::native_file_kind kind,
+                  void *x) noexcept {
       try {
         auto *c = static_cast<C *>(x);
-        c->v->emplace_back(*c->b / filesystem::path(n));
+        c->v->push_back(directory_entry(
+            *c->b / filesystem::path(n), static_cast<file_type>(kind)));
         return true;
       } catch (...) {
         static_cast<C *>(x)->allocation_failed = true;
