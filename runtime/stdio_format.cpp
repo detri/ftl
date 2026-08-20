@@ -4,9 +4,9 @@
 #include <ftl/clocale>
 #include <ftl/cstdint>
 #include <ftl/cstdio>
+#include <ftl/cstdlib>
 #include <ftl/limits>
 #include <ftl/type_traits>
-#include <ftl/vector>
 
 namespace {
 using size_type = decltype(sizeof(0));
@@ -40,6 +40,14 @@ struct output_sink {
   void finish() {
     if (buffer && capacity)
       buffer[count < capacity ? count : capacity - 1] = 0;
+  }
+};
+
+struct scratch_allocation {
+  char *value{};
+  ~scratch_allocation() {
+    if (value != nullptr)
+      ftl::free(value);
   }
 };
 
@@ -246,9 +254,20 @@ void floating(output_sink &sink, conversion item, va_list_type &args) {
     sink.failed = true;
     return;
   }
-  ftl::vector<char> storage(requested + 8192);
-  char *text = storage.data();
-  const size_type text_capacity = storage.size();
+  char local_text[512];
+  const size_type required_capacity = requested + 8192;
+  scratch_allocation storage;
+  char *text = local_text;
+  size_type text_capacity = sizeof(local_text);
+  if (required_capacity > text_capacity) {
+    storage.value = static_cast<char *>(ftl::malloc(required_capacity));
+    if (storage.value == nullptr) {
+      sink.failed = true;
+      return;
+    }
+    text = storage.value;
+    text_capacity = required_capacity;
+  }
   auto result = item.precision >= 0
                     ? ftl::to_chars(text, text + text_capacity, value, format,
                                     item.precision)
