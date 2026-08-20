@@ -25,6 +25,7 @@ struct ftl_file {
   unsigned io_started : 1 = 0;
   int orientation = 0;
   void *wide_locale = nullptr;
+  bool wide_utf8 = false;
   wchar_t wide_pushback{};
   unsigned wide_pushback_bytes = 0;
   ftl::mbstate_t wide_state{};
@@ -193,6 +194,23 @@ bool ensure_wide_locale(ftl_file *stream) {
   if (stream->wide_locale)
     return true;
   const char *name = ::setlocale(LC_CTYPE, nullptr);
+  stream->wide_utf8 = false;
+  if (name != nullptr) {
+    for (const char *current = name; *current != '\0'; ++current) {
+      const char first = static_cast<char>(*current | 0x20);
+      if (first == 'u' && static_cast<char>(current[1] | 0x20) == 't' &&
+          static_cast<char>(current[2] | 0x20) == 'f' &&
+          (current[3] == '-' || current[3] == '_') && current[4] == '8') {
+        stream->wide_utf8 = true;
+        break;
+      }
+      if (first == 'u' && static_cast<char>(current[1] | 0x20) == 't' &&
+          static_cast<char>(current[2] | 0x20) == 'f' && current[3] == '8') {
+        stream->wide_utf8 = true;
+        break;
+      }
+    }
+  }
   stream->wide_locale =
       ftl_locale_runtime::create_ctype(name != nullptr ? name : "C");
   return stream->wide_locale != nullptr;
@@ -467,10 +485,50 @@ int read_wide_byte_locked(file_type *stream) noexcept {
   if (!stream || stream->orientation < 0 || !ensure_wide_locale(stream))
     return EOF;
   stream->orientation = 1;
+  const auto decode_error = [&] {
+    stream->failed = true;
+    runtime_errno() = EILSEQ;
+    return EOF;
+  };
   if (stream->wide_pushback_bytes != 0) {
     stream->wide_pushback_bytes = 0;
     stream->eof = false;
     return static_cast<int>(stream->wide_pushback);
+  }
+  if (stream->wide_utf8) {
+    unsigned char bytes[4]{};
+    if (read_unlocked(stream, bytes, 1) != 1)
+      return EOF;
+    unsigned count = 0;
+    unsigned long value = 0;
+    if (bytes[0] < 0x80) {
+      count = 1;
+      value = bytes[0];
+    } else if ((bytes[0] & 0xe0) == 0xc0) {
+      count = 2;
+      value = bytes[0] & 0x1f;
+    } else if ((bytes[0] & 0xf0) == 0xe0) {
+      count = 3;
+      value = bytes[0] & 0x0f;
+    } else if ((bytes[0] & 0xf8) == 0xf0) {
+      count = 4;
+      value = bytes[0] & 0x07;
+    }
+    if (count == 0 ||
+        (count > 1 && read_unlocked(stream, bytes + 1, count - 1) != count - 1))
+      return decode_error();
+    for (unsigned index = 1; index != count; ++index) {
+      if ((bytes[index] & 0xc0) != 0x80)
+        return decode_error();
+      value = (value << 6) | (bytes[index] & 0x3f);
+    }
+    if ((count == 2 && value < 0x80) || (count == 3 && value < 0x800) ||
+        (count == 4 && value < 0x10000) || value > 0x10ffff ||
+        (value >= 0xd800 && value <= 0xdfff) ||
+        value > static_cast<unsigned long>(static_cast<wchar_t>(-1)))
+      return decode_error();
+    stream->wide_state = {};
+    return static_cast<int>(static_cast<wchar_t>(value));
   }
   char bytes[16]{};
   const int maximum = ftl_locale_runtime::multibyte_max_length(
@@ -487,28 +545,57 @@ int read_wide_byte_locked(file_type *stream) noexcept {
       return static_cast<int>(decoded.value);
     }
     if (decoded.result == ftl_locale_runtime::decoded_wide::status::error) {
-      stream->failed = true;
-      runtime_errno() = EILSEQ;
-      return EOF;
+      return decode_error();
     }
   }
-  stream->failed = true;
-  runtime_errno() = EILSEQ;
-  return EOF;
+  return decode_error();
 }
 int write_wide_byte_locked(int value, file_type *stream) noexcept {
   if (!stream || stream->orientation < 0 || !ensure_wide_locale(stream))
     return EOF;
   stream->orientation = 1;
+  const auto encode_error = [&] {
+    stream->failed = true;
+    runtime_errno() = EILSEQ;
+    return EOF;
+  };
+  if (stream->wide_utf8) {
+    const unsigned long scalar =
+        static_cast<unsigned long>(static_cast<wchar_t>(value));
+    unsigned char bytes[4]{};
+    unsigned count = 0;
+    if (scalar < 0x80) {
+      bytes[0] = static_cast<unsigned char>(scalar);
+      count = 1;
+    } else if (scalar < 0x800) {
+      bytes[0] = static_cast<unsigned char>(0xc0 | (scalar >> 6));
+      bytes[1] = static_cast<unsigned char>(0x80 | (scalar & 0x3f));
+      count = 2;
+    } else if (scalar < 0x10000 &&
+               !(scalar >= 0xd800 && scalar <= 0xdfff)) {
+      bytes[0] = static_cast<unsigned char>(0xe0 | (scalar >> 12));
+      bytes[1] = static_cast<unsigned char>(0x80 | ((scalar >> 6) & 0x3f));
+      bytes[2] = static_cast<unsigned char>(0x80 | (scalar & 0x3f));
+      count = 3;
+    } else if (scalar <= 0x10ffff) {
+      bytes[0] = static_cast<unsigned char>(0xf0 | (scalar >> 18));
+      bytes[1] = static_cast<unsigned char>(0x80 | ((scalar >> 12) & 0x3f));
+      bytes[2] = static_cast<unsigned char>(0x80 | ((scalar >> 6) & 0x3f));
+      bytes[3] = static_cast<unsigned char>(0x80 | (scalar & 0x3f));
+      count = 4;
+    }
+    if (count == 0 || write_unlocked(stream, bytes, count) != count)
+      return encode_error();
+    stream->wide_state = {};
+    return value;
+  }
   const auto encoded = ftl_locale_runtime::encode_wide(
       stream->wide_locale, static_cast<wchar_t>(value));
   if (!encoded.valid ||
       write_unlocked(stream,
                      reinterpret_cast<const unsigned char *>(encoded.bytes),
                      encoded.produced) != encoded.produced) {
-    stream->failed = true;
-    runtime_errno() = EILSEQ;
-    return EOF;
+    return encode_error();
   }
   stream->wide_state = {};
   return value;
@@ -519,12 +606,25 @@ int unget_wide_byte_locked(int value, file_type *stream) noexcept {
       !ensure_wide_locale(stream))
     return EOF;
   stream->orientation = 1;
-  const auto encoded = ftl_locale_runtime::encode_wide(
-      stream->wide_locale, static_cast<wchar_t>(value));
-  if (!encoded.valid)
+  unsigned produced = 0;
+  if (stream->wide_utf8) {
+    const unsigned long scalar =
+        static_cast<unsigned long>(static_cast<wchar_t>(value));
+    produced = scalar < 0x80      ? 1
+               : scalar < 0x800   ? 2
+               : scalar < 0x10000 ? 3
+               : scalar <= 0x10ffff ? 4
+                                    : 0;
+  } else {
+    const auto encoded = ftl_locale_runtime::encode_wide(
+        stream->wide_locale, static_cast<wchar_t>(value));
+    if (encoded.valid)
+      produced = static_cast<unsigned>(encoded.produced);
+  }
+  if (produced == 0)
     return EOF;
   stream->wide_pushback = static_cast<wchar_t>(value);
-  stream->wide_pushback_bytes = static_cast<unsigned>(encoded.produced);
+  stream->wide_pushback_bytes = produced;
   stream->eof = false;
   return value;
 }
