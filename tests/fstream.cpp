@@ -44,7 +44,7 @@ bool ftl_test() {
     char first = 0;
     update.get(first);
     update.put('X');
-    update.seekp(0);
+    update.seekp(0, tested::ios_base::beg);
     update.put('Q');
     char following = 0;
     update.get(following);
@@ -60,7 +60,7 @@ bool ftl_test() {
                                      tested::ios_base::trunc);
     constexpr tested::streamoff large_position =
         static_cast<tested::streamoff>(3) * 1024 * 1024 * 1024;
-    sparse.seekp(large_position);
+    sparse.seekp(large_position, tested::ios_base::beg);
     sparse.put('z');
     if (sparse.fail() || sparse.tellp() != large_position + 1) {
       tested::remove(name);
