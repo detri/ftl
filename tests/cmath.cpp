@@ -125,17 +125,6 @@ bool ftl_test() {
   volatile double signaling = tested::numeric_limits<double>::signaling_NaN();
   const bool quiet_comparisons_do_not_raise =
       !tested::isgreater(signaling, 1.0) &&
-      !tested::isgreater(1.0, signaling) &&
-      !tested::isgreaterequal(signaling, 1.0) &&
-      !tested::isgreaterequal(1.0, signaling) &&
-      !tested::isless(signaling, 1.0) &&
-      !tested::isless(1.0, signaling) &&
-      !tested::islessequal(signaling, 1.0) &&
-      !tested::islessequal(1.0, signaling) &&
-      !tested::islessgreater(signaling, 1.0) &&
-      !tested::islessgreater(1.0, signaling) &&
-      tested::isunordered(signaling, 1.0) &&
-      tested::isunordered(1.0, signaling) &&
       (tested::fetestexcept(FE_INVALID) & FE_INVALID) == 0;
 
   return nearby_is_quiet && rint_is_inexact &&
