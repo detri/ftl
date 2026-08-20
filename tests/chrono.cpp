@@ -41,6 +41,13 @@ protected:
   }
 };
 
+class throwing_chrono_input_buffer final : public tested::stringbuf {
+protected:
+  int_type underflow() override {
+    throw tested::runtime_error{"chrono input failure"};
+  }
+};
+
 static_assert(tested::formattable<seconds, char>);
 
 static_assert(tested::formattable<milliseconds, char>);
@@ -2963,6 +2970,38 @@ bool chrono_stream_io_works() {
 
     if (offset != minutes{-240}) {
       return false;
+    }
+  }
+
+  /*
+   * Stream-buffer failures set badbit and preserve the original exception
+   * when that state is enabled.
+   */
+  {
+    throwing_chrono_input_buffer buffer;
+    tested::istream stream{&buffer};
+    sys_seconds parsed{seconds{17}};
+
+    from_stream(stream, "%F", parsed);
+
+    if (!stream.bad() || parsed != sys_seconds{seconds{17}})
+      return false;
+  }
+
+  {
+    throwing_chrono_input_buffer buffer;
+    tested::istream stream{&buffer};
+    sys_seconds parsed{seconds{19}};
+    stream.exceptions(tested::ios_base::badbit);
+
+    try {
+      from_stream(stream, "%F", parsed);
+      return false;
+    } catch (const tested::runtime_error &error) {
+      if (tested::string{error.what()} != "chrono input failure" ||
+          !stream.bad() || parsed != sys_seconds{seconds{19}}) {
+        return false;
+      }
     }
   }
 

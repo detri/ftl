@@ -630,7 +630,12 @@ public:
 
 private:
   bool peek(Character &result) {
-    const int_type value = stream_.rdbuf()->sgetc();
+    int_type value{};
+
+    if (!stream_.input_operation(
+            value, [&] { return stream_.rdbuf()->sgetc(); })) {
+      return false;
+    }
 
     if (Traits::eq_int_type(value, Traits::eof())) {
       saw_eof_ = true;
@@ -643,7 +648,12 @@ private:
   }
 
   bool take(Character &result) {
-    const int_type value = stream_.rdbuf()->sbumpc();
+    int_type value{};
+
+    if (!stream_.input_operation(
+            value, [&] { return stream_.rdbuf()->sbumpc(); })) {
+      return false;
+    }
 
     if (Traits::eq_int_type(value, Traits::eof())) {
       saw_eof_ = true;
