@@ -2750,7 +2750,7 @@ struct locale_named_time_context {
   string name;
   ftl_locale_runtime::native_handle native;
   explicit locale_named_time_context(const char *value)
-      : name(value ? value : ""), native(ftl_locale_runtime::create_numeric(value)) {
+      : name(value ? value : ""), native(ftl_locale_runtime::create_time(value)) {
     if (!native) locale_named_numpunct_failure();
   }
   locale_named_time_context(const locale_named_time_context &) = delete;
@@ -3264,15 +3264,15 @@ protected:
                                  char_type('%'), char_type('y')};
     return get(first, last, format, error, value, pattern, pattern + 8);
   }
-  virtual iter_type do_get_weekday(iter_type first, iter_type last, ios_base &,
+  virtual iter_type do_get_weekday(iter_type first, iter_type last, ios_base &format,
                                    unsigned int &error, tm *value) const {
-    int matched = match_name(first, last, weekdays(), 7, error);
+    int matched = match_name(first, last, format, weekdays(), 7, error);
     if (matched >= 0) value->tm_wday = matched;
     return advance_name(first, last);
   }
-  virtual iter_type do_get_monthname(iter_type first, iter_type last, ios_base &,
+  virtual iter_type do_get_monthname(iter_type first, iter_type last, ios_base &format,
                                      unsigned int &error, tm *value) const {
-    int matched = match_name(first, last, months(), 12, error);
+    int matched = match_name(first, last, format, months(), 12, error);
     if (matched >= 0) value->tm_mon = matched;
     return advance_name(first, last);
   }
@@ -3353,8 +3353,9 @@ private:
     static const char *values[] = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};
     return values;
   }
-  static int match_name(iter_type first, iter_type last, const char *const *names,
-                        int count, unsigned int &error) {
+  static int match_name(iter_type first, iter_type last, ios_base &format,
+                        const char *const *names, int count,
+                        unsigned int &error) {
     basic_string<char_type> input;
     iter_type position = first;
     while (position != last) {
@@ -3362,12 +3363,20 @@ private:
       if (!((value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z'))) break;
       input.push_back(*position); ++position;
     }
+    const locale where = detail::locale_stream_locale(format);
+    const auto &classification = use_facet<ctype<char_type>>(where);
     for (int index = 0; index < count; ++index) {
       size_t length = 0; while (names[index][length]) ++length;
       if (input.size() != length && input.size() != 3) continue;
       bool equal = true;
-      for (size_t offset = 0; offset < input.size(); ++offset)
-        if (static_cast<char>(input[offset]) != names[index][offset]) { equal = false; break; }
+      for (size_t offset = 0; offset < input.size(); ++offset) {
+        const char_type expected = static_cast<char_type>(names[index][offset]);
+        if (classification.tolower(input[offset]) !=
+            classification.tolower(expected)) {
+          equal = false;
+          break;
+        }
+      }
       if (equal) return index;
     }
     error |= stream_failbit(); return -1;
@@ -3442,7 +3451,18 @@ private:
     for (int index = 0; index < count; ++index) {
       auto full = formatted_name(index, month, false);
       auto abbreviated = formatted_name(index, month, true);
-      if (input == full || input == abbreviated) return index;
+      const auto equal_case_insensitive = [&](const auto &candidate) {
+        if (input.size() != candidate.size())
+          return false;
+        for (size_t offset = 0; offset < input.size(); ++offset)
+          if (classification.tolower(input[offset]) !=
+              classification.tolower(candidate[offset]))
+            return false;
+        return true;
+      };
+      if (equal_case_insensitive(full) ||
+          equal_case_insensitive(abbreviated))
+        return index;
     }
     error |= detail::locale_stream_failbit();
     return -1;
@@ -4270,11 +4290,14 @@ protected:
     string_type digits;
     first = do_get(first, last, intl, format, error, digits);
     if ((error & stream_failbit()) == 0) {
-      char buffer[512]; size_t count = digits.size() < 511 ? digits.size() : 511;
-      for (size_t index = 0; index < count; ++index)
-        buffer[index] = static_cast<char>(digits[index]);
-      buffer[count] = '\0'; char *end = nullptr; units = ::strtold(buffer, &end);
-      if (end != buffer + count) error |= stream_failbit();
+      string buffer;
+      buffer.reserve(digits.size());
+      for (char_type digit : digits)
+        buffer.push_back(static_cast<char>(digit));
+      char *end = nullptr;
+      units = ::strtold(buffer.c_str(), &end);
+      if (end != buffer.data() + buffer.size())
+        error |= stream_failbit();
     }
     return first;
   }
@@ -4303,6 +4326,10 @@ protected:
     const auto &classification = use_facet<ctype<char_type>>(where);
     string_type parsed; bool negative = false, any = false, saw_decimal = false;
     size_t fractional_count = 0;
+    vector<size_t> parsed_groups;
+    size_t current_group = 0;
+    bool saw_separator = false;
+    bool groups_closed = false;
     string_type sign_tail;
     for (int component = 0; component < 4 && (error & stream_failbit()) == 0; ++component) {
       bool final = component == 3;
@@ -4339,11 +4366,21 @@ protected:
           char_type character = *first; char narrow = static_cast<char>(character);
           if (narrow >= '0' && narrow <= '9') {
             parsed.push_back(character); any = true;
-            if (saw_decimal) ++fractional_count;
+            if (saw_decimal)
+              ++fractional_count;
+            else
+              ++current_group;
             ++first;
           } else if (character == separator && !saw_decimal && !grouping.empty()) {
+            parsed_groups.push_back(current_group);
+            current_group = 0;
+            saw_separator = true;
             ++first;
           } else if (character == decimal && !saw_decimal && fractional > 0) {
+            if (saw_separator) {
+              parsed_groups.push_back(current_group);
+              groups_closed = true;
+            }
             saw_decimal = true; ++first;
           } else break;
         }
@@ -4351,6 +4388,41 @@ protected:
       }
     }
     if (!sign_tail.empty() && !consume_text(first, last, sign_tail)) error |= stream_failbit();
+    if (saw_separator && !groups_closed)
+      parsed_groups.push_back(current_group);
+
+    if (saw_separator) {
+      bool valid = parsed_groups.size() > 1;
+      size_t rule = 0;
+      unsigned char repeated = 0;
+
+      for (size_t position = parsed_groups.size(); valid && position != 0;
+           --position) {
+        unsigned char expected = static_cast<unsigned char>(grouping[rule]);
+        if (expected == 0)
+          expected = repeated;
+        else if (expected != static_cast<unsigned char>(CHAR_MAX))
+          repeated = expected;
+
+        const size_t actual = parsed_groups[position - 1];
+        if (expected == static_cast<unsigned char>(CHAR_MAX)) {
+          valid = position == 1 && actual != 0;
+          break;
+        }
+        if (expected == 0 ||
+            (position == 1 ? actual == 0 || actual > expected
+                           : actual != expected)) {
+          valid = false;
+          break;
+        }
+        if (rule + 1 < grouping.size())
+          ++rule;
+      }
+
+      if (!valid)
+        error |= stream_failbit();
+    }
+
     if (!any || (fractional > 0 && fractional_count != static_cast<size_t>(fractional)))
       error |= stream_failbit();
     else {
@@ -4394,9 +4466,15 @@ protected:
   ~money_put() override = default;
   virtual iter_type do_put(iter_type out, bool intl, ios_base &format,
                            char_type fill, long double units) const {
-    char buffer[512]; int count = ::snprintf(buffer, sizeof(buffer), "%.0Lf", units);
+    const int count = ::snprintf(nullptr, 0, "%.0Lf", units);
+    if (count < 0)
+      return out;
+    string buffer(static_cast<size_t>(count) + 1, '\0');
+    if (::snprintf(buffer.data(), buffer.size(), "%.0Lf", units) != count)
+      return out;
     string_type digits;
-    for (int index = 0; index < count && index < 512; ++index)
+    digits.reserve(static_cast<size_t>(count));
+    for (int index = 0; index < count; ++index)
       digits.push_back(static_cast<char_type>(buffer[index]));
     return do_put(out, intl, format, fill, digits);
   }
@@ -5184,6 +5262,7 @@ inline locale_state &locale_classic_state() {
 }
 
 struct locale_global_storage {
+  atomic_flag locked{};
   locale_state *state;
 
   locale_global_storage() noexcept : state(&locale_classic_state()) {}
@@ -5194,6 +5273,15 @@ struct locale_global_storage {
 inline locale_global_storage &locale_global() {
   static locale_global_storage value;
   return value;
+}
+
+inline void locale_global_lock(locale_global_storage &global) noexcept {
+  while (global.locked.test_and_set(memory_order_acquire)) {
+  }
+}
+
+inline void locale_global_unlock(locale_global_storage &global) noexcept {
+  global.locked.clear(memory_order_release);
 }
 
 [[nodiscard]]
@@ -5392,8 +5480,12 @@ inline void locale_combine_missing_facet() {
 
 } // namespace detail
 
-inline locale::locale() noexcept : state_(detail::locale_global().state) {
+inline locale::locale() noexcept : state_(nullptr) {
+  auto &global = detail::locale_global();
+  detail::locale_global_lock(global);
+  state_ = global.state;
   detail::locale_retain_state(state_);
+  detail::locale_global_unlock(global);
 }
 
 inline locale::locale(const locale &other) noexcept : state_(other.state_) {
@@ -5563,17 +5655,13 @@ inline bool locale::operator==(const locale &other) const {
 }
 
 inline locale locale::global(const locale &value) {
-  // Capture the old global before changing its anchor.
-  locale previous;
-
   auto &global = detail::locale_global();
+  detail::locale_global_lock(global);
 
   detail::locale_retain_state(value.state_);
 
   detail::locale_state *old = global.state;
   global.state = value.state_;
-
-  detail::locale_release_state(old);
 
   // The effect on the C locale for an unnamed C++ locale is
   // implementation-defined. Leave it alone in that case.
@@ -5581,7 +5669,10 @@ inline locale locale::global(const locale &value) {
     (void)setlocale(LC_ALL, detail::locale_state_name(value.state_));
   }
 
-  return previous;
+  detail::locale_global_unlock(global);
+
+  // Transfer the old global anchor reference into the returned locale.
+  return locale{old, adopt_state_t{}};
 }
 
 inline const locale &locale::classic() {
@@ -5589,6 +5680,163 @@ inline const locale &locale::classic() {
 
   return value;
 }
+
+template <class Codecvt, class Elem = wchar_t,
+          class WideAlloc = allocator<Elem>,
+          class ByteAlloc = allocator<char>>
+class wstring_convert {
+public:
+  using byte_string = basic_string<char, char_traits<char>, ByteAlloc>;
+  using wide_string = basic_string<Elem, char_traits<Elem>, WideAlloc>;
+  using state_type = typename Codecvt::state_type;
+  using int_type = typename wide_string::traits_type::int_type;
+
+  wstring_convert() : wstring_convert(new Codecvt) {}
+
+  explicit wstring_convert(Codecvt *conversion)
+      : conversion_(conversion) {}
+
+  wstring_convert(Codecvt *conversion, state_type state)
+      : conversion_(conversion), state_(state), retain_state_(true) {}
+
+  explicit wstring_convert(const byte_string &byte_error,
+                           const wide_string &wide_error = wide_string())
+      : byte_error_(byte_error), wide_error_(wide_error),
+        conversion_(new Codecvt), has_error_strings_(true) {}
+
+  ~wstring_convert() { delete conversion_; }
+
+  wstring_convert(const wstring_convert &) = delete;
+  wstring_convert &operator=(const wstring_convert &) = delete;
+
+  wide_string from_bytes(char byte) { return from_bytes(&byte, &byte + 1); }
+
+  wide_string from_bytes(const char *pointer) {
+    return from_bytes(pointer, pointer + char_traits<char>::length(pointer));
+  }
+
+  wide_string from_bytes(const byte_string &value) {
+    return from_bytes(value.data(), value.data() + value.size());
+  }
+
+  wide_string from_bytes(const char *first, const char *last) {
+    if (!retain_state_)
+      state_ = state_type{};
+    converted_ = 0;
+    wide_string result;
+
+    while (first != last) {
+      Elem buffer[32];
+      const char *from_next = first;
+      Elem *to_next = buffer;
+      const auto status = conversion_->in(state_, first, last, from_next,
+                                          buffer, buffer + 32, to_next);
+      result.append(buffer, static_cast<size_t>(to_next - buffer));
+      converted_ += static_cast<size_t>(from_next - first);
+
+      if (status == codecvt_base::noconv) {
+        while (first != last) {
+          result.push_back(static_cast<Elem>(*first++));
+          ++converted_;
+        }
+        return result;
+      }
+      if (status == codecvt_base::error ||
+          (status == codecvt_base::partial && from_next == last) ||
+          (from_next == first && to_next == buffer))
+        return from_bytes_error();
+      first = from_next;
+    }
+
+    return result;
+  }
+
+  byte_string to_bytes(Elem value) { return to_bytes(&value, &value + 1); }
+
+  byte_string to_bytes(const Elem *pointer) {
+    return to_bytes(pointer, pointer + char_traits<Elem>::length(pointer));
+  }
+
+  byte_string to_bytes(const wide_string &value) {
+    return to_bytes(value.data(), value.data() + value.size());
+  }
+
+  byte_string to_bytes(const Elem *first, const Elem *last) {
+    if (!retain_state_)
+      state_ = state_type{};
+    converted_ = 0;
+    byte_string result;
+
+    while (first != last) {
+      char buffer[64];
+      const Elem *from_next = first;
+      char *to_next = buffer;
+      const auto status = conversion_->out(state_, first, last, from_next,
+                                           buffer, buffer + 64, to_next);
+      result.append(buffer, static_cast<size_t>(to_next - buffer));
+      converted_ += static_cast<size_t>(from_next - first);
+
+      if (status == codecvt_base::noconv) {
+        while (first != last) {
+          result.push_back(static_cast<char>(*first++));
+          ++converted_;
+        }
+        return result;
+      }
+      if (status == codecvt_base::error ||
+          (status == codecvt_base::partial && from_next == last) ||
+          (from_next == first && to_next == buffer))
+        return to_bytes_error();
+      first = from_next;
+    }
+
+    for (;;) {
+      char buffer[64];
+      char *to_next = buffer;
+      const auto status =
+          conversion_->unshift(state_, buffer, buffer + 64, to_next);
+      result.append(buffer, static_cast<size_t>(to_next - buffer));
+      if (status == codecvt_base::ok || status == codecvt_base::noconv)
+        break;
+      if (status == codecvt_base::error || to_next == buffer)
+        return to_bytes_error();
+    }
+
+    return result;
+  }
+
+  size_t converted() const noexcept { return converted_; }
+  state_type state() const { return state_; }
+
+private:
+  [[noreturn]] static void conversion_error() {
+#if FTL_HAS_EXCEPTIONS
+    throw range_error("wstring_convert");
+#else
+    terminate();
+#endif
+  }
+
+  wide_string from_bytes_error() const {
+    if (has_error_strings_)
+      return wide_error_;
+    conversion_error();
+  }
+
+  byte_string to_bytes_error() const {
+    if (has_error_strings_)
+      return byte_error_;
+    conversion_error();
+  }
+
+  byte_string byte_error_{};
+  wide_string wide_error_{};
+  Codecvt *conversion_{};
+  state_type state_{};
+  size_t converted_{};
+  bool retain_state_{};
+  bool has_error_strings_{};
+};
 
 template <class Facet> bool has_facet(const locale &value) noexcept {
   const locale::id *key = detail::locale_facet_key<Facet>();
@@ -5681,11 +5929,11 @@ FTL_END_NAMESPACE
 
 #undef FTL_LOCALE_NAMESPACE
 
-#ifndef FTL_IOS_HEADER
+#if !defined(FTL_STREAMBUF_HEADER) && !defined(FTL_IOS_HEADER)
 #ifdef FTL_REPLACE_STL
-#include <ios>
+#include <streambuf>
 #else
-#include <ftl/ios>
+#include <ftl/streambuf>
 #endif
 #endif
 

@@ -43,31 +43,60 @@ inline bool operator==(const memory_resource& a,
 
 namespace detail {
 class new_delete_memory_resource final : public memory_resource {
-    void* do_allocate(size_t bytes, size_t alignment) override {
-#if defined(__STDCPP_DEFAULT_NEW_ALIGNMENT__)
-        if (alignment > __STDCPP_DEFAULT_NEW_ALIGNMENT__) {
-            const size_t total = bytes + alignment - 1 + sizeof(void*);
-            void* raw = ::operator new(total);
-            void* result = static_cast<unsigned char*>(raw) + sizeof(void*);
-            size_t space = total - sizeof(void*);
-            align(alignment, bytes, result, space);
-            static_cast<void**>(result)[-1] = raw;
-            return result;
-        }
+private:
+  void *do_allocate(size_t bytes, size_t alignment) override {
+    if (alignment <= alignof(max_align_t))
+      return ::operator new(bytes);
+
+    if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+#if FTL_HAS_EXCEPTIONS
+      throw bad_alloc{};
+#else
+      terminate();
 #endif
-        return ::operator new(bytes);
     }
-    void do_deallocate(void* p, size_t, size_t alignment) override {
-#if defined(__STDCPP_DEFAULT_NEW_ALIGNMENT__)
-        if (alignment > __STDCPP_DEFAULT_NEW_ALIGNMENT__) {
-            ::operator delete(static_cast<void**>(p)[-1]); return;
-        }
+
+    constexpr size_t header_size = sizeof(void *);
+
+    if (bytes > size_t(-1) - header_size ||
+        bytes + header_size > size_t(-1) - (alignment - 1)) {
+#if FTL_HAS_EXCEPTIONS
+      throw bad_alloc{};
+#else
+      terminate();
 #endif
-        ::operator delete(p);
     }
-    bool do_is_equal(const memory_resource& other) const noexcept override {
-        return this == &other;
+
+    const size_t total = bytes + header_size + alignment - 1;
+    void *base = ::operator new(total);
+
+    const auto begin =
+        reinterpret_cast<uintptr_t>(base) + header_size;
+    const auto aligned =
+        (begin + alignment - 1) & ~(uintptr_t(alignment) - 1);
+
+    auto *result = reinterpret_cast<void *>(aligned);
+    reinterpret_cast<void **>(result)[-1] = base;
+
+    return result;
+  }
+
+  void do_deallocate(void *pointer, size_t, size_t alignment) override {
+    if (!pointer)
+      return;
+
+    if (alignment <= alignof(max_align_t)) {
+      ::operator delete(pointer);
+      return;
     }
+
+    void *base = reinterpret_cast<void **>(pointer)[-1];
+    ::operator delete(base);
+  }
+
+  bool do_is_equal(const memory_resource &other) const noexcept override {
+    return this == &other;
+  }
 };
 class null_memory_resource_impl final : public memory_resource {
     void* do_allocate(size_t, size_t) override {
@@ -190,8 +219,8 @@ struct pool_options {
 
 namespace detail {
 
-constexpr size_t checked_add(size_t a, size_t b) {
-  if (b > size_t(-1) - a) {
+constexpr size_t checked_add(size_t left, size_t right) {
+  if (right > size_t(-1) - left) {
 #if FTL_HAS_EXCEPTIONS
     throw bad_alloc{};
 #else
@@ -199,11 +228,11 @@ constexpr size_t checked_add(size_t a, size_t b) {
 #endif
   }
 
-  return a + b;
+  return left + right;
 }
 
-constexpr size_t checked_mul(size_t a, size_t b) {
-  if (a != 0 && b > size_t(-1) / a) {
+constexpr size_t checked_mul(size_t left, size_t right) {
+  if (left != 0 && right > size_t(-1) / left) {
 #if FTL_HAS_EXCEPTIONS
     throw bad_alloc{};
 #else
@@ -211,14 +240,12 @@ constexpr size_t checked_mul(size_t a, size_t b) {
 #endif
   }
 
-  return a * b;
+  return left * right;
 }
 
 constexpr size_t round_up(size_t value, size_t alignment) {
   const size_t remainder = value % alignment;
-  return remainder == 0
-      ? value
-      : checked_add(value, alignment - remainder);
+  return remainder == 0 ? value : checked_add(value, alignment - remainder);
 }
 
 struct chunk {
@@ -237,32 +264,48 @@ struct pool_class {
   chunk *chunks{};
   free_block *free{};
   size_t requested_size{};
-  size_t alignment{};
+  size_t requested_alignment{};
+  size_t block_alignment{};
   size_t stride{};
   size_t next_blocks{1};
 };
 
+struct oversized_block {
+  oversized_block *next{};
+  void *memory{};
+  size_t bytes{};
+  size_t alignment{};
+};
+
 class pool_storage {
 public:
-  pool_storage(const pool_options &requested,
-               memory_resource *upstream)
+  pool_storage(const pool_options &requested, memory_resource *upstream)
       : upstream_(upstream ? upstream : get_default_resource()) {
     options_.max_blocks_per_chunk =
-        requested.max_blocks_per_chunk != 0
-            ? requested.max_blocks_per_chunk
-            : 64;
-
+        requested.max_blocks_per_chunk != 0 ? requested.max_blocks_per_chunk
+                                            : 64;
     options_.largest_required_pool_block =
         requested.largest_required_pool_block != 0
             ? requested.largest_required_pool_block
             : 1024;
   }
 
-  ~pool_storage() {
-    release();
-  }
+  ~pool_storage() { release(); }
+
+  pool_storage(const pool_storage &) = delete;
+  pool_storage &operator=(const pool_storage &) = delete;
 
   void release() noexcept {
+    while (oversized_) {
+      oversized_block *record = oversized_;
+      oversized_ = record->next;
+
+      upstream_->deallocate(record->memory, record->bytes, record->alignment);
+      record->~oversized_block();
+      upstream_->deallocate(record, sizeof(oversized_block),
+                            alignof(oversized_block));
+    }
+
     while (classes_) {
       pool_class *pool = classes_;
       classes_ = pool->next;
@@ -271,30 +314,21 @@ public:
         chunk *current = pool->chunks;
         pool->chunks = current->next;
 
-        upstream_->deallocate(
-            current->memory,
-            current->bytes,
-            current->alignment);
+        upstream_->deallocate(current->memory, current->bytes,
+                              current->alignment);
 
         current->~chunk();
-        upstream_->deallocate(
-            current,
-            sizeof(chunk),
-            alignof(chunk));
+        upstream_->deallocate(current, sizeof(chunk), alignof(chunk));
       }
 
       pool->~pool_class();
-      upstream_->deallocate(
-          pool,
-          sizeof(pool_class),
-          alignof(pool_class));
+      upstream_->deallocate(pool, sizeof(pool_class), alignof(pool_class));
     }
   }
 
-  [[nodiscard]]
-  void *allocate(size_t bytes, size_t alignment) {
+  [[nodiscard]] void *allocate(size_t bytes, size_t alignment) {
     if (bytes > options_.largest_required_pool_block)
-      return upstream_->allocate(bytes, alignment);
+      return allocate_oversized(bytes, alignment);
 
     pool_class &pool = get_pool(bytes, alignment);
 
@@ -306,21 +340,35 @@ public:
     return result;
   }
 
-  void deallocate(void *pointer,
-                  size_t bytes,
-                  size_t alignment) noexcept {
+  void deallocate(void *pointer, size_t bytes, size_t alignment) noexcept {
     if (!pointer)
       return;
 
     if (bytes > options_.largest_required_pool_block) {
-      upstream_->deallocate(pointer, bytes, alignment);
+      oversized_block **link = &oversized_;
+
+      while (*link && (*link)->memory != pointer)
+        link = &(*link)->next;
+
+      // Supplying a pointer/size/alignment tuple that does not correspond to
+      // an allocation from this resource violates memory_resource's
+      // deallocation precondition.
+      if (!*link)
+        return;
+
+      oversized_block *record = *link;
+      *link = record->next;
+
+      upstream_->deallocate(record->memory, record->bytes, record->alignment);
+      record->~oversized_block();
+      upstream_->deallocate(record, sizeof(oversized_block),
+                            alignof(oversized_block));
       return;
     }
 
     pool_class *pool = find_pool(bytes, alignment);
 
-    // The deallocation precondition says these values correspond to the
-    // original allocation. This therefore indicates programmer UB.
+    // Mismatched deallocation arguments violate the caller's precondition.
     if (!pool)
       return;
 
@@ -329,21 +377,16 @@ public:
     pool->free = node;
   }
 
-  [[nodiscard]]
-  memory_resource *upstream() const noexcept {
-    return upstream_;
-  }
+  [[nodiscard]] memory_resource *upstream() const noexcept { return upstream_; }
 
-  [[nodiscard]]
-  pool_options options() const noexcept {
-    return options_;
-  }
+  [[nodiscard]] pool_options options() const noexcept { return options_; }
 
 private:
-  pool_class *find_pool(size_t bytes, size_t alignment) noexcept {
+  [[nodiscard]] pool_class *find_pool(size_t bytes,
+                                      size_t alignment) noexcept {
     for (pool_class *pool = classes_; pool; pool = pool->next) {
       if (pool->requested_size == bytes &&
-          pool->alignment == alignment)
+          pool->requested_alignment == alignment)
         return pool;
     }
 
@@ -360,21 +403,15 @@ private:
 #if FTL_HAS_EXCEPTIONS
     try {
 #endif
-      size_t stride =
-          round_up(
-              bytes < sizeof(free_block)
-                  ? sizeof(free_block)
-                  : bytes,
-              alignment);
+      const size_t block_alignment =
+          alignment < alignof(free_block) ? alignof(free_block) : alignment;
+      const size_t block_size =
+          bytes < sizeof(free_block) ? sizeof(free_block) : bytes;
+      const size_t stride = round_up(block_size, block_alignment);
 
       auto *pool = ::new (storage) pool_class{
-          classes_,
-          nullptr,
-          nullptr,
-          bytes,
-          alignment,
-          stride,
-          1,
+          classes_, nullptr, nullptr, bytes, alignment, block_alignment,
+          stride,   1,
       };
 
       classes_ = pool;
@@ -382,10 +419,7 @@ private:
 
 #if FTL_HAS_EXCEPTIONS
     } catch (...) {
-      upstream_->deallocate(
-          storage,
-          sizeof(pool_class),
-          alignof(pool_class));
+      upstream_->deallocate(storage, sizeof(pool_class), alignof(pool_class));
       throw;
     }
 #endif
@@ -401,57 +435,78 @@ private:
       count = 1;
 
     const size_t bytes = checked_mul(pool.stride, count);
-
-    void *memory = upstream_->allocate(bytes, pool.alignment);
-
+    void *memory = upstream_->allocate(bytes, pool.block_alignment);
     void *chunk_storage = nullptr;
 
 #if FTL_HAS_EXCEPTIONS
     try {
 #endif
-      chunk_storage =
-          upstream_->allocate(sizeof(chunk), alignof(chunk));
+      chunk_storage = upstream_->allocate(sizeof(chunk), alignof(chunk));
 
       auto *record = ::new (chunk_storage) chunk{
           pool.chunks,
           memory,
           bytes,
-          pool.alignment,
+          pool.block_alignment,
       };
 
       pool.chunks = record;
-
       auto *base = static_cast<unsigned char *>(memory);
 
       for (size_t index = 0; index < count; ++index) {
         auto *node =
-            reinterpret_cast<free_block *>(
-                base + index * pool.stride);
-
+            reinterpret_cast<free_block *>(base + index * pool.stride);
         node->next = pool.free;
         pool.free = node;
       }
 
       if (pool.next_blocks < options_.max_blocks_per_chunk) {
-        size_t doubled =
-            pool.next_blocks >
-                    options_.max_blocks_per_chunk / 2
+        pool.next_blocks =
+            pool.next_blocks > options_.max_blocks_per_chunk / 2
                 ? options_.max_blocks_per_chunk
                 : pool.next_blocks * 2;
 
-        pool.next_blocks =
-            doubled == 0 ? 1 : doubled;
+        if (pool.next_blocks == 0)
+          pool.next_blocks = 1;
       }
 
 #if FTL_HAS_EXCEPTIONS
     } catch (...) {
       if (chunk_storage)
-        upstream_->deallocate(
-            chunk_storage,
-            sizeof(chunk),
-            alignof(chunk));
+        upstream_->deallocate(chunk_storage, sizeof(chunk), alignof(chunk));
 
-      upstream_->deallocate(memory, bytes, pool.alignment);
+      upstream_->deallocate(memory, bytes, pool.block_alignment);
+      throw;
+    }
+#endif
+  }
+
+  [[nodiscard]] void *allocate_oversized(size_t bytes, size_t alignment) {
+    void *memory = upstream_->allocate(bytes, alignment);
+    void *record_storage = nullptr;
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      record_storage =
+          upstream_->allocate(sizeof(oversized_block), alignof(oversized_block));
+
+      oversized_ = ::new (record_storage) oversized_block{
+          oversized_,
+          memory,
+          bytes,
+          alignment,
+      };
+
+      return memory;
+
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      if (record_storage)
+        upstream_->deallocate(record_storage, sizeof(oversized_block),
+                              alignof(oversized_block));
+
+      upstream_->deallocate(memory, bytes, alignment);
       throw;
     }
 #endif
@@ -460,6 +515,7 @@ private:
   memory_resource *upstream_;
   pool_options options_{};
   pool_class *classes_{};
+  oversized_block *oversized_{};
 };
 
 } // namespace detail
@@ -467,51 +523,36 @@ private:
 class unsynchronized_pool_resource : public memory_resource {
 public:
   unsynchronized_pool_resource()
-      : unsynchronized_pool_resource(
-            pool_options{},
-            get_default_resource()) {}
+      : unsynchronized_pool_resource(pool_options{}, get_default_resource()) {}
 
   explicit unsynchronized_pool_resource(memory_resource *upstream)
       : unsynchronized_pool_resource(pool_options{}, upstream) {}
 
   explicit unsynchronized_pool_resource(const pool_options &options)
-      : unsynchronized_pool_resource(
-            options,
-            get_default_resource()) {}
+      : unsynchronized_pool_resource(options, get_default_resource()) {}
 
-  unsynchronized_pool_resource(
-      const pool_options &options,
-      memory_resource *upstream)
+  unsynchronized_pool_resource(const pool_options &options,
+                               memory_resource *upstream)
       : storage_(options, upstream) {}
 
   ~unsynchronized_pool_resource() override = default;
 
-  void release() {
-    storage_.release();
-  }
+  void release() { storage_.release(); }
 
-  memory_resource *upstream_resource() const {
-    return storage_.upstream();
-  }
+  memory_resource *upstream_resource() const { return storage_.upstream(); }
 
-  pool_options options() const {
-    return storage_.options();
-  }
+  pool_options options() const { return storage_.options(); }
 
 private:
   void *do_allocate(size_t bytes, size_t alignment) override {
     return storage_.allocate(bytes, alignment);
   }
 
-  void do_deallocate(
-      void *pointer,
-      size_t bytes,
-      size_t alignment) override {
+  void do_deallocate(void *pointer, size_t bytes, size_t alignment) override {
     storage_.deallocate(pointer, bytes, alignment);
   }
 
-  bool do_is_equal(
-      const memory_resource &other) const noexcept override {
+  bool do_is_equal(const memory_resource &other) const noexcept override {
     return this == &other;
   }
 
@@ -521,21 +562,16 @@ private:
 class synchronized_pool_resource : public memory_resource {
 public:
   synchronized_pool_resource()
-      : synchronized_pool_resource(
-            pool_options{},
-            get_default_resource()) {}
+      : synchronized_pool_resource(pool_options{}, get_default_resource()) {}
 
   explicit synchronized_pool_resource(memory_resource *upstream)
       : synchronized_pool_resource(pool_options{}, upstream) {}
 
   explicit synchronized_pool_resource(const pool_options &options)
-      : synchronized_pool_resource(
-            options,
-            get_default_resource()) {}
+      : synchronized_pool_resource(options, get_default_resource()) {}
 
-  synchronized_pool_resource(
-      const pool_options &options,
-      memory_resource *upstream)
+  synchronized_pool_resource(const pool_options &options,
+                             memory_resource *upstream)
       : storage_(options, upstream) {}
 
   ~synchronized_pool_resource() override = default;
@@ -545,13 +581,9 @@ public:
     storage_.release();
   }
 
-  memory_resource *upstream_resource() const {
-    return storage_.upstream();
-  }
+  memory_resource *upstream_resource() const { return storage_.upstream(); }
 
-  pool_options options() const {
-    return storage_.options();
-  }
+  pool_options options() const { return storage_.options(); }
 
 private:
   struct guard {
@@ -573,16 +605,12 @@ private:
     return storage_.allocate(bytes, alignment);
   }
 
-  void do_deallocate(
-      void *pointer,
-      size_t bytes,
-      size_t alignment) override {
+  void do_deallocate(void *pointer, size_t bytes, size_t alignment) override {
     guard lock{locked_};
     storage_.deallocate(pointer, bytes, alignment);
   }
 
-  bool do_is_equal(
-      const memory_resource &other) const noexcept override {
+  bool do_is_equal(const memory_resource &other) const noexcept override {
     return this == &other;
   }
 
@@ -604,47 +632,33 @@ public:
       : upstream_(upstream ? upstream : get_default_resource()),
         next_buffer_size_(initial_size == 0 ? 1 : initial_size) {}
 
-  monotonic_buffer_resource(
-      void *buffer,
-      size_t size,
-      memory_resource *upstream = get_default_resource())
+  monotonic_buffer_resource(void *buffer, size_t size,
+                            memory_resource *upstream = get_default_resource())
       : upstream_(upstream ? upstream : get_default_resource()),
-        initial_(static_cast<unsigned char *>(buffer)),
-        initial_size_(size),
-        current_(initial_),
-        available_(size),
+        initial_(static_cast<unsigned char *>(buffer)), initial_size_(size),
+        current_(initial_), available_(size),
         next_buffer_size_(size == 0 ? 1 : size) {}
 
-  ~monotonic_buffer_resource() override {
-    release();
-  }
+  ~monotonic_buffer_resource() override { release(); }
 
   void release() {
     while (blocks_) {
       block *current = blocks_;
       blocks_ = current->next;
 
-      upstream_->deallocate(
-          current->memory,
-          current->bytes,
-          current->alignment);
+      upstream_->deallocate(current->memory, current->bytes,
+                            current->alignment);
 
       current->~block();
-      upstream_->deallocate(
-          current,
-          sizeof(block),
-          alignof(block));
+      upstream_->deallocate(current, sizeof(block), alignof(block));
     }
 
     current_ = initial_;
     available_ = initial_size_;
-    next_buffer_size_ =
-        initial_size_ == 0 ? 1 : initial_size_;
+    next_buffer_size_ = initial_size_ == 0 ? 1 : initial_size_;
   }
 
-  memory_resource *upstream_resource() const {
-    return upstream_;
-  }
+  memory_resource *upstream_resource() const { return upstream_; }
 
 private:
   struct block {
@@ -654,44 +668,18 @@ private:
     size_t alignment;
   };
 
-  void *do_allocate(size_t bytes, size_t alignment) override {
-    void *candidate = current_;
-    size_t space = available_;
+  void acquire_buffer(size_t bytes, size_t alignment) {
+    const size_t required = detail::checked_add(bytes, alignment - 1);
+    const size_t buffer_size =
+        next_buffer_size_ < required ? required : next_buffer_size_;
 
-    if (candidate &&
-        FTL_MEMORY_RESOURCE_NAMESPACE::align(
-            alignment, bytes, candidate, space)) {
-      auto *result = static_cast<unsigned char *>(candidate);
-
-      const size_t consumed =
-          static_cast<size_t>(result - current_) + bytes;
-
-      current_ += consumed;
-      available_ -= consumed;
-
-      return result;
-    }
-
-    const size_t padding = alignment - 1;
-
-    const size_t required =
-        detail::checked_add(bytes, padding);
-
-    size_t buffer_size =
-        next_buffer_size_ < required
-            ? required
-            : next_buffer_size_;
-
-    void *memory =
-        upstream_->allocate(buffer_size, alignment);
-
+    void *memory = upstream_->allocate(buffer_size, alignment);
     void *block_storage = nullptr;
 
 #if FTL_HAS_EXCEPTIONS
     try {
 #endif
-      block_storage =
-          upstream_->allocate(sizeof(block), alignof(block));
+      block_storage = upstream_->allocate(sizeof(block), alignof(block));
 
       blocks_ = ::new (block_storage) block{
           blocks_,
@@ -703,15 +691,9 @@ private:
 #if FTL_HAS_EXCEPTIONS
     } catch (...) {
       if (block_storage)
-        upstream_->deallocate(
-            block_storage,
-            sizeof(block),
-            alignof(block));
+        upstream_->deallocate(block_storage, sizeof(block), alignof(block));
 
-      upstream_->deallocate(
-          memory,
-          buffer_size,
-          alignment);
+      upstream_->deallocate(memory, buffer_size, alignment);
       throw;
     }
 #endif
@@ -719,33 +701,50 @@ private:
     current_ = static_cast<unsigned char *>(memory);
     available_ = buffer_size;
 
-    if (next_buffer_size_ <= size_t(-1) / 2)
-      next_buffer_size_ *= 2;
-    else
-      next_buffer_size_ = size_t(-1);
+    size_t next =
+        next_buffer_size_ > size_t(-1) / 2 ? size_t(-1)
+                                           : next_buffer_size_ * 2;
+    if (next < buffer_size)
+      next = buffer_size;
+    next_buffer_size_ = next;
+  }
+
+  void *do_allocate(size_t bytes, size_t alignment) override {
+    void *candidate = current_;
+    size_t space = available_;
+
+    if (candidate &&
+        FTL_MEMORY_RESOURCE_NAMESPACE::align(alignment, bytes, candidate,
+                                             space)) {
+      auto *result = static_cast<unsigned char *>(candidate);
+      const size_t consumed =
+          static_cast<size_t>(result - current_) + bytes;
+
+      current_ += consumed;
+      available_ -= consumed;
+      return result;
+    }
+
+    acquire_buffer(bytes, alignment);
 
     candidate = current_;
     space = available_;
 
-    if (!FTL_MEMORY_RESOURCE_NAMESPACE::align(
-            alignment, bytes, candidate, space))
+    if (!FTL_MEMORY_RESOURCE_NAMESPACE::align(alignment, bytes, candidate,
+                                              space))
       terminate();
 
     auto *result = static_cast<unsigned char *>(candidate);
-
-    const size_t consumed =
-        static_cast<size_t>(result - current_) + bytes;
+    const size_t consumed = static_cast<size_t>(result - current_) + bytes;
 
     current_ += consumed;
     available_ -= consumed;
-
     return result;
   }
 
   void do_deallocate(void *, size_t, size_t) override {}
 
-  bool do_is_equal(
-      const memory_resource &other) const noexcept override {
+  bool do_is_equal(const memory_resource &other) const noexcept override {
     return this == &other;
   }
 

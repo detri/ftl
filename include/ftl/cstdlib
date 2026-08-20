@@ -4,10 +4,12 @@
 #define FTL_CSTDLIB_HEADER
 
 #ifdef FTL_REPLACE_STL
+#include <cmath>
 #include <cstddef>
 #define FTL_CSTDLIB_BEGIN namespace std {
 #define FTL_CSTDLIB_END }
 #else
+#include <ftl/cmath>
 #include <ftl/cstddef>
 #define FTL_CSTDLIB_BEGIN namespace ftl {
 #define FTL_CSTDLIB_END }
@@ -15,16 +17,21 @@
 
 extern "C" {
 #if defined(__APPLE__)
-void abort() __attribute__((__noreturn__));
+void abort() noexcept __attribute__((__noreturn__));
 #else
 [[noreturn]] void abort() noexcept;
 #endif
+#if defined(_MSC_VER)
 int atexit(void (*)());
 int at_quick_exit(void (*)());
+#else
+int atexit(void (*)()) noexcept;
+int at_quick_exit(void (*)()) noexcept;
+#endif
 #if defined(__APPLE__)
 void exit(int) __attribute__((__noreturn__));
-void _Exit(int) __attribute__((__noreturn__));
-void quick_exit(int) __attribute__((__noreturn__));
+void _Exit(int) noexcept __attribute__((__noreturn__));
+void quick_exit(int) noexcept __attribute__((__noreturn__));
 #else
 [[noreturn]] void exit(int);
 [[noreturn]] void _Exit(int) noexcept;

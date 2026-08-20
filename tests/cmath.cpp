@@ -61,6 +61,15 @@ constexpr bool constexpr_cmath() {
 }
 static_assert(constexpr_cmath());
 
+constexpr bool constexpr_reduction_avoids_ratio_overflow() {
+  constexpr double maximum = tested::numeric_limits<double>::max();
+  int quotient = 0;
+  return tested::fmod(maximum, 0.5) == 0.0 &&
+         tested::remainder(maximum, 0.5) == 0.0 &&
+         tested::remquo(maximum, 0.5, &quotient) == 0.0;
+}
+static_assert(constexpr_reduction_avoids_ratio_overflow());
+
 bool ftl_test() {
   tested::fenv_t environment{};
   if (tested::fegetenv(&environment) != 0 ||
@@ -90,6 +99,9 @@ bool ftl_test() {
   const bool special_propagates_nan =
       tested::isnan(tested::comp_ellint_1(quiet_nan)) &&
       (tested::fetestexcept(FE_INVALID) & FE_INVALID) == 0;
+  const double maximum = tested::numeric_limits<double>::max();
+  const bool beta_large_arguments_underflow =
+      tested::beta(maximum, maximum) == 0.0;
 
   return nearby_is_quiet && rint_is_inexact &&
          tested::sqrt(4.0) == 2.0 && tested::cbrt(8.0) == 2.0 &&
@@ -104,6 +116,7 @@ bool ftl_test() {
          tested::nextafter(1.0, 2.0) > 1.0 &&
          tested::scalbn(1.0, 4) == 16.0 && tested::round(1.5) == 2.0 &&
          special_reports_domain && special_propagates_nan &&
+         beta_large_arguments_underflow &&
          tested::isinf(tested::cyl_bessel_k(0.0, 0.0)) &&
          tested::isinf(tested::cyl_neumann(0.0, 0.0));
 }

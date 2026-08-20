@@ -99,23 +99,36 @@ public:
     if (max_depth == 0)
       return result;
 
-    void *addresses[128];
-    const size_type requested = max_depth < 128 ? max_depth : 128;
+    // Capture the implementation's complete trace first and then slice it.
+    // The skip overloads are specified in terms of slicing current(alloc), not
+    // asking the platform to capture a new max-depth trace after skipping.
+    constexpr size_type capture_limit = 128;
+    if (skip >= capture_limit)
+      return result;
+    const size_type last = skip + max_depth < capture_limit
+                               ? skip + max_depth
+                               : capture_limit;
+    void *addresses[capture_limit + 1];
 #if FTL_HAS_EXCEPTIONS
     try {
 #endif
 #if defined(_WIN32)
-      const auto count = static_cast<size_type>(RtlCaptureStackBackTrace(
-          static_cast<unsigned long>(skip + 1),
-          static_cast<unsigned long>(requested), addresses, nullptr));
-#else
-      const int captured = ::backtrace(addresses, static_cast<int>(requested));
-      const size_type first = skip + 1 < static_cast<size_type>(captured)
-                                  ? skip + 1
-                                  : static_cast<size_type>(captured);
-      const size_type count = static_cast<size_type>(captured) - first;
+      const size_type captured = static_cast<size_type>(RtlCaptureStackBackTrace(
+          1, static_cast<unsigned long>(last), addresses, nullptr));
+      const size_type first = skip < captured ? skip : captured;
+      const size_type count = (last < captured ? last : captured) - first;
       for (size_type index = 0; index < count; ++index)
         addresses[index] = addresses[first + index];
+#else
+      const int native_count =
+          ::backtrace(addresses, static_cast<int>(last + 1));
+      const size_type captured = native_count > 0
+                                     ? static_cast<size_type>(native_count) - 1
+                                     : 0;
+      const size_type first = skip < captured ? skip : captured;
+      const size_type count = (last < captured ? last : captured) - first;
+      for (size_type index = 0; index < count; ++index)
+        addresses[index] = addresses[first + index + 1];
 #endif
       result.frames_.reserve(count);
       for (size_type index = 0; index < count; ++index)

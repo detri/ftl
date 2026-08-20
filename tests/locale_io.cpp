@@ -1,4 +1,5 @@
 #ifdef FTL_REPLACE_STL
+#include <codecvt>
 #include <istream>
 #include <locale>
 #include <ostream>
@@ -6,6 +7,7 @@
 #include <type_traits>
 namespace tested = std;
 #else
+#include <ftl/codecvt>
 #include <ftl/istream>
 #include <ftl/locale>
 #include <ftl/ostream>
@@ -58,6 +60,9 @@ static_assert(tested::is_base_of_v<tested::time_put<char>,
                                    tested::time_put_byname<char>>);
 static_assert(tested::sentinel_for<tested::default_sentinel_t,
                                    tested::istreambuf_iterator<char>>);
+static_assert(tested::is_base_of_v<
+              tested::basic_streambuf<wchar_t, tested::char_traits<wchar_t>>,
+              tested::wbuffer_convert<tested::codecvt_utf8<wchar_t>>>);
 
 bool mandatory_classic_facets_exist() {
   const tested::locale &value = tested::locale::classic();
@@ -188,8 +193,27 @@ bool named_and_category_construction_works() {
          tested::has_facet<tested::money_put<wchar_t>>(combined);
 }
 
+bool deprecated_conversion_classes_work() {
+  tested::wstring_convert<tested::codecvt_utf8<char32_t>, char32_t> strings;
+  const auto bytes = strings.to_bytes(U"\u20ac");
+  if (bytes != "\xe2\x82\xac" || strings.converted() != 1)
+    return false;
+  const auto wide = strings.from_bytes(bytes);
+  if (wide.size() != 1 || wide[0] != U'\u20ac' || strings.converted() != 3)
+    return false;
+
+  output_buffer output;
+  tested::wbuffer_convert<tested::codecvt_utf8<wchar_t>> buffer(&output);
+  if (tested::char_traits<wchar_t>::eq_int_type(
+          buffer.sputc(L'\u00a2'), tested::char_traits<wchar_t>::eof()) ||
+      buffer.pubsync() != 0)
+    return false;
+  return output.text == "\xc2\xa2";
+}
+
 bool ftl_test() {
   return mandatory_classic_facets_exist() && numeric_facets_round_trip() &&
          numeric_locale_integration_works() && monetary_and_time_facets_work() &&
-         named_and_category_construction_works();
+         named_and_category_construction_works() &&
+         deprecated_conversion_classes_work();
 }

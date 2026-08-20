@@ -216,4 +216,10 @@ typename Traits::int_type streambuf_sputc(basic_streambuf<C, Traits> *buffer,
 
 FTL_END_NAMESPACE
 
+#ifdef FTL_REPLACE_STL
+#include <detail/wbuffer_convert.hpp>
+#else
+#include <ftl/detail/wbuffer_convert.hpp>
+#endif
+
 #endif // FTL_STREAMBUF_HEADER

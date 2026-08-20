@@ -53,6 +53,69 @@ struct atomic_alias_owner {
   object second{2};
 };
 
+struct allocation_counts {
+  int allocations{};
+  int deallocations{};
+  int constructions{};
+  int destructions{};
+  alignas(256) unsigned char storage[8192]{};
+  ftl::size_t used{};
+};
+
+template <class T, class Observed = T> struct observing_allocator {
+  using value_type = T;
+  template <class U> struct rebind {
+    using other = observing_allocator<U, Observed>;
+  };
+  allocation_counts *counts{};
+
+  observing_allocator() = default;
+  explicit observing_allocator(allocation_counts &value) : counts(&value) {}
+  template <class U>
+  observing_allocator(const observing_allocator<U, Observed> &other)
+      : counts(other.counts) {}
+
+  T *allocate(ftl::size_t count) {
+    ++counts->allocations;
+    const auto base = reinterpret_cast<ftl::uintptr_t>(counts->storage);
+    const auto current = base + counts->used;
+    const auto aligned = (current + alignof(T) - 1) & ~(alignof(T) - 1);
+    const ftl::size_t next =
+        static_cast<ftl::size_t>(aligned - base) + sizeof(T) * count;
+    if (next > sizeof(counts->storage))
+      throw ftl::bad_alloc{};
+    counts->used = next;
+    return reinterpret_cast<T *>(aligned);
+  }
+  void deallocate(T *pointer, ftl::size_t) noexcept {
+    (void)pointer;
+    ++counts->deallocations;
+  }
+  template <class U, class... Args>
+  void construct(U *pointer, Args &&...args) {
+    if constexpr (ftl::is_same_v<ftl::remove_cv_t<U>, Observed>)
+      ++counts->constructions;
+    ::new (static_cast<void *>(pointer)) U(
+        ftl::forward<Args>(args)...);
+  }
+  template <class U> void destroy(U *pointer) noexcept {
+    if constexpr (ftl::is_same_v<ftl::remove_cv_t<U>, Observed>)
+      ++counts->destructions;
+    pointer->~U();
+  }
+
+  template <class, class> friend struct observing_allocator;
+  template <class U>
+  friend bool operator==(const observing_allocator &left,
+                         const observing_allocator<U, Observed> &right) noexcept {
+    return left.counts == right.counts;
+  }
+};
+
+struct alignas(128) over_aligned_value {
+  int value{};
+};
+
 void make_object(object **output) { *output = new object{31}; }
 void replace_object(object **output) {
   delete *output;
@@ -78,6 +141,22 @@ static_assert(ftl::is_constructible_v<ftl::unique_ptr<object, fancy_delete>,
                                       fancy_pointer>);
 static_assert(ftl::is_constructible_v<ftl::unique_ptr<object[], fancy_delete>,
                                       fancy_pointer>);
+
+static_assert(ftl::is_constructible_v<ftl::unique_ptr<object>,
+                                      ftl::unique_ptr<object> &&>);
+
+static_assert(ftl::is_assignable_v<ftl::unique_ptr<object> &,
+                                   ftl::unique_ptr<object> &&>);
+
+static_assert(ftl::is_constructible_v<
+              ftl::shared_ptr<object[]>, object *,
+              ftl::default_delete<object[]>>);
+
+static_assert(ftl::is_constructible_v<ftl::shared_ptr<const object[]>,
+                                      ftl::shared_ptr<object[]>>);
+
+static_assert(!ftl::is_constructible_v<ftl::shared_ptr<base[]>,
+                                       ftl::shared_ptr<derived[]>>);
 
 bool lifetime_works() {
   union storage {
@@ -191,6 +270,44 @@ bool extended_memory_works() {
          aware.value == 19;
 }
 
+bool allocator_backed_shared_arrays_work() {
+  allocation_counts counts;
+  observing_allocator<int> allocator{counts};
+  int row[2] = {4, 9};
+  {
+    auto matrix = ftl::allocate_shared<int[][2]>(allocator, 3, row);
+    if (matrix[0][0] != 4 || matrix[1][1] != 9 || matrix[2][0] != 4 ||
+        counts.constructions < 6)
+      return false;
+  }
+  if (counts.destructions != 6 || counts.constructions != 6 ||
+      counts.allocations != counts.deallocations)
+    return false;
+
+  allocation_counts empty_counts;
+  {
+    auto empty = ftl::allocate_shared<int[]>(
+        observing_allocator<int>{empty_counts}, 0);
+    if (empty.get() == nullptr)
+      return false;
+  }
+  if (empty_counts.allocations != empty_counts.deallocations)
+    return false;
+
+  allocation_counts aligned_counts;
+  {
+    auto values = ftl::allocate_shared<over_aligned_value[]>(
+        observing_allocator<over_aligned_value>{aligned_counts}, 2);
+    if (reinterpret_cast<ftl::uintptr_t>(values.get()) %
+            alignof(over_aligned_value) !=
+        0)
+      return false;
+  }
+  return aligned_counts.constructions == 2 &&
+         aligned_counts.destructions == 2 &&
+         aligned_counts.allocations == aligned_counts.deallocations;
+}
+
 template <class Pointer,
           bool = tested::is_void_v<
               typename tested::pointer_traits<Pointer>::element_type>>
@@ -287,12 +404,46 @@ bool atomic_smart_pointer_assignment_works() {
   return loaded.get() == second.get() && loaded->value == 2;
 }
 
+bool shared_array_deleter_works() {
+  int deletes = 0;
+
+  struct deleter {
+    int *deletes;
+
+    void operator()(int *pointer) const noexcept {
+      ++*deletes;
+      delete[] pointer;
+    }
+  };
+
+  {
+    ftl::shared_ptr<int[]> owner{new int[3]{1, 2, 3}, deleter{&deletes}};
+
+    if (owner[0] != 1 || owner[1] != 2 || owner[2] != 3)
+      return false;
+  }
+
+  return deletes == 1;
+}
+
+bool unique_same_type_move_assignment_works() {
+  auto first = ftl::make_unique<object>(11);
+  auto second = ftl::make_unique<object>(22);
+
+  first = ftl::move(second);
+
+  return first && !second && first->value == 22;
+}
+
 bool ftl_test() {
   return lifetime_works() && shared_ownership_works() &&
          unique_ownership_works() && weak_lifetime_works() &&
          allocator_works() && allocate_shared_works() &&
          extended_memory_works() &&
+         allocator_backed_shared_arrays_work() &&
          atomic_shared_ptr_ownership_equivalence_works() &&
          atomic_weak_ptr_stored_pointer_equivalence_works() &&
-         atomic_smart_pointer_assignment_works();
+         atomic_smart_pointer_assignment_works() &&
+         shared_array_deleter_works() &&
+         unique_same_type_move_assignment_works();
 }
