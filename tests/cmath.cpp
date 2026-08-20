@@ -48,8 +48,8 @@ static_assert(tested::is_same_v<tested::float_t, long double>);
 static_assert(tested::is_same_v<tested::double_t, long double>);
 #endif
 
-#if defined(__SIZEOF_FLOAT128__)
-using extended_float = __float128;
+#if defined(__STDCPP_FLOAT128_T__)
+using extended_float = decltype(0.0f128);
 static_assert(tested::is_same_v<decltype(tested::sqrt(extended_float{})),
                                 extended_float>);
 static_assert(tested::is_same_v<decltype(tested::beta(extended_float{}, 2)),
