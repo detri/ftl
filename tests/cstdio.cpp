@@ -17,6 +17,11 @@ static_assert(tested::is_same_v<decltype(stdout), ::FILE *>);
 using print_type = int (*)(const char *, ...);
 static_assert(tested::is_same_v<
               decltype(static_cast<print_type>(&tested::printf)), print_type>);
+bool cstdio_failure(const char *message) {
+  tested::fprintf(::ftl_stdio_runtime::error_stream(),
+                  "cstdio regression failed: %s\n", message);
+  return false;
+}
 bool ftl_test() {
   char formatted[64]{};
   int written =
@@ -39,7 +44,7 @@ bool ftl_test() {
           702 ||
       high_precision[0] != '1' || high_precision[1] != '.' ||
       high_precision[701] != '0' || high_precision[702] != '\0')
-    return false;
+    return cstdio_failure("high precision output");
   int count_written = -1;
   int format_result = tested::snprintf(
       formatted, sizeof(formatted), "%#.0f %.1a%n", 1.0, 3.0, &count_written);
@@ -158,27 +163,27 @@ bool ftl_test() {
 #elif defined(__APPLE__)
       "en_US.UTF-8";
 #else
-      "C.UTF-8";
+      "C.utf8";
 #endif
   if (tested::setlocale(LC_CTYPE, wide_locale) == nullptr)
-    return false;
+    return cstdio_failure("UTF-8 locale selection");
   tested::FILE *wide_file = tested::tmpfile();
   if (!wide_file || tested::fputwc(L'\u00e9', wide_file) == WEOF ||
       tested::fputwc(L'X', wide_file) == WEOF)
-    return false;
+    return cstdio_failure("wide output");
   tested::fpos_t wide_end{};
   if (tested::fgetpos(wide_file, &wide_end) != 0)
-    return false;
+    return cstdio_failure("wide end position");
   tested::rewind(wide_file);
   if (tested::fgetwc(wide_file) != L'\u00e9' ||
       tested::ungetwc(L'\u00e9', wide_file) == WEOF)
-    return false;
+    return cstdio_failure("wide input or pushback");
   tested::fpos_t pushed_position{};
   if (tested::fgetpos(wide_file, &pushed_position) != 0 ||
       pushed_position.position != 0 ||
       tested::fgetwc(wide_file) != L'\u00e9' ||
       tested::fgetwc(wide_file) != L'X' ||
       tested::fsetpos(wide_file, &wide_end) != 0)
-    return false;
+    return cstdio_failure("wide position state or replay");
   return tested::fclose(wide_file) == 0;
 }
