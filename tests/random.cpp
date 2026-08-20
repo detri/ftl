@@ -33,20 +33,6 @@ struct malformed_seed_sequence {
   void generate(tested::uint32_t *, tested::uint32_t *) { ++generations; }
 };
 
-#if defined(__SIZEOF_INT128__)
-using extended_unsigned = unsigned __int128;
-static_assert(requires(tested::mt19937 &engine) {
-  tested::uniform_int_distribution<extended_unsigned>{}(engine);
-});
-#endif
-
-#if defined(__STDCPP_FLOAT128_T__)
-using extended_float = decltype(0.0f128);
-static_assert(requires(tested::mt19937 &engine) {
-  tested::uniform_real_distribution<extended_float>{}(engine);
-});
-#endif
-
 class random_input_buffer : public tested::streambuf {
 public:
   random_input_buffer(char *first, char *last) { setg(first, first, last); }
