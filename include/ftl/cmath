@@ -51,6 +51,9 @@ using double_t = long double;
 inline float sqrt(float) noexcept;
 inline double sqrt(double) noexcept;
 inline long double sqrt(long double) noexcept;
+#ifdef __STDCPP_FLOAT128_T__
+inline decltype(0.0f128) sqrt(decltype(0.0f128)) noexcept;
+#endif
 constexpr float fabs(float) noexcept;
 constexpr double fabs(double) noexcept;
 constexpr long double fabs(long double) noexcept;
@@ -497,6 +500,11 @@ FTL_CMATH_CONSTEXPR_UNARY(round)
 FTL_CMATH_UNARY(sin)
 FTL_CMATH_UNARY(sinh)
 FTL_CMATH_UNARY(sqrt)
+#ifdef __STDCPP_FLOAT128_T__
+inline decltype(0.0f128) sqrt(decltype(0.0f128) value) noexcept {
+  return __builtin_sqrtf128(value);
+}
+#endif
 FTL_CMATH_UNARY(tan)
 FTL_CMATH_UNARY(tanh)
 FTL_CMATH_UNARY(tgamma)
