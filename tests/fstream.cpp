@@ -33,6 +33,73 @@ bool ftl_test() {
   int a = 0, b = 0;
   in >> a >> b;
   in.close();
+  if (a != 17 || b != 25) {
+    tested::remove(name);
+    return false;
+  }
+
+  {
+    tested::fstream update(name, tested::ios_base::in | tested::ios_base::out |
+                                     tested::ios_base::binary);
+    char first = 0;
+    update.get(first);
+    update.put('X');
+    update.seekp(0);
+    update.put('Q');
+    char following = 0;
+    update.get(following);
+    if (update.fail() || first != '1' || following != 'X') {
+      tested::remove(name);
+      return false;
+    }
+  }
+
+  {
+    tested::fstream sparse(name, tested::ios_base::in | tested::ios_base::out |
+                                     tested::ios_base::binary |
+                                     tested::ios_base::trunc);
+    constexpr tested::streamoff large_position =
+        static_cast<tested::streamoff>(3) * 1024 * 1024 * 1024;
+    sparse.seekp(large_position);
+    sparse.put('z');
+    if (sparse.fail() || sparse.tellp() != large_position + 1) {
+      tested::remove(name);
+      return false;
+    }
+  }
+
+  const char *wide_name =
+#ifdef FTL_REPLACE_STL
+      "ftl_fstream_wide_replace.tmp";
+#else
+      "ftl_fstream_wide_normal.tmp";
+#endif
+  {
+    tested::wofstream output(wide_name,
+                             tested::ios_base::binary | tested::ios_base::trunc);
+    output << L'\u00e9' << L'x';
+    if (output.fail()) {
+      tested::remove(name);
+      tested::remove(wide_name);
+      return false;
+    }
+  }
+  {
+    tested::wifstream input(wide_name, tested::ios_base::binary);
+    wchar_t first = 0, repeated = 0, second = 0;
+    input.get(first);
+    input.unget();
+    input.get(repeated);
+    input.get(second);
+    if (input.fail() || first != L'\u00e9' || repeated != first ||
+        second != L'x') {
+      tested::remove(name);
+      tested::remove(wide_name);
+      return false;
+    }
+  }
+
   tested::remove(name);
-  return a == 17 && b == 25;
+  tested::remove(wide_name);
+  return true;
 }

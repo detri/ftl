@@ -723,7 +723,7 @@ int ungetc(int value, FILE *stream) {
   return ftl_stdio_runtime::unget_byte_locked(value, stream);
 }
 
-int fseek(FILE *stream, long offset, int origin) {
+int __seekoff(FILE *stream, long long offset, int origin) {
   if (!stream ||
       (origin != SEEK_SET && origin != SEEK_CUR && origin != SEEK_END))
     return -1;
@@ -736,7 +736,7 @@ int fseek(FILE *stream, long offset, int origin) {
       origin == SEEK_SET   ? native_seek_origin::begin
       : origin == SEEK_CUR ? native_seek_origin::current
                            : native_seek_origin::end;
-  native_io_offset adjusted_offset = offset;
+  native_io_offset adjusted_offset = static_cast<native_io_offset>(offset);
   if (origin == SEEK_CUR && stream->pushback != -1)
     --adjusted_offset;
   if (!native_seek_file(stream->handle, adjusted_offset, native_origin,
@@ -749,7 +749,11 @@ int fseek(FILE *stream, long offset, int origin) {
   return 0;
 }
 
-long ftell(FILE *stream) {
+int fseek(FILE *stream, long offset, int origin) {
+  return __seekoff(stream, static_cast<long long>(offset), origin);
+}
+
+long long __telloff(FILE *stream) {
   if (!stream)
     return -1;
   file_guard guard(stream);
@@ -763,6 +767,11 @@ long ftell(FILE *stream) {
   position += static_cast<native_io_offset>(stream->buffered);
   if (stream->pushback != -1)
     --position;
+  return static_cast<long long>(position);
+}
+
+long ftell(FILE *stream) {
+  const long long position = __telloff(stream);
   if constexpr (sizeof(long) == 4) {
     if (position < -2147483647LL - 1 || position > 2147483647LL) {
       runtime_errno() = 34;
