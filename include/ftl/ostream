@@ -201,6 +201,9 @@ public:
       this->setstate(ios_base::badbit);
     return *this;
   }
+  template <class Operation> bool __output_operation(Operation operation) {
+    return output_operation(operation);
+  }
 
   basic_ostream(const basic_ostream &) = delete;
   basic_ostream &operator=(const basic_ostream &) = delete;
