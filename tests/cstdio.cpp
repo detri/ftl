@@ -22,6 +22,14 @@ bool cstdio_failure(const char *message) {
                   "cstdio regression failed: %s\n", message);
   return false;
 }
+bool cstdio_wide_input_failure(tested::wint_t value, tested::FILE *stream) {
+  tested::fprintf(::ftl_stdio_runtime::error_stream(),
+                  "cstdio regression failed: wide input value=%u error=%d "
+                  "eof=%d\n",
+                  static_cast<unsigned>(value), tested::ferror(stream),
+                  tested::feof(stream));
+  return false;
+}
 bool ftl_test() {
   char formatted[64]{};
   int written =
@@ -175,8 +183,9 @@ bool ftl_test() {
   if (tested::fgetpos(wide_file, &wide_end) != 0)
     return cstdio_failure("wide end position");
   tested::rewind(wide_file);
-  if (tested::fgetwc(wide_file) != L'\u00e9')
-    return cstdio_failure("wide input");
+  const tested::wint_t wide_first = tested::fgetwc(wide_file);
+  if (wide_first != L'\u00e9')
+    return cstdio_wide_input_failure(wide_first, wide_file);
   if (tested::ungetwc(L'\u00e9', wide_file) == WEOF)
     return cstdio_failure("wide pushback");
   tested::fpos_t pushed_position{};
