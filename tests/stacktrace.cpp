@@ -38,6 +38,11 @@ bool ftl_test() {
     return false;
 
   const auto skipped = tested::stacktrace::current(1, 3);
+  const auto full_tail = tested::stacktrace::current(0, 128);
+  const auto skipped_tail = tested::stacktrace::current(2, 128);
+  const auto expected_tail_size = full_tail.size() > 2 ? full_tail.size() - 2 : 0;
+  if (skipped_tail.size() != expected_tail_size)
+    return false;
   stacktrace_output_buffer buffer;
   tested::ostream stream(&buffer);
   stream << trace;

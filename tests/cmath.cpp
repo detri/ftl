@@ -37,6 +37,25 @@ static_assert(tested::is_same_v<decltype(tested::lerp(1.0f, 2.0L, 3)), long doub
 static_assert(FP_INFINITE != FP_NAN && FP_ZERO != FP_NORMAL);
 static_assert(MATH_ERREXCEPT != 0);
 
+#if FLT_EVAL_METHOD == 0
+static_assert(tested::is_same_v<tested::float_t, float>);
+static_assert(tested::is_same_v<tested::double_t, double>);
+#elif FLT_EVAL_METHOD == 1
+static_assert(tested::is_same_v<tested::float_t, double>);
+static_assert(tested::is_same_v<tested::double_t, double>);
+#elif FLT_EVAL_METHOD == 2
+static_assert(tested::is_same_v<tested::float_t, long double>);
+static_assert(tested::is_same_v<tested::double_t, long double>);
+#endif
+
+#if defined(__SIZEOF_FLOAT128__)
+using extended_float = __float128;
+static_assert(tested::is_same_v<decltype(tested::sqrt(extended_float{})),
+                                extended_float>);
+static_assert(tested::is_same_v<decltype(tested::beta(extended_float{}, 2)),
+                                extended_float>);
+#endif
+
 constexpr bool constexpr_cmath() {
   int exponent{}, quotient{};
   double integer{};
@@ -102,6 +121,11 @@ bool ftl_test() {
   const double maximum = tested::numeric_limits<double>::max();
   const bool beta_large_arguments_underflow =
       tested::beta(maximum, maximum) == 0.0;
+  tested::feclearexcept(FE_ALL_EXCEPT);
+  volatile double signaling = tested::numeric_limits<double>::signaling_NaN();
+  const bool quiet_comparisons_do_not_raise =
+      !tested::isgreater(signaling, 1.0) &&
+      (tested::fetestexcept(FE_INVALID) & FE_INVALID) == 0;
 
   return nearby_is_quiet && rint_is_inexact &&
          tested::sqrt(4.0) == 2.0 && tested::cbrt(8.0) == 2.0 &&
@@ -117,6 +141,7 @@ bool ftl_test() {
          tested::scalbn(1.0, 4) == 16.0 && tested::round(1.5) == 2.0 &&
          special_reports_domain && special_propagates_nan &&
          beta_large_arguments_underflow &&
+         quiet_comparisons_do_not_raise &&
          tested::isinf(tested::cyl_bessel_k(0.0, 0.0)) &&
          tested::isinf(tested::cyl_neumann(0.0, 0.0));
 }

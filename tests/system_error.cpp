@@ -42,7 +42,20 @@ bool ftl_test() {
     return false;
 
   tested::system_error error{code, "opening file"};
-  return error.code() == code && contains(error.what(), "opening file") &&
-         tested::hash<tested::error_code>{}(code) ==
-             tested::hash<tested::error_code>{}(code);
+  if (error.code() != code || !contains(error.what(), "opening file") ||
+      tested::hash<tested::error_code>{}(code) !=
+          tested::hash<tested::error_code>{}(code))
+    return false;
+
+#if defined(_WIN32)
+  tested::error_code missing{2, tested::system_category()};
+  if (missing.default_error_condition() !=
+          tested::make_error_condition(tested::errc::no_such_file_or_directory) ||
+      missing.message().empty())
+    return false;
+  tested::error_code unknown{0x3fffffff, tested::system_category()};
+  if (unknown.default_error_condition().category() != tested::system_category())
+    return false;
+#endif
+  return true;
 }

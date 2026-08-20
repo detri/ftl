@@ -1922,17 +1922,19 @@ public:
 
     block_allocator rebound(allocator);
 
-    block *owner = allocator_traits<block_allocator>::allocate(rebound, 1);
+    block *owner = nullptr;
 
 #if FTL_HAS_EXCEPTIONS
     try {
 #endif
+      owner = allocator_traits<block_allocator>::allocate(rebound, 1);
       allocator_traits<block_allocator>::construct(
           rebound, owner, value, move(value_deleter), allocator);
 
 #if FTL_HAS_EXCEPTIONS
     } catch (...) {
-      allocator_traits<block_allocator>::deallocate(rebound, owner, 1);
+      if (owner)
+        allocator_traits<block_allocator>::deallocate(rebound, owner, 1);
 
       value_deleter(value);
       throw;
@@ -1965,7 +1967,7 @@ public:
     control = detail::make_control_block<block>(
         pointer, forward<Deleter>(other.get_deleter()));
     pointer_value = static_cast<element_type *>(pointer);
-    other.release();
+    (void)other.release();
     enable_weak_this(pointer_value);
   }
 

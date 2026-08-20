@@ -2092,8 +2092,9 @@ public:
       const local_time<
           Duration> &tp)
     requires requires {
-      TimeZonePtr(
-          traits_::locate_zone(string_view{}));
+      TimeZonePtr(traits_::locate_zone(string_view{}));
+      { declval<TimeZonePtr &>()->to_sys(tp) } ->
+          convertible_to<sys_time<duration>>;
     }
       : zoned_time(
             traits_::
@@ -2131,8 +2132,9 @@ public:
           Duration> &tp,
       choose selection)
     requires requires {
-      TimeZonePtr(
-          traits_::locate_zone(string_view{}));
+      TimeZonePtr(traits_::locate_zone(string_view{}));
+      { declval<TimeZonePtr &>()->to_sys(tp, selection) } ->
+          convertible_to<sys_time<duration>>;
     }
       : zoned_time(
             traits_::
@@ -2183,8 +2185,8 @@ public:
           Duration2,
           TimeZonePtr2> &other)
     requires requires {
-      TimeZonePtr(
-          traits_::locate_zone(string_view{}));
+      TimeZonePtr(traits_::locate_zone(string_view{}));
+      requires is_convertible_v<sys_time<Duration2>, sys_time<Duration>>;
     }
       : zoned_time(
             traits_::
@@ -2202,8 +2204,8 @@ public:
           TimeZonePtr2> &other,
       choose selection)
     requires requires {
-      TimeZonePtr(
-          traits_::locate_zone(string_view{}));
+      TimeZonePtr(traits_::locate_zone(string_view{}));
+      requires is_convertible_v<sys_time<Duration2>, sys_time<Duration>>;
     }
       : zoned_time(
             traits_::

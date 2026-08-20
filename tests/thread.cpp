@@ -1,6 +1,7 @@
 #ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <chrono>
+#include <limits>
 #include <memory>
 #include <thread>
 #include <type_traits>
@@ -8,6 +9,7 @@ namespace tested = std;
 #else
 #include <ftl/atomic>
 #include <ftl/chrono>
+#include <ftl/limits>
 #include <ftl/memory>
 #include <ftl/thread>
 #include <ftl/type_traits>
@@ -1248,6 +1250,8 @@ bool thread_id_stream_and_format_work() {
 }
 
 bool ftl_test() {
+  tested::this_thread::sleep_for(tested::chrono::duration<double>{
+      tested::numeric_limits<double>::quiet_NaN()});
   return basic_thread_works() && arguments_work() &&
          move_only_argument_works() && thread_ids_work() &&
          move_thread_works() && detach_works() && atomic_wait_widths_work() &&

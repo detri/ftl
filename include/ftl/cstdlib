@@ -154,8 +154,57 @@ using ::mbtowc;
 using ::wctomb;
 using ::mbstowcs;
 using ::wcstombs;
-using ::bsearch;
-using ::qsort;
+inline void *bsearch(const void *key, const void *base, size_t count,
+                     size_t size,
+                     int (*compare)(const void *, const void *)) {
+  const auto *bytes = static_cast<const unsigned char *>(base);
+  size_t first = 0;
+  while (first < count) {
+    const size_t middle = first + (count - first) / 2;
+    const void *element = bytes + middle * size;
+    const int order = compare(key, element);
+    if (order == 0)
+      return const_cast<void *>(element);
+    if (order < 0)
+      count = middle;
+    else
+      first = middle + 1;
+  }
+  return nullptr;
+}
+inline void qsort(void *base, size_t count, size_t size,
+                  int (*compare)(const void *, const void *)) {
+  if (count < 2 || size == 0)
+    return;
+  auto *bytes = static_cast<unsigned char *>(base);
+  const auto swap_elements = [=](size_t left, size_t right) {
+    for (size_t offset = 0; offset < size; ++offset) {
+      const unsigned char value = bytes[left * size + offset];
+      bytes[left * size + offset] = bytes[right * size + offset];
+      bytes[right * size + offset] = value;
+    }
+  };
+  const auto sift_down = [&](size_t root, size_t length) {
+    for (;;) {
+      if (root >= length / 2)
+        return;
+      size_t child = root * 2 + 1;
+      if (child + 1 < length &&
+          compare(bytes + child * size, bytes + (child + 1) * size) < 0)
+        ++child;
+      if (compare(bytes + root * size, bytes + child * size) >= 0)
+        return;
+      swap_elements(root, child);
+      root = child;
+    }
+  };
+  for (size_t root = count / 2; root != 0;)
+    sift_down(--root, count);
+  for (size_t length = count; length > 1;) {
+    swap_elements(0, --length);
+    sift_down(0, length);
+  }
+}
 using ::rand;
 using ::srand;
 

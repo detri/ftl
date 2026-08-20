@@ -46,6 +46,17 @@ static_assert(tested::is_same_v<decltype(tested::pow(complex<float>{},
                                                      complex<long double>{})),
                                 complex<long double>>);
 
+#if defined(__SIZEOF_FLOAT128__)
+using extended_float = __float128;
+static_assert(tested::is_same_v<decltype(tested::real(extended_float{})),
+                                extended_float>);
+static_assert(tested::is_same_v<decltype(tested::conj(extended_float{})),
+                                complex<extended_float>>);
+static_assert(tested::is_same_v<
+              decltype(tested::pow(complex<double>{}, extended_float{})),
+              complex<extended_float>>);
+#endif
+
 class complex_input_buffer : public tested::streambuf {
 public:
   complex_input_buffer(char *first, char *last) { setg(first, first, last); }

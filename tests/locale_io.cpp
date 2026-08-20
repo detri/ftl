@@ -44,6 +44,12 @@ protected:
   tested::string do_grouping() const override { return tested::string(1, 3); }
 };
 
+class grouped_moneypunct : public tested::moneypunct<char, false> {
+protected:
+  char do_thousands_sep() const override { return ','; }
+  tested::string do_grouping() const override { return tested::string(1, 3); }
+};
+
 template <class Facet>
 constexpr bool facet_has_standard_base =
     tested::is_base_of_v<tested::locale::facet, Facet>;
@@ -181,6 +187,54 @@ bool monetary_and_time_facets_work() {
          (time_error & tested::ios_base::failbit) == 0;
 }
 
+bool time_names_are_case_insensitive() {
+  char text[] = "jUl mOnDaY";
+  input_buffer input(text, text + sizeof(text) - 1);
+  tested::istream stream(&input);
+  tested::tm parsed{};
+  tested::ios_base::iostate error = tested::ios_base::goodbit;
+  const auto &facet = tested::use_facet<tested::time_get<char>>(stream.getloc());
+  auto current = facet.get_monthname(tested::istreambuf_iterator<char>(stream),
+                                     tested::istreambuf_iterator<char>(),
+                                     stream, error, &parsed);
+  if ((error & tested::ios_base::failbit) != 0 || parsed.tm_mon != 6)
+    return false;
+  while (current != tested::istreambuf_iterator<char>() && *current == ' ')
+    ++current;
+  error = tested::ios_base::goodbit;
+  current = facet.get_weekday(current, tested::istreambuf_iterator<char>(),
+                              stream, error, &parsed);
+  return current == tested::istreambuf_iterator<char>() &&
+         (error & tested::ios_base::failbit) == 0 && parsed.tm_wday == 1;
+}
+
+bool monetary_grouping_is_validated() {
+  tested::locale grouped(tested::locale::classic(), new grouped_moneypunct);
+  char valid_text[] = "1,234";
+  input_buffer valid_input(valid_text, valid_text + 5);
+  tested::istream valid_stream(&valid_input);
+  valid_stream.imbue(grouped);
+  tested::string digits;
+  tested::ios_base::iostate error = tested::ios_base::goodbit;
+  const auto &facet = tested::use_facet<tested::money_get<char>>(grouped);
+  facet.get(tested::istreambuf_iterator<char>(valid_stream),
+            tested::istreambuf_iterator<char>(), false, valid_stream, error,
+            digits);
+  if ((error & tested::ios_base::failbit) != 0 || digits != "1234")
+    return false;
+
+  char invalid_text[] = "12,34";
+  input_buffer invalid_input(invalid_text, invalid_text + 5);
+  tested::istream invalid_stream(&invalid_input);
+  invalid_stream.imbue(grouped);
+  error = tested::ios_base::goodbit;
+  digits.clear();
+  facet.get(tested::istreambuf_iterator<char>(invalid_stream),
+            tested::istreambuf_iterator<char>(), false, invalid_stream, error,
+            digits);
+  return (error & tested::ios_base::failbit) != 0;
+}
+
 bool named_and_category_construction_works() {
   tested::locale named("C");
   tested::locale numeric(tested::locale::classic(), "C",
@@ -214,6 +268,8 @@ bool deprecated_conversion_classes_work() {
 bool ftl_test() {
   return mandatory_classic_facets_exist() && numeric_facets_round_trip() &&
          numeric_locale_integration_works() && monetary_and_time_facets_work() &&
+         time_names_are_case_insensitive() &&
+         monetary_grouping_is_validated() &&
          named_and_category_construction_works() &&
          deprecated_conversion_classes_work();
 }
