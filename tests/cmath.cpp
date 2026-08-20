@@ -121,8 +121,8 @@ bool ftl_test() {
   const double maximum = tested::numeric_limits<double>::max();
   const bool beta_large_arguments_underflow =
       tested::beta(maximum, maximum) == 0.0;
-  tested::feclearexcept(FE_ALL_EXCEPT);
   volatile double signaling = tested::numeric_limits<double>::signaling_NaN();
+  tested::feclearexcept(FE_ALL_EXCEPT);
   const bool quiet_comparisons_do_not_raise =
       !tested::isgreater(signaling, 1.0) &&
       (tested::fetestexcept(FE_INVALID) & FE_INVALID) == 0;
