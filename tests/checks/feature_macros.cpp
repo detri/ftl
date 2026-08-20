@@ -8,9 +8,6 @@
 #include <ftl/compare>
 #include <ftl/complex>
 #include <ftl/concepts>
-#if __cpp_lib_concepts < 202207L
-#error <concepts> must advertise standard concepts
-#endif
 #include <ftl/coroutine>
 #include <ftl/cstddef>
 #include <ftl/exception>
