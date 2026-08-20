@@ -11,6 +11,7 @@ struct object {
   int value;
   constexpr explicit object(int input) : value(input) {}
 };
+struct implicit_object { int value; };
 struct base {};
 struct derived : base {};
 struct fancy_pointer {
@@ -31,12 +32,72 @@ struct fancy_delete {
   void operator()(pointer) const noexcept {}
 };
 
+struct unrelated_source {};
+struct unrelated_target {};
+struct target_pointer;
+struct source_pointer {
+  unrelated_source *value{};
+  friend constexpr bool operator==(source_pointer pointer,
+                                   ftl::nullptr_t) noexcept {
+    return pointer.value == nullptr;
+  }
+};
+struct target_pointer {
+  unrelated_target *value{};
+  constexpr target_pointer() = default;
+  constexpr target_pointer(source_pointer) noexcept {}
+  friend constexpr bool operator==(target_pointer pointer,
+                                   ftl::nullptr_t) noexcept {
+    return pointer.value == nullptr;
+  }
+};
+struct source_pointer_delete {
+  using pointer = source_pointer;
+  void operator()(pointer) const noexcept {}
+};
+struct target_pointer_delete {
+  using pointer = target_pointer;
+  constexpr target_pointer_delete() = default;
+  constexpr target_pointer_delete &operator=(source_pointer_delete &&) noexcept {
+    return *this;
+  }
+  void operator()(pointer) const noexcept {}
+};
+
 struct counting_delete {
   int *count;
   void operator()(object *pointer) const noexcept {
     ++*count;
     delete pointer;
   }
+};
+
+struct throwing_move_delete {
+  int *deletes{};
+  int *moves{};
+  throwing_move_delete() = default;
+  throwing_move_delete(int &delete_count, int &move_count)
+      : deletes(&delete_count), moves(&move_count) {}
+  throwing_move_delete(const throwing_move_delete &) = default;
+  throwing_move_delete(throwing_move_delete &&other)
+      : deletes(other.deletes), moves(other.moves) {
+    if (++*moves == 1)
+      throw 7;
+  }
+  void operator()(object *pointer) const noexcept {
+    ++*deletes;
+    delete pointer;
+  }
+};
+
+template <class T> struct failing_allocator {
+  using value_type = T;
+  template <class U> struct rebind { using other = failing_allocator<U>; };
+  failing_allocator() = default;
+  template <class U> failing_allocator(const failing_allocator<U> &) {}
+  [[nodiscard]] T *allocate(ftl::size_t) { throw ftl::bad_alloc{}; }
+  void deallocate(T *, ftl::size_t) noexcept {}
+  friend constexpr bool operator==(failing_allocator, failing_allocator) = default;
 };
 struct enabled : ftl::enable_shared_from_this<enabled> {
   int value;
@@ -51,6 +112,82 @@ struct allocator_aware {
 struct atomic_alias_owner {
   object first{1};
   object second{2};
+};
+
+struct allocation_counts {
+  int allocations{};
+  int deallocations{};
+  int constructions{};
+  int destructions{};
+  alignas(256) unsigned char storage[8192]{};
+  ftl::size_t used{};
+};
+
+template <class T, class Observed = T> struct observing_allocator {
+  using value_type = T;
+  template <class U> struct rebind {
+    using other = observing_allocator<U, Observed>;
+  };
+  allocation_counts *counts{};
+
+  observing_allocator() = default;
+  explicit observing_allocator(allocation_counts &value) : counts(&value) {}
+  template <class U>
+  observing_allocator(const observing_allocator<U, Observed> &other)
+      : counts(other.counts) {}
+
+  T *allocate(ftl::size_t count) {
+    ++counts->allocations;
+    const auto base = reinterpret_cast<ftl::uintptr_t>(counts->storage);
+    const auto current = base + counts->used;
+    const auto aligned = (current + alignof(T) - 1) & ~(alignof(T) - 1);
+    const ftl::size_t next =
+        static_cast<ftl::size_t>(aligned - base) + sizeof(T) * count;
+    if (next > sizeof(counts->storage))
+      throw ftl::bad_alloc{};
+    counts->used = next;
+    return reinterpret_cast<T *>(aligned);
+  }
+  void deallocate(T *pointer, ftl::size_t) noexcept {
+    (void)pointer;
+    ++counts->deallocations;
+  }
+  template <class U, class... Args>
+  void construct(U *pointer, Args &&...args) {
+    if constexpr (ftl::is_same_v<ftl::remove_cv_t<U>, Observed>)
+      ++counts->constructions;
+    ::new (static_cast<void *>(pointer)) U(
+        ftl::forward<Args>(args)...);
+  }
+  template <class U> void destroy(U *pointer) noexcept {
+    if constexpr (ftl::is_same_v<ftl::remove_cv_t<U>, Observed>)
+      ++counts->destructions;
+    pointer->~U();
+  }
+
+  template <class, class> friend struct observing_allocator;
+  template <class U>
+  friend bool operator==(const observing_allocator &left,
+                         const observing_allocator<U, Observed> &right) noexcept {
+    return left.counts == right.counts;
+  }
+};
+
+template <class T> struct tiny_allocator {
+  using value_type = T;
+  template <class U> struct rebind { using other = tiny_allocator<U>; };
+  tiny_allocator() = default;
+  template <class U> tiny_allocator(const tiny_allocator<U> &) {}
+  T *allocate(ftl::size_t count) {
+    return static_cast<T *>(::operator new(count * sizeof(T)));
+  }
+  void deallocate(T *pointer, ftl::size_t) noexcept { ::operator delete(pointer); }
+  constexpr ftl::size_t max_size() const noexcept { return 3; }
+  friend constexpr bool operator==(tiny_allocator, tiny_allocator) = default;
+};
+
+struct alignas(128) over_aligned_value {
+  int value{};
 };
 
 void make_object(object **output) { *output = new object{31}; }
@@ -78,6 +215,51 @@ static_assert(ftl::is_constructible_v<ftl::unique_ptr<object, fancy_delete>,
                                       fancy_pointer>);
 static_assert(ftl::is_constructible_v<ftl::unique_ptr<object[], fancy_delete>,
                                       fancy_pointer>);
+static_assert(ftl::is_assignable_v<
+              ftl::unique_ptr<unrelated_target, target_pointer_delete> &,
+              ftl::unique_ptr<unrelated_source, source_pointer_delete> &&>);
+static_assert(noexcept(ftl::declval<ftl::unique_ptr<object> &>().swap(
+    ftl::declval<ftl::unique_ptr<object> &>())));
+
+static_assert(ftl::is_constructible_v<ftl::unique_ptr<object>,
+                                      ftl::unique_ptr<object> &&>);
+
+static_assert(ftl::is_assignable_v<ftl::unique_ptr<object> &,
+                                   ftl::unique_ptr<object> &&>);
+
+static_assert(ftl::is_constructible_v<
+              ftl::shared_ptr<object[]>, object *,
+              ftl::default_delete<object[]>>);
+
+static_assert(ftl::is_constructible_v<ftl::shared_ptr<const object[]>,
+                                      ftl::shared_ptr<object[]>>);
+
+static_assert(!ftl::is_constructible_v<ftl::shared_ptr<base[]>,
+                                       ftl::shared_ptr<derived[]>>);
+static_assert(ftl::is_constructible_v<ftl::shared_ptr<const object[]>,
+                                      ftl::shared_ptr<object[2]>>);
+static_assert(!ftl::is_constructible_v<ftl::shared_ptr<object[2]>,
+                                       ftl::shared_ptr<object[]>>);
+
+constexpr bool constexpr_allocator_handles_nontrivial_construction() {
+  ftl::allocator<object> allocator;
+  object *value = allocator.allocate(1);
+  ftl::allocator_traits<ftl::allocator<object>>::construct(allocator, value, 73);
+  const bool result = value->value == 73;
+  ftl::allocator_traits<ftl::allocator<object>>::destroy(allocator, value);
+  allocator.deallocate(value, 1);
+  return result;
+}
+#ifdef FTL_REPLACE_STL
+static_assert(constexpr_allocator_handles_nontrivial_construction());
+#endif
+static_assert(!noexcept(ftl::construct_at(ftl::declval<object *>(), 1)));
+
+struct throwing_destructor { ~throwing_destructor() noexcept(false) {} };
+static_assert(!noexcept(ftl::destroy_at(
+    ftl::declval<throwing_destructor *>())));
+static_assert(!noexcept(ftl::destroy_n(
+    ftl::declval<throwing_destructor *>(), 1)));
 
 bool lifetime_works() {
   union storage {
@@ -91,6 +273,20 @@ bool lifetime_works() {
   const bool result = value->value == 42;
   ftl::destroy_at(value);
   return result;
+}
+
+bool explicit_lifetime_start_works() {
+  alignas(implicit_object) unsigned char one[sizeof(implicit_object)]{};
+  auto *single = ftl::start_lifetime_as<implicit_object>(one);
+  single->value = 51;
+  const bool single_works = single->value == 51;
+
+  alignas(implicit_object) unsigned char many[2 * sizeof(implicit_object)]{};
+  auto *array = ftl::start_lifetime_as_array<implicit_object>(many, 2);
+  array[0].value = 61;
+  array[1].value = 62;
+  const bool array_works = array[0].value == 61 && array[1].value == 62;
+  return single_works && array_works;
 }
 
 void algorithms_compile(object *source, object *destination) {
@@ -191,6 +387,113 @@ bool extended_memory_works() {
          aware.value == 19;
 }
 
+bool allocator_backed_shared_arrays_work() {
+  allocation_counts counts;
+  observing_allocator<int> allocator{counts};
+  int row[2] = {4, 9};
+  {
+    auto matrix = ftl::allocate_shared<int[][2]>(allocator, 3, row);
+    if (matrix[0][0] != 4 || matrix[1][1] != 9 || matrix[2][0] != 4 ||
+        counts.constructions < 6)
+      return false;
+  }
+  if (counts.destructions != 6 || counts.constructions != 6 ||
+      counts.allocations != counts.deallocations)
+    return false;
+
+  allocation_counts empty_counts;
+  {
+    auto empty = ftl::allocate_shared<int[]>(
+        observing_allocator<int>{empty_counts}, 0);
+    if (empty.get() == nullptr)
+      return false;
+  }
+  if (empty_counts.allocations != empty_counts.deallocations)
+    return false;
+
+  allocation_counts aligned_counts;
+  {
+    auto values = ftl::allocate_shared<over_aligned_value[]>(
+        observing_allocator<over_aligned_value>{aligned_counts}, 2);
+    if (reinterpret_cast<ftl::uintptr_t>(values.get()) %
+            alignof(over_aligned_value) !=
+        0)
+      return false;
+  }
+  return aligned_counts.constructions == 2 &&
+         aligned_counts.destructions == 2 &&
+         aligned_counts.allocations == aligned_counts.deallocations;
+}
+
+bool shared_array_overflow_is_rejected() {
+#if FTL_HAS_EXCEPTIONS
+  try {
+    (void)ftl::allocate_shared<int[][2]>(tiny_allocator<int>{}, 2);
+  } catch (const ftl::bad_array_new_length &) {
+    return true;
+  } catch (...) {
+  }
+  return false;
+#else
+  return true;
+#endif
+}
+
+bool shared_pointer_failure_cleanup_works() {
+#if FTL_HAS_EXCEPTIONS
+  int deletes = 0;
+  try {
+    ftl::shared_ptr<object>{new object{1}, counting_delete{&deletes},
+                            failing_allocator<object>{}};
+    return false;
+  } catch (const ftl::bad_alloc &) {
+  }
+  if (deletes != 1)
+    return false;
+
+  int moves = 0;
+  throwing_move_delete throwing{deletes, moves};
+  try {
+    ftl::shared_ptr<object>{new object{2}, throwing};
+    return false;
+  } catch (int value) {
+    if (value != 7)
+      return false;
+  }
+  if (deletes != 2)
+    return false;
+
+  moves = 0;
+  {
+    throwing_move_delete stable{deletes, moves};
+    ftl::unique_ptr<object, throwing_move_delete> source{
+        new object{3}, stable};
+    moves = 0;
+    try {
+      ftl::shared_ptr<object> destination{ftl::move(source)};
+      return false;
+    } catch (int value) {
+      if (value != 7 || !source)
+        return false;
+    }
+  }
+  return deletes == 3;
+#else
+  return true;
+#endif
+}
+
+bool owner_before_is_strict_and_owner_based() {
+  auto first = ftl::make_shared<atomic_alias_owner>();
+  auto second = ftl::make_shared<atomic_alias_owner>();
+  ftl::shared_ptr<object> alias{first, &first->second};
+  const bool distinct_are_ordered =
+      first.owner_before(second) != second.owner_before(first);
+  const bool aliases_are_equivalent =
+      !first.owner_before(alias) && !alias.owner_before(first);
+  return distinct_are_ordered && aliases_are_equivalent;
+}
+
 template <class Pointer,
           bool = tested::is_void_v<
               typename tested::pointer_traits<Pointer>::element_type>>
@@ -287,12 +590,50 @@ bool atomic_smart_pointer_assignment_works() {
   return loaded.get() == second.get() && loaded->value == 2;
 }
 
+bool shared_array_deleter_works() {
+  int deletes = 0;
+
+  struct deleter {
+    int *deletes;
+
+    void operator()(int *pointer) const noexcept {
+      ++*deletes;
+      delete[] pointer;
+    }
+  };
+
+  {
+    ftl::shared_ptr<int[]> owner{new int[3]{1, 2, 3}, deleter{&deletes}};
+
+    if (owner[0] != 1 || owner[1] != 2 || owner[2] != 3)
+      return false;
+  }
+
+  return deletes == 1;
+}
+
+bool unique_same_type_move_assignment_works() {
+  auto first = ftl::make_unique<object>(11);
+  auto second = ftl::make_unique<object>(22);
+
+  first = ftl::move(second);
+
+  return first && !second && first->value == 22;
+}
+
 bool ftl_test() {
-  return lifetime_works() && shared_ownership_works() &&
+  return lifetime_works() && explicit_lifetime_start_works() &&
+         shared_ownership_works() &&
          unique_ownership_works() && weak_lifetime_works() &&
          allocator_works() && allocate_shared_works() &&
          extended_memory_works() &&
+         allocator_backed_shared_arrays_work() &&
+         shared_array_overflow_is_rejected() &&
+         shared_pointer_failure_cleanup_works() &&
+         owner_before_is_strict_and_owner_based() &&
          atomic_shared_ptr_ownership_equivalence_works() &&
          atomic_weak_ptr_stored_pointer_equivalence_works() &&
-         atomic_smart_pointer_assignment_works();
+         atomic_smart_pointer_assignment_works() &&
+         shared_array_deleter_works() &&
+         unique_same_type_move_assignment_works();
 }

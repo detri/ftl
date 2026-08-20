@@ -5,10 +5,12 @@
 
 #ifdef FTL_REPLACE_STL
 #include <istream>
+#include <limits>
 #include <span>
 #define FTL_SPANSTREAM_NAMESPACE std
 #else
 #include <ftl/istream>
+#include <ftl/limits>
 #include <ftl/span>
 #define FTL_SPANSTREAM_NAMESPACE ftl
 #endif
@@ -94,16 +96,16 @@ protected:
                                         : span_.size())
             : static_cast<off_type>((which & ios_base::in) ? current_get()
                                                            : current_put());
-    off_type next = base + offset;
-    if (next < 0 || static_cast<size_t>(next) > span_.size())
+    size_t next = 0;
+    if (!checked_position(base, offset, span_.size(), next))
       return pos_type(off_type(-1));
     size_t get = current_get(), put = current_put();
     if (which & ios_base::in)
-      get = static_cast<size_t>(next);
+      get = next;
     if (which & ios_base::out)
-      put = static_cast<size_t>(next);
+      put = next;
     set_sequences(get, put);
-    return pos_type(next);
+    return pos_type(static_cast<off_type>(next));
   }
   pos_type seekpos(pos_type position,
                    ios_base::openmode which = ios_base::in |
@@ -117,6 +119,32 @@ private:
   }
   size_t current_put() const {
     return this->pptr() ? static_cast<size_t>(this->pptr() - this->pbase()) : 0;
+  }
+  static bool checked_position(off_type base, off_type offset, size_t limit,
+                               size_t &result) {
+    if (base < 0 || static_cast<unsigned long long>(base) > limit)
+      return false;
+    const size_t origin = static_cast<size_t>(base);
+    if (offset >= 0) {
+      const auto amount = static_cast<unsigned long long>(offset);
+      if (amount > static_cast<unsigned long long>(limit - origin))
+        return false;
+      result = origin + static_cast<size_t>(amount);
+    } else {
+      const auto amount = static_cast<unsigned long long>(-(offset + 1)) + 1;
+      if (amount > origin)
+        return false;
+      result = origin - static_cast<size_t>(amount);
+    }
+    return true;
+  }
+  void advance_put(size_t amount) {
+    constexpr size_t maximum = static_cast<size_t>((numeric_limits<int>::max)());
+    while (amount > maximum) {
+      this->pbump((numeric_limits<int>::max)());
+      amount -= maximum;
+    }
+    this->pbump(static_cast<int>(amount));
   }
   void reset(FTL_SPANSTREAM_NAMESPACE::span<Character> value) {
     span_ = value;
@@ -132,7 +160,7 @@ private:
       this->setg(nullptr, nullptr, nullptr);
     if (mode_ & ios_base::out) {
       this->setp(data, data + span_.size());
-      this->pbump(static_cast<int>(put));
+      advance_put(put);
     } else
       this->setp(nullptr, nullptr);
   }

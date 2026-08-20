@@ -191,12 +191,12 @@ public:
 #if FTL_HAS_EXCEPTIONS
     } catch (...) {
       storage_failure();
-      static long fallback = 0;
-      fallback = 0;
-      return fallback;
+      failure_word_.integer = 0;
+      return failure_word_.integer;
     }
 #endif
   }
+
   void *&pword(int index) {
 #if FTL_HAS_EXCEPTIONS
     try {
@@ -206,9 +206,8 @@ public:
 #if FTL_HAS_EXCEPTIONS
     } catch (...) {
       storage_failure();
-      static void *fallback = nullptr;
-      fallback = nullptr;
-      return fallback;
+      failure_word_.pointer = nullptr;
+      return failure_word_.pointer;
     }
 #endif
   }
@@ -293,6 +292,7 @@ private:
   streamsize width_ = 0;
   locale locale_{};
   vector<word> words_{};
+  word failure_word_{};
   vector<callback> callbacks_{};
 };
 

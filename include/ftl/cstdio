@@ -108,8 +108,10 @@ int ungetc(int, FILE *);
 size_t fread(void *, size_t, size_t, FILE *);
 int fgetpos(FILE *, fpos_t *);
 int fseek(FILE *, long, int);
+int __seekoff(FILE *, long long, int);
 int fsetpos(FILE *, const fpos_t *);
 long ftell(FILE *);
+long long __telloff(FILE *);
 void rewind(FILE *);
 void clearerr(FILE *);
 int feof(FILE *);
@@ -132,6 +134,16 @@ using ::ftl_stdio_runtime::fwrite;
 #define stdin (::ftl_stdio_runtime::input_stream())
 #define stdout (::ftl_stdio_runtime::output_stream())
 #define stderr (::ftl_stdio_runtime::error_stream())
+#else
+#ifndef stdin
+#define stdin (::ftl_stdio_runtime::input_stream())
+#endif
+#ifndef stdout
+#define stdout (::ftl_stdio_runtime::output_stream())
+#endif
+#ifndef stderr
+#define stderr (::ftl_stdio_runtime::error_stream())
+#endif
 #endif
 
 namespace FTL_CSTDIO_NAMESPACE {

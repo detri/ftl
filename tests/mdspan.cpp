@@ -1,17 +1,17 @@
 #ifdef FTL_REPLACE_STL
-#include <mdspan>
 #include <array>
 #include <cstddef>
 #include <limits>
+#include <mdspan>
 #include <ranges>
 #include <span>
 #include <type_traits>
 namespace tested = std;
 #else
-#include <ftl/mdspan>
 #include <ftl/array>
 #include <ftl/cstddef>
 #include <ftl/limits>
+#include <ftl/mdspan>
 #include <ftl/ranges>
 #include <ftl/span>
 #include <ftl/type_traits>
@@ -797,6 +797,57 @@ static_assert(mdspan_remaining_layouts_work());
 
 using mdspan_fixed_extents = tested::extents<tested::size_t, 2, 3>;
 using mdspan_dynamic_extents = tested::dextents<tested::size_t, 2>;
+
+#if defined(__SIZEOF_INT128__)
+
+using extended_signed = __int128;
+using extended_unsigned = unsigned __int128;
+
+using extended_signed_extents =
+    tested::extents<extended_signed, tested::dynamic_extent, 7>;
+
+using extended_unsigned_extents =
+    tested::extents<extended_unsigned, tested::dynamic_extent>;
+
+static_assert(tested::is_same_v<typename extended_signed_extents::index_type,
+                                extended_signed>);
+
+static_assert(tested::is_same_v<typename extended_signed_extents::size_type,
+                                extended_unsigned>);
+
+static_assert(tested::is_same_v<typename extended_unsigned_extents::size_type,
+                                extended_unsigned>);
+
+static_assert(extended_signed_extents::rank() == 2);
+static_assert(extended_signed_extents::rank_dynamic() == 1);
+
+constexpr bool mdspan_extended_integer_extents_work() {
+  extended_signed_extents signed_value{static_cast<extended_signed>(11)};
+
+  if (signed_value.extent(0) != static_cast<extended_signed>(11))
+    return false;
+
+  if (signed_value.extent(1) != static_cast<extended_signed>(7))
+    return false;
+
+  extended_unsigned_extents unsigned_value{static_cast<extended_unsigned>(13)};
+
+  if (unsigned_value.extent(0) != static_cast<extended_unsigned>(13))
+    return false;
+
+  using mapping = tested::layout_right::mapping<extended_signed_extents>;
+
+  mapping mapped{signed_value};
+
+  if (mapped.required_span_size() != static_cast<extended_signed>(77))
+    return false;
+
+  return true;
+}
+
+static_assert(mdspan_extended_integer_extents_work());
+
+#endif
 
 using fixed_mdspan = tested::mdspan<int, mdspan_fixed_extents>;
 

@@ -50,11 +50,16 @@ namespace chrono {
 
 namespace chrono_detail {
 template <class T> constexpr auto compare_values(const T &a, const T &b) {
-  using category =
-      conditional_t<is_floating_point_v<T>, partial_ordering, strong_ordering>;
-  return a < b   ? category::less
-         : b < a ? category::greater
-                 : category::equivalent;
+  if constexpr (is_floating_point_v<T>) {
+    return a < b   ? partial_ordering::less
+           : b < a ? partial_ordering::greater
+           : a == b ? partial_ordering::equivalent
+                    : partial_ordering::unordered;
+  } else {
+    return a < b   ? strong_ordering::less
+           : b < a ? strong_ordering::greater
+                   : strong_ordering::equal;
+  }
 }
 } // namespace chrono_detail
 
@@ -238,7 +243,11 @@ constexpr bool operator==(duration<R1, P1> a, duration<R2, P2> b) {
 template <class R1, class P1, class R2, class P2>
 constexpr auto operator<=>(duration<R1, P1> a, duration<R2, P2> b) {
   using C = duration_common_t<R1, P1, R2, P2>;
-  return chrono_detail::compare_values(C(a).count(), C(b).count());
+  using rep = typename C::rep;
+  if constexpr (is_arithmetic_v<rep>)
+    return chrono_detail::compare_values(C(a).count(), C(b).count());
+  else
+    return C(a).count() <=> C(b).count();
 }
 
 template <class To, class Rep, class Period>
@@ -343,7 +352,6 @@ constexpr bool operator==(time_point<C, D1> a, time_point<C, D2> b) {
   return a.time_since_epoch() == b.time_since_epoch();
 }
 template <class C, class D1, class D2>
-  requires three_way_comparable_with<D1, D2>
 constexpr auto operator<=>(const time_point<C, D1> &left,
                            const time_point<C, D2> &right) {
   return left.time_since_epoch() <=> right.time_since_epoch();
@@ -435,10 +443,15 @@ public:
     return c;
   }
   constexpr day &operator+=(const days &d) noexcept {
-    value_ = static_cast<unsigned char>(value_ + d.count());
+    value_ = static_cast<unsigned char>(static_cast<long long>(value_) +
+                                        d.count());
     return *this;
   }
-  constexpr day &operator-=(const days &d) noexcept { return *this += -d; }
+  constexpr day &operator-=(const days &d) noexcept {
+    value_ = static_cast<unsigned char>(static_cast<long long>(value_) -
+                                        d.count());
+    return *this;
+  }
   explicit constexpr operator unsigned() const noexcept { return value_; }
   constexpr bool ok() const noexcept { return value_ >= 1 && value_ <= 31; }
   friend constexpr bool operator==(day, day) = default;
@@ -466,13 +479,19 @@ public:
     return c;
   }
   constexpr month &operator+=(const months &m) noexcept {
-    auto n = (int(value_) - 1 + m.count()) % 12;
+    int n = (int(value_) - 1 + m.count() % 12) % 12;
     if (n < 0)
       n += 12;
     value_ = static_cast<unsigned char>(n + 1);
     return *this;
   }
-  constexpr month &operator-=(const months &m) noexcept { return *this += -m; }
+  constexpr month &operator-=(const months &m) noexcept {
+    int n = (int(value_) - 1 - m.count() % 12) % 12;
+    if (n < 0)
+      n += 12;
+    value_ = static_cast<unsigned char>(n + 1);
+    return *this;
+  }
   explicit constexpr operator unsigned() const noexcept { return value_; }
   constexpr bool ok() const noexcept { return value_ >= 1 && value_ <= 12; }
   friend constexpr bool operator==(month, month) = default;
@@ -505,10 +524,13 @@ public:
     return c;
   }
   constexpr year &operator+=(const years &y) noexcept {
-    value_ = static_cast<short>(value_ + y.count());
+    value_ = static_cast<short>(static_cast<long long>(value_) + y.count());
     return *this;
   }
-  constexpr year &operator-=(const years &y) noexcept { return *this += -y; }
+  constexpr year &operator-=(const years &y) noexcept {
+    value_ = static_cast<short>(static_cast<long long>(value_) - y.count());
+    return *this;
+  }
   constexpr year operator+() const noexcept { return *this; }
   constexpr year operator-() const noexcept { return year{-value_}; }
   constexpr bool is_leap() const noexcept { return detail::is_leap(value_); }
@@ -557,13 +579,19 @@ public:
   constexpr unsigned iso_encoding() const { return value_ == 0 ? 7 : value_; }
   constexpr bool ok() const { return value_ <= 6; }
   constexpr weekday &operator+=(const days &d) {
-    auto n = (int(value_) + d.count()) % 7;
+    int n = (int(value_) + d.count() % 7) % 7;
     if (n < 0)
       n += 7;
     value_ = static_cast<unsigned char>(n);
     return *this;
   }
-  constexpr weekday &operator-=(const days &d) { return *this += -d; }
+  constexpr weekday &operator-=(const days &d) {
+    int n = (int(value_) - d.count() % 7) % 7;
+    if (n < 0)
+      n += 7;
+    value_ = static_cast<unsigned char>(n);
+    return *this;
+  }
   constexpr weekday_indexed operator[](unsigned) const;
   constexpr weekday_last operator[](last_spec) const;
   friend constexpr bool operator==(weekday, weekday) = default;
@@ -711,14 +739,23 @@ public:
   constexpr chrono::year year() const { return y_; }
   constexpr chrono::month month() const { return m_; }
   constexpr year_month &operator+=(const months &v) {
-    auto old = m_;
-    m_ += v;
-    y_ += years{(int(unsigned(old)) - 1 + v.count()) / 12 -
-                ((int(unsigned(old)) - 1 + v.count()) < 0 &&
-                 ((int(unsigned(old)) - 1 + v.count()) % 12 != 0))};
+    const long long total = static_cast<long long>(unsigned(m_)) - 1 + v.count();
+    long long years_delta = total / 12;
+    if (total < 0 && total % 12 != 0)
+      --years_delta;
+    m_ = chrono::month{static_cast<unsigned>(total - years_delta * 12 + 1)};
+    y_ += years{static_cast<int>(years_delta)};
     return *this;
   }
-  constexpr year_month &operator-=(const months &v) { return *this += -v; }
+  constexpr year_month &operator-=(const months &v) {
+    const long long total = static_cast<long long>(unsigned(m_)) - 1 - v.count();
+    long long years_delta = total / 12;
+    if (total < 0 && total % 12 != 0)
+      --years_delta;
+    m_ = chrono::month{static_cast<unsigned>(total - years_delta * 12 + 1)};
+    y_ += years{static_cast<int>(years_delta)};
+    return *this;
+  }
   constexpr year_month &operator+=(const years &v) {
     y_ += v;
     return *this;
@@ -771,7 +808,12 @@ public:
     m_ = ym.month();
     return *this;
   }
-  constexpr year_month_day &operator-=(const months &v) { return *this += -v; }
+  constexpr year_month_day &operator-=(const months &v) {
+    auto ym = year_month{y_, m_} -= v;
+    y_ = ym.year();
+    m_ = ym.month();
+    return *this;
+  }
   constexpr year_month_day &operator+=(const years &v) {
     y_ += v;
     return *this;
@@ -814,14 +856,18 @@ public:
     return *this;
   }
   constexpr year_month_day_last &operator-=(const months &value) {
-    return *this += -value;
+    auto ym = year_month{y_, month()} -= value;
+    y_ = ym.year();
+    mdl_ = chrono::month_day_last{ym.month()};
+    return *this;
   }
   constexpr year_month_day_last &operator+=(const years &value) {
     y_ += value;
     return *this;
   }
   constexpr year_month_day_last &operator-=(const years &value) {
-    return *this += -value;
+    y_ -= value;
+    return *this;
   }
   explicit constexpr operator sys_days() const {
     return sys_days(year_month_day{y_, month(), day()});
@@ -877,14 +923,18 @@ public:
     return *this;
   }
   constexpr year_month_weekday &operator-=(const months &value) {
-    return *this += -value;
+    auto ym = year_month{y_, m_} -= value;
+    y_ = ym.year();
+    m_ = ym.month();
+    return *this;
   }
   constexpr year_month_weekday &operator+=(const years &value) {
     y_ += value;
     return *this;
   }
   constexpr year_month_weekday &operator-=(const years &value) {
-    return *this += -value;
+    y_ -= value;
+    return *this;
   }
   constexpr bool ok() const {
     return y_.ok() && m_.ok() && wi_.ok() &&
@@ -920,14 +970,18 @@ public:
     return *this;
   }
   constexpr year_month_weekday_last &operator-=(const months &value) {
-    return *this += -value;
+    auto ym = year_month{y_, m_} -= value;
+    y_ = ym.year();
+    m_ = ym.month();
+    return *this;
   }
   constexpr year_month_weekday_last &operator+=(const years &value) {
     y_ += value;
     return *this;
   }
   constexpr year_month_weekday_last &operator-=(const years &value) {
-    return *this += -value;
+    y_ -= value;
+    return *this;
   }
   constexpr bool ok() const { return y_.ok() && m_.ok() && wl_.ok(); }
   friend constexpr bool operator==(year_month_weekday_last,
@@ -1581,7 +1635,30 @@ template <> struct clock_time_conversion<gps_clock, utc_clock> {
   }
 };
 template <class DestinationClock, class SourceClock, class D>
-constexpr auto clock_cast(const time_point<SourceClock, D> &t) {
+constexpr auto clock_cast(const time_point<SourceClock, D> &t)
+  requires(
+      requires {
+        clock_time_conversion<DestinationClock, SourceClock>{}(t);
+      } ||
+      requires {
+        clock_time_conversion<DestinationClock, system_clock>{}(
+            clock_time_conversion<system_clock, SourceClock>{}(t));
+      } ||
+      requires {
+        clock_time_conversion<DestinationClock, utc_clock>{}(
+            clock_time_conversion<utc_clock, SourceClock>{}(t));
+      } ||
+      requires {
+        clock_time_conversion<DestinationClock, utc_clock>{}(
+            clock_time_conversion<utc_clock, system_clock>{}(
+                clock_time_conversion<system_clock, SourceClock>{}(t)));
+      } ||
+      requires {
+        clock_time_conversion<DestinationClock, system_clock>{}(
+            clock_time_conversion<system_clock, utc_clock>{}(
+                clock_time_conversion<utc_clock, SourceClock>{}(t)));
+      })
+{
   constexpr bool direct =
       requires { clock_time_conversion<DestinationClock, SourceClock>{}(t); };
   constexpr bool via_system = requires {
@@ -1944,8 +2021,8 @@ public:
   explicit zoned_time(
       string_view name)
     requires requires {
-      traits_::locate_zone(
-          string_view{});
+      TimeZonePtr(
+          traits_::locate_zone(string_view{}));
     }
       : zone_(
             traits_::
@@ -1981,8 +2058,8 @@ public:
       const sys_time<
           Duration> &st)
     requires requires {
-      traits_::locate_zone(
-          string_view{});
+      TimeZonePtr(
+          traits_::locate_zone(string_view{}));
     }
       : zoned_time(
             traits_::
@@ -2015,8 +2092,9 @@ public:
       const local_time<
           Duration> &tp)
     requires requires {
-      traits_::locate_zone(
-          string_view{});
+      TimeZonePtr(traits_::locate_zone(string_view{}));
+      { declval<TimeZonePtr &>()->to_sys(tp) } ->
+          convertible_to<sys_time<duration>>;
     }
       : zoned_time(
             traits_::
@@ -2054,8 +2132,9 @@ public:
           Duration> &tp,
       choose selection)
     requires requires {
-      traits_::locate_zone(
-          string_view{});
+      TimeZonePtr(traits_::locate_zone(string_view{}));
+      { declval<TimeZonePtr &>()->to_sys(tp, selection) } ->
+          convertible_to<sys_time<duration>>;
     }
       : zoned_time(
             traits_::
@@ -2106,8 +2185,8 @@ public:
           Duration2,
           TimeZonePtr2> &other)
     requires requires {
-      traits_::locate_zone(
-          string_view{});
+      TimeZonePtr(traits_::locate_zone(string_view{}));
+      requires is_convertible_v<sys_time<Duration2>, sys_time<Duration>>;
     }
       : zoned_time(
             traits_::
@@ -2125,8 +2204,8 @@ public:
           TimeZonePtr2> &other,
       choose selection)
     requires requires {
-      traits_::locate_zone(
-          string_view{});
+      TimeZonePtr(traits_::locate_zone(string_view{}));
+      requires is_convertible_v<sys_time<Duration2>, sys_time<Duration>>;
     }
       : zoned_time(
             traits_::

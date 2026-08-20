@@ -16,14 +16,12 @@ namespace tested = ftl;
 #error "<cstdio> is missing a required macro"
 #endif
 
-#ifdef FTL_REPLACE_STL
 #if !defined(stdin) || !defined(stdout) || !defined(stderr)
-#error "replacement <cstdio> is missing a standard stream macro"
+#error "<cstdio> is missing a standard stream macro"
 #endif
 static_assert(tested::is_same_v<decltype(stdin), tested::FILE *>);
 static_assert(tested::is_same_v<decltype(stdout), tested::FILE *>);
 static_assert(tested::is_same_v<decltype(stderr), tested::FILE *>);
-#endif
 
 using file = tested::FILE;
 using size = tested::size_t;

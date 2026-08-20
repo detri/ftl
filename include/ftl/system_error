@@ -24,6 +24,12 @@
 #endif
 
 extern "C" char *strerror(int);
+#if defined(_WIN32)
+extern "C" __declspec(dllimport) unsigned long __stdcall FormatMessageA(
+    unsigned long, const void *, unsigned long, unsigned long, char *,
+    unsigned long, void *);
+extern "C" __declspec(dllimport) void *__stdcall LocalFree(void *);
+#endif
 
 FTL_BEGIN_NAMESPACE
 
@@ -158,6 +164,68 @@ struct errno_guard {
   ~errno_guard() { errno = value; }
 };
 
+#if defined(_WIN32)
+constexpr int windows_error_to_errc(int value) noexcept {
+  switch (value) {
+  case 1: return static_cast<int>(errc::function_not_supported);
+  case 2: case 3: case 53: case 67: case 123:
+    return static_cast<int>(errc::no_such_file_or_directory);
+  case 4: case 10024: return static_cast<int>(errc::too_many_files_open);
+  case 5: case 12: case 16: case 19: case 32: case 82: case 998: case 10013:
+    return static_cast<int>(errc::permission_denied);
+  case 6: case 87: case 131: case 267: case 4393: case 10022:
+    return static_cast<int>(errc::invalid_argument);
+  case 8: case 14: return static_cast<int>(errc::not_enough_memory);
+  case 15: case 20: case 55: return static_cast<int>(errc::no_such_device);
+  case 17: return static_cast<int>(errc::cross_device_link);
+  case 21: case 1237:
+    return static_cast<int>(errc::resource_unavailable_try_again);
+  case 25: case 29: case 30: case 110: case 1011: case 1012: case 1013:
+    return static_cast<int>(errc::io_error);
+  case 33: case 212: return static_cast<int>(errc::no_lock_available);
+  case 39: case 112: return static_cast<int>(errc::no_space_on_device);
+  case 50: return static_cast<int>(errc::not_supported);
+  case 80: case 183: return static_cast<int>(errc::file_exists);
+  case 109: return static_cast<int>(errc::broken_pipe);
+  case 111: case 206: case 10063:
+    return static_cast<int>(errc::filename_too_long);
+  case 121: case 258: case 1460: case 10060:
+    return static_cast<int>(errc::timed_out);
+  case 142: case 170: case 2401: case 2404:
+    return static_cast<int>(errc::device_or_resource_busy);
+  case 145: return static_cast<int>(errc::directory_not_empty);
+  case 995: return static_cast<int>(errc::operation_canceled);
+  case 10004: return static_cast<int>(errc::interrupted);
+  case 10009: return static_cast<int>(errc::bad_file_descriptor);
+  case 10014: return static_cast<int>(errc::bad_address);
+  case 10035: return static_cast<int>(errc::operation_would_block);
+  case 10036: return static_cast<int>(errc::operation_in_progress);
+  case 10037: return static_cast<int>(errc::connection_already_in_progress);
+  case 10038: return static_cast<int>(errc::not_a_socket);
+  case 10039: return static_cast<int>(errc::destination_address_required);
+  case 10040: return static_cast<int>(errc::message_size);
+  case 10041: return static_cast<int>(errc::wrong_protocol_type);
+  case 10042: return static_cast<int>(errc::no_protocol_option);
+  case 10043: return static_cast<int>(errc::protocol_not_supported);
+  case 10045: return static_cast<int>(errc::operation_not_supported);
+  case 10047: return static_cast<int>(errc::address_family_not_supported);
+  case 10048: return static_cast<int>(errc::address_in_use);
+  case 10049: return static_cast<int>(errc::address_not_available);
+  case 10050: return static_cast<int>(errc::network_down);
+  case 10051: return static_cast<int>(errc::network_unreachable);
+  case 10052: return static_cast<int>(errc::network_reset);
+  case 10053: return static_cast<int>(errc::connection_aborted);
+  case 10054: return static_cast<int>(errc::connection_reset);
+  case 10055: return static_cast<int>(errc::no_buffer_space);
+  case 10056: return static_cast<int>(errc::already_connected);
+  case 10057: return static_cast<int>(errc::not_connected);
+  case 10061: return static_cast<int>(errc::connection_refused);
+  case 10065: return static_cast<int>(errc::host_unreachable);
+  default: return 0;
+  }
+}
+#endif
+
 class generic_error_category final : public error_category {
 public:
   const char *name() const noexcept override { return "generic"; }
@@ -172,14 +240,40 @@ class system_error_category final : public error_category {
 public:
   const char *name() const noexcept override { return "system"; }
   error_condition default_error_condition(int value) const noexcept override {
+#if defined(_WIN32)
+    const int mapped = windows_error_to_errc(value);
+    if (value == 0 || mapped != 0)
+      return error_condition{mapped, generic_category()};
+    return error_condition{value, *this};
+#else
     return value == 0 || detail::is_errc_value(value)
                ? error_condition{value, generic_category()}
                : error_condition{value, *this};
+#endif
   }
   string message(int value) const override {
+#if defined(_WIN32)
+    constexpr unsigned long allocate_buffer = 0x00000100UL;
+    constexpr unsigned long from_system = 0x00001000UL;
+    constexpr unsigned long ignore_inserts = 0x00000200UL;
+    char *text = nullptr;
+    const unsigned long count = ::FormatMessageA(
+        allocate_buffer | from_system | ignore_inserts, nullptr,
+        static_cast<unsigned long>(value), 0,
+        reinterpret_cast<char *>(&text), 0, nullptr);
+    if (!count || !text)
+      return string{"Unknown error"};
+    size_t length = count;
+    while (length && (text[length - 1] == '\r' || text[length - 1] == '\n'))
+      --length;
+    string result(text, length);
+    (void)::LocalFree(text);
+    return result;
+#else
     const errno_guard guard;
     const char *text = ::strerror(value);
     return text == nullptr ? string{"Unknown error"} : string{text};
+#endif
   }
 };
 } // namespace detail

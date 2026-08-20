@@ -192,8 +192,10 @@ basic_istream<C, T> &operator>>(basic_istream<C, T> &s,
   ios_base::iostate state = ios_base::goodbit;
   if (guard) {
     using iterator = istreambuf_iterator<C, T>;
-    use_facet<money_get<C, iterator>>(s.getloc())
-        .get(iterator(s), iterator(), v.international, s, state, v.value);
+    if (!s.input_operation([&] {
+          use_facet<money_get<C, iterator>>(s.getloc())
+              .get(iterator(s), iterator(), v.international, s, state, v.value);
+        })) return s;
   }
   if (state)
     s.setstate(state);
@@ -205,8 +207,15 @@ basic_ostream<C, T> &operator<<(basic_ostream<C, T> &s,
   typename basic_ostream<C, T>::sentry guard(s);
   if (guard) {
     using iterator = ostreambuf_iterator<C, T>;
-    auto result = use_facet<money_put<C, iterator>>(s.getloc())
-                      .put(iterator(s), v.international, s, s.fill(), v.value);
+    iterator result(static_cast<basic_streambuf<C, T> *>(nullptr));
+    if (!s.__output_operation([&] {
+          result = use_facet<money_put<C, iterator>>(s.getloc())
+                       .put(iterator(s), v.international, s, s.fill(), v.value);
+          return !result.failed();
+        })) {
+      if (!s.bad()) s.setstate(ios_base::badbit);
+      return s;
+    }
     if (result.failed())
       s.setstate(ios_base::badbit);
   }
@@ -222,8 +231,10 @@ basic_istream<C, T> &operator>>(basic_istream<C, T> &s,
     const C *end = v.format;
     while (*end)
       ++end;
-    use_facet<time_get<C, iterator>>(s.getloc())
-        .get(iterator(s), iterator(), s, state, v.value, v.format, end);
+    if (!s.input_operation([&] {
+          use_facet<time_get<C, iterator>>(s.getloc())
+              .get(iterator(s), iterator(), s, state, v.value, v.format, end);
+        })) return s;
   }
   if (state)
     s.setstate(state);
@@ -238,8 +249,15 @@ basic_ostream<C, T> &operator<<(basic_ostream<C, T> &s,
     const C *end = v.format;
     while (*end)
       ++end;
-    auto result = use_facet<time_put<C, iterator>>(s.getloc())
-                      .put(iterator(s), s, s.fill(), v.value, v.format, end);
+    iterator result(static_cast<basic_streambuf<C, T> *>(nullptr));
+    if (!s.__output_operation([&] {
+          result = use_facet<time_put<C, iterator>>(s.getloc())
+                       .put(iterator(s), s, s.fill(), v.value, v.format, end);
+          return !result.failed();
+        })) {
+      if (!s.bad()) s.setstate(ios_base::badbit);
+      return s;
+    }
     if (result.failed())
       s.setstate(ios_base::badbit);
   }

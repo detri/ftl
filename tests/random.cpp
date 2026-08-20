@@ -14,6 +14,25 @@ static_assert(tested::uniform_random_bit_generator<tested::ranlux48_base>);
 static_assert(tested::is_same_v<tested::seed_seq::result_type,
                                 tested::uint_least32_t>);
 
+struct maximum_engine {
+  using result_type = tested::uint64_t;
+  static constexpr result_type min() { return 0; }
+  static constexpr result_type max() { return tested::uint64_t(-1); }
+  result_type operator()() { return max(); }
+};
+static_assert(tested::uniform_random_bit_generator<maximum_engine>);
+
+struct malformed_seed_sequence {
+  using result_type = int;
+  int conversions{};
+  int generations{};
+  operator tested::mt19937::result_type() {
+    ++conversions;
+    return 0;
+  }
+  void generate(tested::uint32_t *, tested::uint32_t *) { ++generations; }
+};
+
 class random_input_buffer : public tested::streambuf {
 public:
   random_input_buffer(char *first, char *last) { setg(first, first, last); }
@@ -202,6 +221,19 @@ bool uniform_distributions_stay_in_range() {
   return true;
 }
 
+bool generate_canonical_stays_below_one() {
+  maximum_engine engine;
+  const double value = tested::generate_canonical<double, 53>(engine);
+  return value >= 0.0 && value < 1.0;
+}
+
+bool convertible_seed_uses_value_constructor() {
+  malformed_seed_sequence source;
+  tested::mt19937 engine(source);
+  (void)engine;
+  return source.conversions == 1 && source.generations == 0;
+}
+
 bool scalar_distributions_work() {
   tested::mt19937 engine(123);
   tested::bernoulli_distribution bernoulli(0.25);
@@ -336,6 +368,8 @@ bool malformed_stream_preserves_state() {
 bool ftl_test() {
   return engine_sequences_match_n4950() && seed_sequence_matches_known_vectors() &&
          random_device_uses_platform_entropy() &&
+         generate_canonical_stays_below_one() &&
+         convertible_seed_uses_value_constructor() &&
          uniform_distributions_stay_in_range() && scalar_distributions_work() &&
          distribution_moments_are_sane() && stream_state_round_trips_work() &&
          malformed_stream_preserves_state();

@@ -32,37 +32,49 @@ public:
   using value_type = T;
 
   valarray() = default;
-  explicit valarray(size_t count) { allocate(count); }
+
+  explicit valarray(size_t count) {
+    construct_storage(count, [](T *location, size_t) {
+      ::new (static_cast<void *>(location)) T();
+    });
+  }
+
   valarray(const T &value, size_t count) {
-    allocate(count);
-    for (size_t i = 0; i < count; ++i)
-      data_[i] = value;
+    construct_storage(count, [&](T *location, size_t) {
+      ::new (static_cast<void *>(location)) T(value);
+    });
   }
+
   valarray(const T *values, size_t count) {
-    allocate(count);
-    for (size_t i = 0; i < count; ++i)
-      data_[i] = values[i];
+    construct_storage(count, [&](T *location, size_t index) {
+      ::new (static_cast<void *>(location)) T(values[index]);
+    });
   }
+
   valarray(initializer_list<T> values) : valarray(values.begin(), values.size()) {}
   valarray(const valarray &other) : valarray(other.data_, other.size_) {}
+
   valarray(valarray &&other) noexcept : data_(other.data_), size_(other.size_) {
     other.data_ = nullptr;
     other.size_ = 0;
   }
+
   valarray(const slice_array<T> &);
   valarray(const gslice_array<T> &);
   valarray(const mask_array<T> &);
   valarray(const indirect_array<T> &);
-  ~valarray() { delete[] data_; }
+
+  ~valarray() { destroy_storage(); }
 
   valarray &operator=(const valarray &other) {
     if (this != &other)
       assign(other.data_, other.size_);
     return *this;
   }
+
   valarray &operator=(valarray &&other) noexcept {
     if (this != &other) {
-      delete[] data_;
+      destroy_storage();
       data_ = other.data_;
       size_ = other.size_;
       other.data_ = nullptr;
@@ -70,15 +82,18 @@ public:
     }
     return *this;
   }
+
   valarray &operator=(initializer_list<T> values) {
     assign(values.begin(), values.size());
     return *this;
   }
+
   valarray &operator=(const T &value) {
     for (size_t i = 0; i < size_; ++i)
       data_[i] = value;
     return *this;
   }
+
   valarray &operator=(const slice_array<T> &);
   valarray &operator=(const gslice_array<T> &);
   valarray &operator=(const mask_array<T> &);
@@ -92,6 +107,7 @@ public:
     size_ = other.size_;
     other.size_ = size;
   }
+
   size_t size() const noexcept { return size_; }
   T &operator[](size_t index) noexcept { return data_[index]; }
   const T &operator[](size_t index) const noexcept { return data_[index]; }
@@ -99,6 +115,7 @@ public:
   valarray operator+() const { return transform([](const T &v) { return +v; }); }
   valarray operator-() const { return transform([](const T &v) { return -v; }); }
   valarray operator~() const { return transform([](const T &v) { return ~v; }); }
+
   valarray<bool> operator!() const {
     valarray<bool> result(size_);
     for (size_t i = 0; i < size_; ++i)
@@ -108,11 +125,13 @@ public:
 
 #define FTL_VALARRAY_COMPOUND(op)                                             \
   valarray &operator op##=(const T &value) {                                  \
-    for (size_t i = 0; i < size_; ++i) data_[i] op##= value;                  \
+    for (size_t i = 0; i < size_; ++i)                                        \
+      data_[i] op##= value;                                                    \
     return *this;                                                              \
   }                                                                            \
   valarray &operator op##=(const valarray &other) {                            \
-    for (size_t i = 0; i < size_; ++i) data_[i] op##= other[i];               \
+    for (size_t i = 0; i < size_; ++i)                                        \
+      data_[i] op##= other[i];                                                 \
     return *this;                                                              \
   }
   FTL_VALARRAY_COMPOUND(*)
@@ -144,6 +163,7 @@ public:
       result += data_[i];
     return result;
   }
+
   T min() const {
     T result = data_[0];
     for (size_t i = 1; i < size_; ++i)
@@ -151,6 +171,7 @@ public:
         result = data_[i];
     return result;
   }
+
   T max() const {
     T result = data_[0];
     for (size_t i = 1; i < size_; ++i)
@@ -158,72 +179,175 @@ public:
         result = data_[i];
     return result;
   }
+
   valarray shift(int count) const {
     valarray result(size_);
-    for (size_t i = 0; i < size_; ++i) {
-      const long long source = static_cast<long long>(i) + count;
-      if (source >= 0 && static_cast<size_t>(source) < size_)
-        result[i] = data_[static_cast<size_t>(source)];
+    if (size_ == 0)
+      return result;
+
+    if (count >= 0) {
+      const size_t offset = static_cast<unsigned int>(count);
+      if (offset < size_) {
+        for (size_t i = 0; i < size_ - offset; ++i)
+          result[i] = data_[i + offset];
+      }
+    } else {
+      const size_t offset =
+          static_cast<unsigned int>(-(count + 1)) + size_t{1};
+      if (offset < size_) {
+        for (size_t i = offset; i < size_; ++i)
+          result[i] = data_[i - offset];
+      }
     }
+
     return result;
   }
+
   valarray cshift(int count) const {
     valarray result(size_);
     if (size_ == 0)
       return result;
-    long long offset = count % static_cast<long long>(size_);
-    if (offset < 0)
-      offset += static_cast<long long>(size_);
-    for (size_t i = 0; i < size_; ++i)
-      result[i] = data_[(i + static_cast<size_t>(offset)) % size_];
+
+    size_t offset;
+    if (count >= 0) {
+      offset = static_cast<unsigned int>(count) % size_;
+    } else {
+      const size_t magnitude =
+          static_cast<unsigned int>(-(count + 1)) + size_t{1};
+      const size_t reduced = magnitude % size_;
+      offset = reduced == 0 ? 0 : size_ - reduced;
+    }
+
+    for (size_t i = 0; i < size_; ++i) {
+      const size_t remaining = size_ - i;
+      const size_t source = offset < remaining ? i + offset : offset - remaining;
+      result[i] = data_[source];
+    }
+
     return result;
   }
+
   valarray apply(T function(T)) const {
     valarray result(size_);
     for (size_t i = 0; i < size_; ++i)
       result[i] = function(data_[i]);
     return result;
   }
+
   valarray apply(T function(const T &)) const {
     valarray result(size_);
     for (size_t i = 0; i < size_; ++i)
       result[i] = function(data_[i]);
     return result;
   }
+
   void resize(size_t count, T value = T()) {
-    delete[] data_;
-    data_ = nullptr;
-    size_ = 0;
-    allocate(count);
-    for (size_t i = 0; i < count; ++i)
-      data_[i] = value;
+    valarray replacement(value, count);
+    swap(replacement);
   }
 
   T *data() noexcept { return data_; }
   const T *data() const noexcept { return data_; }
 
 private:
+  template <class Constructor>
+  void construct_storage(size_t count, Constructor constructor) {
+    if (count == 0)
+      return;
+
+    if (count > size_t(-1) / sizeof(T)) {
+#if FTL_HAS_EXCEPTIONS
+      throw bad_array_new_length{};
+#else
+      terminate();
+#endif
+    }
+
+    T *storage = allocate_storage(count);
+    size_t constructed = 0;
+
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      for (; constructed < count; ++constructed)
+        constructor(storage + constructed, constructed);
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      while (constructed != 0)
+        (storage + --constructed)->~T();
+      deallocate_storage(storage);
+      throw;
+    }
+#endif
+
+    data_ = storage;
+    size_ = count;
+  }
+
+  static T *allocate_storage(size_t count) {
+    const size_t bytes = count * sizeof(T);
+
+    if constexpr (alignof(T) <= alignof(max_align_t)) {
+      return static_cast<T *>(::operator new(bytes));
+    } else {
+      constexpr size_t header_size = sizeof(void *);
+      constexpr size_t alignment = alignof(T);
+
+      if (bytes > size_t(-1) - header_size ||
+          bytes + header_size > size_t(-1) - (alignment - 1)) {
+#if FTL_HAS_EXCEPTIONS
+        throw bad_array_new_length{};
+#else
+        terminate();
+#endif
+      }
+
+      void *base = ::operator new(bytes + header_size + alignment - 1);
+      const size_t begin = reinterpret_cast<size_t>(base) + header_size;
+      const size_t aligned = (begin + alignment - 1) & ~(alignment - 1);
+      auto *result = reinterpret_cast<T *>(aligned);
+      reinterpret_cast<void **>(result)[-1] = base;
+      return result;
+    }
+  }
+
+  static void deallocate_storage(T *pointer) noexcept {
+    if (!pointer)
+      return;
+
+    if constexpr (alignof(T) <= alignof(max_align_t)) {
+      ::operator delete(pointer);
+    } else {
+      ::operator delete(reinterpret_cast<void **>(pointer)[-1]);
+    }
+  }
+
+  void destroy_storage() noexcept {
+    for (size_t i = size_; i != 0; --i)
+      (data_ + i - 1)->~T();
+    deallocate_storage(data_);
+    data_ = nullptr;
+    size_ = 0;
+  }
+
   template <class Function> valarray transform(Function function) const {
     valarray result(size_);
     for (size_t i = 0; i < size_; ++i)
       result[i] = function(data_[i]);
     return result;
   }
-  void allocate(size_t count) {
-    if (count != 0)
-      data_ = new T[count]();
-    size_ = count;
-  }
+
   void assign(const T *values, size_t count) {
     if (size_ != count) {
-      delete[] data_;
-      data_ = nullptr;
-      size_ = 0;
-      allocate(count);
+      valarray replacement(values, count);
+      swap(replacement);
+      return;
     }
+
     for (size_t i = 0; i < count; ++i)
       data_[i] = values[i];
   }
+
   T *data_ = nullptr;
   size_t size_ = 0;
 };
@@ -236,8 +360,12 @@ template <class T> void swap(valarray<T> &left, valarray<T> &right) noexcept {
 }
 template <class T> T *begin(valarray<T> &value) noexcept { return value.data(); }
 template <class T> const T *begin(const valarray<T> &value) noexcept { return value.data(); }
-template <class T> T *end(valarray<T> &value) noexcept { return value.data() + value.size(); }
-template <class T> const T *end(const valarray<T> &value) noexcept { return value.data() + value.size(); }
+template <class T> T *end(valarray<T> &value) noexcept {
+  return value.size() == 0 ? value.data() : value.data() + value.size();
+}
+template <class T> const T *end(const valarray<T> &value) noexcept {
+  return value.size() == 0 ? value.data() : value.data() + value.size();
+}
 
 class slice {
 public:

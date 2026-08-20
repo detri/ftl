@@ -128,6 +128,13 @@ inline native_handle create_numeric(const char *name) noexcept {
   return _create_locale(LC_ALL, name);
 }
 
+inline native_handle create_time(const char *name) noexcept {
+  if (name == nullptr)
+    return nullptr;
+
+  return _create_locale(LC_ALL, name);
+}
+
 inline native_handle create_monetary(const char *name) noexcept {
   if (name == nullptr)
     return nullptr;
@@ -501,6 +508,13 @@ inline native_handle create_numeric(const char *name) noexcept {
     return nullptr;
 
   return newlocale(native_numeric_mask | native_ctype_mask, name, nullptr);
+}
+
+inline native_handle create_time(const char *name) noexcept {
+  if (name == nullptr)
+    return nullptr;
+
+  return newlocale(native_time_mask | native_ctype_mask, name, nullptr);
 }
 
 inline native_handle create_monetary(const char *name) noexcept {

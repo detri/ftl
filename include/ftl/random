@@ -109,6 +109,9 @@ template <class T> constexpr size_t random_bit_width(T value) noexcept {
 template <class Sseq, class Engine>
 concept random_seed_sequence =
     !same_as<remove_cvref_t<Sseq>, Engine> &&
+    !requires(Sseq &sequence) {
+      [] (typename Engine::result_type) {}(sequence);
+    } &&
     requires(Sseq &sequence, uint32_t *first, uint32_t *last) {
       sequence.generate(first, last);
     };
@@ -725,7 +728,10 @@ RealType generate_canonical(URBG &generator) {
     result += (static_cast<RealType>(generator()) - static_cast<RealType>(URBG::min())) * factor;
     factor *= range;
   }
-  return result / factor;
+  const RealType value = result / factor;
+  if (value < RealType{1})
+    return value;
+  return RealType{1} - numeric_limits<RealType>::epsilon() / RealType{2};
 }
 
 namespace detail {

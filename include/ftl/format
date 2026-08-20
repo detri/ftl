@@ -3769,15 +3769,6 @@ chrono_parse_format_spec(basic_format_parse_context<charT> &context,
   const auto chrono_begin = current;
 
   if (current != end && *current != format_widen<charT>('}')) {
-    /*
-     * chrono-specs starts with a
-     * conversion-spec, not a literal.
-     */
-    if (*current != format_widen<charT>('%')) {
-      throw_format_error(
-          "chrono format specification must begin with a conversion specifier");
-    }
-
     while (current != end && *current != format_widen<charT>('}')) {
       if (*current == format_widen<charT>('{')) {
         throw_format_error("invalid brace in chrono format specification");
@@ -4098,6 +4089,22 @@ void chrono_append_time_of_day(basic_string<charT> &output,
                                bool localized, char conversion) {
   const long long hour24 = split.hours() % 24;
 
+  if (localized && (conversion == 'p' || conversion == 'r')) {
+    tm value{};
+    value.tm_hour = static_cast<int>(hour24);
+    value.tm_min = static_cast<int>(split.minutes());
+    value.tm_sec = static_cast<int>(split.seconds());
+
+    basic_ostringstream<charT> stream;
+    stream.imbue(context.locale());
+    auto output_iterator = ostreambuf_iterator<charT>(stream);
+    use_facet<time_put<charT>>(stream.getloc())
+        .put(output_iterator, stream, stream.fill(), &value, conversion);
+    const auto localized_text = stream.str();
+    output.append(localized_text.data(), localized_text.size());
+    return;
+  }
+
   switch (conversion) {
   case 'H':
     chrono_append_integer(output, hour24, 2);
@@ -4123,11 +4130,6 @@ void chrono_append_time_of_day(basic_string<charT> &output,
     break;
 
   case 'p':
-    /*
-     * This is the C-locale spelling.
-     * Locale-name integration is the
-     * next chrono slice.
-     */
     chrono_append_ascii(output, hour24 < 12 ? "AM" : "PM");
     break;
 

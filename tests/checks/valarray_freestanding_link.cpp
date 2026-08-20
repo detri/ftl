@@ -1,6 +1,6 @@
 #include <valarray>
 
-void operator delete[](void*) noexcept {}
+void operator delete(void*) noexcept {}
 
 extern "C" int ftl_entry() {
   std::valarray<int> values;

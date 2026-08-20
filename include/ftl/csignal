@@ -9,17 +9,32 @@ extern "C" int raise(int);
 #define SIG_DFL ((void (*)(int))0)
 #define SIG_IGN ((void (*)(int))1)
 #define SIG_ERR ((void (*)(int))-1)
+
 #define SIGINT 2
 #define SIGILL 4
+
+#if defined(_WIN32)
+#define SIGABRT 22
+#else
 #define SIGABRT 6
+#endif
+
 #define SIGFPE 8
 #define SIGSEGV 11
 #define SIGTERM 15
 
 #ifdef FTL_REPLACE_STL
-namespace std { using sig_atomic_t = int; using ::signal; using ::raise; }
+namespace std {
+using sig_atomic_t = int;
+using ::signal;
+using ::raise;
+}
 #else
-namespace ftl { using sig_atomic_t = int; using ::signal; using ::raise; }
+namespace ftl {
+using sig_atomic_t = int;
+using ::signal;
+using ::raise;
+}
 #endif
 
 #endif

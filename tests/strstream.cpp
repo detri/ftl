@@ -1,8 +1,10 @@
 #ifdef FTL_REPLACE_STL
+#include <limits>
 #include <strstream>
 #include <type_traits>
 namespace tested = std;
 #else
+#include <ftl/limits>
 #include <ftl/strstream>
 #include <ftl/type_traits>
 namespace tested = ftl;
@@ -28,5 +30,11 @@ bool ftl_test() {
   both.seekg(0, tested::ios_base::beg);
   number = 0;
   both >> number;
-  return okay && number == 12;
+  if (!okay || number != 12 || both.pcount() != 2)
+    return false;
+
+  tested::strstreambuf checked;
+  return checked.pubseekoff(tested::numeric_limits<tested::streamoff>::max(),
+                            tested::ios_base::cur,
+                            tested::ios_base::out) == tested::streampos(-1);
 }

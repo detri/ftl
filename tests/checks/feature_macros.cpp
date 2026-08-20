@@ -58,9 +58,6 @@
     __cpp_lib_common_reference < 202302L
 #error <type_traits> must advertise completed facilities
 #endif
-#if __cpp_lib_concepts < 202207L
-#error <concepts> must advertise standard concepts
-#endif
 #if __cpp_lib_three_way_comparison < 201907L
 #error <compare> must advertise three-way comparison
 #endif

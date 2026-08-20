@@ -1,10 +1,14 @@
 #ifdef FTL_REPLACE_STL
+#include <clocale>
 #include <cstdio>
+#include <cwchar>
 #include <type_traits>
 namespace tested = std;
 #else
 #include <cstdio>
+#include <ftl/clocale>
 #include <ftl/cstdio>
+#include <ftl/cwchar>
 #include <ftl/type_traits>
 namespace tested = ftl;
 static_assert(!tested::is_same_v<::FILE, tested::FILE>);
@@ -13,6 +17,19 @@ static_assert(tested::is_same_v<decltype(stdout), ::FILE *>);
 using print_type = int (*)(const char *, ...);
 static_assert(tested::is_same_v<
               decltype(static_cast<print_type>(&tested::printf)), print_type>);
+bool cstdio_failure(const char *message) {
+  tested::fprintf(::ftl_stdio_runtime::error_stream(),
+                  "cstdio regression failed: %s\n", message);
+  return false;
+}
+bool cstdio_wide_input_failure(tested::wint_t value, tested::FILE *stream) {
+  tested::fprintf(::ftl_stdio_runtime::error_stream(),
+                  "cstdio regression failed: wide input value=%u error=%d "
+                  "eof=%d\n",
+                  static_cast<unsigned>(value), tested::ferror(stream),
+                  tested::feof(stream));
+  return false;
+}
 bool ftl_test() {
   char formatted[64]{};
   int written =
@@ -30,6 +47,12 @@ bool ftl_test() {
     return false;
   if (tested::snprintf(nullptr, 0, "%d", 1234) != 4)
     return false;
+  char high_precision[800]{};
+  if (tested::snprintf(high_precision, sizeof(high_precision), "%.700f", 1.0) !=
+          702 ||
+      high_precision[0] != '1' || high_precision[1] != '.' ||
+      high_precision[701] != '0' || high_precision[702] != '\0')
+    return cstdio_failure("high precision output");
   int count_written = -1;
   int format_result = tested::snprintf(
       formatted, sizeof(formatted), "%#.0f %.1a%n", 1.0, 3.0, &count_written);
@@ -139,5 +162,38 @@ bool ftl_test() {
               read[4] == 'o' && tested::fgetc(file) == EOF &&
               tested::feof(file) && tested::fsetpos(file, &end_position) == 0 &&
               tested::ftell(file) == 5;
-  return tested::fclose(file) == 0 && okay;
+  if (tested::fclose(file) != 0 || !okay)
+    return false;
+
+  const char *wide_locale =
+#if defined(_WIN32)
+      ".UTF-8";
+#elif defined(__APPLE__)
+      "en_US.UTF-8";
+#else
+      "C.utf8";
+#endif
+  if (tested::setlocale(LC_CTYPE, wide_locale) == nullptr)
+    return cstdio_failure("UTF-8 locale selection");
+  tested::FILE *wide_file = tested::tmpfile();
+  if (!wide_file || tested::fputwc(L'\u00e9', wide_file) == WEOF ||
+      tested::fputwc(L'X', wide_file) == WEOF)
+    return cstdio_failure("wide output");
+  tested::fpos_t wide_end{};
+  if (tested::fgetpos(wide_file, &wide_end) != 0)
+    return cstdio_failure("wide end position");
+  tested::rewind(wide_file);
+  const tested::wint_t wide_first = tested::fgetwc(wide_file);
+  if (wide_first != L'\u00e9')
+    return cstdio_wide_input_failure(wide_first, wide_file);
+  if (tested::ungetwc(L'\u00e9', wide_file) == WEOF)
+    return cstdio_failure("wide pushback");
+  tested::fpos_t pushed_position{};
+  if (tested::fgetpos(wide_file, &pushed_position) != 0 ||
+      pushed_position.position != 0 ||
+      tested::fgetwc(wide_file) != L'\u00e9' ||
+      tested::fgetwc(wide_file) != L'X' ||
+      tested::fsetpos(wide_file, &wide_end) != 0)
+    return cstdio_failure("wide position state or replay");
+  return tested::fclose(wide_file) == 0;
 }

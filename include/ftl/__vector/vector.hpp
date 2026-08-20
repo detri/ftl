@@ -638,6 +638,7 @@ private:
   }
   template<class... Args>
   constexpr void construct_value(pointer location, Args&&... args) {
+#if defined(_MSC_VER) || !defined(FTL_REPLACE_STL)
     if consteval {
       if constexpr (is_same_v<Allocator, allocator<T>> &&
                     is_trivially_default_constructible_v<T>) {
@@ -645,14 +646,17 @@ private:
         return;
       }
     }
+#endif
     traits::construct(allocator_, to_address(location), forward<Args>(args)...);
   }
   constexpr void destroy_value(pointer location) noexcept {
+#if defined(_MSC_VER) || !defined(FTL_REPLACE_STL)
     if consteval {
       if constexpr (is_same_v<Allocator, allocator<T>> &&
                     is_trivially_default_constructible_v<T>)
         return;
     }
+#endif
     traits::destroy(allocator_, to_address(location));
   }
   constexpr void release() noexcept {

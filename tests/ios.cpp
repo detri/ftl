@@ -173,9 +173,11 @@ bool formatting_state_works() {
   stream.precision(9);
   stream.width(12);
   stream.fill('_');
-  return (stream.flags() & tested::ios_base::basefield) == tested::ios_base::hex &&
+  return (stream.flags() & tested::ios_base::basefield) ==
+             tested::ios_base::hex &&
          (stream.flags() & tested::ios_base::showbase) != 0 &&
-         stream.precision() == 9 && stream.width() == 12 && stream.fill() == '_';
+         stream.precision() == 9 && stream.width() == 12 &&
+         stream.fill() == '_';
 }
 
 bool extensible_storage_and_callbacks_work() {
@@ -193,8 +195,10 @@ bool extensible_storage_and_callbacks_work() {
   second.copyfmt(first);
   return second.iword(integer_index) == 42 &&
          second.pword(pointer_index) == &marker &&
-         callback_events[static_cast<int>(tested::ios_base::erase_event)] >= 1 &&
-         callback_events[static_cast<int>(tested::ios_base::copyfmt_event)] >= 1;
+         callback_events[static_cast<int>(tested::ios_base::erase_event)] >=
+             1 &&
+         callback_events[static_cast<int>(tested::ios_base::copyfmt_event)] >=
+             1;
 }
 
 bool positioning_and_error_code_work() {
@@ -206,10 +210,36 @@ bool positioning_and_error_code_work() {
          &code.category() == &tested::iostream_category();
 }
 
+bool extensible_storage_is_per_object() {
+  char character = 'x';
+  fixed_streambuf buffer{&character, &character + 1};
+
+  tested_ios first{&buffer};
+  tested_ios second{&buffer};
+
+  const int integer_index = tested::ios_base::xalloc();
+  const int pointer_index = tested::ios_base::xalloc();
+
+  int first_marker = 1;
+  int second_marker = 2;
+
+  first.iword(integer_index) = 17;
+  second.iword(integer_index) = 29;
+
+  first.pword(pointer_index) = &first_marker;
+  second.pword(pointer_index) = &second_marker;
+
+  return first.iword(integer_index) == 17 &&
+         second.iword(integer_index) == 29 &&
+         first.pword(pointer_index) == &first_marker &&
+         second.pword(pointer_index) == &second_marker;
+}
+
 bool ftl_test() {
   return initial_state_works() && state_flags_work() &&
          null_buffer_state_works() && buffer_replacement_works() &&
          protected_initialization_works() && formatting_state_works() &&
          extensible_storage_and_callbacks_work() &&
-         positioning_and_error_code_work();
+         positioning_and_error_code_work() &&
+         extensible_storage_is_per_object();
 }

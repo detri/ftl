@@ -5,6 +5,7 @@
 
 #ifdef FTL_REPLACE_STL
 #include <bit>
+#include <cfloat>
 #include <limits>
 #include <type_traits>
 #include <detail/math_runtime>
@@ -12,6 +13,7 @@
 #define FTL_CMATH_END }
 #else
 #include <ftl/bit>
+#include <ftl/cfloat>
 #include <ftl/limits>
 #include <ftl/type_traits>
 #include <ftl/detail/math_runtime>
@@ -33,12 +35,25 @@
 
 FTL_CMATH_BEGIN
 
+#if FLT_EVAL_METHOD == 0
 using float_t = float;
 using double_t = double;
+#elif FLT_EVAL_METHOD == 1
+using float_t = double;
+using double_t = double;
+#elif FLT_EVAL_METHOD == 2
+using float_t = long double;
+using double_t = long double;
+#else
+#error FTL requires a determinate FLT_EVAL_METHOD
+#endif
 
 inline float sqrt(float) noexcept;
 inline double sqrt(double) noexcept;
 inline long double sqrt(long double) noexcept;
+#ifdef __STDCPP_FLOAT128_T__
+inline decltype(0.0f128) sqrt(decltype(0.0f128)) noexcept;
+#endif
 constexpr float fabs(float) noexcept;
 constexpr double fabs(double) noexcept;
 constexpr long double fabs(long double) noexcept;
@@ -59,16 +74,17 @@ inline constexpr bool math_arithmetic_v = is_arithmetic_v<remove_cv_t<T>>;
 template <class T>
 inline T math_domain_error() { return sqrt(T{-1}); }
 
+template <class T>
+using math_floating_arg_t =
+    conditional_t<is_integral_v<remove_cv_t<T>>, double, remove_cv_t<T>>;
+
+// The usual arithmetic conversions implement the standard's floating-point
+// conversion-rank/subrank selection after integer arguments are mapped to
+// double as required by the additional math overloads.
 template <class Left, class Right>
-using math_common_t = conditional_t<
-    is_same_v<remove_cv_t<Left>, long double> ||
-        is_same_v<remove_cv_t<Right>, long double>,
-    long double,
-    conditional_t<is_same_v<remove_cv_t<Left>, double> ||
-                      is_same_v<remove_cv_t<Right>, double> ||
-                      is_integral_v<remove_cv_t<Left>> ||
-                      is_integral_v<remove_cv_t<Right>>,
-                  double, float>>;
+using math_common_t =
+    decltype(declval<math_floating_arg_t<Left>>() +
+             declval<math_floating_arg_t<Right>>());
 
 template <class T> constexpr T const_abs(T value) {
   return value == T{} ? T{} : value < T{} ? -value : value;
@@ -85,12 +101,19 @@ template <class T> constexpr bool const_isfinite(T value) {
 template <class T> constexpr bool const_isnormal(T value) {
   return const_isfinite(value) && const_abs(value) >= numeric_limits<T>::min();
 }
-template <class T> struct math_bytes { unsigned char value[sizeof(T)]; };
 template <class T> constexpr bool const_signbit(T value) {
-  const auto bytes = bit_cast<math_bytes<T>>(value);
-  if constexpr (sizeof(T) == 4) return (bytes.value[3] & 0x80u) != 0;
-  if constexpr (sizeof(T) == 8) return (bytes.value[7] & 0x80u) != 0;
-  return (bytes.value[9] & 0x80u) != 0;
+#if defined(__clang__) || defined(__GNUC__)
+  return __builtin_signbit(value);
+#elif defined(_MSC_VER)
+  // MSVC targets supported by FTL use IEEE binary32/binary64 and represent
+  // long double as binary64. Avoid byte-order-sensitive byte indexing.
+  if constexpr (sizeof(T) == sizeof(unsigned int))
+    return (bit_cast<unsigned int>(value) >> 31) != 0;
+  else
+    return (bit_cast<unsigned long long>(value) >> 63) != 0;
+#else
+#error Unsupported compiler representation for constexpr signbit
+#endif
 }
 template <class T> constexpr T const_copysign(T magnitude, T sign) {
   return const_signbit(magnitude) == const_signbit(sign) ? magnitude : -magnitude;
@@ -140,26 +163,68 @@ template <class T> constexpr T const_logb(T value) {
   if (const_isnan(value) || const_isinf(value)) return const_abs(value);
   return T(const_ilogb(value));
 }
+template <class T> struct const_divrem_result {
+  T remainder;
+  unsigned quotient_low_bits;
+};
+
+template <class T>
+constexpr const_divrem_result<T> const_divrem(T numerator, T denominator) {
+  T scaled = denominator;
+  unsigned shifts = 0;
+
+  while (scaled <= numerator - scaled) {
+    scaled += scaled;
+    ++shifts;
+  }
+
+  unsigned quotient = 0;
+  for (;;) {
+    quotient = (quotient << 1) & 7u;
+    if (numerator >= scaled) {
+      numerator -= scaled;
+      quotient |= 1u;
+    }
+    if (shifts == 0)
+      break;
+    scaled *= T{0.5};
+    --shifts;
+  }
+
+  return {numerator, quotient};
+}
+
 template <class T> constexpr T const_fmod(T x, T y) {
   if (const_isnan(x) || const_isnan(y) || y == T{} || const_isinf(x))
     return numeric_limits<T>::quiet_NaN();
   if (const_isinf(y)) return x;
-  return x - const_trunc(x / y) * y;
+  const T magnitude = const_divrem(const_abs(x), const_abs(y)).remainder;
+  return const_copysign(magnitude, x);
 }
 template <class T> constexpr T const_remainder(T x, T y,
                                                long long *quotient = nullptr) {
   if (const_isnan(x) || const_isnan(y) || y == T{} || const_isinf(x))
     return numeric_limits<T>::quiet_NaN();
   if (const_isinf(y)) { if (quotient) *quotient = 0; return x; }
-  const T ratio = x / y;
-  T nearest = const_trunc(ratio);
-  const T fraction = ratio - nearest;
-  if (fraction > T{0.5} ||
-      (fraction == T{0.5} && const_fmod(nearest, T{2}) != T{})) nearest += T{1};
-  else if (fraction < -T{0.5} ||
-           (fraction == -T{0.5} && const_fmod(nearest, T{2}) != T{})) nearest -= T{1};
-  if (quotient) *quotient = static_cast<long long>(nearest);
-  const T result = x - nearest * y;
+
+  const T denominator = const_abs(y);
+  auto division = const_divrem(const_abs(x), denominator);
+  const T complement = denominator - division.remainder;
+  const bool round_up = division.remainder > complement ||
+      (division.remainder == complement &&
+       (division.quotient_low_bits & 1u) != 0);
+
+  if (round_up) {
+    division.remainder = -complement;
+    division.quotient_low_bits = (division.quotient_low_bits + 1u) & 7u;
+  }
+
+  if (quotient) {
+    const long long low = static_cast<long long>(division.quotient_low_bits);
+    *quotient = const_signbit(x) != const_signbit(y) ? -low : low;
+  }
+
+  T result = const_signbit(x) ? -division.remainder : division.remainder;
   return result == T{} ? const_copysign(T{}, x) : result;
 }
 template <class T, class U> constexpr T const_nextafter(T from, U to) {
@@ -435,6 +500,11 @@ FTL_CMATH_CONSTEXPR_UNARY(round)
 FTL_CMATH_UNARY(sin)
 FTL_CMATH_UNARY(sinh)
 FTL_CMATH_UNARY(sqrt)
+#ifdef __STDCPP_FLOAT128_T__
+inline decltype(0.0f128) sqrt(decltype(0.0f128) value) noexcept {
+  return __builtin_sqrtf128(value);
+}
+#endif
 FTL_CMATH_UNARY(tan)
 FTL_CMATH_UNARY(tanh)
 FTL_CMATH_UNARY(tgamma)
@@ -517,7 +587,10 @@ constexpr auto lerp(A a, B b, C t) noexcept {
 
 constexpr float fma(float x, float y, float z) noexcept {
   if consteval {
-#ifdef __clang__
+#if defined(__clang__) && __clang_major__ >= 21 && !defined(_MSC_VER) &&       \
+    !defined(__apple_build_version__)
+    return __builtin_elementwise_fma(x, y, z);
+#elif defined(__clang__)
     return x * y + z;
 #else
     return __builtin_fmaf(x, y, z);
@@ -527,7 +600,10 @@ constexpr float fma(float x, float y, float z) noexcept {
 }
 constexpr double fma(double x, double y, double z) noexcept {
   if consteval {
-#ifdef __clang__
+#if defined(__clang__) && __clang_major__ >= 21 && !defined(_MSC_VER) &&       \
+    !defined(__apple_build_version__)
+    return __builtin_elementwise_fma(x, y, z);
+#elif defined(__clang__)
     return x * y + z;
 #else
     return __builtin_fma(x, y, z);
@@ -538,7 +614,10 @@ constexpr double fma(double x, double y, double z) noexcept {
 constexpr long double fma(long double x, long double y,
                           long double z) noexcept {
   if consteval {
-#ifdef __clang__
+#if defined(__clang__) && __clang_major__ >= 21 && !defined(_MSC_VER) &&       \
+    !defined(__apple_build_version__)
+    return __builtin_elementwise_fma(x, y, z);
+#elif defined(__clang__)
     return x * y + z;
 #else
     return __builtin_fmal(x, y, z);
@@ -814,29 +893,59 @@ constexpr bool signbit(Integer value) noexcept {
     return false;
 }
 
+namespace detail {
+template <class T> constexpr bool quiet_isnan(const T &value) noexcept {
+  using type = remove_cv_t<T>;
+  if constexpr (is_integral_v<type>) {
+    return false;
+  } else if constexpr (sizeof(type) == sizeof(unsigned int)) {
+    const auto bits = bit_cast<unsigned int>(value);
+    return (bits & 0x7f800000u) == 0x7f800000u &&
+           (bits & 0x007fffffu) != 0;
+  } else if constexpr (sizeof(type) == sizeof(unsigned long long)) {
+    const auto bits = bit_cast<unsigned long long>(value);
+    return (bits & 0x7ff0000000000000ull) == 0x7ff0000000000000ull &&
+           (bits & 0x000fffffffffffffull) != 0;
+  } else {
+    return isnan(value);
+  }
+}
+} // namespace detail
+
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-constexpr bool isgreater(Left left, Right right) noexcept { return left > right; }
-template <class Left, class Right>
-  requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-constexpr bool isgreaterequal(Left left, Right right) noexcept {
-  return left >= right;
+constexpr bool isgreater(const Left &left, const Right &right) noexcept {
+  return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
+         left > right;
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-constexpr bool isless(Left left, Right right) noexcept { return left < right; }
-template <class Left, class Right>
-  requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-constexpr bool islessequal(Left left, Right right) noexcept { return left <= right; }
-template <class Left, class Right>
-  requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-constexpr bool islessgreater(Left left, Right right) noexcept {
-  return left < right || left > right;
+constexpr bool isgreaterequal(const Left &left, const Right &right) noexcept {
+  return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
+         left >= right;
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
-constexpr bool isunordered(Left left, Right right) noexcept {
-  return isnan(left) || isnan(right);
+constexpr bool isless(const Left &left, const Right &right) noexcept {
+  return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
+         left < right;
+}
+template <class Left, class Right>
+  requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
+constexpr bool islessequal(const Left &left, const Right &right) noexcept {
+  return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
+         left <= right;
+}
+template <class Left, class Right>
+  requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
+constexpr bool islessgreater(const Left &left, const Right &right) noexcept {
+  return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
+         (left < right || left > right);
+}
+template <class Left, class Right>
+  requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
+constexpr bool isunordered(const Left &left, const Right &right) noexcept {
+  return detail::quiet_isnan(left) || detail::quiet_isnan(right);
 }
 
 inline float nanf(const char *) noexcept {
@@ -958,15 +1067,69 @@ inline long double assoc_legendrel(unsigned l, unsigned m, long double x) {
   return assoc_legendre(l, m, x);
 }
 
-// Adapted from Boost.Math beta.hpp: evaluate through log-gamma to avoid the
-// premature overflow of tgamma(x) * tgamma(y).
-// Copyright John Maddock 2006; Copyright Matt Borland 2024 (BSL-1.0).
+namespace detail {
+template <class T> inline T stirling_correction_from_inverse(T inverse) {
+  const T square = inverse * inverse;
+  return inverse *
+      (T{1} / T{12} + square *
+          (-T{1} / T{360} + square *
+              (T{1} / T{1260} - square / T{1680})));
+}
+
+template <class T> inline T log_beta_stirling(T a, T b) {
+  if (a > b) {
+    const T temporary = a;
+    a = b;
+    b = temporary;
+  }
+
+  const T ratio = a / b;
+  const T log_scale = log(b) + log1p(ratio);
+  const T log_a_fraction = log(a) - log_scale;
+  const T log_b_fraction = -log1p(ratio);
+  const T inverse_a = T{1} / a;
+  const T inverse_b = T{1} / b;
+  const T inverse_sum = inverse_b / (T{1} + ratio);
+  const T correction = stirling_correction_from_inverse(inverse_a) +
+      stirling_correction_from_inverse(inverse_b) -
+      stirling_correction_from_inverse(inverse_sum);
+  constexpr long double log_sqrt_two_pi =
+      0.918938533204672741780329736405617639861L;
+
+  return (a - T{0.5}) * log_a_fraction +
+      (b - T{0.5}) * log_b_fraction - T{0.5} * log_scale +
+      T(log_sqrt_two_pi) + correction;
+}
+
+template <class T> inline T log_beta_positive(T a, T b) {
+  if (a > b) {
+    const T temporary = a;
+    a = b;
+    b = temporary;
+  }
+
+  if (b < T{32})
+    return lgamma(a) + lgamma(b) - lgamma(a + b);
+
+  T recurrence{};
+  while (a < T{8}) {
+    recurrence += log(b) + log1p(a / b) - log(a);
+    a += T{1};
+  }
+
+  return log_beta_stirling(a, b) + recurrence;
+}
+} // namespace detail
+
+// Evaluate in the logarithmic domain with a scaled Stirling form. In
+// particular, neither x + y nor an individual log-gamma term must be
+// representable when the final beta value is finite or underflows to zero.
 template <class T>
   requires is_floating_point_v<T>
 inline T beta(T x, T y) {
   if (isnan(x) || isnan(y)) return x + y;
   if (x <= T{} || y <= T{}) return detail::math_domain_error<T>();
-  return exp(lgamma(x) + lgamma(y) - lgamma(x + y));
+  return exp(detail::log_beta_positive(x, y));
 }
 inline float betaf(float x, float y) { return beta(x, y); }
 inline long double betal(long double x, long double y) { return beta(x, y); }

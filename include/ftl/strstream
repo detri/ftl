@@ -60,6 +60,19 @@ public:
   }
 
 protected:
+  int_type underflow() override {
+    if (!this->gptr())
+      return traits_type::eof();
+    const size_t get = get_offset();
+    const size_t high = high_water();
+    if (high > get_end_) {
+      get_end_ = high;
+      set_get(get);
+    }
+    return this->gptr() < this->egptr()
+               ? traits_type::to_int_type(*this->gptr())
+               : traits_type::eof();
+  }
   int_type overflow(int_type value = traits_type::eof()) override {
     if (constant_ || frozen_ || !dynamic_)
       return traits_type::eof();
@@ -82,11 +95,12 @@ protected:
     storage_ = replacement;
     capacity_ = next;
     allocated_ = true;
+    put_begin_ = 0;
     get_end_ = high;
     this->setg(storage_, storage_ + (get > get_end_ ? get_end_ : get),
                storage_ + get_end_);
     this->setp(storage_, storage_ + capacity_);
-    this->pbump(static_cast<int>(put));
+    advance_put(put);
     *this->pptr() = traits_type::to_char_type(value);
     this->pbump(1);
     if (get_end_ < put + 1)
@@ -121,19 +135,19 @@ protected:
             ? static_cast<off_type>(high)
             : static_cast<off_type>((which & ios_base::in) ? get_offset()
                                                            : put_offset());
-    off_type next = base + offset;
-    if (next < 0 || static_cast<size_t>(next) > high)
+    size_t next = 0;
+    if (!checked_position(base, offset, high, next))
       return pos_type(off_type(-1));
     size_t get = get_offset(), put = put_offset();
     if (which & ios_base::in)
-      get = static_cast<size_t>(next);
+      get = next;
     if (which & ios_base::out) {
-      if (constant_ || !this->pbase())
+      if (constant_ || !this->pbase() || next < put_begin_)
         return pos_type(off_type(-1));
-      put = static_cast<size_t>(next);
+      put = next;
     }
     set_sequences(get, put);
-    return pos_type(next);
+    return pos_type(static_cast<off_type>(next));
   }
   pos_type seekpos(pos_type position,
                    ios_base::openmode which = ios_base::in |
@@ -143,6 +157,24 @@ protected:
   basic_streambuf<char> *setbuf(char *, streamsize) override { return this; }
 
 private:
+  static bool checked_position(off_type base, off_type offset, size_t limit,
+                               size_t &result) {
+    if (base < 0 || static_cast<unsigned long long>(base) > limit)
+      return false;
+    const size_t origin = static_cast<size_t>(base);
+    if (offset >= 0) {
+      const auto amount = static_cast<unsigned long long>(offset);
+      if (amount > static_cast<unsigned long long>(limit - origin))
+        return false;
+      result = origin + static_cast<size_t>(amount);
+    } else {
+      const auto amount = static_cast<unsigned long long>(-(offset + 1)) + 1;
+      if (amount > origin)
+        return false;
+      result = origin - static_cast<size_t>(amount);
+    }
+    return true;
+  }
   void initialize(char *next, streamsize count, char *put, bool constant) {
     size_t length = count > 0    ? static_cast<size_t>(count)
                     : count == 0 ? traits_type::length(next)
@@ -153,8 +185,8 @@ private:
     get_end_ = put ? static_cast<size_t>(put - next) : length;
     this->setg(next, next, next + get_end_);
     if (put) {
-      this->setp(next, next + length);
-      this->pbump(static_cast<int>(put - next));
+      put_begin_ = static_cast<size_t>(put - next);
+      this->setp(put, next + length);
     }
   }
   void *allocate(size_t n) {
@@ -170,7 +202,7 @@ private:
     return this->gptr() ? static_cast<size_t>(this->gptr() - this->eback()) : 0;
   }
   size_t put_offset() const {
-    return this->pptr() ? static_cast<size_t>(this->pptr() - this->pbase()) : 0;
+    return this->pptr() ? static_cast<size_t>(this->pptr() - storage_) : 0;
   }
   size_t high_water() const {
     size_t put = put_offset();
@@ -187,13 +219,22 @@ private:
       this->setg(storage_, storage_ + (get > get_end_ ? get_end_ : get),
                  storage_ + get_end_);
     if (!constant_ && storage_) {
-      this->setp(storage_, storage_ + capacity_);
-      this->pbump(static_cast<int>(put));
+      this->setp(storage_ + put_begin_, storage_ + capacity_);
+      advance_put(put - put_begin_);
     }
+  }
+  void advance_put(size_t amount) {
+    constexpr size_t maximum = static_cast<size_t>(INT_MAX);
+    while (amount > maximum) {
+      this->pbump(INT_MAX);
+      amount -= maximum;
+    }
+    this->pbump(static_cast<int>(amount));
   }
   char *storage_{};
   size_t capacity_{};
   size_t get_end_{};
+  size_t put_begin_{};
   bool dynamic_{};
   bool constant_{};
   bool allocated_{};

@@ -46,6 +46,17 @@ static_assert(tested::is_same_v<decltype(tested::pow(complex<float>{},
                                                      complex<long double>{})),
                                 complex<long double>>);
 
+#if defined(__STDCPP_FLOAT128_T__)
+using extended_float = decltype(0.0f128);
+static_assert(tested::is_same_v<decltype(tested::real(extended_float{})),
+                                extended_float>);
+static_assert(tested::is_same_v<decltype(tested::conj(extended_float{})),
+                                complex<extended_float>>);
+static_assert(tested::is_same_v<
+              decltype(tested::pow(complex<double>{}, extended_float{})),
+              complex<extended_float>>);
+#endif
+
 class complex_input_buffer : public tested::streambuf {
 public:
   complex_input_buffer(char *first, char *last) { setg(first, first, last); }
@@ -54,6 +65,7 @@ public:
 class complex_output_buffer : public tested::streambuf {
 public:
   tested::string text;
+
 protected:
   int_type overflow(int_type value) override {
     if (traits_type::eq_int_type(value, traits_type::eof()))
@@ -88,22 +100,67 @@ bool stream_round_trip_works() {
   return value == complex<double>{4.5, 0.0};
 }
 
+constexpr bool converting_assignment_works() {
+  complex<double> destination{};
+  const complex<float> source{1.25f, -2.5f};
+
+  complex<double> &result = (destination = source);
+
+  return &result == &destination && destination == complex<double>{1.25, -2.5};
+}
+
+static_assert(converting_assignment_works());
+
+#if defined(__SIZEOF_INT128__)
+using extended_int = __int128;
+
+static_assert(
+    tested::is_same_v<decltype(tested::real(extended_int{})), double>);
+
+static_assert(
+    tested::is_same_v<decltype(tested::imag(extended_int{})), double>);
+
+static_assert(
+    tested::is_same_v<decltype(tested::norm(extended_int{})), double>);
+
+static_assert(
+    tested::is_same_v<decltype(tested::conj(extended_int{})), complex<double>>);
+
+static_assert(
+    tested::is_same_v<decltype(tested::proj(extended_int{})), complex<double>>);
+
+static_assert(
+    tested::is_same_v<decltype(tested::pow(complex<double>{}, extended_int{})),
+                      complex<double>>);
+#endif
+
+bool stream_width_and_fill_apply_to_whole_complex() {
+  complex_output_buffer output;
+  tested::ostream stream(&output);
+
+  stream.fill('#');
+  stream.setf(tested::ios_base::right, tested::ios_base::adjustfield);
+  stream.width(10);
+
+  stream << complex<double>{1.0, 2.0};
+
+  return output.text == "#####(1,2)" && stream.width() == 0;
+}
+
 bool ftl_test() {
   const complex<double> value{3.0, 4.0};
   const auto square_root = tested::sqrt(complex<double>{-1.0, 0.0});
   const auto exponential = tested::exp(complex<double>{0.0, 0.0});
   const auto logarithm = tested::log(complex<double>{1.0, 0.0});
-  const auto power = tested::pow(complex<double>{2.0, 0.0},
-                                 complex<double>{3.0, 0.0});
+  const auto power =
+      tested::pow(complex<double>{2.0, 0.0}, complex<double>{3.0, 0.0});
   const auto lower_sqrt = tested::sqrt(complex<double>{-1.0, -0.0});
   const auto upper_log = tested::log(complex<double>{-1.0, 0.0});
   const auto lower_log = tested::log(complex<double>{-1.0, -0.0});
-  const auto projected =
-      tested::proj(complex<double>{HUGE_VAL, -2.0});
+  const auto projected = tested::proj(complex<double>{HUGE_VAL, -2.0});
   const auto divided_by_zero = value / complex<double>{0.0, 0.0};
   const auto divided_by_negative_zero = value / complex<double>{-0.0, 0.0};
-  const auto divided_by_infinity =
-      value / complex<double>{HUGE_VAL, HUGE_VAL};
+  const auto divided_by_infinity = value / complex<double>{HUGE_VAL, HUGE_VAL};
   const auto infinite_numerator =
       complex<double>{HUGE_VAL, 1.0} / complex<double>{2.0, 3.0};
   const auto nan = tested::numeric_limits<double>::quiet_NaN();
@@ -134,5 +191,6 @@ bool ftl_test() {
          !tested::signbit(infinite_numerator.real()) &&
          tested::signbit(infinite_numerator.imag()) &&
          tested::isnan(nan_quotient.real()) &&
-         tested::isnan(nan_quotient.imag()) && stream_round_trip_works();
+         tested::isnan(nan_quotient.imag()) && stream_round_trip_works() &&
+         stream_width_and_fill_apply_to_whole_complex();
 }

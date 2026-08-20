@@ -12,8 +12,41 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+struct incompatible_zone_pointer {
+  incompatible_zone_pointer(int) {}
+};
+
+#ifdef FTL_REPLACE_STL
+namespace std::chrono {
+#else
+namespace ftl::chrono {
+#endif
+template <> struct zoned_traits<::incompatible_zone_pointer> {
+  static int locate_zone(string_view);
+};
+}
+
 using namespace tested::chrono;
 using namespace tested::chrono::literals;
+
+class marker_time_put final : public tested::time_put<char> {
+protected:
+  iter_type do_put(iter_type output, tested::ios_base &, char,
+                   const tested::tm *, char format,
+                   char) const override {
+    const char *text = format == 'p' ? "period" : "clock";
+    while (*text)
+      *output++ = *text++;
+    return output;
+  }
+};
+
+class throwing_chrono_input_buffer final : public tested::stringbuf {
+protected:
+  int_type underflow() override {
+    throw tested::runtime_error{"chrono input failure"};
+  }
+};
 
 static_assert(tested::formattable<seconds, char>);
 
@@ -126,6 +159,29 @@ static_assert(noexcept(tested::declval<const tzdb_list &>().end()));
 static_assert(duration_cast<seconds>(1500ms).count() == 1);
 static_assert(is_clock_v<system_clock> && is_clock_v<steady_clock>);
 static_assert(!is_clock_v<int>);
+
+struct unreachable_clock {};
+template <class To, class From>
+concept clock_castable = requires(time_point<From> value) {
+  clock_cast<To>(value);
+};
+static_assert(!clock_castable<unreachable_clock, system_clock>);
+static_assert(!tested::is_constructible_v<
+              zoned_time<seconds, incompatible_zone_pointer>,
+              tested::string_view, local_time<seconds>>);
+static_assert(!tested::is_constructible_v<
+              zoned_time<seconds, incompatible_zone_pointer>,
+              tested::string_view, local_time<seconds>, choose>);
+
+static_assert(tested::is_same_v<
+              decltype(duration<double>{} <=> duration<double>{}),
+              tested::partial_ordering>);
+
+bool duration_nan_ordering_works() {
+  const double nan = tested::numeric_limits<double>::quiet_NaN();
+  return (duration<double>{nan} <=> duration<double>{0.0}) ==
+         tested::partial_ordering::unordered;
+}
 static_assert((++time_point<system_clock, seconds>{seconds{1}})
                   .time_since_epoch() == seconds{2});
 static_assert(floor<seconds>(-1500ms).count() == -2);
@@ -140,6 +196,10 @@ static_assert((year{2024} / February / last).day() == day{29});
 static_assert((year{2024} / March / Friday[1]).ok());
 static_assert(weekday{local_days{days{0}}} == Thursday);
 static_assert(year{2024} / March + months{10} == year{2025} / January);
+static_assert((month{1} += months{tested::numeric_limits<int>::max()}) ==
+              month{8});
+static_assert((weekday{0} += days{tested::numeric_limits<int>::max()}) ==
+              weekday{1});
 static_assert(year{2020} / January - year{2019} / December == months{1});
 static_assert(hh_mm_ss<milliseconds>::fractional_width == 3);
 static_assert(hh_mm_ss<duration<int, tested::ratio<1, 3>>>::fractional_width ==
@@ -229,6 +289,16 @@ bool chrono_duration_formatting_works() {
   if (!equal_text(fields.c_str(), "03 hours 02 minutes 01 seconds")) {
     return false;
   }
+
+  const auto leading_literal =
+      tested::format("{:elapsed %H:%M:%S}", 3h + 2min + 1s);
+  if (!equal_text(leading_literal.c_str(), "elapsed 03:02:01"))
+    return false;
+
+  tested::locale marked(tested::locale::classic(), new marker_time_put);
+  if (!equal_text(tested::format(marked, "{:L%p}", 13h).c_str(), "period") ||
+      !equal_text(tested::format(marked, "{:L%r}", 13h).c_str(), "clock"))
+    return false;
 
   const auto fractional = tested::format("{:%T}", 1h + 2min + 3004ms);
 
@@ -2904,6 +2974,38 @@ bool chrono_stream_io_works() {
   }
 
   /*
+   * Stream-buffer failures set badbit and preserve the original exception
+   * when that state is enabled.
+   */
+  {
+    throwing_chrono_input_buffer buffer;
+    tested::istream stream{&buffer};
+    sys_seconds parsed{seconds{17}};
+
+    from_stream(stream, "%F", parsed);
+
+    if (!stream.bad() || parsed != sys_seconds{seconds{17}})
+      return false;
+  }
+
+  {
+    throwing_chrono_input_buffer buffer;
+    tested::istream stream{&buffer};
+    sys_seconds parsed{seconds{19}};
+    stream.exceptions(tested::ios_base::badbit);
+
+    try {
+      from_stream(stream, "%F", parsed);
+      return false;
+    } catch (const tested::runtime_error &error) {
+      if (tested::string{error.what()} != "chrono input failure" ||
+          !stream.bad() || parsed != sys_seconds{seconds{19}}) {
+        return false;
+      }
+    }
+  }
+
+  /*
    * Colonized offset.
    */
   {
@@ -3295,6 +3397,8 @@ bool chrono_stream_io_works() {
 }
 
 bool ftl_test() {
+  if (!duration_nan_ordering_works())
+    return false;
   if (!(system_clock::now().time_since_epoch() > seconds{0})) {
     return false;
   }

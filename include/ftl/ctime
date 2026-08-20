@@ -9,6 +9,7 @@
 #include <detail/clock_runtime.hpp>
 #include <detail/time_core.hpp>
 #include <detail/time_storage.hpp>
+#include <limits>
 #include <type_traits>
 #else
 #include <ftl/__c_time_types.hpp>
@@ -16,6 +17,7 @@
 #include <ftl/detail/clock_runtime.hpp>
 #include <ftl/detail/time_core.hpp>
 #include <ftl/detail/time_storage.hpp>
+#include <ftl/limits>
 #include <ftl/type_traits>
 #endif
 
@@ -55,7 +57,7 @@ FTL_BEGIN_NAMESPACE
 
 inline clock_t clock() noexcept { return ftl_time_runtime::clock(); }
 inline double difftime(time_t end, time_t beginning) noexcept {
-  return static_cast<double>(end - beginning);
+  return static_cast<double>(end) - static_cast<double>(beginning);
 }
 inline time_t time(time_t *result) noexcept {
 #if defined(_WIN32)
@@ -72,11 +74,14 @@ inline int timespec_get(timespec *value, int base) noexcept {
   const long long nanoseconds =
       ::ftl_clock_runtime::system_nanoseconds();
 
-  value->tv_sec =
-      static_cast<time_t>(nanoseconds / 1000000000LL);
-
-  value->tv_nsec =
-      static_cast<long>(nanoseconds % 1000000000LL);
+  long long seconds = nanoseconds / 1000000000LL;
+  long nanosecond_part = static_cast<long>(nanoseconds % 1000000000LL);
+  if (nanosecond_part < 0) {
+    nanosecond_part += 1000000000L;
+    --seconds;
+  }
+  value->tv_sec = static_cast<time_t>(seconds);
+  value->tv_nsec = nanosecond_part;
 
   return base;
 }
@@ -85,8 +90,18 @@ inline tm *gmtime(const time_t *source) noexcept {
   if (!source)
     return nullptr;
   const long long days = detail::floor_div(*source, 86400);
-  long long seconds = *source - days * 86400;
+  constexpr long long minimum_days =
+      static_cast<long long>((numeric_limits<int>::min)() + 1900) * 365;
+  constexpr long long maximum_days =
+      static_cast<long long>((numeric_limits<int>::max)()) * 365;
+  if (days < minimum_days || days > maximum_days)
+    return nullptr;
+  long long seconds = *source % 86400;
+  if (seconds < 0)
+    seconds += 86400;
   const auto date = detail::civil_from_days(days);
+  if (date.year < (numeric_limits<int>::min)() + 1900)
+    return nullptr;
   auto &out = detail::ctime_tm_storage;
   out.tm_sec = int(seconds % 60);
   seconds /= 60;
@@ -99,6 +114,10 @@ inline tm *gmtime(const time_t *source) noexcept {
   out.tm_wday = int((days + 4) % 7 + ((days + 4) % 7 < 0 ? 7 : 0));
   out.tm_yday = int(days - detail::days_from_civil(date.year, 1, 1));
   out.tm_isdst = 0;
+#if !defined(_WIN32)
+  out.tm_gmtoff = 0;
+  out.tm_zone = "UTC";
+#endif
   return &out;
 }
 

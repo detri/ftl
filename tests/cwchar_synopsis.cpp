@@ -26,6 +26,7 @@ template <class T, class U> inline constexpr bool same_as_v = false;
 
 template <class T> inline constexpr bool same_as_v<T, T> = true;
 
+static_assert(same_as_v<decltype(WEOF), tested::wint_t>);
 static_assert(same_as_v<tested::size_t, decltype(sizeof(0))>);
 
 static_assert(sizeof(tested::mbstate_t) != 0);

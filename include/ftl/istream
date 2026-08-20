@@ -46,17 +46,24 @@ public:
         stream.setstate(ios_base::failbit);
         return;
       }
-      if (stream.tie()) stream.tie()->flush();
+      if (stream.tie() && !stream.input_operation([&] { stream.tie()->flush(); }))
+        return;
       if (!noskipws && (stream.flags() & ios_base::skipws) != 0) {
-        const auto &classification = use_facet<ctype<char_type>>(stream.getloc());
+        const ctype<char_type> *classification = nullptr;
+        if (!stream.input_operation([&] {
+              classification = &use_facet<ctype<char_type>>(stream.getloc());
+            })) return;
         for (;;) {
-          int_type value = stream.rdbuf()->sgetc();
+          int_type value;
+          if (!stream.input_operation(value, [&] { return stream.rdbuf()->sgetc(); }))
+            return;
           if (traits_type::eq_int_type(value, traits_type::eof())) {
             stream.setstate(ios_base::eofbit | ios_base::failbit);
             return;
           }
-          if (!classification.is(ctype_base::space, traits_type::to_char_type(value))) break;
-          stream.rdbuf()->snextc();
+          if (!classification->is(ctype_base::space, traits_type::to_char_type(value))) break;
+          if (!stream.input_operation(value, [&] { return stream.rdbuf()->snextc(); }))
+            return;
         }
       }
       ok_ = stream.good();
@@ -99,13 +106,17 @@ public:
     if (!destination) { this->setstate(ios_base::failbit); return *this; }
     if (guard) {
       for (;;) {
-        int_type value = this->rdbuf()->sgetc();
+        int_type value;
+        if (!input_operation(value, [&] { return this->rdbuf()->sgetc(); })) break;
         if (traits_type::eq_int_type(value, traits_type::eof())) {
           this->setstate(ios_base::eofbit); break;
         }
-        if (traits_type::eq_int_type(destination->sputc(traits_type::to_char_type(value)),
-                                     traits_type::eof())) break;
-        this->rdbuf()->snextc(); ++extracted_;
+        int_type written;
+        if (!input_operation(written, [&] {
+              return destination->sputc(traits_type::to_char_type(value));
+            }) || traits_type::eq_int_type(written, traits_type::eof())) break;
+        if (!input_operation(value, [&] { return this->rdbuf()->snextc(); })) break;
+        ++extracted_;
       }
     }
     if (extracted_ == 0) this->setstate(ios_base::failbit);
@@ -116,7 +127,9 @@ public:
   int_type get() {
     extracted_ = 0; sentry guard(*this, true);
     if (!guard) return traits_type::eof();
-    int_type value = this->rdbuf()->sbumpc();
+    int_type value;
+    if (!input_operation(value, [&] { return this->rdbuf()->sbumpc(); }))
+      return traits_type::eof();
     if (traits_type::eq_int_type(value, traits_type::eof()))
       this->setstate(ios_base::eofbit | ios_base::failbit);
     else extracted_ = 1;
@@ -136,13 +149,15 @@ public:
     sentry guard(*this, true);
     if (guard && count > 0) {
       while (extracted_ + 1 < count) {
-        int_type value = this->rdbuf()->sgetc();
+        int_type value;
+        if (!input_operation(value, [&] { return this->rdbuf()->sgetc(); })) break;
         if (traits_type::eq_int_type(value, traits_type::eof())) {
           this->setstate(ios_base::eofbit); break;
         }
         char_type character = traits_type::to_char_type(value);
         if (traits_type::eq(character, delimiter)) break;
-        destination[extracted_++] = character; this->rdbuf()->snextc();
+        destination[extracted_++] = character;
+        if (!input_operation(value, [&] { return this->rdbuf()->snextc(); })) break;
       }
       destination[extracted_] = char_type();
     }
@@ -157,14 +172,18 @@ public:
     extracted_ = 0; sentry guard(*this, true);
     if (guard) {
       for (;;) {
-        int_type value = this->rdbuf()->sgetc();
+        int_type value;
+        if (!input_operation(value, [&] { return this->rdbuf()->sgetc(); })) break;
         if (traits_type::eq_int_type(value, traits_type::eof())) {
           this->setstate(ios_base::eofbit); break;
         }
         char_type character = traits_type::to_char_type(value);
+        int_type written;
         if (traits_type::eq(character, delimiter) ||
-            traits_type::eq_int_type(destination.sputc(character), traits_type::eof())) break;
-        this->rdbuf()->snextc(); ++extracted_;
+            !input_operation(written, [&] { return destination.sputc(character); }) ||
+            traits_type::eq_int_type(written, traits_type::eof())) break;
+        if (!input_operation(value, [&] { return this->rdbuf()->snextc(); })) break;
+        ++extracted_;
       }
     }
     if (extracted_ == 0) this->setstate(ios_base::failbit);
@@ -179,19 +198,23 @@ public:
     bool found = false;
     if (guard && count > 0) {
       for (;;) {
-        int_type value = this->rdbuf()->sgetc();
+        int_type value;
+        if (!input_operation(value, [&] { return this->rdbuf()->sgetc(); })) break;
         if (traits_type::eq_int_type(value, traits_type::eof())) {
           this->setstate(ios_base::eofbit); break;
         }
         char_type character = traits_type::to_char_type(value);
         if (traits_type::eq(character, delimiter)) {
-          this->rdbuf()->snextc(); ++extracted_; found = true; break;
+          if (input_operation(value, [&] { return this->rdbuf()->snextc(); })) {
+            ++extracted_; found = true;
+          }
+          break;
         }
         if (extracted_ + 1 >= count) {
           this->setstate(ios_base::failbit); break;
         }
         destination[extracted_++] = character;
-        this->rdbuf()->snextc();
+        if (!input_operation(value, [&] { return this->rdbuf()->snextc(); })) break;
       }
       destination[found ? extracted_ - 1 : extracted_] = char_type();
     }
@@ -201,7 +224,8 @@ public:
   basic_istream &ignore(streamsize count = 1, int_type delimiter = traits_type::eof()) {
     extracted_ = 0; sentry guard(*this, true);
     while (guard && extracted_ < count) {
-      int_type value = this->rdbuf()->sbumpc();
+      int_type value;
+      if (!input_operation(value, [&] { return this->rdbuf()->sbumpc(); })) break;
       if (traits_type::eq_int_type(value, traits_type::eof())) {
         this->setstate(ios_base::eofbit); break;
       }
@@ -213,62 +237,85 @@ public:
   int_type peek() {
     extracted_ = 0; sentry guard(*this, true);
     if (!guard) return traits_type::eof();
-    int_type value = this->rdbuf()->sgetc();
+    int_type value;
+    if (!input_operation(value, [&] { return this->rdbuf()->sgetc(); }))
+      return traits_type::eof();
     if (traits_type::eq_int_type(value, traits_type::eof())) this->setstate(ios_base::eofbit);
     return value;
   }
   basic_istream &read(char_type *destination, streamsize count) {
     extracted_ = 0; sentry guard(*this, true);
-    if (guard && count > 0) extracted_ = this->rdbuf()->sgetn(destination, count);
+    if (guard && count > 0 &&
+        !input_operation(extracted_, [&] { return this->rdbuf()->sgetn(destination, count); }))
+      return *this;
     if (extracted_ != count) this->setstate(ios_base::eofbit | ios_base::failbit);
     return *this;
   }
   streamsize readsome(char_type *destination, streamsize count) {
     extracted_ = 0; sentry guard(*this, true);
     if (!guard) return 0;
-    streamsize available = this->rdbuf()->in_avail();
+    streamsize available;
+    if (!input_operation(available, [&] { return this->rdbuf()->in_avail(); })) return 0;
     if (available < 0) this->setstate(ios_base::eofbit);
-    else if (available > 0) extracted_ = this->rdbuf()->sgetn(destination, available < count ? available : count);
+    else if (available > 0 && !input_operation(extracted_, [&] {
+      return this->rdbuf()->sgetn(destination, available < count ? available : count);
+    })) return 0;
     return extracted_;
   }
   basic_istream &putback(char_type character) {
     extracted_ = 0; this->clear(this->rdstate() & ~ios_base::eofbit); sentry guard(*this, true);
-    if (!guard || traits_type::eq_int_type(this->rdbuf()->sputbackc(character), traits_type::eof()))
+    int_type result = traits_type::eof();
+    if (guard && !input_operation(result, [&] { return this->rdbuf()->sputbackc(character); }))
+      return *this;
+    if (!guard || traits_type::eq_int_type(result, traits_type::eof()))
       this->setstate(ios_base::badbit);
     return *this;
   }
   basic_istream &unget() {
     extracted_ = 0; this->clear(this->rdstate() & ~ios_base::eofbit); sentry guard(*this, true);
-    if (!guard || traits_type::eq_int_type(this->rdbuf()->sungetc(), traits_type::eof()))
+    int_type result = traits_type::eof();
+    if (guard && !input_operation(result, [&] { return this->rdbuf()->sungetc(); }))
+      return *this;
+    if (!guard || traits_type::eq_int_type(result, traits_type::eof()))
       this->setstate(ios_base::badbit);
     return *this;
   }
   int sync() {
     sentry guard(*this, true);
-    if (!guard || !this->rdbuf() || this->rdbuf()->pubsync() == -1) {
+    int result = -1;
+    if (guard && this->rdbuf() &&
+        !input_operation(result, [&] { return this->rdbuf()->pubsync(); })) return -1;
+    if (!guard || !this->rdbuf() || result == -1) {
       this->setstate(ios_base::badbit); return -1;
     }
     return 0;
   }
   pos_type tellg() {
     sentry guard(*this, true);
-    return guard && this->rdbuf()
-        ? this->rdbuf()->pubseekoff(0, ios_base::cur, ios_base::in)
-        : pos_type(off_type(-1));
+    pos_type result(off_type(-1));
+    if (guard && this->rdbuf())
+      input_operation(result, [&] { return this->rdbuf()->pubseekoff(0, ios_base::cur, ios_base::in); });
+    return result;
   }
   basic_istream &seekg(pos_type position) {
     this->clear(this->rdstate() & ~ios_base::eofbit);
     sentry guard(*this, true);
-    if (!guard || !this->rdbuf() ||
-        this->rdbuf()->pubseekpos(position, ios_base::in) == pos_type(off_type(-1)))
+    pos_type result(off_type(-1));
+    if (guard && this->rdbuf() && !input_operation(result, [&] {
+          return this->rdbuf()->pubseekpos(position, ios_base::in);
+        })) return *this;
+    if (!guard || !this->rdbuf() || result == pos_type(off_type(-1)))
       this->setstate(ios_base::failbit);
     return *this;
   }
   basic_istream &seekg(off_type offset, ios_base::seekdir direction) {
     this->clear(this->rdstate() & ~ios_base::eofbit);
     sentry guard(*this, true);
-    if (!guard || !this->rdbuf() || this->rdbuf()->pubseekoff(
-        offset, direction, ios_base::in) == pos_type(off_type(-1)))
+    pos_type result(off_type(-1));
+    if (guard && this->rdbuf() && !input_operation(result, [&] {
+          return this->rdbuf()->pubseekoff(offset, direction, ios_base::in);
+        })) return *this;
+    if (!guard || !this->rdbuf() || result == pos_type(off_type(-1)))
       this->setstate(ios_base::failbit);
     return *this;
   }
@@ -284,6 +331,32 @@ protected:
   void swap(basic_istream &other) {
     basic_ios<char_type, traits_type>::swap(other);
     streamsize value = extracted_; extracted_ = other.extracted_; other.extracted_ = value;
+  }
+
+private:
+#if FTL_HAS_EXCEPTIONS
+  void record_exception() {
+    exception_ptr caught = current_exception();
+    const bool rethrow = (this->exceptions() & ios_base::badbit) != 0;
+    this->__setstate_nothrow(ios_base::badbit);
+    if (rethrow) FTL_ISTREAM_NAMESPACE::rethrow_exception(caught);
+  }
+#endif
+
+public:
+  template <class Operation> bool input_operation(Operation operation) {
+#if FTL_HAS_EXCEPTIONS
+    try { operation(); }
+    catch (...) { record_exception(); return false; }
+#else
+    operation();
+#endif
+    return true;
+  }
+
+  template <class Result, class Operation>
+  bool input_operation(Result &result, Operation operation) {
+    return input_operation([&] { result = operation(); });
   }
 
 private:
@@ -329,7 +402,9 @@ basic_istream<Character, Traits> &operator>>(basic_istream<Character, Traits> &s
                                              Character &character) {
   typename basic_istream<Character, Traits>::sentry guard(stream);
   if (guard) {
-    auto value = stream.rdbuf()->sbumpc();
+    typename Traits::int_type value;
+    if (!stream.input_operation(value, [&] { return stream.rdbuf()->sbumpc(); }))
+      return stream;
     if (!Traits::eq_int_type(value, Traits::eof())) character = Traits::to_char_type(value);
     else stream.setstate(ios_base::eofbit | ios_base::failbit);
   }
@@ -351,13 +426,18 @@ basic_istream<Character, Traits> &operator>>(basic_istream<Character, Traits> &s
       ? static_cast<size_t>(stream.width()) : Size;
   size_t count = 0;
   if (guard) {
-    const auto &classification = use_facet<ctype<Character>>(stream.getloc());
+    const ctype<Character> *classification = nullptr;
+    if (!stream.input_operation([&] {
+          classification = &use_facet<ctype<Character>>(stream.getloc());
+        })) return stream;
     while (count + 1 < limit) {
-      auto value = stream.rdbuf()->sgetc();
+      typename Traits::int_type value;
+      if (!stream.input_operation(value, [&] { return stream.rdbuf()->sgetc(); })) break;
       if (Traits::eq_int_type(value, Traits::eof())) { stream.setstate(ios_base::eofbit); break; }
       Character character = Traits::to_char_type(value);
-      if (classification.is(ctype_base::space, character)) break;
-      destination[count++] = character; stream.rdbuf()->snextc();
+      if (classification->is(ctype_base::space, character)) break;
+      destination[count++] = character;
+      if (!stream.input_operation(value, [&] { return stream.rdbuf()->snextc(); })) break;
     }
   }
   destination[count] = Character(); stream.width(0);
@@ -403,14 +483,18 @@ template <class Character, class Traits>
 basic_istream<Character, Traits> &ws(basic_istream<Character, Traits> &stream) {
   typename basic_istream<Character, Traits>::sentry guard(stream, true);
   if (guard) {
-    const auto &classification = use_facet<ctype<Character>>(stream.getloc());
+    const ctype<Character> *classification = nullptr;
+    if (!stream.input_operation([&] {
+          classification = &use_facet<ctype<Character>>(stream.getloc());
+        })) return stream;
     for (;;) {
-      auto value = stream.rdbuf()->sgetc();
+      typename Traits::int_type value;
+      if (!stream.input_operation(value, [&] { return stream.rdbuf()->sgetc(); })) break;
       if (Traits::eq_int_type(value, Traits::eof())) {
         stream.setstate(ios_base::eofbit); break;
       }
-      if (!classification.is(ctype_base::space, Traits::to_char_type(value))) break;
-      stream.rdbuf()->snextc();
+      if (!classification->is(ctype_base::space, Traits::to_char_type(value))) break;
+      if (!stream.input_operation(value, [&] { return stream.rdbuf()->snextc(); })) break;
     }
   }
   return stream;
@@ -425,13 +509,18 @@ basic_istream<C, T> &operator>>(basic_istream<C, T> &stream,
   if (stream.width() > 0 && static_cast<decltype(maximum)>(stream.width()) < maximum)
     maximum = static_cast<decltype(maximum)>(stream.width());
   if (guard) {
-    const auto &classification = use_facet<ctype<C>>(stream.getloc());
+    const ctype<C> *classification = nullptr;
+    if (!stream.input_operation([&] {
+          classification = &use_facet<ctype<C>>(stream.getloc());
+        })) return stream;
     while (value.size() < maximum) {
-      auto next = stream.rdbuf()->sgetc();
+      typename T::int_type next;
+      if (!stream.input_operation(next, [&] { return stream.rdbuf()->sgetc(); })) break;
       if (T::eq_int_type(next, T::eof())) { stream.setstate(ios_base::eofbit); break; }
       C character = T::to_char_type(next);
-      if (classification.is(ctype_base::space, character)) break;
-      value.push_back(character); stream.rdbuf()->snextc();
+      if (classification->is(ctype_base::space, character)) break;
+      value.push_back(character);
+      if (!stream.input_operation(next, [&] { return stream.rdbuf()->snextc(); })) break;
     }
   }
   stream.width(0);
@@ -446,9 +535,12 @@ basic_istream<C, T> &getline(basic_istream<C, T> &stream,
   value.erase(); bool extracted = false, found = false;
   if (guard) {
     while (value.size() < value.max_size()) {
-      auto next = stream.rdbuf()->sgetc();
+      typename T::int_type next;
+      if (!stream.input_operation(next, [&] { return stream.rdbuf()->sgetc(); })) break;
       if (T::eq_int_type(next, T::eof())) { stream.setstate(ios_base::eofbit); break; }
-      C character = T::to_char_type(next); stream.rdbuf()->snextc(); extracted = true;
+      C character = T::to_char_type(next);
+      if (!stream.input_operation(next, [&] { return stream.rdbuf()->snextc(); })) break;
+      extracted = true;
       if (T::eq(character, delimiter)) { found = true; break; }
       value.push_back(character);
     }

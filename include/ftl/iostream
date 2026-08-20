@@ -98,17 +98,43 @@ protected:
     return Traits::to_int_type(cache_);
   }
   typename Traits::int_type
+  pbackfail(typename Traits::int_type value = Traits::eof()) override {
+    if (!input_)
+      return Traits::eof();
+    const auto character =
+        Traits::eq_int_type(value, Traits::eof())
+            ? (this->gptr() && this->gptr() != this->eback()
+                   ? Traits::to_int_type(this->gptr()[-1])
+                   : Traits::eof())
+            : value;
+    if (Traits::eq_int_type(character, Traits::eof()) ||
+        ::ftl_stdio_runtime::unget_wide_byte(
+            static_cast<int>(Traits::to_char_type(character)), file_) == EOF)
+      return Traits::eof();
+    this->setg(nullptr, nullptr, nullptr);
+    return Traits::not_eof(value);
+  }
+  typename Traits::int_type
   overflow(typename Traits::int_type value = Traits::eof()) override {
     if (input_)
       return Traits::eof();
     if (Traits::eq_int_type(value, Traits::eof()))
       return Traits::not_eof(value);
     wchar_t character = Traits::to_char_type(value);
-    if (static_cast<unsigned long long>(character) > 0x7f)
-      return Traits::eof();
-    auto result = ::ftl_stdio_runtime::write_wide_byte(
-        static_cast<unsigned char>(character), file_);
+    auto result = ::ftl_stdio_runtime::write_wide_byte(character, file_);
     return result == EOF ? Traits::eof() : value;
+  }
+  streamsize xsputn(const wchar_t *data, streamsize count) override {
+    if (input_ || count <= 0)
+      return 0;
+    ::ftl_stdio_runtime::lock_file(file_);
+    streamsize written = 0;
+    while (written != count &&
+           ::ftl_stdio_runtime::write_wide_byte_locked(data[written], file_) !=
+               EOF)
+      ++written;
+    ::ftl_stdio_runtime::unlock_file(file_);
+    return written;
   }
   int sync() override { return ::ftl_cstdio_runtime::fflush(file_); }
 

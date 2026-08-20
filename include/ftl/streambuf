@@ -84,6 +84,9 @@ public:
     return xsputn(source, count);
   }
 
+  virtual void __set_emit_on_sync(bool) noexcept {}
+  virtual bool __emit() { return true; }
+
 protected:
   basic_streambuf() = default;
   basic_streambuf(const basic_streambuf &other)
@@ -100,7 +103,9 @@ protected:
     epptr_ = other.epptr_;
     return *this;
   }
+
   void swap(basic_streambuf &other) {
+    swap_value(locale_, other.locale_);
     swap_value(eback_, other.eback_);
     swap_value(gptr_, other.gptr_);
     swap_value(egptr_, other.egptr_);
@@ -213,5 +218,11 @@ typename Traits::int_type streambuf_sputc(basic_streambuf<C, Traits> *buffer,
 } // namespace detail
 
 FTL_END_NAMESPACE
+
+#ifdef FTL_REPLACE_STL
+#include <detail/wbuffer_convert.hpp>
+#else
+#include <ftl/detail/wbuffer_convert.hpp>
+#endif
 
 #endif // FTL_STREAMBUF_HEADER

@@ -10,8 +10,17 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+struct invalid_path_source {
+  const int *data() const;
+  tested::size_t size() const;
+};
+
 static_assert(tested::filesystem::path::preferred_separator == '/');
 static_assert(tested::is_same_v<tested::filesystem::path::value_type, char>);
+static_assert(!tested::is_constructible_v<tested::filesystem::path,
+                                          invalid_path_source>);
+static_assert(!tested::is_constructible_v<tested::filesystem::path,
+                                          const int *>);
 static_assert(
     tested::ranges::enable_view<tested::filesystem::directory_iterator>);
 static_assert(tested::ranges::enable_borrowed_range<
@@ -57,6 +66,11 @@ bool ftl_test() {
     return false;
   if (fs::path("a\\b").filename() != fs::path("a\\b"))
     return false;
+  if (fs::path("/").parent_path() != fs::path("/") ||
+      fs::path("/").root_path() != fs::path("/") ||
+      !fs::path("/").relative_path().empty() ||
+      !fs::path("foo/").filename().empty())
+    return false;
   if (fs::path("a/./b/../c").lexically_normal() != fs::path("a/c"))
     return false;
   if (fs::path("foo/./bar/..").lexically_normal() != fs::path("foo/") ||
@@ -97,6 +111,13 @@ bool ftl_test() {
     return false;
   if (!fs::copy_file(root / "a/file.txt", root / "a/copy.txt", ec) || ec)
     return false;
+  if (fs::copy_file(root / "missing", root / "missing-copy", ec) || !ec)
+    return false;
+  ec.clear();
+  fs::copy(root / "missing", root / "missing-copy", ec);
+  if (!ec)
+    return false;
+  ec.clear();
   if (fs::copy_file(root / "a/file.txt", root / "a/copy.txt",
                     fs::copy_options::skip_existing, ec) ||
       ec)
@@ -124,6 +145,22 @@ bool ftl_test() {
        !ec && i != fs::directory_iterator(); i.increment(ec))
     ++entries;
   if (ec || entries != (symlinks_created ? 5u : 3u))
+    return false;
+  {
+    tested::ofstream out(root / "cache.txt");
+    out << "cache";
+  }
+  fs::directory_entry cached;
+  for (fs::directory_iterator i(root, ec);
+       !ec && i != fs::directory_iterator(); i.increment(ec)) {
+    if (i->path().filename() == "cache.txt")
+      cached = *i;
+  }
+  if (ec || cached.path().empty() || !cached.exists(ec) || ec ||
+      !fs::remove(root / "cache.txt", ec) || ec || !cached.exists(ec) || ec)
+    return false;
+  cached.refresh(ec);
+  if (ec || cached.exists(ec) || ec)
     return false;
   unsigned recursive_entries = 0;
   for (fs::recursive_directory_iterator i(root, ec);

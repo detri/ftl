@@ -37,6 +37,25 @@ static_assert(tested::is_same_v<decltype(tested::lerp(1.0f, 2.0L, 3)), long doub
 static_assert(FP_INFINITE != FP_NAN && FP_ZERO != FP_NORMAL);
 static_assert(MATH_ERREXCEPT != 0);
 
+#if FLT_EVAL_METHOD == 0
+static_assert(tested::is_same_v<tested::float_t, float>);
+static_assert(tested::is_same_v<tested::double_t, double>);
+#elif FLT_EVAL_METHOD == 1
+static_assert(tested::is_same_v<tested::float_t, double>);
+static_assert(tested::is_same_v<tested::double_t, double>);
+#elif FLT_EVAL_METHOD == 2
+static_assert(tested::is_same_v<tested::float_t, long double>);
+static_assert(tested::is_same_v<tested::double_t, long double>);
+#endif
+
+#if defined(__STDCPP_FLOAT128_T__)
+using extended_float = decltype(0.0f128);
+static_assert(tested::is_same_v<decltype(tested::sqrt(extended_float{})),
+                                extended_float>);
+static_assert(tested::is_same_v<decltype(tested::beta(extended_float{}, 2)),
+                                extended_float>);
+#endif
+
 constexpr bool constexpr_cmath() {
   int exponent{}, quotient{};
   double integer{};
@@ -60,6 +79,15 @@ constexpr bool constexpr_cmath() {
          tested::isunordered(tested::numeric_limits<double>::quiet_NaN(), 1.0);
 }
 static_assert(constexpr_cmath());
+
+constexpr bool constexpr_reduction_avoids_ratio_overflow() {
+  constexpr double maximum = tested::numeric_limits<double>::max();
+  int quotient = 0;
+  return tested::fmod(maximum, 0.5) == 0.0 &&
+         tested::remainder(maximum, 0.5) == 0.0 &&
+         tested::remquo(maximum, 0.5, &quotient) == 0.0;
+}
+static_assert(constexpr_reduction_avoids_ratio_overflow());
 
 bool ftl_test() {
   tested::fenv_t environment{};
@@ -90,6 +118,25 @@ bool ftl_test() {
   const bool special_propagates_nan =
       tested::isnan(tested::comp_ellint_1(quiet_nan)) &&
       (tested::fetestexcept(FE_INVALID) & FE_INVALID) == 0;
+  const double maximum = tested::numeric_limits<double>::max();
+  const bool beta_large_arguments_underflow =
+      tested::beta(maximum, maximum) == 0.0;
+  volatile double signaling = tested::numeric_limits<double>::signaling_NaN();
+  tested::feclearexcept(FE_ALL_EXCEPT);
+  const bool quiet_comparisons_do_not_raise =
+      !tested::isgreater(signaling, 1.0) &&
+      !tested::isgreater(1.0, signaling) &&
+      !tested::isgreaterequal(signaling, 1.0) &&
+      !tested::isgreaterequal(1.0, signaling) &&
+      !tested::isless(signaling, 1.0) &&
+      !tested::isless(1.0, signaling) &&
+      !tested::islessequal(signaling, 1.0) &&
+      !tested::islessequal(1.0, signaling) &&
+      !tested::islessgreater(signaling, 1.0) &&
+      !tested::islessgreater(1.0, signaling) &&
+      tested::isunordered(signaling, 1.0) &&
+      tested::isunordered(1.0, signaling) &&
+      (tested::fetestexcept(FE_INVALID) & FE_INVALID) == 0;
 
   return nearby_is_quiet && rint_is_inexact &&
          tested::sqrt(4.0) == 2.0 && tested::cbrt(8.0) == 2.0 &&
@@ -104,6 +151,8 @@ bool ftl_test() {
          tested::nextafter(1.0, 2.0) > 1.0 &&
          tested::scalbn(1.0, 4) == 16.0 && tested::round(1.5) == 2.0 &&
          special_reports_domain && special_propagates_nan &&
+         beta_large_arguments_underflow &&
+         quiet_comparisons_do_not_raise &&
          tested::isinf(tested::cyl_bessel_k(0.0, 0.0)) &&
          tested::isinf(tested::cyl_neumann(0.0, 0.0));
 }

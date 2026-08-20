@@ -10,6 +10,12 @@ namespace tested = ftl;
 #error "<cwctype> must define WEOF"
 #endif
 
+template <class T, class U> inline constexpr bool same_as_v = false;
+
+template <class T> inline constexpr bool same_as_v<T, T> = true;
+
+static_assert(same_as_v<decltype(WEOF), tested::wint_t>);
+
 using classification_type = int (*)(tested::wint_t);
 
 using iswctype_type = int (*)(tested::wint_t, tested::wctype_t);

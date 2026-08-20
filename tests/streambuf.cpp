@@ -6,14 +6,9 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
-struct test_char_traits
-    : tested::char_traits<char> {};
+struct test_char_traits : tested::char_traits<char> {};
 
-using tested_streambuf =
-    tested::basic_streambuf<
-        char,
-        test_char_traits
-    >;
+using tested_streambuf = tested::basic_streambuf<char, test_char_traits>;
 
 class fixed_streambuf : public tested_streambuf {
 public:
@@ -65,10 +60,15 @@ private:
 class writable_streambuf : public tested_streambuf {
 public:
   writable_streambuf(char *first, char *last) { setp(first, last); }
+
   char *beginning() const noexcept { return pbase(); }
   char *current() const noexcept { return pptr(); }
   char *ending() const noexcept { return epptr(); }
+
   void rewind(int count) { pbump(-count); }
+
+  void swap_with(writable_streambuf &other) { swap(other); }
+
 protected:
   pos_type seekoff(off_type offset, tested::ios_base::seekdir direction,
                    tested::ios_base::openmode) override {
@@ -76,6 +76,7 @@ protected:
       return pos_type(off_type(-1));
     return pos_type(offset);
   }
+
   int sync() override { return 0; }
 };
 
@@ -89,6 +90,30 @@ static_assert(tested::is_same_v<tested::streambuf::traits_type,
 
 static_assert(tested::is_same_v<tested::streambuf::int_type,
                                 tested::char_traits<char>::int_type>);
+
+struct marker_facet : tested::locale::facet {
+  static tested::locale::id id;
+};
+
+tested::locale::id marker_facet::id;
+
+bool swap_preserves_locale_state() {
+  char left_storage[1]{};
+  char right_storage[1]{};
+
+  writable_streambuf left(left_storage, left_storage + 1);
+  writable_streambuf right(right_storage, right_storage + 1);
+
+  const tested::locale classic = tested::locale::classic();
+  const tested::locale marked(classic, new marker_facet);
+
+  left.pubimbue(classic);
+  right.pubimbue(marked);
+
+  left.swap_with(right);
+
+  return left.getloc() == marked && right.getloc() == classic;
+}
 
 bool fixed_get_area_works() {
   char values[] = {'a', 'b', 'c', 'd'};
@@ -199,8 +224,8 @@ bool put_area_and_positioning_work() {
   if (buffer.sputc('d') != test_char_traits::to_int_type('d') ||
       storage[0] != 'a' || storage[1] != 'b' || storage[2] != 'd')
     return false;
-  return buffer.pubseekoff(4, tested::ios_base::beg,
-                           tested::ios_base::out) == tested::streampos(4) &&
+  return buffer.pubseekoff(4, tested::ios_base::beg, tested::ios_base::out) ==
+             tested::streampos(4) &&
          buffer.pubsync() == 0;
 }
 
@@ -215,5 +240,6 @@ bool locale_state_works() {
 bool ftl_test() {
   return fixed_get_area_works() && protected_area_access_works() &&
          virtual_underflow_works() && bulk_virtual_read_works() &&
-         put_area_and_positioning_work() && locale_state_works();
+         put_area_and_positioning_work() && locale_state_works() &&
+         swap_preserves_locale_state();
 }

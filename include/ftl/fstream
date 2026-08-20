@@ -77,10 +77,12 @@ public:
       : basic_streambuf<Character, Traits>(
             static_cast<basic_filebuf &&>(other)),
         file_(other.file_), mode_(other.mode_), state_(other.state_),
-        last_output_(other.last_output_) {
+        state_before_input_(other.state_before_input_),
+        external_count_(other.external_count_), operation_(other.operation_) {
     other.file_ = nullptr;
     other.state_ = {};
-    other.last_output_ = false;
+    other.external_count_ = 0;
+    other.operation_ = operation::none;
     this->setg(nullptr, nullptr, nullptr);
     this->setp(nullptr, nullptr);
   }
@@ -91,10 +93,13 @@ public:
       file_ = other.file_;
       mode_ = other.mode_;
       state_ = other.state_;
-      last_output_ = other.last_output_;
+      state_before_input_ = other.state_before_input_;
+      external_count_ = other.external_count_;
+      operation_ = other.operation_;
       other.file_ = nullptr;
       other.state_ = {};
-      other.last_output_ = false;
+      other.external_count_ = 0;
+      other.operation_ = operation::none;
       this->setg(nullptr, nullptr, nullptr);
       this->setp(nullptr, nullptr);
     }
@@ -111,9 +116,15 @@ public:
     auto state = state_;
     state_ = other.state_;
     other.state_ = state;
-    auto output = last_output_;
-    last_output_ = other.last_output_;
-    other.last_output_ = output;
+    auto prior_state = state_before_input_;
+    state_before_input_ = other.state_before_input_;
+    other.state_before_input_ = prior_state;
+    auto count = external_count_;
+    external_count_ = other.external_count_;
+    other.external_count_ = count;
+    auto operation_value = operation_;
+    operation_ = other.operation_;
+    other.operation_ = operation_value;
     this->setg(nullptr, nullptr, nullptr);
     other.setg(nullptr, nullptr, nullptr);
   }
@@ -157,7 +168,7 @@ public:
 #if FTL_HAS_EXCEPTIONS
     try {
 #endif
-      if (last_output_ && !is_same_v<Character, char>) {
+      if (operation_ == operation::output && !is_same_v<Character, char>) {
         char bytes[64];
         char *next = bytes;
         const auto &conversion =
@@ -179,7 +190,8 @@ public:
       if (::ftl_cstdio_runtime::fclose(old) != 0)
         okay = false;
       state_ = {};
-      last_output_ = false;
+      external_count_ = 0;
+      operation_ = operation::none;
       return okay ? this : nullptr;
 #if FTL_HAS_EXCEPTIONS
     } catch (...) {
@@ -188,7 +200,8 @@ public:
       this->setg(nullptr, nullptr, nullptr);
       this->setp(nullptr, nullptr);
       state_ = {};
-      last_output_ = false;
+      external_count_ = 0;
+      operation_ = operation::none;
       ::ftl_cstdio_runtime::fclose(old);
       throw;
     }
@@ -203,11 +216,16 @@ protected:
   int_type underflow() override {
     if (!file_ || !(mode_ & ios_base::in))
       return Traits::eof();
+    if (operation_ == operation::output && sync() != 0)
+      return Traits::eof();
+    operation_ = operation::input;
+    state_before_input_ = state_;
     if constexpr (is_same_v<Character, char>) {
       int value = ::ftl_cstdio_runtime::fgetc(file_);
       if (value == EOF)
         return Traits::eof();
       cache_ = static_cast<Character>(value);
+      external_count_ = 1;
     } else {
       char bytes[64];
       size_t count = 0;
@@ -231,6 +249,7 @@ protected:
           return Traits::eof();
         if (result == codecvt_base::ok && to_next == &cache_ + 1) {
           state_ = trial;
+          external_count_ = count;
           break;
         }
       }
@@ -248,16 +267,20 @@ protected:
       character = this->gptr()[-1];
     } else
       character = Traits::to_char_type(value);
-    int okay;
-    if constexpr (is_same_v<Character, char>)
-      okay = ::ftl_cstdio_runtime::ungetc(static_cast<unsigned char>(character),
-                                          file_) != EOF;
-    else
-      okay = static_cast<unsigned long long>(character) <= 0x7f &&
-             ::ftl_cstdio_runtime::ungetc(static_cast<unsigned char>(character),
-                                          file_) != EOF;
-    if (!okay)
-      return Traits::eof();
+    if constexpr (is_same_v<Character, char>) {
+      if (::ftl_cstdio_runtime::ungetc(static_cast<unsigned char>(character),
+                                      file_) == EOF)
+        return Traits::eof();
+    } else {
+      if (operation_ != operation::input || external_count_ == 0 ||
+          !Traits::eq(character, cache_) ||
+          ::ftl_cstdio_runtime::__seekoff(
+              file_, -static_cast<long long>(external_count_), SEEK_CUR) != 0)
+        return Traits::eof();
+      state_ = state_before_input_;
+      external_count_ = 0;
+      operation_ = operation::none;
+    }
     this->setg(nullptr, nullptr, nullptr);
     return Traits::not_eof(value);
   }
@@ -266,6 +289,8 @@ protected:
       return Traits::eof();
     if (Traits::eq_int_type(value, Traits::eof()))
       return sync() == 0 ? Traits::not_eof(value) : Traits::eof();
+    if (!prepare_output())
+      return Traits::eof();
     bool okay;
     if constexpr (is_same_v<Character, char>)
       okay = ::ftl_cstdio_runtime::fputc(
@@ -286,15 +311,22 @@ protected:
                  bytes, 1, static_cast<size_t>(to_next - bytes), file_) ==
                  static_cast<size_t>(to_next - bytes);
     }
-    last_output_ = okay;
+    if (okay)
+      operation_ = operation::output;
     return okay ? value : Traits::eof();
   }
   streamsize xsputn(const Character *source, streamsize count) override {
     if (!file_ || !(mode_ & ios_base::out) || count <= 0)
       return 0;
-    if constexpr (is_same_v<Character, char>)
-      return static_cast<streamsize>(::ftl_cstdio_runtime::fwrite(
+    if constexpr (is_same_v<Character, char>) {
+      if (!prepare_output())
+        return 0;
+      const auto written = static_cast<streamsize>(::ftl_cstdio_runtime::fwrite(
           source, 1, static_cast<size_t>(count), file_));
+      if (written != 0)
+        operation_ = operation::output;
+      return written;
+    }
     else {
       streamsize done = 0;
       while (done < count &&
@@ -319,27 +351,67 @@ protected:
                    ios_base::openmode = ios_base::in | ios_base::out) override {
     if (!file_)
       return pos_type(off_type(-1));
+    if (operation_ == operation::output && sync() != 0)
+      return pos_type(off_type(-1));
+    if (direction == ios_base::cur && operation_ == operation::input &&
+        this->gptr() && this->gptr() < this->egptr()) {
+      offset -= static_cast<off_type>(external_count_);
+      state_ = state_before_input_;
+    }
     this->setg(nullptr, nullptr, nullptr);
     int origin = direction == ios_base::beg   ? SEEK_SET
                  : direction == ios_base::cur ? SEEK_CUR
                                               : SEEK_END;
-    if (::ftl_cstdio_runtime::fseek(file_, static_cast<long>(offset), origin) !=
-        0)
+    if (::ftl_cstdio_runtime::__seekoff(
+            file_, static_cast<long long>(offset), origin) != 0)
       return pos_type(off_type(-1));
-    return pos_type(static_cast<off_type>(::ftl_cstdio_runtime::ftell(file_)));
+    external_count_ = 0;
+    operation_ = operation::none;
+    pos_type result{static_cast<off_type>(::ftl_cstdio_runtime::__telloff(file_))};
+    result.state(state_);
+    return result;
   }
   pos_type seekpos(pos_type position,
                    ios_base::openmode which = ios_base::in |
                                               ios_base::out) override {
-    return seekoff(static_cast<off_type>(position), ios_base::beg, which);
+    if (!file_ || (operation_ == operation::output && sync() != 0) ||
+        ::ftl_cstdio_runtime::__seekoff(
+            file_, static_cast<long long>(static_cast<off_type>(position)),
+            SEEK_SET) != 0)
+      return pos_type(off_type(-1));
+    state_ = position.state();
+    external_count_ = 0;
+    operation_ = operation::none;
+    this->setg(nullptr, nullptr, nullptr);
+    return position;
   }
 
 private:
+  enum class operation { none, input, output };
+
+  bool prepare_output() {
+    if (operation_ != operation::input)
+      return true;
+    const bool unread = this->gptr() && this->gptr() < this->egptr();
+    const long long adjustment =
+        unread ? -static_cast<long long>(external_count_) : 0;
+    if (::ftl_cstdio_runtime::__seekoff(file_, adjustment, SEEK_CUR) != 0)
+      return false;
+    if (unread)
+      state_ = state_before_input_;
+    this->setg(nullptr, nullptr, nullptr);
+    external_count_ = 0;
+    operation_ = operation::none;
+    return true;
+  }
+
   FILE *file_{};
   ios_base::openmode mode_{};
   Character cache_{};
   typename Traits::state_type state_{};
-  bool last_output_{};
+  typename Traits::state_type state_before_input_{};
+  size_t external_count_{};
+  operation operation_{operation::none};
 };
 template <class C, class T>
 void swap(basic_filebuf<C, T> &l, basic_filebuf<C, T> &r) {

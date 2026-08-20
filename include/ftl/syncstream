@@ -7,31 +7,19 @@
 #include <mutex>
 #include <ostream>
 #include <string>
-#include <vector>
 #else
 #include <ftl/mutex>
 #include <ftl/ostream>
 #include <ftl/string>
-#include <ftl/vector>
 #endif
 
 FTL_BEGIN_NAMESPACE
 namespace detail {
-template <class C, class T> struct syncbuf_lock_entry {
-  basic_streambuf<C, T> *buffer;
-  mutex lock;
-};
 template <class C, class T>
 mutex &syncbuf_mutex(basic_streambuf<C, T> *buffer) {
-  static mutex registry_lock;
-  static vector<syncbuf_lock_entry<C, T> *> entries;
-  lock_guard guard(registry_lock);
-  for (auto *entry : entries)
-    if (entry->buffer == buffer)
-      return entry->lock;
-  auto *entry = new syncbuf_lock_entry<C, T>{buffer, {}};
-  entries.push_back(entry);
-  return entry->lock;
+  static mutex locks[64];
+  const auto address = reinterpret_cast<size_t>(buffer);
+  return locks[(address >> 3) % 64];
 }
 } // namespace detail
 
@@ -127,6 +115,10 @@ public:
     return pending_.get_allocator();
   }
   void set_emit_on_sync(bool value) noexcept { emit_on_sync_ = value; }
+  void __set_emit_on_sync(bool value) noexcept override {
+    set_emit_on_sync(value);
+  }
+  bool __emit() override { return emit(); }
 
 protected:
   int sync() override {
@@ -191,7 +183,7 @@ public:
   }
   ~basic_osyncstream() = default;
   basic_osyncstream &operator=(const basic_osyncstream &) = delete;
-  basic_osyncstream &operator=(basic_osyncstream &&other) noexcept {
+  basic_osyncstream &operator=(basic_osyncstream &&other) {
     basic_ostream<Character, Traits>::operator=(
         static_cast<basic_ostream<Character, Traits> &&>(other));
     sb_ = static_cast<syncbuf_type &&>(other.sb_);
@@ -203,8 +195,7 @@ public:
   }
   streambuf_type *get_wrapped() const noexcept { return sb_.get_wrapped(); }
   void emit() {
-    if (!sb_.emit())
-      this->setstate(ios_base::badbit);
+    this->__emit_buffer();
   }
 
 private:

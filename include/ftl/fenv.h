@@ -132,6 +132,40 @@ inline unsigned long long to_native(unsigned int flags) noexcept {
 
 #endif
 
+inline void raise_with_arithmetic(unsigned int exceptions) noexcept {
+  volatile double left{};
+  volatile double right{};
+  volatile double result{};
+
+  if ((exceptions & FE_INVALID) != 0) {
+    left = 0.0;
+    right = 0.0;
+    result = left / right;
+  }
+  if ((exceptions & FE_DIVBYZERO) != 0) {
+    left = 1.0;
+    right = 0.0;
+    result = left / right;
+  }
+  if ((exceptions & FE_OVERFLOW) != 0) {
+    left = 0x1.fffffffffffffp+1023;
+    right = left;
+    result = left * right;
+  }
+  if ((exceptions & FE_UNDERFLOW) != 0) {
+    left = 0x1p-1022;
+    right = left;
+    result = left * right;
+  }
+  if ((exceptions & FE_INEXACT) != 0) {
+    left = 2.0;
+    right = 3.0;
+    result = left / right;
+  }
+
+  (void)result;
+}
+
 } // namespace ftl_fenv_detail
 
 extern "C" inline int feclearexcept(int exceptions) noexcept {
@@ -166,6 +200,11 @@ extern "C" inline int fegetexceptflag(fexcept_t *flag,
 
 extern "C" inline int feraiseexcept(int exceptions) noexcept {
   exceptions &= FE_ALL_EXCEPT;
+  // Arithmetic execution is required here rather than merely editing sticky
+  // status bits: when the caller has enabled a trap, the corresponding
+  // operation must actually deliver it. The explicit status merge below also
+  // keeps both architectural status stores coherent on masked configurations.
+  ftl_fenv_detail::raise_with_arithmetic(unsigned(exceptions));
 #if defined(__x86_64__) || defined(_M_X64)
   auto environment = ftl_fenv_detail::get();
   environment.status |= static_cast<unsigned short>(exceptions);
