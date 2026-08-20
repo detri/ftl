@@ -175,9 +175,10 @@ bool ftl_test() {
   if (tested::fgetpos(wide_file, &wide_end) != 0)
     return cstdio_failure("wide end position");
   tested::rewind(wide_file);
-  if (tested::fgetwc(wide_file) != L'\u00e9' ||
-      tested::ungetwc(L'\u00e9', wide_file) == WEOF)
-    return cstdio_failure("wide input or pushback");
+  if (tested::fgetwc(wide_file) != L'\u00e9')
+    return cstdio_failure("wide input");
+  if (tested::ungetwc(L'\u00e9', wide_file) == WEOF)
+    return cstdio_failure("wide pushback");
   tested::fpos_t pushed_position{};
   if (tested::fgetpos(wide_file, &pushed_position) != 0 ||
       pushed_position.position != 0 ||
