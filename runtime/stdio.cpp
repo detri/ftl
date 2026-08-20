@@ -1,6 +1,8 @@
 // Freestanding Template Library
 // SPDX-License-Identifier: MIT
+#include <ftl/cerrno>
 #include <ftl/cstdio>
+#include <ftl/detail/locale_runtime.hpp>
 #include <ftl/detail/native_io.hpp>
 
 struct ftl_file {
@@ -22,6 +24,10 @@ struct ftl_file {
   unsigned occupied : 1 = 0;
   unsigned io_started : 1 = 0;
   int orientation = 0;
+  void *wide_locale = nullptr;
+  wchar_t wide_pushback{};
+  unsigned wide_pushback_bytes = 0;
+  ftl::mbstate_t wide_state{};
 };
 
 namespace {
@@ -173,10 +179,23 @@ ftl_file *allocate_stream() {
 }
 
 void release_stream(ftl_file *stream) {
+  if (stream->wide_locale) {
+    ftl_locale_runtime::destroy(stream->wide_locale);
+    stream->wide_locale = nullptr;
+  }
   while (!acquire(stream_table_lock)) {
   }
   stream->occupied = false;
   release(stream_table_lock);
+}
+
+bool ensure_wide_locale(ftl_file *stream) {
+  if (stream->wide_locale)
+    return true;
+  const char *name = ::setlocale(LC_CTYPE, nullptr);
+  stream->wide_locale =
+      ftl_locale_runtime::create_ctype(name != nullptr ? name : "C");
+  return stream->wide_locale != nullptr;
 }
 
 bool parse_mode(const char *mode, native_open_options &options, bool &readable,
@@ -404,8 +423,11 @@ int orient(file_type *stream, int mode) noexcept {
   if (!stream)
     return 0;
   file_guard guard(stream);
-  if (stream->orientation == 0 && mode != 0)
+  if (stream->orientation == 0 && mode != 0) {
     stream->orientation = mode < 0 ? -1 : 1;
+    if (stream->orientation > 0 && !ensure_wide_locale(stream))
+      stream->orientation = 0;
+  }
   return stream->orientation;
 }
 void lock_file(file_type *stream) noexcept {
@@ -442,27 +464,69 @@ int unget_byte_locked(int value, file_type *stream) noexcept {
   return stream->pushback;
 }
 int read_wide_byte_locked(file_type *stream) noexcept {
-  if (!stream || stream->orientation < 0)
+  if (!stream || stream->orientation < 0 || !ensure_wide_locale(stream))
     return EOF;
   stream->orientation = 1;
-  unsigned char value;
-  return read_unlocked(stream, &value, 1) == 1 ? value : EOF;
+  if (stream->wide_pushback_bytes != 0) {
+    stream->wide_pushback_bytes = 0;
+    stream->eof = false;
+    return static_cast<int>(stream->wide_pushback);
+  }
+  char bytes[16]{};
+  const int maximum = ftl_locale_runtime::multibyte_max_length(
+      stream->wide_locale);
+  for (int count = 1; count <= maximum && count <= 16; ++count) {
+    unsigned char byte{};
+    if (read_unlocked(stream, &byte, 1) != 1)
+      return EOF;
+    bytes[count - 1] = static_cast<char>(byte);
+    const auto decoded = ftl_locale_runtime::decode_wide(
+        stream->wide_locale, bytes, bytes + count);
+    if (decoded.result == ftl_locale_runtime::decoded_wide::status::complete) {
+      stream->wide_state = {};
+      return static_cast<int>(decoded.value);
+    }
+    if (decoded.result == ftl_locale_runtime::decoded_wide::status::error) {
+      stream->failed = true;
+      runtime_errno() = EILSEQ;
+      return EOF;
+    }
+  }
+  stream->failed = true;
+  runtime_errno() = EILSEQ;
+  return EOF;
 }
 int write_wide_byte_locked(int value, file_type *stream) noexcept {
-  if (!stream || stream->orientation < 0)
+  if (!stream || stream->orientation < 0 || !ensure_wide_locale(stream))
     return EOF;
   stream->orientation = 1;
-  unsigned char byte = static_cast<unsigned char>(value);
-  return write_unlocked(stream, &byte, 1) == 1 ? byte : EOF;
+  const auto encoded = ftl_locale_runtime::encode_wide(
+      stream->wide_locale, static_cast<wchar_t>(value));
+  if (!encoded.valid ||
+      write_unlocked(stream,
+                     reinterpret_cast<const unsigned char *>(encoded.bytes),
+                     encoded.produced) != encoded.produced) {
+    stream->failed = true;
+    runtime_errno() = EILSEQ;
+    return EOF;
+  }
+  stream->wide_state = {};
+  return value;
 }
 int unget_wide_byte_locked(int value, file_type *stream) noexcept {
   if (!stream || value == EOF || stream->orientation < 0 || !stream->readable ||
-      stream->pushback != -1)
+      stream->pushback != -1 || stream->wide_pushback_bytes != 0 ||
+      !ensure_wide_locale(stream))
     return EOF;
   stream->orientation = 1;
-  stream->pushback = static_cast<unsigned char>(value);
+  const auto encoded = ftl_locale_runtime::encode_wide(
+      stream->wide_locale, static_cast<wchar_t>(value));
+  if (!encoded.valid)
+    return EOF;
+  stream->wide_pushback = static_cast<wchar_t>(value);
+  stream->wide_pushback_bytes = static_cast<unsigned>(encoded.produced);
   stream->eof = false;
-  return stream->pushback;
+  return value;
 }
 int read_wide_byte(file_type *stream) noexcept {
   if (!stream)
@@ -581,6 +645,10 @@ FILE *freopen(const char *path, const char *mode, FILE *stream) {
     native_io_error ignored;
     (void)native_close_file(stream->handle, ignored);
   }
+  if (stream->wide_locale) {
+    ftl_locale_runtime::destroy(stream->wide_locale);
+    stream->wide_locale = nullptr;
+  }
   native_io_error error;
   if (!native_open_file(path, options, stream->handle, error)) {
     stream->failed = true;
@@ -599,6 +667,8 @@ FILE *freopen(const char *path, const char *mode, FILE *stream) {
   stream->pushback = -1;
   stream->buffered = 0;
   stream->orientation = 0;
+  stream->wide_pushback_bytes = 0;
+  stream->wide_state = {};
   stream->io_started = false;
   release(stream->lock);
   release(stream_table_lock);
@@ -619,6 +689,10 @@ int fclose(FILE *stream) {
       set_error(stream, error);
       okay = false;
     }
+  }
+  if (stream->wide_locale) {
+    ftl_locale_runtime::destroy(stream->wide_locale);
+    stream->wide_locale = nullptr;
   }
   stream->occupied = false;
   release(stream->lock);
@@ -745,6 +819,8 @@ int __seekoff(FILE *stream, long long offset, int origin) {
     return -1;
   }
   stream->pushback = -1;
+  stream->wide_pushback_bytes = 0;
+  stream->wide_state = {};
   stream->eof = false;
   return 0;
 }
@@ -767,6 +843,7 @@ long long __telloff(FILE *stream) {
   position += static_cast<native_io_offset>(stream->buffered);
   if (stream->pushback != -1)
     --position;
+  position -= static_cast<native_io_offset>(stream->wide_pushback_bytes);
   return static_cast<long long>(position);
 }
 
@@ -800,8 +877,9 @@ int fgetpos(FILE *stream, fpos_t *position) {
   value += static_cast<native_io_offset>(stream->buffered);
   if (stream->pushback != -1)
     --value;
+  value -= static_cast<native_io_offset>(stream->wide_pushback_bytes);
   position->position = value;
-  position->state = {};
+  position->state = stream->wide_state;
   return 0;
 }
 
@@ -819,6 +897,8 @@ int fsetpos(FILE *stream, const fpos_t *position) {
     return -1;
   }
   stream->pushback = -1;
+  stream->wide_pushback_bytes = 0;
+  stream->wide_state = position->state;
   stream->eof = false;
   return 0;
 }

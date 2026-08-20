@@ -134,6 +134,16 @@ using ::ftl_stdio_runtime::fwrite;
 #define stdin (::ftl_stdio_runtime::input_stream())
 #define stdout (::ftl_stdio_runtime::output_stream())
 #define stderr (::ftl_stdio_runtime::error_stream())
+#else
+#ifndef stdin
+#define stdin (::ftl_stdio_runtime::input_stream())
+#endif
+#ifndef stdout
+#define stdout (::ftl_stdio_runtime::output_stream())
+#endif
+#ifndef stderr
+#define stderr (::ftl_stdio_runtime::error_stream())
+#endif
 #endif
 
 namespace FTL_CSTDIO_NAMESPACE {

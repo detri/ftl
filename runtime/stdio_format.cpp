@@ -1,10 +1,12 @@
 // Freestanding Template Library
 // SPDX-License-Identifier: MIT
 #include <ftl/charconv>
+#include <ftl/clocale>
 #include <ftl/cstdint>
 #include <ftl/cstdio>
 #include <ftl/limits>
 #include <ftl/type_traits>
+#include <ftl/vector>
 
 namespace {
 using size_type = decltype(sizeof(0));
@@ -229,7 +231,6 @@ void floating(output_sink &sink, conversion item, va_list_type &args) {
       : item.type == 'e' || item.type == 'E' ? ftl::chars_format::scientific
       : item.type == 'a' || item.type == 'A' ? ftl::chars_format::hex
                                              : ftl::chars_format::general;
-  char text[512];
   if (item.precision < 0) {
     item.precision =
         item.type == 'a' || item.type == 'A'
@@ -240,10 +241,18 @@ void floating(output_sink &sink, conversion item, va_list_type &args) {
   } else if ((item.type == 'g' || item.type == 'G') && item.precision == 0) {
     item.precision = 1;
   }
+  const size_type requested = static_cast<size_type>(item.precision);
+  if (requested > static_cast<size_type>(-1) - 8192) {
+    sink.failed = true;
+    return;
+  }
+  ftl::vector<char> storage(requested + 8192);
+  char *text = storage.data();
+  const size_type text_capacity = storage.size();
   auto result = item.precision >= 0
-                    ? ftl::to_chars(text, text + sizeof(text), value, format,
+                    ? ftl::to_chars(text, text + text_capacity, value, format,
                                     item.precision)
-                    : ftl::to_chars(text, text + sizeof(text), value, format);
+                    : ftl::to_chars(text, text + text_capacity, value, format);
   if (result.ec != ftl::errc{}) {
     sink.failed = true;
     return;
@@ -274,7 +283,7 @@ void floating(output_sink &sink, conversion item, va_list_type &args) {
     for (size_type index = 0; index != insertion; ++index)
       if (text[index] == '.')
         has_point = true;
-    if (!has_point && size + 1 < sizeof(text)) {
+    if (!has_point && size + 1 < text_capacity) {
       for (size_type index = size; index != insertion; --index)
         text[index] = text[index - 1];
       text[insertion] = '.';
@@ -302,7 +311,7 @@ void floating(output_sink &sink, conversion item, va_list_type &args) {
       significant = 1;
     int trailing_zeroes = item.precision - significant;
     if (trailing_zeroes > 0) {
-      if (size + static_cast<size_type>(trailing_zeroes) >= sizeof(text)) {
+      if (size + static_cast<size_type>(trailing_zeroes) >= text_capacity) {
         sink.failed = true;
         return;
       }
@@ -311,6 +320,28 @@ void floating(output_sink &sink, conversion item, va_list_type &args) {
       for (int index = 0; index != trailing_zeroes; ++index)
         text[exponent + static_cast<size_type>(index)] = '0';
       size += static_cast<size_type>(trailing_zeroes);
+    }
+  }
+  const lconv *numeric = ::localeconv();
+  const char *radix = numeric != nullptr ? numeric->decimal_point : nullptr;
+  if (!special && radix != nullptr && radix[0] != '\0' &&
+      !(radix[0] == '.' && radix[1] == '\0')) {
+    size_type radix_size = 0;
+    while (radix[radix_size] != '\0')
+      ++radix_size;
+    for (size_type index = 0; index != size; ++index) {
+      if (text[index] != '.')
+        continue;
+      if (size + radix_size - 1 >= text_capacity) {
+        sink.failed = true;
+        return;
+      }
+      for (size_type tail = size; tail != index + 1; --tail)
+        text[tail + radix_size - 2] = text[tail - 1];
+      for (size_type part = 0; part != radix_size; ++part)
+        text[index + part] = radix[part];
+      size += radix_size - 1;
+      break;
     }
   }
   char prefix[3];
@@ -633,6 +664,12 @@ bool scan_float(input_source &source, conversion item, va_list_type &args,
   bool hexadecimal_input = false;
   bool point_seen = false;
   bool exponent_seen = false;
+  const lconv *numeric = ::localeconv();
+  const int decimal =
+      numeric != nullptr && numeric->decimal_point != nullptr &&
+              numeric->decimal_point[0] != '\0'
+          ? static_cast<unsigned char>(numeric->decimal_point[0])
+          : '.';
   while (count != limit) {
     int value = source.get();
     int start = count && (buffer[0] == '+' || buffer[0] == '-') ? 1 : 0;
@@ -664,7 +701,7 @@ bool scan_float(input_source &source, conversion item, va_list_type &args,
     } else if (digit(value) || (hexadecimal_input && digit_value(value) >= 10 &&
                                 digit_value(value) < 16)) {
       valid = true;
-    } else if (!point_seen && !exponent_seen && value == '.') {
+    } else if (!point_seen && !exponent_seen && value == decimal) {
       point_seen = true;
       valid = true;
     } else if (!hexadecimal_input && !exponent_seen &&
@@ -690,7 +727,7 @@ bool scan_float(input_source &source, conversion item, va_list_type &args,
       source.unget(value);
       break;
     }
-    buffer[count++] = static_cast<char>(value);
+    buffer[count++] = static_cast<char>(value == decimal ? '.' : value);
   }
   if (!count)
     return false;
