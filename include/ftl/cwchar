@@ -95,7 +95,11 @@ namespace ftl {
 #endif
 
 #ifndef WEOF
-#define WEOF (~0u)
+#ifdef FTL_REPLACE_STL
+#define WEOF static_cast<std::wint_t>(-1)
+#else
+#define WEOF static_cast<ftl::wint_t>(-1)
+#endif
 #endif
 
 using size_t = decltype(sizeof(0));

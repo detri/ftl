@@ -17,11 +17,14 @@
 
 extern "C" {
 #if defined(__APPLE__)
-void abort() noexcept __attribute__((__noreturn__));
+void abort() __attribute__((__noreturn__));
 #else
 [[noreturn]] void abort() noexcept;
 #endif
 #if defined(_MSC_VER)
+int atexit(void (*)());
+int at_quick_exit(void (*)());
+#elif defined(__APPLE__)
 int atexit(void (*)());
 int at_quick_exit(void (*)());
 #else
@@ -30,8 +33,8 @@ int at_quick_exit(void (*)()) noexcept;
 #endif
 #if defined(__APPLE__)
 void exit(int) __attribute__((__noreturn__));
-void _Exit(int) noexcept __attribute__((__noreturn__));
-void quick_exit(int) noexcept __attribute__((__noreturn__));
+void _Exit(int) __attribute__((__noreturn__));
+void quick_exit(int) __attribute__((__noreturn__));
 #else
 [[noreturn]] void exit(int);
 [[noreturn]] void _Exit(int) noexcept;
@@ -86,6 +89,9 @@ decltype(sizeof(0)) __ctype_get_mb_cur_max() noexcept;
 #define MB_CUR_MAX static_cast<decltype(sizeof(0))>(::___mb_cur_max_func())
 #elif defined(__APPLE__)
 #define RAND_MAX 0x7fffffff
+#ifdef MB_CUR_MAX
+#undef MB_CUR_MAX
+#endif
 #define MB_CUR_MAX static_cast<decltype(sizeof(0))>(::___mb_cur_max())
 #else
 #define RAND_MAX 0x7fffffff

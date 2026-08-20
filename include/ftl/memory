@@ -75,7 +75,9 @@ template <class T, class Void>
 copy_cv_volatile_t<T, Void> *start_lifetime_as(Void *pointer) noexcept {
   using result_type = copy_cv_volatile_t<T, Void>;
 
+#if FTL_HAS_IS_IMPLICIT_LIFETIME
   static_assert(is_implicit_lifetime_v<T>);
+#endif
   static_assert(sizeof(T) != 0);
 
 #if defined(_MSC_VER) && !defined(__clang__)

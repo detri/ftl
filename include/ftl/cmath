@@ -579,8 +579,10 @@ constexpr auto lerp(A a, B b, C t) noexcept {
 
 constexpr float fma(float x, float y, float z) noexcept {
   if consteval {
-#ifdef __clang__
+#if defined(__clang__) && !defined(_MSC_VER)
     return __builtin_elementwise_fma(x, y, z);
+#elif defined(__clang__)
+    return x * y + z;
 #else
     return __builtin_fmaf(x, y, z);
 #endif
@@ -589,8 +591,10 @@ constexpr float fma(float x, float y, float z) noexcept {
 }
 constexpr double fma(double x, double y, double z) noexcept {
   if consteval {
-#ifdef __clang__
+#if defined(__clang__) && !defined(_MSC_VER)
     return __builtin_elementwise_fma(x, y, z);
+#elif defined(__clang__)
+    return x * y + z;
 #else
     return __builtin_fma(x, y, z);
 #endif
@@ -600,8 +604,10 @@ constexpr double fma(double x, double y, double z) noexcept {
 constexpr long double fma(long double x, long double y,
                           long double z) noexcept {
   if consteval {
-#ifdef __clang__
+#if defined(__clang__) && !defined(_MSC_VER)
     return __builtin_elementwise_fma(x, y, z);
+#elif defined(__clang__)
+    return x * y + z;
 #else
     return __builtin_fmal(x, y, z);
 #endif
