@@ -10,6 +10,13 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+#include <cstdio>
+
+static bool filesystem_failure(const char *stage) {
+  std::fprintf(stderr, "filesystem regression failed: %s\n", stage);
+  return false;
+}
+
 struct invalid_path_source {
   const int *data() const;
   tested::size_t size() const;
@@ -150,23 +157,23 @@ bool ftl_test() {
   fs::directory_entry cached(root / "a/file.txt", ec);
   if (ec || !cached.exists(ec) || ec ||
       !fs::remove(root / "a/file.txt", ec) || ec || !cached.exists(ec) || ec)
-    return false;
+    return filesystem_failure("directory_entry cached status");
   cached.refresh(ec);
   if (ec || cached.exists(ec) || ec)
-    return false;
+    return filesystem_failure("directory_entry refresh");
   unsigned recursive_entries = 0;
   for (fs::recursive_directory_iterator i(root, ec);
        !ec && i != fs::recursive_directory_iterator(); i.increment(ec))
     ++recursive_entries;
   if (ec || recursive_entries != (symlinks_created ? 5u : 3u))
-    return false;
+    return filesystem_failure("recursive directory iteration");
   fs::recursive_directory_iterator shallow(root, ec);
   if (ec || shallow == fs::recursive_directory_iterator())
-    return false;
+    return filesystem_failure("shallow iterator construction");
   shallow.disable_recursion_pending();
   shallow.increment(ec);
   if (ec || shallow != fs::recursive_directory_iterator())
-    return false;
+    return filesystem_failure("disabled recursion increment");
   auto removed = fs::remove_all(root, ec);
-  return removed >= 4 && !ec;
+  return (removed >= 4 && !ec) || filesystem_failure("remove_all cleanup");
 }
