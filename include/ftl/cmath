@@ -893,35 +893,59 @@ constexpr bool signbit(Integer value) noexcept {
     return false;
 }
 
+namespace detail {
+template <class T> constexpr bool quiet_isnan(T value) noexcept {
+  using type = remove_cv_t<T>;
+  if constexpr (is_integral_v<type>) {
+    return false;
+  } else if constexpr (sizeof(type) == sizeof(unsigned int)) {
+    const auto bits = bit_cast<unsigned int>(value);
+    return (bits & 0x7f800000u) == 0x7f800000u &&
+           (bits & 0x007fffffu) != 0;
+  } else if constexpr (sizeof(type) == sizeof(unsigned long long)) {
+    const auto bits = bit_cast<unsigned long long>(value);
+    return (bits & 0x7ff0000000000000ull) == 0x7ff0000000000000ull &&
+           (bits & 0x000fffffffffffffull) != 0;
+  } else {
+    return isnan(value);
+  }
+}
+} // namespace detail
+
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
 constexpr bool isgreater(Left left, Right right) noexcept {
-  return !isnan(left) && !isnan(right) && left > right;
+  return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
+         left > right;
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
 constexpr bool isgreaterequal(Left left, Right right) noexcept {
-  return !isnan(left) && !isnan(right) && left >= right;
+  return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
+         left >= right;
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
 constexpr bool isless(Left left, Right right) noexcept {
-  return !isnan(left) && !isnan(right) && left < right;
+  return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
+         left < right;
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
 constexpr bool islessequal(Left left, Right right) noexcept {
-  return !isnan(left) && !isnan(right) && left <= right;
+  return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
+         left <= right;
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
 constexpr bool islessgreater(Left left, Right right) noexcept {
-  return !isnan(left) && !isnan(right) && (left < right || left > right);
+  return !detail::quiet_isnan(left) && !detail::quiet_isnan(right) &&
+         (left < right || left > right);
 }
 template <class Left, class Right>
   requires(detail::math_arithmetic_v<Left> && detail::math_arithmetic_v<Right>)
 constexpr bool isunordered(Left left, Right right) noexcept {
-  return isnan(left) || isnan(right);
+  return detail::quiet_isnan(left) || detail::quiet_isnan(right);
 }
 
 inline float nanf(const char *) noexcept {
