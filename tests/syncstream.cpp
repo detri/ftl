@@ -15,6 +15,7 @@ namespace tested = ftl;
 class sink : public tested::streambuf {
 public:
   tested::string value;
+  int synchronizations = 0;
 
 protected:
   tested::streamsize xsputn(const char *s, tested::streamsize n) override {
@@ -26,7 +27,25 @@ protected:
       value.push_back(traits_type::to_char_type(c));
     return c;
   }
+  int sync() override {
+    ++synchronizations;
+    return 0;
+  }
 };
+
+#if FTL_HAS_EXCEPTIONS
+struct sink_exception {};
+class throwing_sink : public tested::streambuf {
+protected:
+  tested::streamsize xsputn(const char *, tested::streamsize) override {
+    throw sink_exception{};
+  }
+};
+#endif
+
+static_assert(!noexcept(tested::declval<tested::osyncstream &>() =
+                        tested::declval<tested::osyncstream &&>()));
+
 bool ftl_test() {
   sink target;
   {
@@ -45,5 +64,54 @@ bool ftl_test() {
     if (buffer.pubsync() != 0)
       return false;
   }
-  return target.value == "alphabeta";
+  if (target.value != "alphabeta")
+    return false;
+
+  {
+    tested::osyncstream stream(&target);
+    stream << "one" << tested::emit_on_flush << tested::flush;
+    if (target.value != "alphabetaone" || target.synchronizations != 1)
+      return false;
+    stream << tested::noemit_on_flush << "two" << tested::flush;
+    if (target.value != "alphabetaone")
+      return false;
+    stream << tested::flush_emit;
+    if (target.value != "alphabetaonetwo" || target.synchronizations != 2)
+      return false;
+  }
+
+  {
+    tested::syncbuf first(&target);
+    tested::syncbuf second(&target);
+    const tested::locale first_locale = tested::locale::classic();
+    const tested::locale second_locale(first_locale, new tested::ctype<char>);
+    first.pubimbue(first_locale);
+    second.pubimbue(second_locale);
+    first.swap(second);
+    if (!(first.getloc() == second_locale) || !(second.getloc() == first_locale))
+      return false;
+  }
+
+#if FTL_HAS_EXCEPTIONS
+  {
+    throwing_sink target;
+    tested::osyncstream stream(&target);
+    stream << "x";
+    try { stream.emit(); } catch (...) { return false; }
+    if (!stream.bad()) return false;
+  }
+  {
+    throwing_sink target;
+    tested::osyncstream stream(&target);
+    stream << "x";
+    stream.exceptions(tested::ios_base::badbit);
+    try {
+      stream.emit();
+    } catch (const sink_exception &) {
+      if (!stream.bad()) return false;
+    } catch (...) { return false; }
+  }
+#endif
+
+  return true;
 }

@@ -190,6 +190,17 @@ public:
   basic_ostream &__insert(const char_type *source, streamsize count) {
     return put_padded(source, count, false);
   }
+  void __set_emit_on_sync(bool value) {
+    if (this->rdbuf()) this->rdbuf()->__set_emit_on_sync(value);
+  }
+  basic_ostream &__emit_buffer() {
+    sentry guard(*this);
+    if (guard && !output_operation([&] {
+          return this->rdbuf() && this->rdbuf()->__emit();
+        }))
+      this->setstate(ios_base::badbit);
+    return *this;
+  }
 
   basic_ostream(const basic_ostream &) = delete;
   basic_ostream &operator=(const basic_ostream &) = delete;
@@ -355,11 +366,17 @@ basic_ostream<C, T> &ends(basic_ostream<C, T> &stream) { return stream.put(C());
 template <class C, class T>
 basic_ostream<C, T> &flush(basic_ostream<C, T> &stream) { return stream.flush(); }
 template <class C, class T>
-basic_ostream<C, T> &emit_on_flush(basic_ostream<C, T> &stream) { return stream; }
+basic_ostream<C, T> &emit_on_flush(basic_ostream<C, T> &stream) {
+  stream.__set_emit_on_sync(true); return stream;
+}
 template <class C, class T>
-basic_ostream<C, T> &noemit_on_flush(basic_ostream<C, T> &stream) { return stream; }
+basic_ostream<C, T> &noemit_on_flush(basic_ostream<C, T> &stream) {
+  stream.__set_emit_on_sync(false); return stream;
+}
 template <class C, class T>
-basic_ostream<C, T> &flush_emit(basic_ostream<C, T> &stream) { return stream.flush(); }
+basic_ostream<C, T> &flush_emit(basic_ostream<C, T> &stream) {
+  stream.flush(); return stream.__emit_buffer();
+}
 
 template <class C, class T, class A>
 basic_ostream<C, T> &operator<<(basic_ostream<C, T> &stream,

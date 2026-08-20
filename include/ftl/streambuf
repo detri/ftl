@@ -84,6 +84,9 @@ public:
     return xsputn(source, count);
   }
 
+  virtual void __set_emit_on_sync(bool) noexcept {}
+  virtual bool __emit() { return true; }
+
 protected:
   basic_streambuf() = default;
   basic_streambuf(const basic_streambuf &other)
