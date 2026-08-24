@@ -34,13 +34,6 @@ concept comparison_integer = requires(T input) {
 
 static_assert(comparison_integer<signed char>);
 static_assert(comparison_integer<unsigned char>);
-static_assert(!comparison_integer<bool>);
-static_assert(!comparison_integer<char>);
-static_assert(!comparison_integer<wchar_t>);
-static_assert(!comparison_integer<char8_t>);
-static_assert(!comparison_integer<char16_t>);
-static_assert(!comparison_integer<char32_t>);
-
 #if defined(__SIZEOF_INT128__)
 static_assert(comparison_integer<__int128>);
 static_assert(comparison_integer<unsigned __int128>);
@@ -56,6 +49,24 @@ struct legacy_ordered {
     return left.value < right.value;
   }
 };
+
+struct explicit_boolean {
+  constexpr explicit operator bool() const { return true; }
+};
+
+struct non_boolean_ordered {
+  friend constexpr bool operator==(non_boolean_ordered,
+                                   non_boolean_ordered) = default;
+  friend constexpr explicit_boolean operator<(non_boolean_ordered,
+                                               non_boolean_ordered) {
+    return {};
+  }
+};
+
+template <class T>
+concept has_three_way = requires(T left, T right) { left <=> right; };
+
+static_assert(!has_three_way<tested::pair<non_boolean_ordered, int>>);
 
 static_assert(tested::pair<legacy_ordered, int>{{1}, 0} <
               tested::pair<legacy_ordered, int>{{2}, 0});

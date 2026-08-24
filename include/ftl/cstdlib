@@ -17,7 +17,7 @@
 
 extern "C" {
 #if defined(__APPLE__)
-void abort() __attribute__((__noreturn__));
+void abort() noexcept __attribute__((__noreturn__));
 #else
 [[noreturn]] void abort() noexcept;
 #endif

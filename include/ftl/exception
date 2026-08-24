@@ -132,6 +132,9 @@ private:
 class bad_exception : public exception {
 public:
     bad_exception() noexcept : exception("bad exception", 1) {}
+    [[nodiscard]] const char* what() const noexcept override {
+        return "bad exception";
+    }
 };
 #elif !defined(_MSC_VER)
 using exception = ::std::exception;

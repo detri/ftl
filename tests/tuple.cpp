@@ -17,6 +17,27 @@ struct no_throw_call {
 using one_int = tested::tuple<int>;
 using pointer_subrange = tested::ranges::subrange<int *, int *>;
 
+struct counted_move {
+  int *moves;
+  constexpr explicit counted_move(int &count) : moves(&count) {}
+  counted_move(const counted_move &) = delete;
+  constexpr counted_move(counted_move &&other) : moves(other.moves) {
+    ++*moves;
+  }
+};
+
+constexpr bool tuple_cat_constructs_elements_once() {
+  int moves = 0;
+  tested::tuple<counted_move> first(counted_move{moves});
+  moves = 0;
+  auto result = tested::tuple_cat(tested::move(first), tested::tuple<int>{1},
+                                  tested::tuple<int>{2});
+  (void)result;
+  return moves == 1;
+}
+
+static_assert(tuple_cat_constructs_elements_once());
+
 using pointer_tuple = tested::tuple<int *, int *>;
 
 static_assert(tested::is_same_v<

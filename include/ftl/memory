@@ -1381,12 +1381,12 @@ struct pointer_control_block final : shared_control_block {
 
 template <class Pointer, class Deleter, class Allocator>
 struct allocator_pointer_control_block final : shared_control_block {
-  FTL_NO_UNIQUE_ADDRESS Deleter deleter;
   FTL_NO_UNIQUE_ADDRESS Allocator allocator;
+  FTL_NO_UNIQUE_ADDRESS Deleter deleter;
   Pointer pointer;
   template <class D>
   allocator_pointer_control_block(Pointer p, D &&d, const Allocator &a)
-      : deleter(forward<D>(d)), allocator(a), pointer(p) {}
+      : allocator(a), deleter(forward<D>(d)), pointer(p) {}
   void destroy_object() noexcept override { deleter(pointer); }
   void destroy_block() noexcept override {
     using block = allocator_pointer_control_block;

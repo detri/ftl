@@ -390,6 +390,36 @@ static_assert(tested::compare_weak_order_fallback(minimal_fallback_order{1},
 static_assert(tested::compare_partial_order_fallback(
                   minimal_fallback_order{2}, minimal_fallback_order{1}) > 0);
 
+struct contextual_boolean {
+  bool value;
+  constexpr explicit operator bool() const { return value; }
+};
+
+struct asymmetric_partial_fallback {
+  int value;
+
+  friend constexpr bool operator==(asymmetric_partial_fallback &left,
+                                   const asymmetric_partial_fallback &right) {
+    return left.value == right.value;
+  }
+  friend constexpr bool operator<(asymmetric_partial_fallback &left,
+                                  const asymmetric_partial_fallback &right) {
+    return left.value < right.value;
+  }
+  friend constexpr contextual_boolean
+  operator<(const asymmetric_partial_fallback &left,
+            asymmetric_partial_fallback &right) {
+    return {left.value < right.value};
+  }
+};
+
+consteval bool asymmetric_partial_fallback_works() {
+  asymmetric_partial_fallback left{2};
+  const asymmetric_partial_fallback right{1};
+  return tested::compare_partial_order_fallback(left, right) > 0;
+}
+static_assert(asymmetric_partial_fallback_works());
+
 bool ftl_test() {
   int left = 0;
   int right = 0;

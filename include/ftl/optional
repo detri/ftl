@@ -110,6 +110,7 @@ template<class T>
 class optional {
     static_assert(!is_reference_v<T>);
     static_assert(!is_void_v<T>);
+    static_assert(is_destructible_v<T>);
     static_assert(!is_same_v<remove_cv_t<T>, nullopt_t>);
     static_assert(!is_same_v<remove_cv_t<T>, in_place_t>);
 
@@ -170,9 +171,8 @@ public:
     template<class U = T>
     constexpr explicit(!is_convertible_v<U, T>) optional(U&& input)
         noexcept(is_nothrow_constructible_v<T, U>)
-        requires (!detail::is_optional_v<remove_cvref_t<U>> &&
+        requires (!is_same_v<remove_cvref_t<U>, optional> &&
                   !is_same_v<remove_cvref_t<U>, in_place_t> &&
-                  !is_same_v<remove_cvref_t<U>, nullopt_t> &&
                   is_constructible_v<T, U>)
         : stored(forward<U>(input)), engaged{true} {}
 
@@ -240,7 +240,7 @@ public:
 
     template<class U = T>
     constexpr optional& operator=(U&& input)
-        requires (!detail::is_optional_v<remove_cvref_t<U>> &&
+        requires (!is_same_v<remove_cvref_t<U>, optional> &&
                   (!is_scalar_v<T> ||
                    !is_same_v<decay_t<U>, T>) &&
                   is_constructible_v<T, U> && is_assignable_v<T&, U>) {
@@ -430,12 +430,14 @@ public:
     }
 
     template<class F>
-        requires (invocable<F> && copy_constructible<T>)
+        requires (invocable<F> && copy_constructible<T> &&
+                  same_as<remove_cvref_t<invoke_result_t<F>>, optional>)
     constexpr optional or_else(F&& function) const& {
         return engaged ? *this : invoke(forward<F>(function));
     }
     template<class F>
-        requires (invocable<F> && move_constructible<T>)
+        requires (invocable<F> && move_constructible<T> &&
+                  same_as<remove_cvref_t<invoke_result_t<F>>, optional>)
     constexpr optional or_else(F&& function) && {
         return engaged ? move(*this) : invoke(forward<F>(function));
     }
@@ -579,6 +581,13 @@ template<class T, class U>
 constexpr bool operator==(const optional<T>& left, const U& right)
 {
     return left && *left == right;
+}
+
+template<class T, class U>
+    requires (!detail::is_derived_from_optional_v<U> &&
+              requires(const U& left, const T& right) { left == right; })
+constexpr bool operator==(const U& left, const optional<T>& right) {
+    return right && left == *right;
 }
 
 

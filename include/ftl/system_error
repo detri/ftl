@@ -7,6 +7,7 @@
 #include <compare>
 #include <cstddef>
 #include <functional>
+#include <iosfwd>
 #include <cerrno>
 #include <stdexcept>
 #include <string>
@@ -16,6 +17,7 @@
 #include <ftl/compare>
 #include <ftl/cstddef>
 #include <ftl/functional>
+#include <ftl/iosfwd>
 #include <ftl/cerrno>
 #include <ftl/stdexcept>
 #include <ftl/string>
@@ -326,6 +328,12 @@ inline strong_ordering operator<=>(const error_condition &left,
                                         : strong_ordering::equal;
 }
 
+template <class Character, class Traits>
+basic_ostream<Character, Traits> &
+operator<<(basic_ostream<Character, Traits> &output, const error_code &code) {
+  return output << code.category().name() << ':' << code.value();
+}
+
 class system_error : public runtime_error {
 public:
   system_error(error_code code, const string &what_arg)
@@ -343,6 +351,7 @@ public:
       : system_error(error_code{value, category}) {}
 
   const error_code &code() const noexcept { return code_; }
+  const char *what() const noexcept override { return runtime_error::what(); }
 
 private:
   static string compose(error_code code, const char *what_arg) {

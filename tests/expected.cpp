@@ -21,6 +21,46 @@ struct throwing_move {
     friend void swap(throwing_move&, throwing_move&) noexcept {}
 };
 
+struct move_only_value {
+    move_only_value() = default;
+    move_only_value(const move_only_value&) = delete;
+    move_only_value(move_only_value&&) = default;
+};
+
+struct return_int_expected {
+    tested::expected<int, move_only_value> operator()(int) const;
+};
+struct return_int {
+    int operator()(int) const;
+};
+struct recover_move_only_value {
+    tested::expected<move_only_value, int>
+    operator()(int) const;
+};
+
+template<class X>
+concept has_lvalue_and_then = requires(X& value) {
+    value.and_then(return_int_expected{});
+};
+template<class X>
+concept has_lvalue_transform = requires(X& value) {
+    value.transform(return_int{});
+};
+template<class X>
+concept has_lvalue_or_else = requires(X& value) {
+    value.or_else(recover_move_only_value{});
+};
+template<class X>
+concept has_lvalue_transform_error = requires(X& value) {
+    value.transform_error(return_int{});
+};
+
+static_assert(!has_lvalue_and_then<tested::expected<int, move_only_value>>);
+static_assert(!has_lvalue_transform<tested::expected<int, move_only_value>>);
+static_assert(!has_lvalue_or_else<tested::expected<move_only_value, int>>);
+static_assert(!has_lvalue_transform_error<
+              tested::expected<move_only_value, int>>);
+
 constexpr bool expected_works() {
     tested::expected<int, int> value = 3;
     auto doubled = value.transform([](int x) { return x * 2; });

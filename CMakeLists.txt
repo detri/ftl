@@ -147,3 +147,7 @@ if (BUILD_TESTING)
     enable_testing()
     add_subdirectory(tests)
 endif ()
+
+# STL replacement
+
+include(cmake/ftl_replace_stl.cmake)

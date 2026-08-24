@@ -928,6 +928,9 @@ function(F) -> function<
 
 template <class...> class move_only_function;
 namespace detail {
+template <class> inline constexpr bool is_move_only_function_v = false;
+template <class... S>
+inline constexpr bool is_move_only_function_v<move_only_function<S...>> = true;
 template <class F, int Qualifier> struct mof_call;
 template <class F> struct mof_call<F, 0> {
   using type = F &;
@@ -941,8 +944,23 @@ template <class F> struct mof_call<F, 2> {
 template <class F> struct mof_call<F, 3> {
   using type = const F &&;
 };
+template <class F> struct mof_call<F, 4> { using type = F &; };
+template <class F> struct mof_call<F, 5> { using type = const F &; };
 template <class F, int Qualifier>
 using mof_call_t = typename mof_call<F, Qualifier>::type;
+template <class F, int Qualifier> struct mof_inv_call;
+template <class F> struct mof_inv_call<F, 0> { using type = F &&; };
+template <class F> struct mof_inv_call<F, 1> { using type = F &&; };
+template <class F> struct mof_inv_call<F, 2> { using type = const F &&; };
+template <class F> struct mof_inv_call<F, 3> { using type = const F &&; };
+template <class F> struct mof_inv_call<F, 4> { using type = F &; };
+template <class F> struct mof_inv_call<F, 5> { using type = const F &; };
+template <class F, int Qualifier>
+using mof_inv_call_t = typename mof_inv_call<F, Qualifier>::type;
+
+template <class> inline constexpr bool is_in_place_type_tag_v = false;
+template <class T>
+inline constexpr bool is_in_place_type_tag_v<in_place_type_t<T>> = true;
 } // namespace detail
 
 #define FTL_DETAIL_MOVE_ONLY_FUNCTION(Suffix, Qual, Cast, Q, Noex)             \
@@ -950,45 +968,109 @@ using mof_call_t = typename mof_call<F, Qualifier>::type;
     struct erased {                                                            \
       virtual ~erased() = default;                                             \
       virtual R call(A &&...) Qual noexcept(Noex) = 0;                         \
+      virtual erased *move_to(void *) noexcept = 0;                            \
+      virtual void destroy_inline() noexcept = 0;                              \
     };                                                                         \
     template <class F> struct model final : erased {                           \
       F value;                                                                 \
-      template <class G>                                                       \
-      explicit model(G &&object) : value(forward<G>(object)) {}                \
+      template <class... G>                                                    \
+      explicit model(G &&...object) : value(forward<G>(object)...) {}          \
       R call(A &&...args) Qual noexcept(Noex) override {                       \
         return invoke_r<R>(Cast, forward<A>(args)...);                         \
       }                                                                        \
+      erased *move_to(void *storage) noexcept override {                       \
+        if constexpr (is_move_constructible_v<F>)                              \
+          return ::new (storage) model(move(value));                           \
+        else { (void)storage; return nullptr; }                                \
+      }                                                                        \
+      void destroy_inline() noexcept override { this->~model(); }              \
     };                                                                         \
+    alignas(void *) unsigned char inline_storage_[3 * sizeof(void *)]{};        \
     erased *target_ = nullptr;                                                 \
+    bool inline_target_ = false;                                               \
+    void reset() noexcept {                                                    \
+      if (!target_) return;                                                    \
+      if (inline_target_) target_->destroy_inline();                           \
+      else delete target_;                                                     \
+      target_ = nullptr;                                                       \
+      inline_target_ = false;                                                  \
+    }                                                                          \
+    void move_from(move_only_function &other) noexcept {                       \
+      if (!other.target_) return;                                              \
+      if (other.inline_target_) {                                              \
+        target_ = other.target_->move_to(inline_storage_);                     \
+        inline_target_ = true;                                                 \
+        other.target_->destroy_inline();                                       \
+      } else target_ = other.target_;                                          \
+      other.target_ = nullptr;                                                 \
+      other.inline_target_ = false;                                            \
+    }                                                                          \
+    template <class T, class... Args> void create(Args &&...args) {            \
+      if constexpr (is_pointer_v<T> ||                                         \
+                    detail::is_reference_wrapper_v<T>) {                       \
+        static_assert(sizeof(model<T>) <= sizeof(inline_storage_));            \
+        target_ = ::new (static_cast<void *>(inline_storage_))                 \
+            model<T>(forward<Args>(args)...);                                  \
+        inline_target_ = true;                                                 \
+      } else target_ = new model<T>(forward<Args>(args)...);                   \
+    }                                                                          \
                                                                                \
   public:                                                                      \
+    using result_type = R;                                                     \
     move_only_function() noexcept = default;                                   \
     move_only_function(nullptr_t) noexcept {}                                  \
-    move_only_function(move_only_function &&other) noexcept                    \
-        : target_(exchange(other.target_, nullptr)) {}                         \
+    move_only_function(move_only_function &&other) noexcept { move_from(other); } \
     move_only_function(const move_only_function &) = delete;                   \
     template <class F>                                                         \
       requires(!is_same_v<remove_cvref_t<F>, move_only_function>) &&           \
+              (!detail::is_in_place_type_tag_v<remove_cvref_t<F>>) &&          \
               is_constructible_v<decay_t<F>, F> &&                             \
               is_invocable_r_v<R, detail::mof_call_t<decay_t<F>, Q>, A...> &&  \
+              is_invocable_r_v<R, detail::mof_inv_call_t<decay_t<F>, Q>, A...> && \
               (!Noex ||                                                        \
                is_nothrow_invocable_r_v<R, detail::mof_call_t<decay_t<F>, Q>,  \
-                                        A...>)                                 \
+                                        A...>) &&                              \
+              (!Noex || is_nothrow_invocable_r_v<                             \
+                            R, detail::mof_inv_call_t<decay_t<F>, Q>, A...>)   \
     move_only_function(F &&value) {                                            \
       using T = decay_t<F>;                                                    \
-      if constexpr (is_pointer_v<T> || is_member_pointer_v<T>)                 \
+      if constexpr (is_pointer_v<T> || is_member_pointer_v<T> ||               \
+                    detail::is_move_only_function_v<T>)                        \
         if (!value)                                                            \
           return;                                                              \
-      target_ = new model<T>(forward<F>(value));                               \
+      create<T>(forward<F>(value));                                            \
     }                                                                          \
-    ~move_only_function() { delete target_; }                                  \
+    template <class T, class... Args>                                          \
+      requires(is_same_v<T, decay_t<T>> && is_constructible_v<T, Args...> &&   \
+               is_invocable_r_v<R, detail::mof_call_t<T, Q>, A...> &&         \
+               is_invocable_r_v<R, detail::mof_inv_call_t<T, Q>, A...> &&     \
+               (!Noex || is_nothrow_invocable_r_v<                            \
+                             R, detail::mof_call_t<T, Q>, A...>) &&            \
+               (!Noex || is_nothrow_invocable_r_v<                            \
+                             R, detail::mof_inv_call_t<T, Q>, A...>))          \
+    explicit move_only_function(in_place_type_t<T>, Args &&...args) {          \
+      create<T>(forward<Args>(args)...);                                       \
+    }                                                                          \
+    template <class T, class U, class... Args>                                 \
+      requires(is_same_v<T, decay_t<T>> &&                                    \
+               is_constructible_v<T, initializer_list<U> &, Args...> &&       \
+               is_invocable_r_v<R, detail::mof_call_t<T, Q>, A...> &&         \
+               is_invocable_r_v<R, detail::mof_inv_call_t<T, Q>, A...> &&     \
+               (!Noex || is_nothrow_invocable_r_v<                            \
+                             R, detail::mof_call_t<T, Q>, A...>) &&            \
+               (!Noex || is_nothrow_invocable_r_v<                            \
+                             R, detail::mof_inv_call_t<T, Q>, A...>))          \
+    explicit move_only_function(in_place_type_t<T>, initializer_list<U> list, \
+                                Args &&...args) {                              \
+      create<T>(list, forward<Args>(args)...);                                \
+    }                                                                          \
+    ~move_only_function() { reset(); }                                         \
     move_only_function &operator=(move_only_function &&other) noexcept {       \
-      move_only_function(move(other)).swap(*this);                             \
+      if (this != &other) { reset(); move_from(other); }                       \
       return *this;                                                            \
     }                                                                          \
     move_only_function &operator=(nullptr_t) noexcept {                        \
-      delete target_;                                                          \
-      target_ = nullptr;                                                       \
+      reset();                                                                 \
       return *this;                                                            \
     }                                                                          \
     template <class F> move_only_function &operator=(F &&value) {              \
@@ -996,9 +1078,10 @@ using mof_call_t = typename mof_call<F, Qualifier>::type;
       return *this;                                                            \
     }                                                                          \
     void swap(move_only_function &other) noexcept {                            \
-      auto *value = target_;                                                   \
-      target_ = other.target_;                                                 \
-      other.target_ = value;                                                   \
+      if (this == &other) return;                                              \
+      move_only_function temporary(move(other));                               \
+      other = move(*this);                                                     \
+      *this = move(temporary);                                                 \
     }                                                                          \
     explicit operator bool() const noexcept { return target_ != nullptr; }     \
     R operator()(A... args) Qual noexcept(Noex) {                              \
@@ -1008,8 +1091,8 @@ using mof_call_t = typename mof_call<F, Qualifier>::type;
 
 FTL_DETAIL_MOVE_ONLY_FUNCTION(, , value, 0, false)
 FTL_DETAIL_MOVE_ONLY_FUNCTION(noexcept, , value, 0, true)
-FTL_DETAIL_MOVE_ONLY_FUNCTION(&, &, value, 0, false)
-FTL_DETAIL_MOVE_ONLY_FUNCTION(& noexcept, &, value, 0, true)
+FTL_DETAIL_MOVE_ONLY_FUNCTION(&, &, value, 4, false)
+FTL_DETAIL_MOVE_ONLY_FUNCTION(& noexcept, &, value, 4, true)
 FTL_DETAIL_MOVE_ONLY_FUNCTION(&&, &&, move(value), 1, false)
 FTL_DETAIL_MOVE_ONLY_FUNCTION(&& noexcept, &&, move(value), 1, true)
 FTL_DETAIL_MOVE_ONLY_FUNCTION(const, const, static_cast<const F &>(value), 2,
@@ -1017,9 +1100,9 @@ FTL_DETAIL_MOVE_ONLY_FUNCTION(const, const, static_cast<const F &>(value), 2,
 FTL_DETAIL_MOVE_ONLY_FUNCTION(const noexcept, const,
                               static_cast<const F &>(value), 2, true)
 FTL_DETAIL_MOVE_ONLY_FUNCTION(const &, const &, static_cast<const F &>(value),
-                              2, false)
+                              5, false)
 FTL_DETAIL_MOVE_ONLY_FUNCTION(const & noexcept, const &,
-                              static_cast<const F &>(value), 2, true)
+                              static_cast<const F &>(value), 5, true)
 FTL_DETAIL_MOVE_ONLY_FUNCTION(const &&, const &&,
                               static_cast<const F &&>(move(value)), 3, false)
 FTL_DETAIL_MOVE_ONLY_FUNCTION(const && noexcept, const &&,
@@ -1030,6 +1113,10 @@ template <class... S>
 void swap(move_only_function<S...> &left,
           move_only_function<S...> &right) noexcept {
   left.swap(right);
+}
+template <class... S>
+bool operator==(const move_only_function<S...> &value, nullptr_t) noexcept {
+  return !value;
 }
 
 namespace detail {

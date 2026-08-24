@@ -194,6 +194,13 @@ public:
              !(detail::pair_dangles_v<Types, U &&> || ...))
       : base(forward<U>(values)...) {}
 
+  template <class... U>
+  constexpr tuple(U &&...)
+    requires(elementwise_constructor_is_disambiguated<U...>() &&
+             (is_constructible_v<Types, U> && ...) &&
+             (detail::pair_dangles_v<Types, U &&> || ...))
+  = delete;
+
   constexpr tuple(const tuple &) = default;
 
   constexpr tuple(tuple &&) = default;
@@ -299,6 +306,17 @@ public:
         !tuple_like_dangles<TupleLike>(index_sequence_for<Types...>{}))
       : tuple(forward<TupleLike>(other), index_sequence_for<Types...>{}) {}
 
+  template <class TupleLike>
+  constexpr tuple(TupleLike &&)
+    requires(
+        !detail::is_subrange<remove_cvref_t<TupleLike>>::value &&
+        detail::is_tuple_source<remove_cvref_t<TupleLike>>::value &&
+        tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(Types) &&
+        tuple_like_constructible<TupleLike>(index_sequence_for<Types...>{}) &&
+        !tuple_like_uses_other_constructor<TupleLike>() &&
+        tuple_like_dangles<TupleLike>(index_sequence_for<Types...>{}))
+  = delete;
+
   template <class Alloc>
   constexpr explicit(!(detail::implicitly_default_constructible<Types> && ...))
       tuple(allocator_arg_t, const Alloc &allocator)
@@ -319,6 +337,13 @@ public:
              (is_constructible_v<Types, U> && ...) &&
              !(detail::pair_dangles_v<Types, U &&> || ...))
       : base(allocator_arg, allocator, forward<U>(values)...) {}
+
+  template <class Alloc, class... U>
+  constexpr tuple(allocator_arg_t, const Alloc &, U &&...)
+    requires(elementwise_constructor_is_disambiguated<U...>() &&
+             (is_constructible_v<Types, U> && ...) &&
+             (detail::pair_dangles_v<Types, U &&> || ...))
+  = delete;
 
   template <class Alloc>
   constexpr tuple(allocator_arg_t, const Alloc &allocator, const tuple &other)
@@ -447,6 +472,17 @@ public:
         !tuple_like_dangles<TupleLike>(index_sequence_for<Types...>{}))
       : tuple(allocator_arg, allocator, forward<TupleLike>(other),
               index_sequence_for<Types...>{}) {}
+
+  template <class Alloc, class TupleLike>
+  constexpr tuple(allocator_arg_t, const Alloc &, TupleLike &&)
+    requires(
+        !detail::is_subrange<remove_cvref_t<TupleLike>>::value &&
+        detail::is_tuple_source<remove_cvref_t<TupleLike>>::value &&
+        tuple_size_v<remove_cvref_t<TupleLike>> == sizeof...(Types) &&
+        tuple_like_constructible<TupleLike>(index_sequence_for<Types...>{}) &&
+        !tuple_like_uses_other_constructor<TupleLike>() &&
+        tuple_like_dangles<TupleLike>(index_sequence_for<Types...>{}))
+  = delete;
 
   template <class... U>
   constexpr tuple &operator=(const tuple<U...> &other)
@@ -626,14 +662,7 @@ constexpr const T &&get(const tuple<Types...> &&value) noexcept {
 namespace detail {
 template <class T, class U>
 constexpr auto tuple_compare_element(const T &left, const U &right) {
-  if constexpr (requires { left <=> right; })
-    return left <=> right;
-  else if (left < right)
-    return weak_ordering::less;
-  else if (right < left)
-    return weak_ordering::greater;
-  else
-    return weak_ordering::equivalent;
+  return synth_three_way(left, right);
 }
 
 template <class Left, class Right, size_t... I>
@@ -804,12 +833,31 @@ struct ignore_t {
   }
 };
 
-template <class Left, class Right, size_t... L, size_t... R>
-constexpr auto tuple_cat_two(Left &&left, Right &&right, index_sequence<L...>,
-                             index_sequence<R...>) {
-  return tuple<tuple_element_t<L, remove_cvref_t<Left>>...,
-               tuple_element_t<R, remove_cvref_t<Right>>...>(
-      get<L>(forward<Left>(left))..., get<R>(forward<Right>(right))...);
+template <size_t Index, class First, class... Rest> struct tuple_cat_element {
+  static constexpr size_t first_size = tuple_size_v<First>;
+  using type = typename tuple_cat_element<Index - first_size, Rest...>::type;
+};
+template <size_t Index, class First, class... Rest>
+  requires(Index < tuple_size_v<First>)
+struct tuple_cat_element<Index, First, Rest...> {
+  using type = tuple_element_t<Index, First>;
+};
+template <size_t Index, class... Tuples>
+using tuple_cat_element_t = typename tuple_cat_element<Index, Tuples...>::type;
+
+template <size_t Index, class First, class... Rest>
+constexpr decltype(auto) tuple_cat_get(First &&first, Rest &&...rest) {
+  if constexpr (Index < tuple_size_v<remove_cvref_t<First>>)
+    return get<Index>(forward<First>(first));
+  else
+    return tuple_cat_get<Index - tuple_size_v<remove_cvref_t<First>>>(
+        forward<Rest>(rest)...);
+}
+
+template <class... Tuples, size_t... Index>
+constexpr auto tuple_cat_all(index_sequence<Index...>, Tuples &&...values) {
+  return tuple<tuple_cat_element_t<Index, remove_cvref_t<Tuples>...>...>(
+      tuple_cat_get<Index>(forward<Tuples>(values)...)...);
 }
 } // namespace detail
 inline constexpr detail::ignore_t ignore{};
@@ -845,20 +893,23 @@ constexpr tuple<> tuple_cat() { return {}; }
 template <class Tuple>
   requires detail::is_tuple_source<remove_cvref_t<Tuple>>::value
 constexpr auto tuple_cat(Tuple &&value) {
-  return detail::tuple_cat_two(
-      tuple<>{}, forward<Tuple>(value), index_sequence<>{},
-      make_index_sequence<tuple_size_v<remove_reference_t<Tuple>>>{});
+  return detail::tuple_cat_all(
+      make_index_sequence<tuple_size_v<remove_reference_t<Tuple>>>{},
+      forward<Tuple>(value));
 }
 template <class First, class Second, class... Rest>
   requires(detail::is_tuple_source<remove_cvref_t<First>>::value &&
            detail::is_tuple_source<remove_cvref_t<Second>>::value &&
            (detail::is_tuple_source<remove_cvref_t<Rest>>::value && ...))
 constexpr auto tuple_cat(First &&first, Second &&second, Rest &&...rest) {
-  auto joined = detail::tuple_cat_two(
-      forward<First>(first), forward<Second>(second),
-      make_index_sequence<tuple_size_v<remove_reference_t<First>>>{},
-      make_index_sequence<tuple_size_v<remove_reference_t<Second>>>{});
-  return tuple_cat(move(joined), forward<Rest>(rest)...);
+  constexpr size_t size = tuple_size_v<remove_reference_t<First>> +
+                          tuple_size_v<remove_reference_t<Second>> +
+                          (size_t{0} + ... +
+                           tuple_size_v<remove_reference_t<Rest>>);
+  return detail::tuple_cat_all(make_index_sequence<size>{},
+                               forward<First>(first),
+                               forward<Second>(second),
+                               forward<Rest>(rest)...);
 }
 
 FTL_END_NAMESPACE

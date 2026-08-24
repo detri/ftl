@@ -11,6 +11,8 @@ using ftl_runtime_size_t = decltype(sizeof(0));
 
 extern "C" {
 
+void ftl_runtime_link_anchor() {}
+
 #if !defined(_MSC_VER)
 [[noreturn]] void __cxa_pure_virtual() {
   __builtin_trap();

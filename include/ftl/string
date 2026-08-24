@@ -962,8 +962,17 @@ private:
     if (count == 0)
       return;
     reserve_exact(count);
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
     Traits::copy(data(), characters, count);
     set_size(count);
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      deallocate();
+      throw;
+    }
+#endif
   }
   constexpr void initialize_substring(const basic_string &value,
                                       size_type position, size_type count) {
@@ -1005,8 +1014,18 @@ private:
     }
 #endif
     const size_type old_size = size_;
-    Traits::copy(raw, data(), old_size);
-    raw[old_size] = Character{};
+#if FTL_HAS_EXCEPTIONS
+    try {
+#endif
+      Traits::copy(raw, data(), old_size);
+      raw[old_size] = Character{};
+#if FTL_HAS_EXCEPTIONS
+    } catch (...) {
+      allocator_traits<Allocator>::deallocate(allocator_, replacement,
+                                               requested + 1);
+      throw;
+    }
+#endif
     deallocate();
     allocation_ = replacement;
     size_ = old_size;
@@ -1034,7 +1053,8 @@ private:
       allocated_ = true;
       other.release_without_deallocation();
     } else {
-      Traits::copy(small_, other.small_, other.size_ + 1);
+      for (size_type index = 0; index <= other.size_; ++index)
+        small_[index] = other.small_[index];
       capacity_ = small_capacity;
       allocated_ = false;
       other.clear();
@@ -1049,8 +1069,11 @@ private:
     }
     if (!allocated_ && !other.allocated_) {
       const size_type extent = size_ > other.size_ ? size_ : other.size_;
-      for (size_type index = 0; index <= extent; ++index)
-        FTL_STRING_NAMESPACE::swap(small_[index], other.small_[index]);
+      for (size_type index = 0; index <= extent; ++index) {
+        Character saved = small_[index];
+        small_[index] = other.small_[index];
+        other.small_[index] = saved;
+      }
       FTL_STRING_NAMESPACE::swap(size_, other.size_);
       return;
     }
@@ -1060,7 +1083,8 @@ private:
     }
     Character saved[small_capacity + 1]{};
     const size_type saved_size = other.size_;
-    Traits::copy(saved, other.small_, saved_size + 1);
+    for (size_type index = 0; index <= saved_size; ++index)
+      saved[index] = other.small_[index];
     other.allocation_ = allocation_;
     other.size_ = size_;
     other.capacity_ = capacity_;
@@ -1069,7 +1093,8 @@ private:
     size_ = saved_size;
     capacity_ = small_capacity;
     allocated_ = false;
-    Traits::copy(small_, saved, saved_size + 1);
+    for (size_type index = 0; index <= saved_size; ++index)
+      small_[index] = saved[index];
   }
 
   static constexpr size_type small_capacity =

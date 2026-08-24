@@ -33,6 +33,11 @@ struct controlled_set_compare {
     return left < right;
   }
 };
+struct throwing_move_set_compare {
+  throwing_move_set_compare() = default;
+  throwing_move_set_compare(throwing_move_set_compare&&) noexcept(false) {}
+  bool operator()(int left, int right) const { return left < right; }
+};
 struct legacy_set_key {
   int value;
   friend bool operator==(const legacy_set_key&, const legacy_set_key&) = default;
@@ -64,6 +69,8 @@ using deduced_set = decltype(tested::set(
     tested::declval<int *>(), tested::declval<int *>(),
     tested::declval<tested::allocator<int>>()));
 static_assert(tested::is_same_v<deduced_set, tested::set<int>>);
+static_assert(!noexcept(tested::set<int, throwing_move_set_compare>(
+    tested::declval<tested::set<int, throwing_move_set_compare>&&>())));
 
 bool ftl_test() {
   {

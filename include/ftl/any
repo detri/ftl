@@ -116,7 +116,7 @@ public:
     template<class T>
     any& operator=(T&& value)
         requires (!is_same_v<decay_t<T>, any> && valid_value<T>) {
-        any(forward<T>(value)).swap(*this);
+        any(in_place_type<decay_t<T>>, forward<T>(value)).swap(*this);
         return *this;
     }
 

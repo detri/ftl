@@ -425,12 +425,6 @@
 #define __cpp_lib_constexpr_dynamic_alloc 201907L
 #endif
 
-#if !defined(__cpp_lib_uses_allocator_construction) ||                         \
-    __cpp_lib_uses_allocator_construction < 201811L
-#undef __cpp_lib_uses_allocator_construction
-#define __cpp_lib_uses_allocator_construction 201811L
-#endif
-
 #if !defined(__cpp_lib_atomic_shared_ptr) ||                                   \
     __cpp_lib_atomic_shared_ptr < 201711L
 #undef __cpp_lib_atomic_shared_ptr

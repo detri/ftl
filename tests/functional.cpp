@@ -93,6 +93,44 @@ static_assert(tested::ranges::less{}(2, 3));
 static_assert(tested::is_constructible_v<
               tested::move_only_function<int(int) const & noexcept>,
               decltype([](int value) noexcept { return value; })>);
+static_assert(tested::is_same_v<
+              tested::move_only_function<long(int)>::result_type, long>);
+static_assert(noexcept(tested::declval<const tested::move_only_function<void()>&>()
+                       == nullptr));
+
+struct lvalue_only_callable {
+  int operator()(int value) & { return value; }
+};
+struct rvalue_only_callable {
+  int operator()(int value) && { return value; }
+};
+struct in_place_callable {
+  int offset;
+  in_place_callable(tested::initializer_list<int> values, int extra)
+      : offset(*values.begin() + extra) {}
+  int operator()(int value) & { return value + offset; }
+};
+struct immovable_callable {
+  immovable_callable() = default;
+  immovable_callable(const immovable_callable &) = delete;
+  immovable_callable(immovable_callable &&) = delete;
+  int operator()(int value) { return value + 1; }
+};
+
+static_assert(!tested::is_constructible_v<
+              tested::move_only_function<int(int)>, lvalue_only_callable>);
+static_assert(!tested::is_constructible_v<
+              tested::move_only_function<int(int)>, rvalue_only_callable>);
+static_assert(tested::is_constructible_v<
+              tested::move_only_function<int(int) &>, lvalue_only_callable>);
+static_assert(tested::is_constructible_v<
+              tested::move_only_function<int(int) &&>, rvalue_only_callable>);
+static_assert(!tested::is_constructible_v<
+              tested::move_only_function<int(int)>,
+              tested::in_place_type_t<move_only_callable>>);
+static_assert(tested::is_constructible_v<
+              tested::move_only_function<int(int)>,
+              tested::in_place_type_t<immovable_callable>>);
 static_assert(tested::hash<unsigned>{}(42) ==
               ftl_rapidhash::rapidhash_t<unsigned>{}(42));
 static_assert(!hash_enabled<const int>);
@@ -147,6 +185,13 @@ bool pointer_total_order_works() {
 }
 
 bool ftl_test() {
+  if (!(tested::move_only_function<void()>{} == nullptr))
+    return false;
+  tested::move_only_function<int(short)> empty_source;
+  tested::move_only_function<long(int)> empty_conversion(
+      tested::move(empty_source));
+  if (empty_conversion != nullptr)
+    return false;
   alignas(long double) unsigned char first_bytes[sizeof(long double)];
   alignas(long double) unsigned char second_bytes[sizeof(long double)];
   for (auto& byte : first_bytes) byte = 0x11;
@@ -188,6 +233,15 @@ bool ftl_test() {
 
   tested::move_only_function<int(int)> movable = move_only_callable{3};
   if (movable(2) != 5)
+    return false;
+  tested::move_only_function<int(int) &> in_place(
+      tested::in_place_type<in_place_callable>, {2}, 3);
+  if (in_place(4) != 9)
+    return false;
+  tested::move_only_function<int(int)> immovable(
+      tested::in_place_type<immovable_callable>);
+  auto moved_immovable = tested::move(immovable);
+  if (moved_immovable(3) != 4)
     return false;
 
   constexpr int pattern[] = {2, 3};
