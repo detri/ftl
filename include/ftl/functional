@@ -974,7 +974,7 @@ inline constexpr bool is_in_place_type_tag_v<in_place_type_t<T>> = true;
     template <class F> struct model final : erased {                           \
       F value;                                                                 \
       template <class... G>                                                    \
-      explicit model(G &&...object) : value(forward<G>(object)...) {}          \
+      explicit model(G &&...object) : value(static_cast<G &&>(object)...) {}   \
       R call(A &&...args) Qual noexcept(Noex) override {                       \
         return invoke_r<R>(Cast, forward<A>(args)...);                         \
       }                                                                        \
@@ -1010,9 +1010,9 @@ inline constexpr bool is_in_place_type_tag_v<in_place_type_t<T>> = true;
                     detail::is_reference_wrapper_v<T>) {                       \
         static_assert(sizeof(model<T>) <= sizeof(inline_storage_));            \
         target_ = ::new (static_cast<void *>(inline_storage_))                 \
-            model<T>(forward<Args>(args)...);                                  \
+            model<T>(static_cast<Args &&>(args)...);                           \
         inline_target_ = true;                                                 \
-      } else target_ = new model<T>(forward<Args>(args)...);                   \
+      } else target_ = new model<T>(static_cast<Args &&>(args)...);            \
     }                                                                          \
                                                                                \
   public:                                                                      \

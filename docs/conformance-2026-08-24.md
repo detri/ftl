@@ -19,8 +19,9 @@ in the final table.
 Windows closure was re-certified on 2026-08-24 with the canonical Release
 MSVC and Clang-CL configurations. Each compiler completed its full build and
 passed all 388 tests in both normal and `FTL_REPLACE_STL` modes, including the
-freestanding linkage and feature-macro checks. Linux GCC/Clang and native Apple
-validation remain external to this Windows re-certification.
+freestanding linkage and feature-macro checks. Native WSL2 GCC and Clang also
+completed their canonical full builds and passed all 388 tests in both modes.
+Native Apple validation remains external to this re-certification.
 
 ## Certified
 
@@ -69,7 +70,7 @@ validation remain external to this Windows re-certification.
 | `<algorithm>`                           | CERTIFIED            | The required `ranges::minmax_result` alias was already present; the comparison dependency is closed.                                                                                                                   |
 | `<numeric>`                             | REMEDIATED           | Implemented pointer `midpoint` without a potentially unrepresentable `b-a`.                                                                                                                                            |
 | `<memory>` ownership                    | REMEDIATED + BLOCKED | Preserved an effective raw-pointer `shared_ptr` cleanup deleter until control-block commit; normal-mode constexpr allocation remains blocked below.                                                                    |
-| `<cstdlib>` / `<stdlib.h>`              | REMEDIATED           | Gave Apple's namespace `abort` the required `noexcept` function type.                                                                                                                                                  |
+| `<cstdlib>` / `<stdlib.h>`              | REMEDIATED           | Wrapped Apple's non-`noexcept` global C `abort` declaration with the required `noexcept` namespace function.                                                                                                           |
 | `<cmath>` core                          | BLOCKED              | A genuinely fused constant-evaluated `fma` needs a compiler intrinsic or software correctly-rounded backend; extended math remains blocked below.                                                                      |
 
 ## Known blockers and realistic paths

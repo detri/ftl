@@ -17,7 +17,7 @@
 
 extern "C" {
 #if defined(__APPLE__)
-void abort() noexcept __attribute__((__noreturn__));
+void abort() __attribute__((__noreturn__));
 #else
 [[noreturn]] void abort() noexcept;
 #endif
@@ -105,7 +105,11 @@ struct div_t { int quot, rem; };
 struct ldiv_t { long quot, rem; };
 struct lldiv_t { long long quot, rem; };
 
+#if defined(__APPLE__)
+[[noreturn]] inline void abort() noexcept { ::abort(); }
+#else
 using ::abort;
+#endif
 #if defined(_MSC_VER) || defined(__APPLE__)
 inline int atexit(void (*function)()) noexcept { return ::atexit(function); }
 inline int at_quick_exit(void (*function)()) noexcept {

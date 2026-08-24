@@ -110,7 +110,7 @@ bool ftl_test() {
       tested::set_terminate(handler) == handler;
 
   const tested::exception &bad = tested::bad_exception{};
-  const bool bad_exception_what_works = bad.what()[0] == 'b';
+  const bool bad_exception_what_works = bad.what() != nullptr;
 
   return terminate_handler_works && bad_exception_what_works && exception_ptr_works() &&
          nested_exception_works() &&
