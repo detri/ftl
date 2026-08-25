@@ -230,9 +230,8 @@ bool ftl_test()
         }
     }
 
-    // A UTF-8 leading code unit is accepted into state.
-    // The completed non-ASCII scalar then fails because the
-    // C locale cannot represent it.
+    // A UTF-8 leading code unit is accepted into state. The completed scalar
+    // is then encoded according to the native C-locale repertoire.
     {
         tested::mbstate_t state{};
         char output = '\0';
@@ -244,8 +243,13 @@ bool ftl_test()
 
         errno = 0;
 
+#if defined(__APPLE__)
+        if (tested::c8rtomb(&output, static_cast<char8_t>(0xa2), &state) != 1 ||
+            static_cast<unsigned char>(output) != 0xa2)
+#else
         if (tested::c8rtomb(&output, static_cast<char8_t>(0xa2), &state) != error ||
             errno != EILSEQ)
+#endif
         {
             return false;
         }
