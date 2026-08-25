@@ -31,6 +31,18 @@ struct throwing_compare {
   }
   bool operator()(int left, int right) const { return left < right; }
 };
+struct throwing_move_compare {
+  throwing_move_compare() = default;
+  throwing_move_compare(throwing_move_compare&&) noexcept(false) {}
+  bool operator()(int left, int right) const { return left < right; }
+};
+struct counting_compare {
+  inline static int comparisons;
+  bool operator()(int left, int right) const {
+    ++comparisons;
+    return left < right;
+  }
+};
 template <class C> concept probe_findable = requires(C &c) { c.find(probe{}); };
 template <class C> concept probe_erasable = requires(C &c) { c.erase(probe{}); };
 
@@ -50,6 +62,8 @@ static_assert(!probe_findable<tested::map<int, int>>);
 static_assert(probe_erasable<tested::map<int, int, transparent_compare>>);
 static_assert(!noexcept(tested::declval<tested::map<int, int, throwing_compare> &>() =
                         tested::declval<tested::map<int, int, throwing_compare> &&>()));
+static_assert(!noexcept(tested::map<int, int, throwing_move_compare>(
+    tested::declval<tested::map<int, int, throwing_move_compare>&&>())));
 static_assert(tested::is_same_v<
     typename tested::map<int, int, tested::less<int>>::node_type,
     typename tested::multimap<int, int, tested::greater<int>>::node_type>);
@@ -64,6 +78,15 @@ using deduced_map = decltype(tested::map(
 static_assert(tested::is_same_v<deduced_map, tested::map<int, int>>);
 
 bool ftl_test() {
+  {
+    tested::map<int, int, counting_compare> hinted;
+    counting_compare::comparisons = 0;
+    for (int key = 0; key != 20; ++key)
+      hinted.try_emplace(hinted.end(), key, key);
+    for (int key = 20; key != 40; ++key)
+      hinted.insert_or_assign(hinted.end(), key, key);
+    if (counting_compare::comparisons > 180) return false;
+  }
   {
     tested::multimap<int, int, tested::greater<int>> source{
         {3, 30}, {2, 20}, {2, 21}, {1, 10}};

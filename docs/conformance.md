@@ -1,5 +1,8 @@
 # C++23 Conformance Ledger
 
+> Historical audit/remediation record. The fresh current-state result is
+> [`conformance-2026-08-24.md`](conformance-2026-08-24.md).
+
 This document tracks exhaustive C++23 conformance review of FTL independently
 from implementation progress in `ROADMAP.md`.
 

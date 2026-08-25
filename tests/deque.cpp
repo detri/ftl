@@ -17,6 +17,8 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+#include "equal_state_allocator.hpp"
+
 struct counted_deque {
   inline static int alive;
   int value{};
@@ -87,6 +89,13 @@ static_assert(tested::uses_allocator_v<tested::deque<int>, tested::allocator<int
 static_assert(tested::is_same_v<tested::pmr::deque<int>, tested::deque<int, tested::pmr::polymorphic_allocator<int>>>);
 
 bool ftl_test() {
+  {
+    using allocator = equal_state_allocator<int>;
+    tested::deque<int, allocator> source({1, 2}, allocator(2));
+    tested::deque<int, allocator> target({3}, allocator(1));
+    target = source;
+    if (target.get_allocator().id != 2 || target != source) return false;
+  }
   {
     deque_allocation_state::allocations = 0;
     deque_allocation_state::deallocations = 0;

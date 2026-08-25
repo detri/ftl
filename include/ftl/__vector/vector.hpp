@@ -151,10 +151,9 @@ public:
     if (this == &other)
       return *this;
     if constexpr (traits::propagate_on_container_copy_assignment::value) {
-      if (!(allocator_ == other.allocator_)) {
+      if (!(allocator_ == other.allocator_))
         release();
-        allocator_ = other.allocator_;
-      }
+      allocator_ = other.allocator_;
     }
     assign(other.begin(), other.end());
     return *this;
@@ -310,6 +309,15 @@ public:
   constexpr void push_back(T &&value) { emplace_back(move(value)); }
   template <detail::vector_compatible_range<T> Range>
   constexpr void append_range(Range &&range) {
+    if constexpr (same_as<remove_cvref_t<Range>, vector>) {
+      if (this == static_cast<const vector *>(&range)) {
+        vector copy(range, allocator_);
+        reserve_for(copy.size());
+        for (auto &value : copy)
+          emplace_back(move_if_noexcept(value));
+        return;
+      }
+    }
     if constexpr (ranges::sized_range<Range>)
       reserve_for(static_cast<size_type>(ranges::size(range)));
     for (auto &&value : range)
@@ -619,14 +627,14 @@ private:
     }
     vector replacement(allocator_);
     replacement.reserve(size() + inserted.size());
-    replacement.append_iterators(
-        make_move_iterator(begin()),
-        make_move_iterator(begin() + static_cast<difference_type>(index)));
-    replacement.append_iterators(make_move_iterator(inserted.begin()),
-                                 make_move_iterator(inserted.end()));
-    replacement.append_iterators(
-        make_move_iterator(begin() + static_cast<difference_type>(index)),
-        make_move_iterator(end()));
+    for (pointer source = first_;
+         source != first_ + static_cast<difference_type>(index); ++source)
+      replacement.emplace_back(move_if_noexcept(*source));
+    for (pointer source = inserted.first_; source != inserted.last_; ++source)
+      replacement.emplace_back(move_if_noexcept(*source));
+    for (pointer source = first_ + static_cast<difference_type>(index);
+         source != last_; ++source)
+      replacement.emplace_back(move_if_noexcept(*source));
     swap_storage(replacement);
     return begin() + static_cast<difference_type>(index);
   }

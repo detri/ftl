@@ -16,6 +16,8 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+#include "equal_state_allocator.hpp"
+
 struct forward_counted {
   inline static int alive;
   int value{};
@@ -88,6 +90,13 @@ static_assert(
         tested::forward_list<int, tested::pmr::polymorphic_allocator<int>>>);
 
 bool ftl_test() {
+  {
+    using allocator = equal_state_allocator<int>;
+    tested::forward_list<int, allocator> source({1, 2}, allocator(2));
+    tested::forward_list<int, allocator> target({3}, allocator(1));
+    target = source;
+    if (target.get_allocator().id != 2 || target != source) return false;
+  }
   {
     forward_allocation_state::allocations = 0;
     forward_allocation_state::deallocations = 0;

@@ -51,6 +51,25 @@ concept has_rvalue_or_else = requires(O value) {
     tested::move(value).or_else(not_callable{});
 };
 
+struct optional_consumer {
+    constexpr optional_consumer(const tested::optional<int>&) {}
+};
+
+struct convertible_optional_result {
+    constexpr operator tested::optional<int>() const { return {1}; }
+};
+
+template<class O>
+concept accepts_convertible_or_else = requires(O value) {
+    value.or_else([] { return convertible_optional_result{}; });
+};
+
+struct equality_left { int value; };
+struct equality_right { int value; };
+constexpr bool operator==(equality_left left, equality_right right) {
+    return left.value == right.value;
+}
+
 constexpr bool value_optional_works() {
     tested::optional<value> item;
     if (item || item.value_or(value{3}).number != 3)
@@ -112,6 +131,11 @@ static_assert(tested::is_assignable_v<tested::optional<long>&,
                                      const tested::optional<int>&>);
 static_assert(tested::is_constructible_v<tested::optional<bool>,
                                         const tested::optional<int>&>);
+static_assert(tested::is_constructible_v<tested::optional<optional_consumer>,
+                                        const tested::optional<int>&>);
+static_assert(!accepts_convertible_or_else<tested::optional<int>>);
+static_assert(equality_left{3} == tested::optional<equality_right>{
+                                      equality_right{3}});
 #if __cpp_lib_optional != 202110L
 #error optional must advertise its C++23 monadic surface
 #endif

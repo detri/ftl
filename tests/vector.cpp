@@ -18,6 +18,8 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+#include "equal_state_allocator.hpp"
+
 struct counted {
   inline static int alive;
   int value{};
@@ -51,6 +53,15 @@ struct throwing_value {
   throwing_value(throwing_value&& other) noexcept(false) : value(other.value) {}
   throwing_value& operator=(const throwing_value&) = default;
   throwing_value& operator=(throwing_value&&) = default;
+};
+
+struct copy_fallback_value {
+  int value;
+  explicit copy_fallback_value(int input) : value(input) {}
+  copy_fallback_value(const copy_fallback_value&) = default;
+  copy_fallback_value(copy_fallback_value&&) { throw 1; }
+  copy_fallback_value& operator=(const copy_fallback_value&) = default;
+  copy_fallback_value& operator=(copy_fallback_value&&) = default;
 };
 
 struct incomplete;
@@ -113,6 +124,32 @@ static_assert(__cpp_lib_incomplete_container_elements == 201505L);
 
 bool ftl_test() {
   {
+    tested::vector<int> self{1, 2, 3};
+    self.shrink_to_fit();
+    self.append_range(self);
+    if (self != tested::vector<int>{1, 2, 3, 1, 2, 3}) return false;
+  }
+
+  {
+    tested::vector<copy_fallback_value> self;
+    self.emplace_back(1);
+    self.emplace_back(2);
+    self.append_range(self);
+    if (self.size() != 4 || self[2].value != 1 || self[3].value != 2)
+      return false;
+  }
+
+  {
+    tested::vector<copy_fallback_value> values;
+    values.emplace_back(1);
+    values.emplace_back(3);
+    values.shrink_to_fit();
+    const copy_fallback_value inserted(2);
+    values.insert(values.begin() + 1, 1, inserted);
+    if (values.size() != 3 || values[0].value != 1 ||
+        values[1].value != 2 || values[2].value != 3) return false;
+  }
+  {
     tested::vector<int> aliased{1, 2};
     aliased.shrink_to_fit();
     aliased.push_back(aliased[0]);
@@ -163,6 +200,12 @@ bool ftl_test() {
   tested::vector<int, copy_allocator> target({3}, copy_allocator(1));
   target = source;
   if (target.get_allocator().id != 2) return false;
+
+  using equal_allocator = equal_state_allocator<int>;
+  tested::vector<int, equal_allocator> equal_source({1, 2}, equal_allocator(4));
+  tested::vector<int, equal_allocator> equal_target({3}, equal_allocator(3));
+  equal_target = equal_source;
+  if (equal_target.get_allocator().id != 4) return false;
 
   tested::vector<bool> bits(17, true);
   bits[8] = false;

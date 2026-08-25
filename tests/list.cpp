@@ -16,6 +16,8 @@ namespace tested = std;
 namespace tested = ftl;
 #endif
 
+#include "equal_state_allocator.hpp"
+
 struct list_counted {
   inline static int alive;
   int value{};
@@ -69,6 +71,13 @@ static_assert(tested::is_same_v<
               tested::list<int, tested::pmr::polymorphic_allocator<int>>>);
 
 bool ftl_test() {
+  {
+    using allocator = equal_state_allocator<int>;
+    tested::list<int, allocator> source({1, 2}, allocator(2));
+    tested::list<int, allocator> target({3}, allocator(1));
+    target = source;
+    if (target.get_allocator().id != 2 || target != source) return false;
+  }
   {
     list_allocation_state::allocations = list_allocation_state::deallocations = 0;
     throwing_list_value::constructions_before_throw = 1;

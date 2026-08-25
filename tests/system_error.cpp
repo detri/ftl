@@ -1,9 +1,11 @@
 #ifdef FTL_REPLACE_STL
 #include <system_error>
 #include <type_traits>
+#include <sstream>
 namespace tested = std;
 #else
 #include <ftl/system_error>
+#include <ftl/sstream>
 #include <ftl/type_traits>
 namespace tested = ftl;
 #endif
@@ -45,6 +47,11 @@ bool ftl_test() {
   if (error.code() != code || !contains(error.what(), "opening file") ||
       tested::hash<tested::error_code>{}(code) !=
           tested::hash<tested::error_code>{}(code))
+    return false;
+
+  tested::ostringstream output;
+  output << code;
+  if (!contains(output.str().c_str(), "generic:"))
     return false;
 
 #if defined(_WIN32)

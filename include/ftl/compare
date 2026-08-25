@@ -1049,7 +1049,7 @@ concept partial_fallback_comparable =
         {
             static_cast<U&&>(right) <
             static_cast<T&&>(left)
-        } -> boolean_testable;
+        };
     };
 
 struct strong_fallback_fn {

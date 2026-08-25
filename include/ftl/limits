@@ -65,7 +65,7 @@ template<class T> struct integral_limits {
     static constexpr T denorm_min() noexcept { return T(0); }
     static constexpr bool is_iec559 = false;
     static constexpr bool is_bounded = true, is_modulo = !is_signed;
-    static constexpr bool traps = false, tinyness_before = false;
+    static constexpr bool traps = true, tinyness_before = false;
     static constexpr float_round_style round_style = round_toward_zero;
 };
 }
@@ -208,6 +208,9 @@ FTL_FLOAT_LIMITS(long double, __LDBL, l);
 #undef FTL_FLOAT_QUIET_NAN
 #undef FTL_FLOAT_SIGNALING_NAN
 
+#define FTL_EXTENDED_FLOAT_INFINITY(SUFFIX) __builtin_huge_val##SUFFIX()
+#define FTL_EXTENDED_FLOAT_QUIET_NAN(SUFFIX) __builtin_nan##SUFFIX("")
+#define FTL_EXTENDED_FLOAT_SIGNALING_NAN(SUFFIX) __builtin_nans##SUFFIX("")
 #define FTL_EXTENDED_FLOAT_LIMITS(SUFFIX, P) \
 template<> struct numeric_limits<decltype(0.0##SUFFIX)> { \
     using T = decltype(0.0##SUFFIX); \
@@ -226,10 +229,10 @@ template<> struct numeric_limits<decltype(0.0##SUFFIX)> { \
     static constexpr bool has_infinity = P##_HAS_INFINITY__; \
     static constexpr bool has_quiet_NaN = P##_HAS_QUIET_NAN__; \
     static constexpr bool has_signaling_NaN = P##_IS_IEC_60559__; \
-    static constexpr T infinity() noexcept { return static_cast<T>(__builtin_huge_val()); } \
-    static constexpr T quiet_NaN() noexcept { return static_cast<T>(__builtin_nan("")); } \
+    static constexpr T infinity() noexcept { return FTL_EXTENDED_FLOAT_INFINITY(SUFFIX); } \
+    static constexpr T quiet_NaN() noexcept { return FTL_EXTENDED_FLOAT_QUIET_NAN(SUFFIX); } \
     static constexpr T signaling_NaN() noexcept { \
-        return has_signaling_NaN ? static_cast<T>(__builtin_nans("")) : T(0); \
+        return has_signaling_NaN ? FTL_EXTENDED_FLOAT_SIGNALING_NAN(SUFFIX) : T(0); \
     } \
     static constexpr T denorm_min() noexcept { return P##_DENORM_MIN__; } \
     static constexpr bool is_iec559 = P##_IS_IEC_60559__; \
@@ -250,9 +253,23 @@ FTL_EXTENDED_FLOAT_LIMITS(f64, __FLT64);
 FTL_EXTENDED_FLOAT_LIMITS(f128, __FLT128);
 #endif
 #ifdef __STDCPP_BFLOAT16_T__
+#if defined(__GNUC__) && !defined(__clang__)
+#undef FTL_EXTENDED_FLOAT_INFINITY
+#undef FTL_EXTENDED_FLOAT_QUIET_NAN
+#undef FTL_EXTENDED_FLOAT_SIGNALING_NAN
+#define FTL_EXTENDED_FLOAT_INFINITY(SUFFIX) \
+    __builtin_bit_cast(decltype(0.0##SUFFIX), static_cast<__UINT16_TYPE__>(0x7f80))
+#define FTL_EXTENDED_FLOAT_QUIET_NAN(SUFFIX) \
+    __builtin_bit_cast(decltype(0.0##SUFFIX), static_cast<__UINT16_TYPE__>(0x7fc0))
+#define FTL_EXTENDED_FLOAT_SIGNALING_NAN(SUFFIX) \
+    __builtin_bit_cast(decltype(0.0##SUFFIX), static_cast<__UINT16_TYPE__>(0x7f81))
+#endif
 FTL_EXTENDED_FLOAT_LIMITS(bf16, __BFLT16);
 #endif
 #undef FTL_EXTENDED_FLOAT_LIMITS
+#undef FTL_EXTENDED_FLOAT_INFINITY
+#undef FTL_EXTENDED_FLOAT_QUIET_NAN
+#undef FTL_EXTENDED_FLOAT_SIGNALING_NAN
 
 template<class T> struct numeric_limits<const T> : numeric_limits<T> {};
 template<class T> struct numeric_limits<volatile T> : numeric_limits<T> {};

@@ -241,6 +241,17 @@ template <class T> struct counting_allocator {
   }
 };
 
+struct throwing_traits : tested::char_traits<char> {
+  static inline bool throw_on_copy = false;
+
+  static char *copy(char *destination, const char *source,
+                    tested::size_t count) {
+    if (throw_on_copy && count != 0)
+      throw 17;
+    return tested::char_traits<char>::copy(destination, source, count);
+  }
+};
+
 bool ftl_test() {
   allocation_state first{};
   allocation_state second{};
@@ -268,6 +279,31 @@ bool ftl_test() {
   if (first.allocations != first.deallocations ||
       second.allocations != second.deallocations)
     return false;
+
+#if defined(_CPPUNWIND) || defined(__cpp_exceptions)
+  allocation_state throwing_state{};
+  using throwing_string =
+      tested::basic_string<char, throwing_traits, counting_allocator<char>>;
+  try {
+    throwing_traits::throw_on_copy = true;
+    throwing_string value("abcdefghijklmnopqrstuvwxyz0123456789",
+                          counting_allocator<char>(throwing_state));
+    return false;
+  } catch (int value) {
+    throwing_traits::throw_on_copy = false;
+    if (value != 17 || throwing_state.allocations != 1 ||
+        throwing_state.deallocations != 1)
+      return false;
+  }
+
+  throwing_string left("left", counting_allocator<char>(throwing_state));
+  throwing_string right("right", counting_allocator<char>(throwing_state));
+  throwing_traits::throw_on_copy = true;
+  left.swap(right);
+  throwing_traits::throw_on_copy = false;
+  if (left != "right" || right != "left")
+    return false;
+#endif
 
   tested::size_t index = 0;
   if (tested::stoi("  -0x10tail", &index, 0) != -16 || index != 7)

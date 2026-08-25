@@ -16,6 +16,35 @@ struct list_value {
     constexpr list_value(tested::initializer_list<int>) {}
 };
 
+struct independently_ordered {
+    int number;
+    friend constexpr bool operator==(independently_ordered,
+                                     independently_ordered) { return true; }
+    friend constexpr bool operator!=(independently_ordered left,
+                                     independently_ordered right) {
+        return left.number != right.number;
+    }
+    friend constexpr bool operator<(independently_ordered,
+                                    independently_ordered) { return false; }
+    friend constexpr bool operator>(independently_ordered left,
+                                    independently_ordered right) {
+        return left.number > right.number;
+    }
+    friend constexpr bool operator<=(independently_ordered left,
+                                     independently_ordered right) {
+        return left.number <= right.number;
+    }
+    friend constexpr bool operator>=(independently_ordered left,
+                                     independently_ordered right) {
+        return left.number >= right.number;
+    }
+};
+
+struct convertible_visitor {
+    short operator()(int value) const { return static_cast<short>(value); }
+    long operator()(value current) const { return current.number; }
+};
+
 template<class V>
 concept can_emplace_out_of_bounds = requires(V& item) {
     item.template emplace<9>();
@@ -45,6 +74,14 @@ struct guarded_copy {
     guarded_copy& operator=(const guarded_copy&) = default;
     guarded_copy& operator=(guarded_copy&&) = default;
 };
+
+struct guarded_source {};
+struct guarded_conversion {
+    guarded_conversion(guarded_source) { throw 2; }
+    guarded_conversion(guarded_conversion&&) noexcept = default;
+    guarded_conversion& operator=(guarded_conversion&&) = default;
+    guarded_conversion& operator=(guarded_source) { return *this; }
+};
 #endif
 
 constexpr bool variant_works() {
@@ -68,6 +105,9 @@ static_assert(tested::is_same_v<tested::variant_alternative_t<1, tested::variant
 static_assert(tested::is_trivially_copyable_v<tested::variant<int, float>>);
 static_assert(tested::is_copy_constructible_v<tested::variant<int, int>>);
 static_assert(tested::variant<float, long>{1}.index() == 1);
+static_assert(!tested::is_constructible_v<
+              tested::variant<tested::in_place_type_t<int>>,
+              tested::in_place_type_t<int>>);
 static_assert(!can_emplace_out_of_bounds<tested::variant<int, float>>);
 static_assert(!can_emplace_duplicate_type<tested::variant<list_value,
                                                           list_value>>);
@@ -77,6 +117,16 @@ static_assert(tested::visit([](const auto& item) {
     else
         return item.number;
 }, derived_variant{7}) == 7);
+static_assert(tested::visit([] { return 11; }) == 11);
+static_assert(tested::visit<long>([] { return short{12}; }) == 12);
+static_assert(tested::variant<independently_ordered>(
+                  tested::in_place_index<0>, independently_ordered{2}) >
+              tested::variant<independently_ordered>(
+                  tested::in_place_index<0>, independently_ordered{1}));
+static_assert(tested::variant<independently_ordered>(
+                  tested::in_place_index<0>, independently_ordered{2}) !=
+              tested::variant<independently_ordered>(
+                  tested::in_place_index<0>, independently_ordered{1}));
 
 bool ftl_test() {
     if (!variant_works()) return false;
@@ -101,6 +151,8 @@ bool ftl_test() {
         }, first, second) != 6)
         return false;
     tested::variant<int, value> item(4);
+    if (tested::visit<long>(convertible_visitor{}, item) != 4)
+        return false;
 #if FTL_HAS_EXCEPTIONS
     tested::variant<int, guarded_copy> preserved(17);
     tested::variant<int, guarded_copy> source(tested::in_place_index<1>, 8);
@@ -111,6 +163,15 @@ bool ftl_test() {
     } catch (...) {
         guarded_copy::throw_on_copy = false;
         if (preserved.index() != 0 || tested::get<0>(preserved) != 17)
+            return false;
+    }
+    tested::variant<int, guarded_conversion> conversion_preserved(23);
+    try {
+        conversion_preserved = guarded_source{};
+        return false;
+    } catch (int error) {
+        if (error != 2 || conversion_preserved.index() != 0 ||
+            tested::get<0>(conversion_preserved) != 23)
             return false;
     }
 #endif

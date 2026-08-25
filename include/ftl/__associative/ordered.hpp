@@ -186,6 +186,23 @@ public:
     return tree_.insert(hint, move(node));
   }
 
+private:
+  iterator equivalent_hint(const_iterator hint, const Key &key) {
+    const auto compare = key_comp();
+    if (hint != end() && !compare(key, hint->first) &&
+        !compare(hint->first, key))
+      return tree_.mutable_iterator(hint);
+    if (hint != begin()) {
+      auto previous = hint;
+      --previous;
+      if (!compare(key, previous->first) && !compare(previous->first, key))
+        return tree_.mutable_iterator(previous);
+    }
+    return end();
+  }
+
+public:
+
   template <class... Args>
   pair<iterator, bool> try_emplace(const Key &key, Args &&...args)
     requires(!Multi)
@@ -207,16 +224,22 @@ public:
                    forward_as_tuple(forward<Args>(args)...));
   }
   template <class... Args>
-  iterator try_emplace(const_iterator, const Key &key, Args &&...args)
+  iterator try_emplace(const_iterator hint, const Key &key, Args &&...args)
     requires(!Multi)
   {
-    return try_emplace(key, forward<Args>(args)...).first;
+    if (auto found = equivalent_hint(hint, key); found != end())
+      return found;
+    return emplace_hint(hint, piecewise_construct, forward_as_tuple(key),
+                        forward_as_tuple(forward<Args>(args)...));
   }
   template <class... Args>
-  iterator try_emplace(const_iterator, Key &&key, Args &&...args)
+  iterator try_emplace(const_iterator hint, Key &&key, Args &&...args)
     requires(!Multi)
   {
-    return try_emplace(move(key), forward<Args>(args)...).first;
+    if (auto found = equivalent_hint(hint, key); found != end())
+      return found;
+    return emplace_hint(hint, piecewise_construct, forward_as_tuple(move(key)),
+                        forward_as_tuple(forward<Args>(args)...));
   }
   template <class M>
   pair<iterator, bool> insert_or_assign(const Key &key, M &&value)
@@ -241,16 +264,24 @@ public:
     return emplace(move(key), static_cast<M &&>(value));
   }
   template <class M>
-  iterator insert_or_assign(const_iterator, const Key &key, M &&value)
+  iterator insert_or_assign(const_iterator hint, const Key &key, M &&value)
     requires(!Multi)
   {
-    return insert_or_assign(key, static_cast<M &&>(value)).first;
+    if (auto found = equivalent_hint(hint, key); found != end()) {
+      found->second = static_cast<M &&>(value);
+      return found;
+    }
+    return emplace_hint(hint, key, static_cast<M &&>(value));
   }
   template <class M>
-  iterator insert_or_assign(const_iterator, Key &&key, M &&value)
+  iterator insert_or_assign(const_iterator hint, Key &&key, M &&value)
     requires(!Multi)
   {
-    return insert_or_assign(move(key), static_cast<M &&>(value)).first;
+    if (auto found = equivalent_hint(hint, key); found != end()) {
+      found->second = static_cast<M &&>(value);
+      return found;
+    }
+    return emplace_hint(hint, move(key), static_cast<M &&>(value));
   }
 
   iterator erase(iterator position) { return tree_.erase(position); }

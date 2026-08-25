@@ -21,6 +21,7 @@ constexpr T&& forward(remove_reference_t<T>&&) noexcept;
 
 template<class T, T... Values>
 struct integer_sequence {
+    static_assert(is_integral_v<T>);
     using value_type = T;
     static constexpr size_t size() noexcept { return sizeof...(Values); }
 };
@@ -158,8 +159,8 @@ concept comparison_integer =
 template<class T, class U>
     requires three_way_comparable_with<T, U> ||
              requires(const T& left, const U& right) {
-                 bool(left < right);
-                 bool(right < left);
+                 { left < right } -> boolean_testable;
+                 { right < left } -> boolean_testable;
              }
 constexpr auto synth_three_way(const T& left, const U& right) {
     if constexpr (three_way_comparable_with<T, U>) {
@@ -543,6 +544,11 @@ constexpr bool operator==(const pair<T1, T2>& left,
 }
 
 template<class T1, class T2, class U1, class U2>
+    requires requires(const T1& first, const U1& other_first,
+                      const T2& second, const U2& other_second) {
+        detail::synth_three_way(first, other_first);
+        detail::synth_three_way(second, other_second);
+    }
 constexpr auto operator<=>(const pair<T1, T2>& left,
                            const pair<U1, U2>& right) {
     using category = common_comparison_category_t<
@@ -688,8 +694,9 @@ constexpr underlying_type_t<Enum> to_underlying(Enum value) noexcept {
     return static_cast<underlying_type_t<Enum>>(value);
 }
 
-template<detail::comparison_integer T, detail::comparison_integer U>
+template<class T, class U>
 constexpr bool cmp_equal(T left, U right) noexcept {
+    static_assert(detail::comparison_integer<T> && detail::comparison_integer<U>);
     if constexpr (is_signed_v<T> == is_signed_v<U>)
         return left == right;
     else if constexpr (is_signed_v<T>)
@@ -698,13 +705,15 @@ constexpr bool cmp_equal(T left, U right) noexcept {
         return right < 0 ? false : left == make_unsigned_t<U>(right);
 }
 
-template<detail::comparison_integer T, detail::comparison_integer U>
+template<class T, class U>
 constexpr bool cmp_not_equal(T left, U right) noexcept {
+    static_assert(detail::comparison_integer<T> && detail::comparison_integer<U>);
     return !cmp_equal(left, right);
 }
 
-template<detail::comparison_integer T, detail::comparison_integer U>
+template<class T, class U>
 constexpr bool cmp_less(T left, U right) noexcept {
+    static_assert(detail::comparison_integer<T> && detail::comparison_integer<U>);
     if constexpr (is_signed_v<T> == is_signed_v<U>)
         return left < right;
     else if constexpr (is_signed_v<T>)
@@ -713,23 +722,27 @@ constexpr bool cmp_less(T left, U right) noexcept {
         return right >= 0 && left < make_unsigned_t<U>(right);
 }
 
-template<detail::comparison_integer T, detail::comparison_integer U>
+template<class T, class U>
 constexpr bool cmp_greater(T left, U right) noexcept {
+    static_assert(detail::comparison_integer<T> && detail::comparison_integer<U>);
     return cmp_less(right, left);
 }
 
-template<detail::comparison_integer T, detail::comparison_integer U>
+template<class T, class U>
 constexpr bool cmp_less_equal(T left, U right) noexcept {
+    static_assert(detail::comparison_integer<T> && detail::comparison_integer<U>);
     return !cmp_less(right, left);
 }
 
-template<detail::comparison_integer T, detail::comparison_integer U>
+template<class T, class U>
 constexpr bool cmp_greater_equal(T left, U right) noexcept {
+    static_assert(detail::comparison_integer<T> && detail::comparison_integer<U>);
     return !cmp_less(left, right);
 }
 
-template<detail::comparison_integer Result, detail::comparison_integer T>
+template<class Result, class T>
 constexpr bool in_range(T value) noexcept {
+    static_assert(detail::comparison_integer<Result> && detail::comparison_integer<T>);
     using unsigned_result = make_unsigned_t<Result>;
     constexpr unsigned_result maximum =
         unsigned_result(-1) >> (is_signed_v<Result> ? 1 : 0);

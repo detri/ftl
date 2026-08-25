@@ -23,6 +23,12 @@ struct throwing_value {
 static_assert(!tested::is_constructible_v<
               tested::any, decltype(tested::in_place_type<noncopyable>)>);
 
+bool assignment_accepts_copyable_in_place_tag() {
+    tested::any value;
+    value = tested::in_place_type<int>;
+    return tested::any_cast<tested::in_place_type_t<int>>(&value) != nullptr;
+}
+
 bool ftl_test() {
     tested::any value = 3;
     if (!value.has_value() || tested::any_cast<int>(value) != 3)
@@ -53,7 +59,8 @@ bool ftl_test() {
     try {
         (void)tested::any_cast<int>(value);
     } catch (const tested::bad_any_cast&) {
-        return !value.has_value() && value.type() == typeid(void);
+        return !value.has_value() && value.type() == typeid(void) &&
+               assignment_accepts_copyable_in_place_tag();
     }
     return false;
 }

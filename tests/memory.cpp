@@ -90,6 +90,39 @@ struct throwing_move_delete {
   }
 };
 
+struct clearing_move_delete {
+  int *deletes{};
+  explicit clearing_move_delete(int &count) : deletes(&count) {}
+  clearing_move_delete(const clearing_move_delete &) = default;
+  clearing_move_delete(clearing_move_delete &&other) noexcept
+      : deletes(other.deletes) { other.deletes = nullptr; }
+  void operator()(object *pointer) const noexcept {
+    if (deletes) ++*deletes;
+    delete pointer;
+  }
+};
+
+struct late_throw_allocator_state { inline static bool throw_copies; };
+
+template<class T> struct late_throw_allocator {
+  using value_type = T;
+  template<class U> struct rebind { using other = late_throw_allocator<U>; };
+  late_throw_allocator() = default;
+  template<class U>
+  late_throw_allocator(const late_throw_allocator<U> &) {
+    if (late_throw_allocator_state::throw_copies) throw 9;
+  }
+  late_throw_allocator(const late_throw_allocator &) {
+    if (late_throw_allocator_state::throw_copies) throw 9;
+  }
+  T *allocate(ftl::size_t count) {
+    late_throw_allocator_state::throw_copies = true;
+    return static_cast<T *>(::operator new(count * sizeof(T)));
+  }
+  void deallocate(T *value, ftl::size_t) noexcept { ::operator delete(value); }
+  friend bool operator==(late_throw_allocator, late_throw_allocator) = default;
+};
+
 template <class T> struct failing_allocator {
   using value_type = T;
   template <class U> struct rebind { using other = failing_allocator<U>; };
@@ -451,6 +484,17 @@ bool shared_pointer_failure_cleanup_works() {
   if (deletes != 1)
     return false;
 
+  late_throw_allocator_state::throw_copies = false;
+  try {
+    ftl::shared_ptr<object>{new object{4}, clearing_move_delete{deletes},
+                            late_throw_allocator<object>{}};
+    return false;
+  } catch (int value) {
+    if (value != 9) return false;
+  }
+  late_throw_allocator_state::throw_copies = false;
+  if (deletes != 2) return false;
+
   int moves = 0;
   throwing_move_delete throwing{deletes, moves};
   try {
@@ -460,7 +504,7 @@ bool shared_pointer_failure_cleanup_works() {
     if (value != 7)
       return false;
   }
-  if (deletes != 2)
+  if (deletes != 3)
     return false;
 
   moves = 0;
@@ -477,7 +521,7 @@ bool shared_pointer_failure_cleanup_works() {
         return false;
     }
   }
-  return deletes == 3;
+  return deletes == 4;
 #else
   return true;
 #endif

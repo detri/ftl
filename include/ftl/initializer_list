@@ -39,7 +39,7 @@ public:
     constexpr initializer_list() noexcept = default;
 #if defined(_MSC_VER) && !defined(__clang__)
     constexpr size_type size() const noexcept {
-        return static_cast<size_type>(last - first);
+        return first ? static_cast<size_type>(last - first) : 0;
     }
 #else
     constexpr size_type size() const noexcept { return count; }

@@ -899,7 +899,16 @@ constexpr T *midpoint(T *a, T *b) {
   static_assert(sizeof(T) != 0,
                 "midpoint pointer element type must be complete");
 
-  return a + (b - a) / 2;
+  if consteval {
+    return a + (b - a) / 2;
+  } else {
+    using address_type = conditional_t<sizeof(void *) == sizeof(unsigned long long),
+                                       unsigned long long, unsigned long>;
+    const auto left = reinterpret_cast<address_type>(a);
+    const auto right = reinterpret_cast<address_type>(b);
+    return left < right ? a + (right - left) / sizeof(T) / 2
+                        : a - (left - right) / sizeof(T) / 2;
+  }
 }
 
 FTL_END_NAMESPACE

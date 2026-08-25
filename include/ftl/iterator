@@ -1568,18 +1568,12 @@ constexpr operator CI() && {
   }
 
   constexpr auto operator<=>(const basic_const_iterator &right) const
-#ifdef FTL_REPLACE_STL
-    requires(random_access_iterator<Iterator> &&
-             three_way_comparable<Iterator>)
-#else
-    requires random_access_iterator<Iterator>
-#endif
+    requires random_access_iterator<Iterator> &&
+             requires(const Iterator &left, const Iterator &other) {
+               compare_three_way{}(left, other);
+             }
   {
-#ifdef FTL_REPLACE_STL
-    return current <=> right.current;
-#else
     return compare_three_way{}(current, right.current);
-#endif
   }
 
   template <class I>
@@ -1638,18 +1632,14 @@ constexpr operator CI() && {
     requires(
         detail::different_from<I, basic_const_iterator> &&
         random_access_iterator<Iterator> &&
-        totally_ordered_with<Iterator, I>
-#ifdef FTL_REPLACE_STL
-        &&
-        three_way_comparable_with<Iterator, I>
-#else
-        && requires(const Iterator &left, const I &other) {
-             left <=> other;
-           }
-#endif
+        totally_ordered_with<Iterator, I> &&
+        !detail::is_basic_const_iterator<remove_cvref_t<I>>::value &&
+        requires(const Iterator &left, const I &other) {
+          compare_three_way{}(left, other);
+        }
     )
   constexpr auto operator<=>(const I &right) const {
-    return current <=> right;
+    return compare_three_way{}(current, right);
   }
 
   template <detail::not_a_const_iterator I>

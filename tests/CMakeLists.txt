@@ -1,4 +1,6 @@
 include(FetchContent)
+include(../cmake/ftl_replace_stl.cmake)
+
 FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
@@ -56,7 +58,7 @@ function(add_ftl_test header)
 
         if (mode STREQUAL replace AND
                 header MATCHES
-                "^(regex|string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|queue|stack|locale(_.*)?|codecvt|format|chrono|print|exception|iosfwd|streambuf|ios|istream|istream_view|ostream|complex|random|thread|stacktrace|iostream|fstream|sstream|spanstream|syncstream|iomanip|cstdio|strstream|filesystem|feature_macro_semantics)$")
+                "^(regex|string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|queue|stack|locale(_.*)?|codecvt|format|chrono|print|exception|system_error|iosfwd|streambuf|ios|istream|istream_view|ostream|complex|random|thread|stacktrace|iostream|fstream|sstream|spanstream|syncstream|iomanip|cstdio|strstream|filesystem|feature_macro_semantics)$")
             set(ftl_standalone_replace TRUE)
         endif ()
 
@@ -201,10 +203,16 @@ add_ftl_compile_fail_check(type_traits_rejects_make_signed_bool
         checks/type_traits_make_signed_bool_compile_fail.cpp)
 add_ftl_compile_fail_check(utility_rejects_bad_forward
         checks/utility_forward_compile_fail.cpp)
+add_ftl_compile_fail_check(integer_sequence_rejects_non_integer
+        checks/integer_sequence_non_integer_compile_fail.cpp)
+add_ftl_compile_fail_check(cmp_equal_rejects_bool
+        checks/cmp_equal_bool_compile_fail.cpp)
 add_ftl_compile_fail_check(compare_rejects_nonzero
         checks/compare_nonzero_compile_fail.cpp)
 add_ftl_compile_fail_check(pair_rejects_dangling_reference
         checks/pair_dangling_compile_fail.cpp)
+add_ftl_compile_fail_check(tuple_rejects_dangling_reference
+        checks/tuple_dangling_compile_fail.cpp)
 add_ftl_compile_fail_check(ratio_rejects_intmax_min_numerator
         checks/ratio_intmax_min_numerator_compile_fail.cpp)
 add_ftl_compile_fail_check(ratio_rejects_intmax_min_denominator
@@ -215,10 +223,22 @@ add_ftl_compile_fail_check(any_rejects_move_only
         checks/any_rejects_move_only_compile_fail.cpp)
 add_ftl_compile_fail_check(expected_rejects_reference
         checks/expected_rejects_reference_compile_fail.cpp)
+add_ftl_compile_fail_check(expected_rejects_invalid_error
+        checks/expected_invalid_error_compile_fail.cpp)
+add_ftl_compile_fail_check(expected_rejects_nondestructible_type
+        checks/expected_nondestructible_compile_fail.cpp)
+add_ftl_compile_fail_check(expected_rejects_unexpected_error
+        checks/expected_unexpected_error_compile_fail.cpp)
+add_ftl_compile_fail_check(expected_rejects_explicit_bool_equality
+        checks/expected_explicit_bool_equality_compile_fail.cpp)
 add_ftl_compile_fail_check(optional_rejects_rvalue_reference
         checks/optional_rejects_rvalue_reference_compile_fail.cpp)
 add_ftl_compile_fail_check(variant_rejects_duplicate_get
         checks/variant_rejects_duplicate_get_compile_fail.cpp)
+add_ftl_compile_fail_check(variant_rejects_duplicate_get_if
+        checks/variant_duplicate_get_if_compile_fail.cpp)
+add_ftl_compile_fail_check(variant_rejects_nondestructible_alternative
+        checks/variant_nondestructible_compile_fail.cpp)
 add_ftl_compile_fail_check(variant_rejects_mismatched_visit_results
         checks/variant_mismatched_visit_result_compile_fail.cpp)
 add_ftl_compile_fail_check(span_rejects_const_removal checks/span_rejects_const_removal_compile_fail.cpp)
@@ -269,6 +289,31 @@ add_test(
         "${CMAKE_CURRENT_SOURCE_DIR}/checks/feature_macro_exports.cmake"
 )
 add_ftl_standalone_check(no_allocation checks/no_allocation.cpp)
+
+add_executable(ftl_check_replace_stl_link checks/replace_stl_link.cpp)
+ftl_replace_stl(ftl_check_replace_stl_link)
+
+set(ftl_replace_stl_map
+        "$<TARGET_FILE_DIR:ftl_check_replace_stl_link>/ftl_replace_stl.map")
+if (MSVC)
+    target_link_options(ftl_check_replace_stl_link PRIVATE
+            "/MAP:${ftl_replace_stl_map}")
+elseif (APPLE)
+    target_link_options(ftl_check_replace_stl_link PRIVATE
+            "LINKER:-map,${ftl_replace_stl_map}")
+else ()
+    target_link_options(ftl_check_replace_stl_link PRIVATE
+            "LINKER:-Map,${ftl_replace_stl_map}")
+endif ()
+
+add_test(NAME check.replace_stl_link COMMAND ftl_check_replace_stl_link)
+add_test(
+        NAME check.replace_stl_link_map
+        COMMAND ${CMAKE_COMMAND}
+        "-DFTL_LINK_MAP=${ftl_replace_stl_map}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/checks/replace_stl_link.cmake"
+)
+
 add_ftl_freestanding_link_check(freestanding_link checks/freestanding_link.cpp)
 add_ftl_freestanding_link_check(
         fenv_freestanding_link

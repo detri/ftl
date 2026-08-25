@@ -92,6 +92,7 @@ bool make_exception_ptr_works() {
 
 static_assert(tested::is_base_of_v<tested::exception, tested::bad_alloc>);
 static_assert(tested::is_base_of_v<tested::exception, tested::bad_weak_ptr>);
+static_assert(noexcept(tested::bad_exception{}.what()));
 
 bool inaccessible_and_ambiguous_nested_are_noops() {
   private_nested private_value;
@@ -108,7 +109,10 @@ bool ftl_test() {
   const bool terminate_handler_works =
       tested::set_terminate(handler) == handler;
 
-  return terminate_handler_works && exception_ptr_works() &&
+  const tested::exception &bad = tested::bad_exception{};
+  const bool bad_exception_what_works = bad.what() != nullptr;
+
+  return terminate_handler_works && bad_exception_what_works && exception_ptr_works() &&
          nested_exception_works() &&
          inaccessible_and_ambiguous_nested_are_noops() &&
          uncaught_count_works() && make_exception_ptr_works();

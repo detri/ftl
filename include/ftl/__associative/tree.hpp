@@ -182,7 +182,9 @@ public:
       : compare_(other.compare_), allocator_(allocator) {
     initialize([&] { insert(other.begin(), other.end()); });
   }
-  associative_tree(associative_tree &&other) noexcept
+  associative_tree(associative_tree &&other)
+      noexcept(is_nothrow_move_constructible_v<Compare> &&
+               is_nothrow_move_constructible_v<Allocator>)
       : root_(exchange(other.root_, nullptr)), size_(exchange(other.size_, 0)),
         compare_(move(other.compare_)), allocator_(move(other.allocator_)) {}
   associative_tree(associative_tree &&other, const Allocator &allocator)
@@ -244,6 +246,9 @@ public:
   }
   iterator end() noexcept { return iterator(nullptr, this); }
   const_iterator end() const noexcept { return const_iterator(nullptr, this); }
+  iterator mutable_iterator(const_iterator value) noexcept {
+    return iterator(value.current_, this);
+  }
   [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
   size_type size() const noexcept { return size_; }
   size_type max_size() const noexcept {

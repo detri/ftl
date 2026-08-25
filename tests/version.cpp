@@ -4,6 +4,10 @@
 #include <ftl/version>
 #endif
 
+#ifdef __cpp_lib_uses_allocator_construction
+#error "FTL does not implement uses-allocator construction"
+#endif
+
 #define FTL_REQUIRE_VERSION_MACRO(Name, Value)                                 \
   static_assert(Name == Value, #Name " has the wrong N4950 value")
 

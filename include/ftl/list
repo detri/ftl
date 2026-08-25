@@ -168,11 +168,12 @@ public:
   list &operator=(const list &other) {
     if (this == &other)
       return *this;
-    if constexpr (traits::propagate_on_container_copy_assignment::value)
+    if constexpr (traits::propagate_on_container_copy_assignment::value) {
       if (!(allocator_ == other.allocator_)) {
         clear();
-        allocator_ = other.allocator_;
       }
+      allocator_ = other.allocator_;
+    }
     assign(other.begin(), other.end());
     return *this;
   }
