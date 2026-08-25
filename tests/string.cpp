@@ -315,7 +315,13 @@ bool ftl_test() {
     return false;
   if (tested::to_string(42) != "42" || tested::to_string(1.5) != "1.500000")
     return false;
-  if (tested::to_wstring(-7) != L"-7")
+  if (tested::to_string(42u) != "42" ||
+      tested::to_string(-7l) != "-7" ||
+      tested::to_string(9ull) != "9" ||
+      tested::to_string(1.25L) != "1.250000")
+    return false;
+  if (tested::to_wstring(-7) != L"-7" ||
+      tested::to_wstring(1.25) != L"1.250000")
     return false;
   if (tested::hash<tested::string>{}("hash") !=
       tested::hash<tested::string>{}(tested::string("hash")))

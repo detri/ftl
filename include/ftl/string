@@ -15,6 +15,7 @@ extern "C" void __cdecl __fastfail(unsigned int);
 #include <charconv>
 #include <compare>
 #include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <cwchar>
 #include <detail/rapidhash>
@@ -34,6 +35,7 @@ extern "C" void __cdecl __fastfail(unsigned int);
 #include <ftl/charconv>
 #include <ftl/compare>
 #include <ftl/cerrno>
+#include <ftl/cstdio>
 #include <ftl/cstdlib>
 #include <ftl/cwchar>
 #include <ftl/detail/rapidhash>
@@ -1372,30 +1374,51 @@ Result string_to_floating(const String &value,
 
 template <class Number>
 string number_to_string(Number value) {
-  constexpr size_t capacity = is_integral_v<Number>
-                                  ? numeric_limits<Number>::digits + 3
-                                  : numeric_limits<Number>::max_exponent10 +
-                                        numeric_limits<Number>::max_digits10 + 16;
-  string result(capacity, '\0');
-  to_chars_result converted;
-  if constexpr (is_integral_v<Number>)
-    converted = to_chars(result.data(), result.data() + result.size(), value);
-  else
-    converted = to_chars(result.data(), result.data() + result.size(), value,
-                         chars_format::fixed, 6);
-  if (converted.ec != errc{})
+  const char *format = [] {
+    if constexpr (is_same_v<Number, int>)
+      return "%d";
+    else if constexpr (is_same_v<Number, unsigned>)
+      return "%u";
+    else if constexpr (is_same_v<Number, long>)
+      return "%ld";
+    else if constexpr (is_same_v<Number, unsigned long>)
+      return "%lu";
+    else if constexpr (is_same_v<Number, long long>)
+      return "%lld";
+    else if constexpr (is_same_v<Number, unsigned long long>)
+      return "%llu";
+    else if constexpr (is_same_v<Number, long double>)
+      return "%Lf";
+    else
+      return "%f";
+  }();
+
+  const int count = snprintf(nullptr, 0, format, value);
+  if (count < 0)
     string_length_failure();
-  result.resize(static_cast<size_t>(converted.ptr - result.data()));
+
+  string result(static_cast<size_t>(count) + 1, '\0');
+  if (snprintf(result.data(), result.size(), format, value) != count)
+    string_length_failure();
+  result.resize(static_cast<size_t>(count));
   return result;
 }
 
 template <class Number>
 wstring number_to_wstring(Number value) {
   const string narrow = number_to_string(value);
-  wstring wide;
-  wide.reserve(narrow.size());
-  for (char character : narrow)
-    wide.push_back(static_cast<wchar_t>(character));
+  const char *source = narrow.c_str();
+  mbstate_t state{};
+  const size_t count = mbsrtowcs(nullptr, &source, 0, &state);
+  if (count == static_cast<size_t>(-1))
+    string_length_failure();
+
+  wstring wide(count + 1, L'\0');
+  source = narrow.c_str();
+  state = mbstate_t{};
+  if (mbsrtowcs(wide.data(), &source, wide.size(), &state) != count)
+    string_length_failure();
+  wide.resize(count);
   return wide;
 }
 
