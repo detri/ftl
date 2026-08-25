@@ -1314,10 +1314,21 @@ inline size_t wcrtomb(char *s, wchar_t wc, mbstate_t *ps) {
     ps = &internal_state;
 
   char internal_buffer[16]{};
+  const bool resetting = s == nullptr;
 
-  if (s == nullptr) {
+  if (resetting) {
     s = internal_buffer;
     wc = L'\0';
+
+    /*
+     * wcrtomb(nullptr, ...) is equivalent to converting L'\0'
+     * using an initial conversion state.
+     *
+     * FTL also owns staging fields outside the native mbstate_t,
+     * so those must be cleared before performing the reset
+     * conversion.
+     */
+    cwchar_detail::reset_state(*ps);
   }
 
   auto locale = ftl_locale_runtime::snapshot_current_ctype();
@@ -1329,7 +1340,8 @@ inline size_t wcrtomb(char *s, wchar_t wc, mbstate_t *ps) {
   }
 
   const auto encoded =
-      ftl_locale_runtime::encode_wide_restartable(locale, *ps, wc);
+      ftl_locale_runtime::encode_wide_restartable(
+          locale, *ps, wc);
 
   ftl_locale_runtime::destroy(locale);
 
@@ -1341,6 +1353,13 @@ inline size_t wcrtomb(char *s, wchar_t wc, mbstate_t *ps) {
 
   for (size_t index = 0; index < encoded.produced; ++index)
     s[index] = encoded.bytes[index];
+
+  /*
+   * Successful conversion of the null wide character leaves
+   * the conversion state in its initial state.
+   */
+  if (wc == L'\0')
+    cwchar_detail::reset_state(*ps);
 
   return encoded.produced;
 }
