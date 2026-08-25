@@ -65,6 +65,9 @@ bool ftl_test()
     }
 
     // Null character conversions return zero.
+#if defined(__APPLE__)
+    __builtin_printf("cuchar apple codec: ascii passed\n");
+#endif
     {
         tested::mbstate_t state{};
         char8_t c8 = u8'x';
@@ -108,6 +111,9 @@ bool ftl_test()
     }
 
     // Null source is equivalent to converting "".
+#if defined(__APPLE__)
+    __builtin_printf("cuchar apple codec: zero length passed\n");
+#endif
     {
         tested::mbstate_t state{};
 
@@ -128,6 +134,9 @@ bool ftl_test()
     }
 
     // Non-ASCII narrow input is invalid in FTL's C locale.
+#if defined(__APPLE__)
+    __builtin_printf("cuchar apple codec: null source passed\n");
+#endif
     {
         const char input[] = {static_cast<char>(0x80), '\0'};
 
@@ -159,6 +168,9 @@ bool ftl_test()
     }
 
     // UTF code units -> ASCII narrow encoding.
+#if defined(__APPLE__)
+    __builtin_printf("cuchar apple codec: C-locale decode passed\n");
+#endif
     {
         tested::mbstate_t state{};
         char output = '\0';
@@ -200,6 +212,9 @@ bool ftl_test()
     }
 
     // A UTF-8 leading code unit is accepted into state.
+#if defined(__APPLE__)
+    __builtin_printf("cuchar apple codec: reset passed\n");
+#endif
     // The completed non-ASCII scalar then fails because the
     // C locale cannot represent it.
     {
@@ -286,6 +301,9 @@ bool ftl_test()
     }
 
     // Valid non-ASCII UTF-16/UTF-32 scalars cannot be encoded
+#if defined(__APPLE__)
+    __builtin_printf("cuchar apple codec: staging errors passed\n");
+#endif
     // by the current C locale.
     {
         tested::mbstate_t state{};
@@ -307,6 +325,11 @@ bool ftl_test()
             return false;
         }
     }
+
+
+#if defined(__APPLE__)
+    __builtin_printf("cuchar apple codec: C locale passed\n");
+#endif
 
 
 #if defined(_WIN32)
