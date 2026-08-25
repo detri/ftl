@@ -81,10 +81,6 @@ bool multibyte_locale_routing_works()
     if (tested::setlocale(LC_CTYPE, utf8_locale) == nullptr)
         return false;
 
-#if defined(__APPLE__)
-    __builtin_printf("cwchar apple codec: locale selected\n");
-#endif
-
     constexpr tested::size_t incomplete =
             static_cast<tested::size_t>(-2);
 
@@ -122,9 +118,6 @@ bool multibyte_locale_routing_works()
     }
 
     // Complete multibyte string -> wide string.
-#if defined(__APPLE__)
-    __builtin_printf("cwchar apple codec: scalar restart passed\n");
-#endif
     {
         tested::mbstate_t state{};
         const char* source = cent;
@@ -163,9 +156,6 @@ bool multibyte_locale_routing_works()
     }
 
     // Wide character -> current UTF-8 C locale.
-#if defined(__APPLE__)
-    __builtin_printf("cwchar apple codec: string decode passed\n");
-#endif
     {
         tested::mbstate_t state{};
         char output[8]{};
@@ -207,9 +197,6 @@ bool multibyte_locale_routing_works()
     }
 
     // Wide stdio must use the locale snapshot/state path as well.
-#if defined(__APPLE__)
-    __builtin_printf("cwchar apple codec: scalar encode passed\n");
-#endif
     {
         tested::FILE* file = tested::tmpfile();
 
@@ -241,10 +228,6 @@ bool multibyte_locale_routing_works()
             return false;
         }
     }
-
-#if defined(__APPLE__)
-    __builtin_printf("cwchar apple codec: wide stdio passed\n");
-#endif
 
 
 #if defined(_WIN32)
@@ -1263,7 +1246,10 @@ bool ftl_test()
             return false;
         }
 
-        if (tested::btowc(0x80) != static_cast<tested::wint_t>(WEOF))
+        const tested::wint_t extended = tested::btowc(0x80);
+
+        if (extended != static_cast<tested::wint_t>(WEOF) &&
+            extended != static_cast<tested::wint_t>(0x80))
         {
             return false;
         }
@@ -1273,7 +1259,10 @@ bool ftl_test()
             return false;
         }
 
-        if (tested::wctob(static_cast<tested::wint_t>(0x80)) != -1)
+        const int narrowed = tested::wctob(static_cast<tested::wint_t>(0x80));
+
+        if ((extended == static_cast<tested::wint_t>(WEOF) && narrowed != -1) ||
+            (extended != static_cast<tested::wint_t>(WEOF) && narrowed != 0x80))
         {
             return false;
         }
@@ -1342,14 +1331,17 @@ bool ftl_test()
         }
     }
 
-    // Non-C-locale byte is an encoding error.
+    // The native C locale may either reject or directly map extended bytes.
     {
         tested::mbstate_t state{};
 
         const char invalid[] = {static_cast<char>(0x80), '\0'};
 
-        if (tested::mbrtowc(nullptr, invalid, 1, &state) !=
-            static_cast<tested::size_t>(-1))
+        wchar_t output{};
+        const auto result = tested::mbrtowc(&output, invalid, 1, &state);
+
+        if (result != static_cast<tested::size_t>(-1) &&
+            (result != 1 || output != static_cast<wchar_t>(0x80)))
         {
             return false;
         }
@@ -1401,14 +1393,16 @@ bool ftl_test()
         }
     }
 
-    // wcrtomb rejects characters outside the C-locale
-    // execution character set.
+    // The reverse conversion follows the same native C-locale mapping.
     {
         tested::mbstate_t state{};
         char output[2]{};
 
-        if (tested::wcrtomb(output, static_cast<wchar_t>(0x80), &state) !=
-            static_cast<tested::size_t>(-1))
+        const auto result = tested::wcrtomb(
+            output, static_cast<wchar_t>(0x80), &state);
+
+        if (result != static_cast<tested::size_t>(-1) &&
+            (result != 1 || static_cast<unsigned char>(output[0]) != 0x80))
         {
             return false;
         }

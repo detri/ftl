@@ -65,9 +65,6 @@ bool ftl_test()
     }
 
     // Null character conversions return zero.
-#if defined(__APPLE__)
-    __builtin_printf("cuchar apple codec: ascii passed\n");
-#endif
     {
         tested::mbstate_t state{};
         char8_t c8 = u8'x';
@@ -111,9 +108,6 @@ bool ftl_test()
     }
 
     // Null source is equivalent to converting "".
-#if defined(__APPLE__)
-    __builtin_printf("cuchar apple codec: zero length passed\n");
-#endif
     {
         tested::mbstate_t state{};
 
@@ -133,10 +127,8 @@ bool ftl_test()
         }
     }
 
-    // Non-ASCII narrow input is invalid in FTL's C locale.
-#if defined(__APPLE__)
-    __builtin_printf("cuchar apple codec: null source passed\n");
-#endif
+    // Darwin's native C locale directly maps every byte; other supported
+    // C runtimes reject bytes outside the basic execution character set.
     {
         const char input[] = {static_cast<char>(0x80), '\0'};
 
@@ -144,6 +136,35 @@ bool ftl_test()
 
         errno = 0;
 
+#if defined(__APPLE__)
+        char8_t output8{};
+        if (tested::mbrtoc8(&output8, input, 1, &state) != 1 ||
+            output8 != static_cast<char8_t>(0xc2))
+        {
+            return false;
+        }
+
+        if (tested::mbrtoc8(&output8, "", 1, &state) !=
+                static_cast<tested::size_t>(-3) ||
+            output8 != static_cast<char8_t>(0x80))
+        {
+            return false;
+        }
+
+        char16_t output16{};
+        if (tested::mbrtoc16(&output16, input, 1, &state) != 1 ||
+            output16 != static_cast<char16_t>(0x80))
+        {
+            return false;
+        }
+
+        char32_t output32{};
+        if (tested::mbrtoc32(&output32, input, 1, &state) != 1 ||
+            output32 != static_cast<char32_t>(0x80))
+        {
+            return false;
+        }
+#else
         if (tested::mbrtoc8(nullptr, input, 1, &state) != error ||
             errno != EILSEQ)
         {
@@ -165,12 +186,10 @@ bool ftl_test()
         {
             return false;
         }
+#endif
     }
 
     // UTF code units -> ASCII narrow encoding.
-#if defined(__APPLE__)
-    __builtin_printf("cuchar apple codec: C-locale decode passed\n");
-#endif
     {
         tested::mbstate_t state{};
         char output = '\0';
@@ -212,9 +231,6 @@ bool ftl_test()
     }
 
     // A UTF-8 leading code unit is accepted into state.
-#if defined(__APPLE__)
-    __builtin_printf("cuchar apple codec: reset passed\n");
-#endif
     // The completed non-ASCII scalar then fails because the
     // C locale cannot represent it.
     {
@@ -300,36 +316,38 @@ bool ftl_test()
         }
     }
 
-    // Valid non-ASCII UTF-16/UTF-32 scalars cannot be encoded
-#if defined(__APPLE__)
-    __builtin_printf("cuchar apple codec: staging errors passed\n");
-#endif
-    // by the current C locale.
+    // Non-ASCII scalar encoding follows the native C-locale repertoire.
     {
         tested::mbstate_t state{};
         char output{};
 
         errno = 0;
 
+#if defined(__APPLE__)
+        if (tested::c16rtomb(&output, u'\u00a2', &state) != 1 ||
+            static_cast<unsigned char>(output) != 0xa2)
+#else
         if (tested::c16rtomb(&output, u'\u00a2', &state) != error ||
             errno != EILSEQ)
+#endif
         {
             return false;
         }
 
         errno = 0;
 
+#if defined(__APPLE__)
+        if (tested::c32rtomb(&output, U'\u00a2', &state) != 1 ||
+            static_cast<unsigned char>(output) != 0xa2)
+#else
         if (tested::c32rtomb(&output, U'\u00a2', &state) != error ||
             errno != EILSEQ)
+#endif
         {
             return false;
         }
     }
 
-
-#if defined(__APPLE__)
-    __builtin_printf("cuchar apple codec: C locale passed\n");
-#endif
 
 
 #if defined(_WIN32)
