@@ -22,8 +22,7 @@ using size_t = decltype(sizeof(0));
 namespace cuchar_detail {
 
 inline void reset_state(mbstate_t &state) {
-  state.state = 0;
-  state.value = 0;
+  state = mbstate_t{};
 }
 
 inline size_t encoding_error(mbstate_t &state) {

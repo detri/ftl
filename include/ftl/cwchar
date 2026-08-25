@@ -1208,14 +1208,15 @@ inline int wctob(wint_t c) {
 }
 
 inline int mbsinit(const mbstate_t *ps) {
-  return ps == nullptr || (ps->state == 0 && ps->value == 0);
+  return ps == nullptr ||
+         (ps->state == 0 && ps->value == 0 && ps->pending_count == 0 &&
+          ps->native_active == 0);
 }
 
 namespace cwchar_detail {
 
 inline void reset_state(mbstate_t &state) {
-  state.state = 0;
-  state.value = 0;
+  state = mbstate_t{};
 }
 
 inline bool valid_multibyte_byte(unsigned char value) { return value <= 0x7f; }

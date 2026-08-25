@@ -312,11 +312,25 @@ public:
     if constexpr (same_as<remove_cvref_t<Range>, vector>) {
       if (this == static_cast<const vector *>(&range)) {
         vector copy(range, allocator_);
-        reserve_for(copy.size());
-        for (auto &value : copy)
-          emplace_back(move_if_noexcept(value));
+        if constexpr (
+            FTL_VECTOR_NAMESPACE::is_same_v<
+                Allocator, FTL_VECTOR_NAMESPACE::allocator<T>> &&
+            FTL_VECTOR_NAMESPACE::is_trivially_copyable_v<T> &&
+            FTL_VECTOR_NAMESPACE::is_trivially_copy_constructible_v<T>) {
+          append_iterators(copy.begin(), copy.end());
+        } else {
+          reserve_for(copy.size());
+          for (auto &value : copy)
+            emplace_back(move_if_noexcept(value));
+        }
         return;
       }
+    }
+    if constexpr (FTL_VECTOR_NAMESPACE::ranges::contiguous_range<Range> &&
+                  FTL_VECTOR_NAMESPACE::ranges::common_range<Range>) {
+      append_iterators(FTL_VECTOR_NAMESPACE::ranges::begin(range),
+                       FTL_VECTOR_NAMESPACE::ranges::end(range));
+      return;
     }
     if constexpr (ranges::sized_range<Range>)
       reserve_for(static_cast<size_type>(ranges::size(range)));
@@ -339,6 +353,17 @@ public:
       construct_value(last_, move(value));
       ++last_;
     } else {
+      if constexpr (byte_shiftable<T>) {
+        if (!FTL_VECTOR_NAMESPACE::is_constant_evaluated()) {
+          FTL_VECTOR_NAMESPACE::memmove(
+              FTL_VECTOR_NAMESPACE::to_address(place + 1),
+              FTL_VECTOR_NAMESPACE::to_address(place),
+              static_cast<size_type>(last_ - place) * sizeof(T));
+          *place = move(value);
+          ++last_;
+          return iterator(place);
+        }
+      }
       construct_value(last_, move(last_[-1]));
       ++last_;
       for (pointer current = last_ - 2; current != place; --current)
@@ -383,8 +408,21 @@ public:
     pointer output = first_ + (first - cbegin());
     pointer input = first_ + (last - cbegin());
     pointer result = output;
-    while (input != last_)
-      *output++ = move(*input++);
+    if constexpr (byte_erasable<T>) {
+      if (!FTL_VECTOR_NAMESPACE::is_constant_evaluated()) {
+        const size_type tail = static_cast<size_type>(last_ - input);
+        FTL_VECTOR_NAMESPACE::memmove(
+            FTL_VECTOR_NAMESPACE::to_address(output),
+            FTL_VECTOR_NAMESPACE::to_address(input), tail * sizeof(T));
+        output += static_cast<difference_type>(tail);
+      } else {
+        while (input != last_)
+          *output++ = move(*input++);
+      }
+    } else {
+      while (input != last_)
+        *output++ = move(*input++);
+    }
     while (last_ != output) {
       --last_;
       destroy_value(last_);
@@ -404,6 +442,28 @@ public:
   }
 
 private:
+  template <class U = T>
+  static constexpr bool default_byte_operations =
+      FTL_VECTOR_NAMESPACE::is_same_v<
+          Allocator, FTL_VECTOR_NAMESPACE::allocator<U>> &&
+      FTL_VECTOR_NAMESPACE::is_trivially_copyable_v<U>;
+  template <class U = T>
+  static constexpr bool byte_relocatable =
+      default_byte_operations<U> &&
+      ((FTL_VECTOR_NAMESPACE::is_nothrow_move_constructible_v<U> ||
+        !FTL_VECTOR_NAMESPACE::is_copy_constructible_v<U>)
+           ? FTL_VECTOR_NAMESPACE::is_trivially_move_constructible_v<U>
+           : FTL_VECTOR_NAMESPACE::is_trivially_copy_constructible_v<U>);
+  template <class U = T>
+  static constexpr bool byte_shiftable =
+      default_byte_operations<U> &&
+      FTL_VECTOR_NAMESPACE::is_trivially_move_constructible_v<U> &&
+      FTL_VECTOR_NAMESPACE::is_trivially_move_assignable_v<U>;
+  template <class U = T>
+  static constexpr bool byte_erasable =
+      default_byte_operations<U> &&
+      FTL_VECTOR_NAMESPACE::is_trivially_move_assignable_v<U>;
+
   constexpr void check_add(size_type count) const {
     if (count > max_size() - size())
       detail::vector_length_failure();
@@ -442,8 +502,7 @@ private:
       construct_value(replacement + static_cast<difference_type>(old_size),
                       forward<Args>(args)...);
       appended = true;
-      for (pointer source = first_; source != last_; ++source, ++current)
-        construct_value(current, move_if_noexcept(*source));
+      relocate(current, first_, last_);
 #if FTL_HAS_EXCEPTIONS
     } catch (...) {
       destroy(replacement, current);
@@ -469,8 +528,7 @@ private:
 #if FTL_HAS_EXCEPTIONS
     try {
 #endif
-      for (pointer source = first_; source != last_; ++source, ++current)
-        construct_value(current, move_if_noexcept(*source));
+      relocate(current, first_, last_);
 #if FTL_HAS_EXCEPTIONS
     } catch (...) {
       destroy(replacement, current);
@@ -557,8 +615,7 @@ private:
       // existing element remains valid throughout its construction.
       for (size_type index = 0; index < count; ++index, ++appended_current)
         construct(*this, appended_current);
-      for (pointer source = first_; source != last_; ++source, ++old_current)
-        construct_value(old_current, move_if_noexcept(*source));
+      relocate(old_current, first_, last_);
 #if FTL_HAS_EXCEPTIONS
     } catch (...) {
       destroy(replacement, old_current);
@@ -578,9 +635,26 @@ private:
 #if FTL_HAS_EXCEPTIONS
     try {
 #endif
-      if constexpr (forward_iterator<InputIterator>)
-        reserve_for(static_cast<size_type>(
-            FTL_VECTOR_NAMESPACE::distance(first, last)));
+      if constexpr (forward_iterator<InputIterator>) {
+        const size_type count = static_cast<size_type>(
+            FTL_VECTOR_NAMESPACE::distance(first, last));
+        reserve_for(count);
+        if constexpr (default_byte_operations<T> &&
+                      FTL_VECTOR_NAMESPACE::is_trivially_copy_constructible_v<T> &&
+                      FTL_VECTOR_NAMESPACE::contiguous_iterator<InputIterator> &&
+                      FTL_VECTOR_NAMESPACE::is_same_v<
+                          typename FTL_VECTOR_NAMESPACE::iterator_traits<
+                              InputIterator>::value_type,
+                          T>) {
+          if (!FTL_VECTOR_NAMESPACE::is_constant_evaluated() && count != 0) {
+            FTL_VECTOR_NAMESPACE::memcpy(
+                FTL_VECTOR_NAMESPACE::to_address(last_),
+                FTL_VECTOR_NAMESPACE::to_address(first), count * sizeof(T));
+            last_ += static_cast<difference_type>(count);
+            return;
+          }
+        }
+      }
       for (; first != last; ++first)
         emplace_back(*first);
 #if FTL_HAS_EXCEPTIONS
@@ -599,6 +673,19 @@ private:
       pointer place = first_ + static_cast<difference_type>(index);
       const size_type tail = static_cast<size_type>(last_ - place);
       const pointer old_last = last_;
+      if constexpr (byte_shiftable<T>) {
+        if (!FTL_VECTOR_NAMESPACE::is_constant_evaluated()) {
+          FTL_VECTOR_NAMESPACE::memmove(
+              FTL_VECTOR_NAMESPACE::to_address(
+                  place + static_cast<difference_type>(count)),
+              FTL_VECTOR_NAMESPACE::to_address(place), tail * sizeof(T));
+          FTL_VECTOR_NAMESPACE::memcpy(
+              FTL_VECTOR_NAMESPACE::to_address(place), inserted.data(),
+              count * sizeof(T));
+          last_ += static_cast<difference_type>(count);
+          return iterator(place);
+        }
+      }
       if (count <= tail) {
         for (pointer source = old_last - static_cast<difference_type>(count); source != old_last; ++source) {
           construct_value(last_, move(*source));
@@ -642,6 +729,24 @@ private:
     while (last != first) {
       --last;
       destroy_value(last);
+    }
+  }
+  constexpr void relocate(pointer &destination, pointer first, pointer last) {
+    if constexpr (byte_relocatable<T>) {
+      if (!FTL_VECTOR_NAMESPACE::is_constant_evaluated()) {
+        const size_type count = static_cast<size_type>(last - first);
+        if (count != 0)
+          FTL_VECTOR_NAMESPACE::memcpy(
+              FTL_VECTOR_NAMESPACE::to_address(destination),
+              FTL_VECTOR_NAMESPACE::to_address(first), count * sizeof(T));
+        destination += static_cast<difference_type>(count);
+        return;
+      }
+    }
+    while (first != last) {
+      construct_value(destination, move_if_noexcept(*first));
+      ++first;
+      ++destination;
     }
   }
   template<class... Args>

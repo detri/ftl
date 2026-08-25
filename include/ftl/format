@@ -4856,10 +4856,95 @@ void chrono_require_weekday(const chrono_date_fields &fields) {
 }
 
 template <class charT>
+void chrono_append_locale_time(basic_string<charT> &output,
+                               const locale &where, const tm &value,
+                               char modifier, char conversion) {
+  basic_ostringstream<charT> stream;
+  stream.imbue(where);
+
+  auto iterator = ostreambuf_iterator<charT>(stream);
+  iterator = use_facet<time_put<charT>>(where).put(
+      iterator, stream, stream.fill(), &value, conversion, modifier);
+
+  if (iterator.failed())
+    throw_format_error("locale-specific chrono conversion failed");
+
+  const auto text = stream.str();
+  output.append(text.data(), text.size());
+}
+
+template <class charT, class Split>
+void chrono_append_locale_datetime(basic_string<charT> &output,
+                                   const locale &where,
+                                   const chrono_date_fields &fields,
+                                   const Split &split, char modifier,
+                                   char conversion) {
+  chrono_require_year<charT>(fields);
+  chrono_require_month<charT>(fields);
+  chrono_require_day<charT>(fields);
+
+  tm value{};
+  value.tm_year = fields.year - 1900;
+  value.tm_mon = static_cast<int>(fields.month) - 1;
+  value.tm_mday = static_cast<int>(fields.day);
+  value.tm_wday = static_cast<int>(fields.weekday);
+  value.tm_yday = static_cast<int>(chrono_day_of_year(fields)) - 1;
+  value.tm_hour = static_cast<int>(split.hours() % 24);
+  value.tm_min = static_cast<int>(split.minutes());
+  value.tm_sec = static_cast<int>(split.seconds());
+
+  chrono_append_locale_time(output, where, value, modifier, conversion);
+}
+
+template <class charT>
 void chrono_append_date_conversion(basic_string<charT> &output,
                                    const chrono_date_fields &fields,
-                                   char modifier, char conversion) {
-  (void)modifier;
+                                   char modifier, char conversion,
+                                   const locale *where = nullptr) {
+  if (where != nullptr &&
+      (modifier != '\0' || conversion == 'a' || conversion == 'A' ||
+       conversion == 'b' || conversion == 'B' || conversion == 'h' ||
+       conversion == 'x')) {
+    switch (conversion) {
+    case 'a':
+    case 'A':
+    case 'u':
+    case 'w':
+      chrono_require_weekday<charT>(fields);
+      break;
+    case 'b':
+    case 'B':
+    case 'h':
+    case 'm':
+      chrono_require_month<charT>(fields);
+      break;
+    case 'd':
+    case 'e':
+      chrono_require_day<charT>(fields);
+      break;
+    case 'C':
+    case 'y':
+    case 'Y':
+      chrono_require_year<charT>(fields);
+      break;
+    default:
+      chrono_require_year<charT>(fields);
+      chrono_require_month<charT>(fields);
+      chrono_require_day<charT>(fields);
+      break;
+    }
+
+    tm value{};
+    value.tm_year = fields.year - 1900;
+    value.tm_mon = static_cast<int>(fields.month) - 1;
+    value.tm_mday = static_cast<int>(fields.day);
+    value.tm_wday = static_cast<int>(fields.weekday);
+    if (fields.has_year && fields.has_month && fields.has_day)
+      value.tm_yday = static_cast<int>(chrono_day_of_year(fields)) - 1;
+
+    chrono_append_locale_time(output, *where, value, modifier, conversion);
+    return;
+  }
 
   switch (conversion) {
   case 'a': {
@@ -5023,14 +5108,6 @@ void chrono_append_date_conversion(basic_string<charT> &output,
     return;
 
   case 'x':
-    /*
-     * Classic locale representation.
-     * FTL currently has no time_put
-     * facet surface, so L-sensitive
-     * names remain a locale-layer
-     * integration rather than a
-     * chrono-type problem.
-     */
     chrono_append_date_conversion(output, fields, '\0', 'D');
 
     return;
@@ -5233,6 +5310,7 @@ public:
   typename FormatContext::iterator format(const T &value,
                                           FormatContext &context) const {
     basic_string<charT> content;
+    const auto formatting_locale = context.locale();
 
     if (spec_.chrono_specs.empty()) {
       chrono_append_calendar_default(content, value);
@@ -5243,7 +5321,10 @@ public:
                           [&](basic_string<charT> &destination, char modifier,
                               char conversion) {
                             chrono_append_date_conversion(destination, fields,
-                                                          modifier, conversion);
+                                                          modifier, conversion,
+                                                          spec_.outer.localized
+                                                              ? &formatting_locale
+                                                              : nullptr);
                           });
     }
 
@@ -5414,6 +5495,7 @@ public:
     const chrono_clock_hms_view<precision> split{addressof(hms), leap_second};
 
     basic_string<charT> content;
+    const auto formatting_locale = context.locale();
 
     basic_string_view<charT> chrono_specs = spec_.chrono_specs;
 
@@ -5444,6 +5526,12 @@ public:
             return;
 
           case 'c':
+            if (spec_.outer.localized) {
+              chrono_append_locale_datetime(destination, formatting_locale,
+                                            fields, split, modifier, 'c');
+              return;
+            }
+
             chrono_append_date_conversion(destination, fields, modifier, 'a');
 
             destination.push_back(format_widen<charT>(' '));
@@ -5466,6 +5554,12 @@ public:
             return;
 
           case 'X':
+            if (spec_.outer.localized) {
+              chrono_append_locale_datetime(destination, formatting_locale,
+                                            fields, split, modifier, 'X');
+              return;
+            }
+
             chrono_append_time_of_day(destination, context, split,
                                       spec_.outer.localized, 'T');
 
@@ -5497,7 +5591,10 @@ public:
 
           default:
             chrono_append_date_conversion(destination, fields, modifier,
-                                          conversion);
+                                          conversion,
+                                          spec_.outer.localized
+                                              ? &formatting_locale
+                                              : nullptr);
 
             return;
           }
@@ -5585,6 +5682,7 @@ public:
         };
 
     basic_string<charT> content;
+    const auto formatting_locale = context.locale();
 
     basic_string_view<charT>
         chrono_specs =
@@ -5634,6 +5732,12 @@ public:
             return;
 
           case 'c':
+            if (spec_.outer.localized) {
+              chrono_append_locale_datetime(
+                  destination, formatting_locale, fields, split, modifier, 'c');
+              return;
+            }
+
             chrono_append_date_conversion(
                 destination,
                 fields,
@@ -5680,6 +5784,12 @@ public:
             return;
 
           case 'X':
+            if (spec_.outer.localized) {
+              chrono_append_locale_datetime(
+                  destination, formatting_locale, fields, split, modifier, 'X');
+              return;
+            }
+
             chrono_append_time_of_day(
                 destination,
                 context,
@@ -5723,7 +5833,10 @@ public:
                 destination,
                 fields,
                 modifier,
-                conversion);
+                conversion,
+                spec_.outer.localized
+                    ? &formatting_locale
+                    : nullptr);
 
             return;
           }

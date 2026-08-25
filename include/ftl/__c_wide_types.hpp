@@ -11,12 +11,16 @@ namespace ftl {
 
 /*
  * FTL owns its multibyte conversion state rather than inheriting the host
- * C runtime's ABI. The two words are sufficient for an accumulated code
- * point plus decoder/encoder state.
+ * C runtime's ABI. It stores an accumulated code point plus enough pending
+ * input for a restartable native multibyte conversion.
  */
 struct mbstate_t {
   unsigned int state;
   unsigned int value;
+  unsigned int pending_count;
+  unsigned int native_active;
+  unsigned char pending[16];
+  alignas(8) unsigned char native_state[128];
 };
 
 /*

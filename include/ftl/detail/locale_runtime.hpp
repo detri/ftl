@@ -199,7 +199,9 @@ inline decoded_wide decode_wide(native_handle locale, const char *first,
 
   const auto available = static_cast<decltype(sizeof(0))>(last - first);
 
+  (void)_mbtowc_l(nullptr, nullptr, 0, locale);
   const int result = _mbtowc_l(&value, first, available, locale);
+  (void)_mbtowc_l(nullptr, nullptr, 0, locale);
 
   if (result > 0) {
     return {decoded_wide::status::complete, value,
@@ -227,7 +229,9 @@ inline decoded_wide decode_wide(native_handle locale, const char *first,
 inline encoded_wide encode_wide(native_handle locale, wchar_t value) noexcept {
   encoded_wide result{};
 
+  (void)_wctomb_l(nullptr, wchar_t{}, locale);
   const int produced = _wctomb_l(result.bytes, value, locale);
+  (void)_wctomb_l(nullptr, wchar_t{}, locale);
 
   if (produced < 0)
     return result;
@@ -442,9 +446,20 @@ int wctomb(char *, wchar_t);
 decltype(sizeof(0)) mbrtowc(wchar_t *, const char *, decltype(sizeof(0)),
                             void *);
 
+decltype(sizeof(0)) wcrtomb(char *, wchar_t, void *);
+
+int mbsinit(const void *);
+
 #if defined(__APPLE__)
 
 int ___mb_cur_max(void);
+
+decltype(sizeof(0)) mbrtowc_l(wchar_t *, const char *, decltype(sizeof(0)),
+                              void *, void *);
+
+decltype(sizeof(0)) wcrtomb_l(char *, wchar_t, void *, void *);
+
+int mbsinit_l(const void *, void *);
 
 #else
 
@@ -606,6 +621,50 @@ inline bool multibyte_is_stateful(native_handle locale) noexcept {
   return result != 0;
 }
 
+inline decltype(sizeof(0))
+decode_wide_native(native_handle locale, wchar_t *value, const char *first,
+                   decltype(sizeof(0)) available, void *state) noexcept {
+#if defined(__APPLE__)
+  return mbrtowc_l(value, first, available, state, locale);
+#else
+  native_handle previous = uselocale(locale);
+
+  if (previous == nullptr)
+    return static_cast<decltype(sizeof(0))>(-1);
+
+  const auto result = mbrtowc(value, first, available, state);
+  (void)uselocale(previous);
+  return result;
+#endif
+}
+
+inline decltype(sizeof(0)) encode_wide_native(native_handle locale,
+                                               char *output, wchar_t value,
+                                               void *state) noexcept {
+#if defined(__APPLE__)
+  return wcrtomb_l(output, value, state, locale);
+#else
+  native_handle previous = uselocale(locale);
+
+  if (previous == nullptr)
+    return static_cast<decltype(sizeof(0))>(-1);
+
+  const auto result = wcrtomb(output, value, state);
+  (void)uselocale(previous);
+  return result;
+#endif
+}
+
+inline bool native_state_is_initial(native_handle locale,
+                                    const void *state) noexcept {
+#if defined(__APPLE__)
+  return mbsinit_l(state, locale) != 0;
+#else
+  (void)locale;
+  return mbsinit(state) != 0;
+#endif
+}
+
 inline decoded_wide decode_wide(native_handle locale, const char *first,
                                 const char *last) noexcept {
   if (first == last) {
@@ -619,22 +678,18 @@ inline decoded_wide decode_wide(native_handle locale, const char *first,
   }
 
   //
-  // codecvt_byname rejects state-dependent native encodings,
-  // so using mbrtowc's internal state is sufficient. Reset it
-  // around each isolated scalar so a partial/error result never
-  // contaminates the next call.
+  // codecvt_byname rejects state-dependent native encodings. Give each
+  // isolated scalar an independent native state so an incomplete probe never
+  // contaminates another conversion through mbrtowc's hidden internal state.
+  // This storage exceeds mbstate_t on every supported POSIX target.
   //
-  const char reset_sequence[] = "";
-
-  (void)mbrtowc(nullptr, reset_sequence, 1, nullptr);
+  alignas(16) unsigned char conversion_state[128]{};
 
   wchar_t value{};
 
   const auto available = static_cast<decltype(sizeof(0))>(last - first);
 
-  const auto result = mbrtowc(&value, first, available, nullptr);
-
-  (void)mbrtowc(nullptr, reset_sequence, 1, nullptr);
+  const auto result = mbrtowc(&value, first, available, conversion_state);
 
   (void)uselocale(previous);
 
@@ -844,6 +899,123 @@ inline char narrow(native_handle locale, wchar_t value,
 }
 
 #endif
+
+template <class State>
+inline decoded_wide decode_wide_restartable(native_handle locale, State &state,
+                                             const char *first,
+                                             const char *last) noexcept {
+#if defined(_WIN32)
+  constexpr auto capacity = sizeof(state.pending);
+  const auto available = static_cast<decltype(sizeof(0))>(last - first);
+  const auto maximum = static_cast<decltype(sizeof(0))>(
+      multibyte_max_length(locale));
+  if (maximum == 0 || maximum > capacity || state.pending_count > maximum) {
+    state.pending_count = 0;
+    return {decoded_wide::status::error, wchar_t{}, 0};
+  }
+
+  const auto room = capacity - state.pending_count;
+  auto supplied = available < room ? available : room;
+  if (supplied > maximum - state.pending_count)
+    supplied = maximum - state.pending_count;
+
+  unsigned char buffer[capacity]{};
+  for (decltype(sizeof(0)) index = 0; index < state.pending_count; ++index)
+    buffer[index] = state.pending[index];
+  for (decltype(sizeof(0)) index = 0; index < supplied; ++index)
+    buffer[state.pending_count + index] =
+        static_cast<unsigned char>(first[index]);
+
+  const auto previous = state.pending_count;
+  const auto decoded = decode_wide(
+      locale, reinterpret_cast<const char *>(buffer),
+      reinterpret_cast<const char *>(buffer + previous + supplied));
+
+  if (decoded.result == decoded_wide::status::partial) {
+    for (decltype(sizeof(0)) index = 0; index < supplied; ++index)
+      state.pending[previous + index] =
+          static_cast<unsigned char>(first[index]);
+    state.pending_count += static_cast<unsigned int>(supplied);
+    return {decoded.result, wchar_t{}, supplied};
+  }
+
+  state.pending_count = 0;
+
+  if (decoded.result == decoded_wide::status::error)
+    return {decoded.result, wchar_t{}, 0};
+
+  return {decoded.result, decoded.value,
+          decoded.consumed - static_cast<decltype(sizeof(0))>(previous)};
+#else
+  const auto available = static_cast<decltype(sizeof(0))>(last - first);
+  wchar_t value{};
+  const auto result =
+      decode_wide_native(locale, &value, first, available, state.native_state);
+  constexpr auto conversion_error = static_cast<decltype(sizeof(0))>(-1);
+  constexpr auto conversion_partial = static_cast<decltype(sizeof(0))>(-2);
+
+  if (result == conversion_error) {
+    for (auto &byte : state.native_state)
+      byte = 0;
+    state.native_active = 0;
+    return {decoded_wide::status::error, wchar_t{}, 0};
+  }
+
+  state.native_active =
+      native_state_is_initial(locale, state.native_state) ? 0u : 1u;
+
+  if (result == conversion_partial)
+    return {decoded_wide::status::partial, wchar_t{}, available};
+
+  return {decoded_wide::status::complete, value, result == 0 ? 1u : result};
+#endif
+}
+
+template <class State>
+inline encoded_wide encode_wide_restartable(native_handle locale, State &state,
+                                             wchar_t value) noexcept {
+#if defined(_WIN32)
+  (void)state;
+  return encode_wide(locale, value);
+#else
+  encoded_wide result{};
+  const auto produced =
+      encode_wide_native(locale, result.bytes, value, state.native_state);
+
+  if (produced == static_cast<decltype(sizeof(0))>(-1))
+    return result;
+
+  state.native_active =
+      native_state_is_initial(locale, state.native_state) ? 0u : 1u;
+  result.valid = true;
+  result.produced = produced;
+  return result;
+#endif
+}
+
+template <class State>
+inline encoded_wide unshift_wide(native_handle locale, State &state) noexcept {
+  encoded_wide result{};
+
+#if defined(_WIN32)
+  (void)locale;
+  (void)state;
+  result.valid = true;
+#else
+  const auto produced =
+      encode_wide_native(locale, result.bytes, wchar_t{}, state.native_state);
+
+  if (produced == static_cast<decltype(sizeof(0))>(-1) || produced == 0)
+    return result;
+
+  state.native_active =
+      native_state_is_initial(locale, state.native_state) ? 0u : 1u;
+  result.valid = true;
+  result.produced = produced - 1;
+#endif
+
+  return result;
+}
 
 } // namespace ftl_locale_runtime
 

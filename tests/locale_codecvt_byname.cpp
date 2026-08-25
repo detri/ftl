@@ -329,6 +329,63 @@ bool ftl_test() {
   }
 
   //
+  // An incomplete native multibyte character is consumed into mbstate_t and
+  // can be completed from a different input buffer. Copies of the state are
+  // independent, as required for an ordinary stateT value.
+  //
+  {
+#if defined(_WIN32)
+    const char *name = ".UTF-8";
+#elif defined(__APPLE__)
+    const char *name = "en_US.UTF-8";
+#else
+    const char *name = "C.UTF-8";
+#endif
+
+    tested::locale value(
+        classic,
+        new tested::codecvt_byname<wchar_t, char, tested::mbstate_t>(name));
+    const auto &facet = tested::use_facet<wide_codec>(value);
+
+    const char first[] = {static_cast<char>(0xc2)};
+    const char second[] = {static_cast<char>(0xa2)};
+    wchar_t output[1]{};
+    tested::mbstate_t state{};
+    const char *from_next = nullptr;
+    wchar_t *to_next = nullptr;
+
+    if (facet.in(state, first, first + 1, from_next, output, output + 1,
+                 to_next) != tested::codecvt_base::partial ||
+        from_next != first + 1 || to_next != output) {
+      return false;
+    }
+
+#if defined(_WIN32)
+    if (state.pending_count != 1 || state.native_active != 0)
+      return false;
+#else
+    if (state.pending_count != 0 || state.native_active == 0)
+      return false;
+#endif
+
+    tested::mbstate_t copied = state;
+    if (facet.in(state, second, second + 1, from_next, output, output + 1,
+                 to_next) != tested::codecvt_base::ok ||
+        from_next != second + 1 || to_next != output + 1 ||
+        output[0] != static_cast<wchar_t>(0x00a2) ||
+        state.pending_count != 0 || state.native_active != 0) {
+      return false;
+    }
+
+    output[0] = wchar_t{};
+    if (facet.in(copied, second, second + 1, from_next, output, output + 1,
+                 to_next) != tested::codecvt_base::ok ||
+        output[0] != static_cast<wchar_t>(0x00a2)) {
+      return false;
+    }
+  }
+
+  //
   // The deprecated byname UTF facets are also required.
   //
   {
