@@ -844,6 +844,36 @@ namespace ftl_cstdio_runtime
         return stream;
     }
 
+#if defined(_WIN32)
+    FILE* fopen(const wchar_t* path, const char* mode)
+    {
+        ftl::detail::native_open_options options;
+        bool readable, writable, binary;
+        if (!parse_mode(mode, options, readable, writable, binary))
+        {
+            runtime_errno() = 22;
+            return nullptr;
+        }
+        FILE* stream = allocate_stream();
+        if (!stream)
+            return nullptr;
+        ftl::detail::native_io_error error;
+        if (!ftl::detail::native_open_file(
+                path, options, stream->handle, error))
+        {
+            release_stream(stream);
+            set_runtime_error(error);
+            return nullptr;
+        }
+        stream->readable = readable;
+        stream->writable = writable;
+        stream->append = options.append;
+        stream->binary = binary;
+        stream->owned_handle = true;
+        return stream;
+    }
+#endif
+
     FILE* freopen(const char* path, const char* mode, FILE* stream)
     {
         if (!stream)

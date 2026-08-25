@@ -14,41 +14,6 @@
 namespace {
 using namespace ftl::detail;
 
-bool wide_path(const char *source, wchar_t *result, int capacity,
-               native_io_error &error) noexcept {
-  for (const char *current = source; *current; ++current) {
-    if (*current == '\\') {
-      error.value = ERROR_INVALID_NAME;
-      return false;
-    }
-  }
-  int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, source, -1, result,
-                              capacity);
-  if (!n) {
-    error.value = static_cast<int>(GetLastError());
-    return false;
-  }
-  for (int i = 0; i != n; ++i)
-    if (result[i] == L'/')
-      result[i] = L'\\';
-  return true;
-}
-
-bool utf8(const wchar_t *source, char *result, int capacity, int &size,
-          native_io_error &error) noexcept {
-  size = WideCharToMultiByte(CP_UTF8, 0, source, -1, result, capacity, nullptr,
-                             nullptr);
-  if (!size) {
-    error.value = static_cast<int>(GetLastError());
-    return false;
-  }
-  --size;
-  for (int i = 0; i != size; ++i)
-    if (result[i] == '\\')
-      result[i] = '/';
-  return true;
-}
-
 native_file_kind kind(DWORD attributes) noexcept {
   if (attributes & FILE_ATTRIBUTE_REPARSE_POINT)
     return native_file_kind::symlink;
@@ -67,13 +32,10 @@ long long ticks(FILETIME t) noexcept {
 } // namespace
 
 namespace ftl::detail {
-bool native_status(const char *p, bool follow, native_file_info &out,
+bool native_status(const wchar_t *p, bool follow, native_file_info &out,
                    native_io_error &error) noexcept {
-  wchar_t path[32768];
-  if (!wide_path(p, path, 32768, error))
-    return false;
   WIN32_FILE_ATTRIBUTE_DATA data{};
-  if (!GetFileAttributesExW(path, GetFileExInfoStandard, &data)) {
+  if (!GetFileAttributesExW(p, GetFileExInfoStandard, &data)) {
     auto e = GetLastError();
     if (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND ||
         e == ERROR_INVALID_NAME) {
@@ -93,7 +55,7 @@ bool native_status(const char *p, bool follow, native_file_info &out,
   out.write_time = ticks(data.ftLastWriteTime);
   if (follow || out.kind != native_file_kind::symlink) {
     HANDLE h = CreateFileW(
-        path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        p, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
     if (h != INVALID_HANDLE_VALUE) {
       BY_HANDLE_FILE_INFORMATION i{};
@@ -110,56 +72,40 @@ bool native_status(const char *p, bool follow, native_file_info &out,
   return true;
 }
 
-bool native_current_path(char *out, native_io_size cap, native_io_size &n,
+bool native_current_path(wchar_t *out, native_io_size cap, native_io_size &n,
                          native_io_error &error) noexcept {
-  wchar_t path[32768];
-  DWORD got = GetCurrentDirectoryW(32768, path);
-  if (!got || got >= 32768) {
+  DWORD got = GetCurrentDirectoryW(static_cast<DWORD>(cap), out);
+  if (!got || got >= cap) {
     error.value = GetLastError();
     return false;
   }
-  int size{};
-  if (!utf8(path, out, static_cast<int>(cap), size, error))
-    return false;
-  n = static_cast<native_io_size>(size);
+  n = static_cast<native_io_size>(got);
   return true;
 }
-bool native_set_current_path(const char *p, native_io_error &e) noexcept {
-  wchar_t path[32768];
-  if (!wide_path(p, path, 32768, e))
-    return false;
-  if (!SetCurrentDirectoryW(path)) {
+bool native_set_current_path(const wchar_t *p, native_io_error &e) noexcept {
+  if (!SetCurrentDirectoryW(p)) {
     e.value = GetLastError();
     return false;
   }
   return true;
 }
-bool native_create_directory(const char *p, native_io_error &e) noexcept {
-  wchar_t path[32768];
-  if (!wide_path(p, path, 32768, e))
-    return false;
-  if (!CreateDirectoryW(path, nullptr)) {
+bool native_create_directory(const wchar_t *p, native_io_error &e) noexcept {
+  if (!CreateDirectoryW(p, nullptr)) {
     e.value = GetLastError();
     return false;
   }
   return true;
 }
-bool native_create_directory_from(const char *p, const char *attributes,
+bool native_create_directory_from(const wchar_t *p, const wchar_t *attributes,
                                   native_io_error &e) noexcept {
-  wchar_t path[32768], source[32768];
-  if (!wide_path(p, path, 32768, e) || !wide_path(attributes, source, 32768, e))
-    return false;
-  if (!CreateDirectoryExW(source, path, nullptr)) {
+  if (!CreateDirectoryExW(attributes, p, nullptr)) {
     e.value = GetLastError();
     return false;
   }
   return true;
 }
-bool native_remove(const char *p, bool &removed, native_io_error &e) noexcept {
-  wchar_t path[32768];
-  if (!wide_path(p, path, 32768, e))
-    return false;
-  DWORD a = GetFileAttributesW(path);
+bool native_remove(const wchar_t *p, bool &removed, native_io_error &e) noexcept {
+  DWORD a = GetFileAttributesW(p);
   if (a == INVALID_FILE_ATTRIBUTES) {
     auto x = GetLastError();
     if (x == ERROR_FILE_NOT_FOUND || x == ERROR_PATH_NOT_FOUND) {
@@ -169,8 +115,8 @@ bool native_remove(const char *p, bool &removed, native_io_error &e) noexcept {
     e.value = x;
     return false;
   }
-  BOOL ok = (a & FILE_ATTRIBUTE_DIRECTORY) ? RemoveDirectoryW(path)
-                                           : DeleteFileW(path);
+  BOOL ok = (a & FILE_ATTRIBUTE_DIRECTORY) ? RemoveDirectoryW(p)
+                                           : DeleteFileW(p);
   if (!ok) {
     e.value = GetLastError();
     return false;
@@ -178,12 +124,9 @@ bool native_remove(const char *p, bool &removed, native_io_error &e) noexcept {
   removed = true;
   return true;
 }
-bool native_resize_file(const char *p, unsigned long long size,
+bool native_resize_file(const wchar_t *p, unsigned long long size,
                         native_io_error &e) noexcept {
-  wchar_t path[32768];
-  if (!wide_path(p, path, 32768, e))
-    return false;
-  HANDLE h = CreateFileW(path, GENERIC_WRITE,
+  HANDLE h = CreateFileW(p, GENERIC_WRITE,
                          FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                          nullptr, OPEN_EXISTING, 0, nullptr);
   if (h == INVALID_HANDLE_VALUE) {
@@ -198,13 +141,10 @@ bool native_resize_file(const char *p, unsigned long long size,
   CloseHandle(h);
   return ok;
 }
-bool native_set_write_time(const char *p, long long value,
+bool native_set_write_time(const wchar_t *p, long long value,
                            native_io_error &e) noexcept {
-  wchar_t path[32768];
-  if (!wide_path(p, path, 32768, e))
-    return false;
   HANDLE h =
-      CreateFileW(path, FILE_WRITE_ATTRIBUTES,
+      CreateFileW(p, FILE_WRITE_ATTRIBUTES,
                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                   nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
   if (h == INVALID_HANDLE_VALUE) {
@@ -221,12 +161,9 @@ bool native_set_write_time(const char *p, long long value,
   CloseHandle(h);
   return ok;
 }
-bool native_set_permissions(const char *p, unsigned bits, bool add, bool,
+bool native_set_permissions(const wchar_t *p, unsigned bits, bool add, bool,
                             native_io_error &e) noexcept {
-  wchar_t path[32768];
-  if (!wide_path(p, path, 32768, e))
-    return false;
-  DWORD a = GetFileAttributesW(path);
+  DWORD a = GetFileAttributesW(p);
   if (a == INVALID_FILE_ATTRIBUTES) {
     e.value = GetLastError();
     return false;
@@ -236,43 +173,34 @@ bool native_set_permissions(const char *p, unsigned bits, bool add, bool,
     a &= ~FILE_ATTRIBUTE_READONLY;
   else if (!add && !writable)
     a |= FILE_ATTRIBUTE_READONLY;
-  if (!SetFileAttributesW(path, a)) {
+  if (!SetFileAttributesW(p, a)) {
     e.value = GetLastError();
     return false;
   }
   return true;
 }
-bool native_create_hard_link(const char *to, const char *link,
+bool native_create_hard_link(const wchar_t *to, const wchar_t *link,
                              native_io_error &e) noexcept {
-  wchar_t a[32768], b[32768];
-  if (!wide_path(to, a, 32768, e) || !wide_path(link, b, 32768, e))
-    return false;
-  if (!CreateHardLinkW(b, a, nullptr)) {
+  if (!CreateHardLinkW(link, to, nullptr)) {
     e.value = GetLastError();
     return false;
   }
   return true;
 }
-bool native_create_symlink(const char *to, const char *link, bool directory,
+bool native_create_symlink(const wchar_t *to, const wchar_t *link, bool directory,
                            native_io_error &e) noexcept {
-  wchar_t a[32768], b[32768];
-  if (!wide_path(to, a, 32768, e) || !wide_path(link, b, 32768, e))
-    return false;
   DWORD f = directory ? SYMBOLIC_LINK_FLAG_DIRECTORY : 0;
   f |= SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE;
-  if (!CreateSymbolicLinkW(b, a, f)) {
+  if (!CreateSymbolicLinkW(link, to, f)) {
     e.value = GetLastError();
     return false;
   }
   return true;
 }
-bool native_read_symlink(const char *p, char *out, native_io_size cap,
+bool native_read_symlink(const wchar_t *p, wchar_t *out, native_io_size cap,
                          native_io_size &n, native_io_error &e) noexcept {
-  wchar_t path[32768], wide[32768];
-  if (!wide_path(p, path, 32768, e))
-    return false;
   HANDLE h = CreateFileW(
-      path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+      p, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
       OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS,
       nullptr);
   if (h == INVALID_HANDLE_VALUE) {
@@ -301,29 +229,30 @@ bool native_read_symlink(const char *p, char *out, native_io_size cap,
   WORD offset = data.print_length ? data.print_offset : data.substitute_offset;
   WORD bytes = data.print_length ? data.print_length : data.substitute_length;
   auto count = static_cast<size_t>(bytes / sizeof(wchar_t));
-  if (count >= 32768) {
+  if (count >= cap) {
     e.value = ERROR_INSUFFICIENT_BUFFER;
     return false;
   }
   const wchar_t *source = reinterpret_cast<const wchar_t *>(
       reinterpret_cast<const unsigned char *>(data.buffer) + offset);
-  memcpy(wide, source, count * sizeof(wchar_t));
-  wide[count] = 0;
-  const wchar_t *s = wide;
-  if (!data.print_length && wcsncmp(s, L"\\??\\", 4) == 0)
-    s += 4;
-  int z;
-  if (!utf8(s, out, static_cast<int>(cap), z, e))
-    return false;
-  n = z;
+  ::memcpy(out, source, count * sizeof(wchar_t));
+  out[count] = 0;
+  const wchar_t *s = out;
+  if (!data.print_length && ::wcsncmp(s, L"\\??\\", 4) == 0)
+    ::memmove(out, out + 4, (count - 3) * sizeof(wchar_t));
+  n = ::wcslen(out);
   return true;
 }
-bool native_list_directory(const char *p, native_directory_callback cb,
+bool native_list_directory(const wchar_t *p, native_directory_callback cb,
                            void *ctx, native_io_error &e) noexcept {
   wchar_t path[32768];
-  if (!wide_path(p, path, 32766, e))
+  const size_t input_size = ::wcslen(p);
+  if (input_size >= 32766) {
+    e.value = ERROR_INSUFFICIENT_BUFFER;
     return false;
-  size_t n = wcslen(path);
+  }
+  ::memcpy(path, p, (input_size + 1) * sizeof(wchar_t));
+  size_t n = input_size;
   if (n && path[n - 1] != L'\\')
     path[n++] = L'\\';
   path[n++] = L'*';
@@ -336,11 +265,8 @@ bool native_list_directory(const char *p, native_directory_callback cb,
   }
   bool ok = true;
   do {
-    if (wcscmp(d.cFileName, L".") && wcscmp(d.cFileName, L"..")) {
-      char name[32768];
-      int z;
-      if (!utf8(d.cFileName, name, 32768, z, e) ||
-          !cb(name, kind(d.dwFileAttributes), ctx)) {
+    if (::wcscmp(d.cFileName, L".") && ::wcscmp(d.cFileName, L"..")) {
+      if (!cb(d.cFileName, kind(d.dwFileAttributes), ctx)) {
         ok = false;
         break;
       }
@@ -354,13 +280,10 @@ bool native_list_directory(const char *p, native_directory_callback cb,
   }
   return ok;
 }
-bool native_space(const char *p, native_space_info &o,
+bool native_space(const wchar_t *p, native_space_info &o,
                   native_io_error &e) noexcept {
-  wchar_t path[32768];
-  if (!wide_path(p, path, 32768, e))
-    return false;
   ULARGE_INTEGER a, b, c;
-  if (!GetDiskFreeSpaceExW(path, &a, &b, &c)) {
+  if (!GetDiskFreeSpaceExW(p, &a, &b, &c)) {
     e.value = GetLastError();
     return false;
   }
@@ -369,71 +292,55 @@ bool native_space(const char *p, native_space_info &o,
   o.free = c.QuadPart;
   return true;
 }
-bool native_copy_file(const char *a, const char *b, bool overwrite,
+bool native_copy_file(const wchar_t *a, const wchar_t *b, bool overwrite,
                       native_io_error &e) noexcept {
-  wchar_t x[32768], y[32768];
-  if (!wide_path(a, x, 32768, e) || !wide_path(b, y, 32768, e))
-    return false;
-  if (!CopyFileW(x, y, !overwrite)) {
+  if (!CopyFileW(a, b, !overwrite)) {
     e.value = GetLastError();
     return false;
   }
   return true;
 }
-bool native_absolute_path(const char *p, char *out, native_io_size cap,
+bool native_absolute_path(const wchar_t *p, wchar_t *out, native_io_size cap,
                           native_io_size &n, native_io_error &e) noexcept {
-  wchar_t path[32768], full[32768];
-  if (!wide_path(p, path, 32768, e))
-    return false;
-  DWORD got = GetFullPathNameW(path, 32768, full, nullptr);
-  if (!got || got >= 32768) {
+  DWORD got = GetFullPathNameW(p, static_cast<DWORD>(cap), out, nullptr);
+  if (!got || got >= cap) {
     e.value = GetLastError();
     return false;
   }
-  int z;
-  if (!utf8(full, out, static_cast<int>(cap), z, e))
-    return false;
-  n = z;
+  n = got;
   return true;
 }
-bool native_canonical_path(const char *p, char *out, native_io_size cap,
+bool native_canonical_path(const wchar_t *p, wchar_t *out, native_io_size cap,
                            native_io_size &n, native_io_error &e) noexcept {
-  wchar_t path[32768], full[32768];
-  if (!wide_path(p, path, 32768, e))
-    return false;
   HANDLE handle = CreateFileW(
-      path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+      p, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
       OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
   if (handle == INVALID_HANDLE_VALUE) {
     e.value = GetLastError();
     return false;
   }
   DWORD got =
-      GetFinalPathNameByHandleW(handle, full, 32768, FILE_NAME_NORMALIZED);
+      GetFinalPathNameByHandleW(handle, out, static_cast<DWORD>(cap), FILE_NAME_NORMALIZED);
   CloseHandle(handle);
-  if (!got || got >= 32768) {
+  if (!got || got >= cap) {
     e.value = GetLastError();
     return false;
   }
-  const wchar_t *value = wcsncmp(full, L"\\\\?\\", 4) == 0 ? full + 4 : full;
-  int size;
-  if (!utf8(value, out, static_cast<int>(cap), size, e))
-    return false;
-  n = static_cast<native_io_size>(size);
+  if (::wcsncmp(out, L"\\\\?\\", 4) == 0) {
+    ::memmove(out, out + 4, (got - 3) * sizeof(wchar_t));
+    got -= 4;
+  }
+  n = static_cast<native_io_size>(got);
   return true;
 }
-bool native_temp_directory(char *out, native_io_size cap, native_io_size &n,
+bool native_temp_directory(wchar_t *out, native_io_size cap, native_io_size &n,
                            native_io_error &e) noexcept {
-  wchar_t path[32768];
-  DWORD got = GetTempPathW(32768, path);
-  if (!got || got >= 32768) {
+  DWORD got = GetTempPathW(static_cast<DWORD>(cap), out);
+  if (!got || got >= cap) {
     e.value = GetLastError();
     return false;
   }
-  int size;
-  if (!utf8(path, out, static_cast<int>(cap), size, e))
-    return false;
-  n = static_cast<native_io_size>(size);
+  n = static_cast<native_io_size>(got);
   return true;
 }
 } // namespace ftl::detail

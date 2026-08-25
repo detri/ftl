@@ -73,6 +73,7 @@ portability repairs.
 | `<memory>` ownership                    | REMEDIATED + BLOCKED | Preserved an effective raw-pointer `shared_ptr` cleanup deleter until control-block commit; normal-mode constexpr allocation remains blocked below.                                                                    |
 | `<cstdlib>` / `<stdlib.h>`              | REMEDIATED           | Wrapped Apple's non-`noexcept` global C `abort` declaration with the required `noexcept` namespace function.                                                                                                           |
 | `<cmath>` core                          | BLOCKED              | A genuinely fused constant-evaluated `fma` needs a compiler intrinsic or software correctly-rounded backend; extended math remains blocked below.                                                                      |
+| `<filesystem>`                          | REMEDIATED           | Changed the Windows ABI to native-wide `path::value_type`, `string_type`, and `L'\\'`, while retaining explicit UTF-8 conversion APIs and native-wide filesystem/stream I/O.                                            |
 
 ## Known blockers and realistic paths
 
@@ -82,11 +83,9 @@ portability repairs.
 | `<generator>`                                          | Add a compiler/runtime coroutine-traits bridge for normal-mode range `elements_of`; replacement mode already owns the needed traits.                                                                                          |
 | `<memory>` constexpr allocator                         | Seek compiler recognition for `ftl::allocator` or document normal-mode exclusion; the language privilege currently applies specifically to `std::allocator`, so replacement mode is the conforming path.                      |
 | `<complex>`, `<cmath>` core and special functions      | Add per-extended-type runtime backends (for example binary128 via compiler-rt/libquadmath where available) and decline unsupported types explicitly rather than narrowing through `long double`.                              |
-| `<chrono>` formatting/parsing, `<locale>`, `<iomanip>` | Generate and own locale data for composite date/time patterns, eras, and alternative digits; drive all four surfaces from that common grammar/data layer.                                                                     |
-| `<filesystem>`                                         | Take a versioned Windows ABI break to native-wide `path::value_type` / `string_type` and `L'\\'`, retaining UTF-8 APIs as explicit conversion extensions.                                                                     |
 
 The ordinary remediation ledger is now clear. The remaining practical runtime
-projects are generated locale data, extended floating support, and the Windows
-filesystem ABI. RTTI, pre-intrinsic constant-evaluated `fma`, normal-mode
+project is extended floating support. RTTI, pre-intrinsic constant-evaluated
+`fma`, normal-mode
 allocator constant evaluation, and generator integration may require compiler
 cooperation and remain explicitly mode-qualified.

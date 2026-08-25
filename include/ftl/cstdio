@@ -78,6 +78,9 @@ FILE *tmpfile();
 char *tmpnam(char *);
 int fclose(FILE *);
 FILE *fopen(const char *, const char *);
+#if defined(_WIN32)
+FILE *fopen(const wchar_t *, const char *);
+#endif
 FILE *freopen(const char *, const char *, FILE *);
 void setbuf(FILE *, char *);
 int setvbuf(FILE *, char *, int, size_t);

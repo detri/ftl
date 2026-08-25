@@ -11,6 +11,12 @@
 
 namespace ftl::detail {
 
+#if defined(_WIN32)
+using native_path_char = wchar_t;
+#else
+using native_path_char = char;
+#endif
+
 enum class native_file_kind : signed char {
   none = 0,
   not_found = -1,
@@ -38,48 +44,48 @@ struct native_space_info {
   unsigned long long capacity{}, free{}, available{};
 };
 
-using native_directory_callback = bool (*)(const char *, native_file_kind,
+using native_directory_callback = bool (*)(const native_path_char *, native_file_kind,
                                            void *) noexcept;
 
-[[nodiscard]] bool native_status(const char *, bool follow, native_file_info &,
+[[nodiscard]] bool native_status(const native_path_char *, bool follow, native_file_info &,
                                  native_io_error &) noexcept;
-[[nodiscard]] bool native_current_path(char *, native_io_size, native_io_size &,
+[[nodiscard]] bool native_current_path(native_path_char *, native_io_size, native_io_size &,
                                        native_io_error &) noexcept;
-[[nodiscard]] bool native_set_current_path(const char *,
+[[nodiscard]] bool native_set_current_path(const native_path_char *,
                                            native_io_error &) noexcept;
-[[nodiscard]] bool native_create_directory(const char *,
+[[nodiscard]] bool native_create_directory(const native_path_char *,
                                            native_io_error &) noexcept;
-[[nodiscard]] bool native_create_directory_from(const char *, const char *,
+[[nodiscard]] bool native_create_directory_from(const native_path_char *, const native_path_char *,
                                                 native_io_error &) noexcept;
-[[nodiscard]] bool native_remove(const char *, bool &,
+[[nodiscard]] bool native_remove(const native_path_char *, bool &,
                                  native_io_error &) noexcept;
-[[nodiscard]] bool native_resize_file(const char *, unsigned long long,
+[[nodiscard]] bool native_resize_file(const native_path_char *, unsigned long long,
                                       native_io_error &) noexcept;
-[[nodiscard]] bool native_set_write_time(const char *, long long,
+[[nodiscard]] bool native_set_write_time(const native_path_char *, long long,
                                          native_io_error &) noexcept;
-[[nodiscard]] bool native_set_permissions(const char *, unsigned, bool, bool,
+[[nodiscard]] bool native_set_permissions(const native_path_char *, unsigned, bool, bool,
                                           native_io_error &) noexcept;
-[[nodiscard]] bool native_create_hard_link(const char *, const char *,
+[[nodiscard]] bool native_create_hard_link(const native_path_char *, const native_path_char *,
                                            native_io_error &) noexcept;
-[[nodiscard]] bool native_create_symlink(const char *, const char *, bool,
+[[nodiscard]] bool native_create_symlink(const native_path_char *, const native_path_char *, bool,
                                          native_io_error &) noexcept;
-[[nodiscard]] bool native_read_symlink(const char *, char *, native_io_size,
+[[nodiscard]] bool native_read_symlink(const native_path_char *, native_path_char *, native_io_size,
                                        native_io_size &,
                                        native_io_error &) noexcept;
-[[nodiscard]] bool native_list_directory(const char *,
+[[nodiscard]] bool native_list_directory(const native_path_char *,
                                          native_directory_callback, void *,
                                          native_io_error &) noexcept;
-[[nodiscard]] bool native_space(const char *, native_space_info &,
+[[nodiscard]] bool native_space(const native_path_char *, native_space_info &,
                                 native_io_error &) noexcept;
-[[nodiscard]] bool native_copy_file(const char *, const char *, bool,
+[[nodiscard]] bool native_copy_file(const native_path_char *, const native_path_char *, bool,
                                     native_io_error &) noexcept;
-[[nodiscard]] bool native_absolute_path(const char *, char *, native_io_size,
+[[nodiscard]] bool native_absolute_path(const native_path_char *, native_path_char *, native_io_size,
                                         native_io_size &,
                                         native_io_error &) noexcept;
-[[nodiscard]] bool native_canonical_path(const char *, char *, native_io_size,
+[[nodiscard]] bool native_canonical_path(const native_path_char *, native_path_char *, native_io_size,
                                          native_io_size &,
                                          native_io_error &) noexcept;
-[[nodiscard]] bool native_temp_directory(char *, native_io_size,
+[[nodiscard]] bool native_temp_directory(native_path_char *, native_io_size,
                                          native_io_size &,
                                          native_io_error &) noexcept;
 
