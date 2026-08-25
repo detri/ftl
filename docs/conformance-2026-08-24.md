@@ -13,7 +13,7 @@ source-interface product boundary explicitly stated in `ROADMAP.md`.
 The fresh findings were remediated against the ISO/IEC 14882:2024 text in
 `C:\Users\Aaron\Documents\CppStandards`. All ordinary remediation and
 dependency rows below now certify. The remaining limitations are the explicit
-compiler, ABI, locale-data, codec, extended-floating, and platform-ABI blockers
+compiler, ABI, locale-data, extended-floating, and platform-ABI blockers
 in the final table.
 
 Windows closure was re-certified on 2026-08-24 with the canonical Release
@@ -21,7 +21,8 @@ MSVC and Clang-CL configurations. Each compiler completed its full build and
 passed all 388 tests in both normal and `FTL_REPLACE_STL` modes, including the
 freestanding linkage and feature-macro checks. Native WSL2 GCC and Clang also
 completed their canonical full builds and passed all 388 tests in both modes.
-Native Apple validation remains external to this re-certification.
+AppleClang CI also completed its build and test matrix after the locale-codec
+portability repairs.
 
 ## Certified
 
