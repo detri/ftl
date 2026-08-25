@@ -107,6 +107,11 @@ static_assert(TIME_UTC > 0);
 [[maybe_unused]]
 timespec* timespec_pointer = nullptr;
 
+#if defined(__APPLE__)
+static_assert(sizeof(clock_t) == sizeof(unsigned long));
+static_assert(clock_t(-1) > clock_t(0));
+#endif
+
 bool ftl_test() {
   assert(true);
 

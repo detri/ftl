@@ -43,7 +43,13 @@ long long _mktime64(void *);
 decltype(sizeof(0)) strftime(char *, decltype(sizeof(0)), const char *,
                              const void *);
 #else
+
+#if defined(__APPLE__)
+unsigned long clock();
+#else
 long clock();
+#endif
+
 long time(long *);
 void *localtime(const long *);
 long mktime(void *);

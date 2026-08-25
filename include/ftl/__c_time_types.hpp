@@ -9,7 +9,11 @@ namespace std {
 namespace ftl {
 #endif
 
-using clock_t = long;
+#if defined(__APPLE__)
+    using clock_t = unsigned long;
+#else
+    using clock_t = long;
+#endif
 
 #if defined(_WIN32)
 using time_t = long long;
