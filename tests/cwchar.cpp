@@ -229,6 +229,270 @@ bool multibyte_locale_routing_works()
         }
     }
 
+
+#if defined(_WIN32)
+
+    static_assert(sizeof(wchar_t) == 2);
+
+    const char grinning_face[] = {
+        static_cast<char>(0xf0),
+        static_cast<char>(0x9f),
+        static_cast<char>(0x98),
+        static_cast<char>(0x80),
+        '\0'
+    };
+
+    constexpr tested::size_t encoding_error =
+            static_cast<tested::size_t>(-1);
+
+    //
+    // A supplementary Unicode scalar is valid UTF-8, but Windows wchar_t is
+    // one UTF-16 code unit. <cwchar> cannot manufacture a surrogate-pair
+    // result from a conversion that produces exactly one wchar_t, so the
+    // scalar is an encoding error here. <cuchar> owns the UTF-16/UTF-32 path.
+    //
+    {
+        tested::mbstate_t state{};
+        wchar_t output = L'X';
+
+        errno = 0;
+
+        if (tested::mbrtowc(
+                &output,
+                grinning_face,
+                4,
+                &state) != encoding_error)
+        {
+            return false;
+        }
+
+        if (errno != EILSEQ || output != L'X')
+            return false;
+
+        /*
+         * FTL deterministically resets conversion state after an encoding
+         * error even though the standard otherwise leaves that state
+         * unspecified.
+         */
+        if (tested::mbsinit(&state) == 0)
+            return false;
+    }
+
+    //
+    // The same boundary must be preserved by the restartable string
+    // conversion. A valid BMP prefix is committed, then conversion stops at
+    // the supplementary scalar and leaves source pointing at its first byte.
+    //
+    {
+        const char text[] = {
+            'A',
+            static_cast<char>(0xf0),
+            static_cast<char>(0x9f),
+            static_cast<char>(0x98),
+            static_cast<char>(0x80),
+            'B',
+            '\0'
+        };
+
+        const char* source = text;
+        wchar_t output[4] = {L'?', L'?', L'?', L'?'};
+        tested::mbstate_t state{};
+
+        errno = 0;
+
+        if (tested::mbsrtowcs(
+                output,
+                &source,
+                4,
+                &state) != encoding_error)
+        {
+            return false;
+        }
+
+        if (errno != EILSEQ ||
+            source != text + 1 ||
+            output[0] != L'A' ||
+            output[1] != L'?')
+        {
+            return false;
+        }
+
+        if (tested::mbsinit(&state) == 0)
+            return false;
+    }
+
+    //
+    // Sizing the same invalid wchar_t conversion reports the error without
+    // moving the caller's source pointer.
+    //
+    {
+        const char* source = grinning_face;
+        tested::mbstate_t state{};
+
+        errno = 0;
+
+        if (tested::mbsrtowcs(
+                nullptr,
+                &source,
+                0,
+                &state) != encoding_error)
+        {
+            return false;
+        }
+
+        if (errno != EILSEQ || source != grinning_face)
+            return false;
+
+        if (tested::mbsinit(&state) == 0)
+            return false;
+    }
+
+    //
+    // A UTF-16 surrogate code unit is not a Unicode scalar value and cannot
+    // independently be encoded by wcrtomb.
+    //
+    {
+        const wchar_t high = static_cast<wchar_t>(0xd83d);
+        const wchar_t low = static_cast<wchar_t>(0xde00);
+
+        tested::mbstate_t state{};
+        char output[8]{};
+
+        errno = 0;
+
+        if (tested::wcrtomb(
+                output,
+                high,
+                &state) != encoding_error)
+        {
+            return false;
+        }
+
+        if (errno != EILSEQ || tested::mbsinit(&state) == 0)
+            return false;
+
+        errno = 0;
+
+        if (tested::wcrtomb(
+                output,
+                low,
+                &state) != encoding_error)
+        {
+            return false;
+        }
+
+        if (errno != EILSEQ || tested::mbsinit(&state) == 0)
+            return false;
+    }
+
+    //
+    // wcsrtombs likewise must not silently join adjacent surrogate wchar_t
+    // values into one scalar. It commits the preceding BMP character and
+    // stops with source at the high surrogate.
+    //
+    {
+        const wchar_t text[] = {
+            L'A',
+            static_cast<wchar_t>(0xd83d),
+            static_cast<wchar_t>(0xde00),
+            L'B',
+            L'\0'
+        };
+
+        const wchar_t* source = text;
+        char output[16]{};
+        tested::mbstate_t state{};
+
+        errno = 0;
+
+        if (tested::wcsrtombs(
+                output,
+                &source,
+                sizeof(output),
+                &state) != encoding_error)
+        {
+            return false;
+        }
+
+        if (errno != EILSEQ ||
+            source != text + 1 ||
+            output[0] != 'A')
+        {
+            return false;
+        }
+
+        if (tested::mbsinit(&state) == 0)
+            return false;
+    }
+
+    //
+    // The sizing form has the same conversion validity rules but does not
+    // alter the caller's source pointer.
+    //
+    {
+        const wchar_t text[] = {
+            static_cast<wchar_t>(0xd83d),
+            static_cast<wchar_t>(0xde00),
+            L'\0'
+        };
+
+        const wchar_t* source = text;
+        tested::mbstate_t state{};
+
+        errno = 0;
+
+        if (tested::wcsrtombs(
+                nullptr,
+                &source,
+                0,
+                &state) != encoding_error)
+        {
+            return false;
+        }
+
+        if (errno != EILSEQ || source != text)
+            return false;
+
+        if (tested::mbsinit(&state) == 0)
+            return false;
+    }
+
+    //
+    // Wide stdio uses the same single-wchar_t encoding boundary. A lone
+    // surrogate must fail instead of being emitted as malformed UTF-8.
+    //
+    {
+        tested::FILE* file = tested::tmpfile();
+
+        if (file == nullptr)
+            return false;
+
+        struct file_close
+        {
+            tested::FILE* file;
+
+            ~file_close()
+            {
+                if (file != nullptr)
+                    tested::fclose(file);
+            }
+        } close{file};
+
+        errno = 0;
+
+        if (tested::fputwc(
+                static_cast<wchar_t>(0xd83d),
+                file) != WEOF)
+        {
+            return false;
+        }
+
+        if (errno != EILSEQ)
+            return false;
+    }
+
+#endif
+
     return true;
 }
 

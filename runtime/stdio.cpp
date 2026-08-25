@@ -31,7 +31,7 @@ struct ftl_file
     unsigned occupied: 1 = 0;
     unsigned io_started: 1 = 0;
     int orientation = 0;
-    void* wide_locale = nullptr;
+    ftl_locale_runtime::native_handle wide_locale{};
     wchar_t wide_pushback{};
     unsigned wide_pushback_bytes = 0;
     FTL_STDIO_RUNTIME_NAMESPACE::mbstate_t wide_state{};
@@ -608,7 +608,20 @@ namespace ftl_stdio_runtime
             unsigned char byte{};
 
             if (read_unlocked(stream, &byte, 1) != 1)
+            {
+                /*
+                 * EOF in the middle of a multibyte character is an
+                 * encoding error. Preserve a real underlying I/O error.
+                 */
+                if (!stream->failed &&
+                    (stream->wide_state.pending_count != 0 ||
+                     stream->wide_state.native_active != 0))
+                {
+                    return decode_error();
+                }
+
                 return EOF;
+            }
 
             const char input = static_cast<char>(byte);
 

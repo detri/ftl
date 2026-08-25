@@ -22,10 +22,9 @@ namespace ftl_locale_runtime
         void* crt = nullptr;
         unsigned int code_page = 0;
         int multibyte_max = 1;
-        bool code_page_known = false;
+        bool c_locale = false;
 
         constexpr native_handle() noexcept = default;
-
         constexpr native_handle(decltype(nullptr)) noexcept {}
 
         constexpr explicit operator bool() const noexcept
@@ -117,19 +116,6 @@ namespace ftl_locale_runtime
                !(value >= 0xd800u && value <= 0xdfffu);
     }
 
-    struct windows_locale_data_public
-    {
-        const unsigned short* pctype;
-        int mb_cur_max;
-        unsigned int code_page;
-    };
-
-    struct windows_locale_pointers
-    {
-        windows_locale_data_public* locinfo;
-        void* mbcinfo;
-    };
-
 #if defined(_WIN32)
 
     extern "C"
@@ -192,7 +178,7 @@ namespace ftl_locale_runtime
     decltype(sizeof(0)) __cdecl _wcsxfrm_l(wchar_t*, const wchar_t*,
                                            decltype(sizeof(0)), void*);
 
-    int __cdecl _configthreadlocale(int);
+    void* __cdecl _get_current_locale(void);
 
     int __stdcall MultiByteToWideChar(
         unsigned int code_page,
@@ -216,347 +202,146 @@ namespace ftl_locale_runtime
         unsigned int code_page,
         unsigned char value);
 
-    int __stdcall GetLocaleInfoEx(
-        const wchar_t* locale_name,
-        unsigned long type,
-        wchar_t* data,
-        int data_count);
-
-    int __stdcall GetUserDefaultLocaleName(
-        wchar_t* locale_name,
-        int locale_name_count);
-    } // extern "C"
-
-    struct resolved_code_page
+    struct windows_cp_info
     {
-        unsigned int value = 0;
-        bool known = false;
+        unsigned int max_char_size;
+        unsigned char default_char[2];
+        unsigned char lead_byte[12];
     };
 
-    inline char ascii_lower(char value) noexcept
+    int __stdcall GetCPInfo(
+        unsigned int code_page,
+        windows_cp_info* info);
+
+    int __cdecl _configthreadlocale(int);
+    } // extern "C"
+
+    struct windows_crt_locale_data_public
     {
-        if (value >= 'A' && value <= 'Z')
-            return static_cast<char>(value - 'A' + 'a');
+        const unsigned short* pctype;
+        int mb_cur_max;
+        unsigned int code_page;
+    };
 
-        return value;
-    }
-
-    inline bool ascii_equal_case_insensitive(const char* left,
-                                             const char* right) noexcept
+    struct windows_crt_locale_pointers
     {
-        if (left == nullptr || right == nullptr)
-            return left == right;
+        void* locinfo;
+        void* mbcinfo;
+    };
 
-        for (;; ++left, ++right)
-        {
-            if (ascii_lower(*left) != ascii_lower(*right))
-                return false;
-
-            if (*left == '\0')
-                return true;
-        }
-    }
-
-    inline resolved_code_page parse_decimal_code_page(
-        const char* text) noexcept
+    inline const windows_crt_locale_data_public*
+    windows_crt_public_data(void* locale) noexcept
     {
-        if (text == nullptr || *text == '\0')
-            return {};
-
-        unsigned int value = 0;
-
-        for (; *text != '\0'; ++text)
-        {
-            if (*text < '0' || *text > '9')
-                return {};
-
-            const unsigned int digit =
-                    static_cast<unsigned int>(*text - '0');
-
-            if (value > (0xffffffffu - digit) / 10u)
-                return {};
-
-            value = value * 10u + digit;
-        }
-
-        if (value == 0)
-            return {};
-
-        return {value, true};
-    }
-
-    inline resolved_code_page parse_wide_decimal_code_page(
-        const wchar_t* text) noexcept
-    {
-        if (text == nullptr || *text == L'\0')
-            return {};
-
-        unsigned int value = 0;
-
-        for (; *text != L'\0'; ++text)
-        {
-            if (*text < L'0' || *text > L'9')
-                return {};
-
-            const unsigned int digit =
-                    static_cast<unsigned int>(*text - L'0');
-
-            if (value > (0xffffffffu - digit) / 10u)
-                return {};
-
-            value = value * 10u + digit;
-        }
-
-        return {value, true};
-    }
-
-    inline bool copy_ascii_locale_name(
-        wchar_t* destination,
-        decltype(sizeof(0)) capacity,
-        const char* first,
-        const char* last) noexcept
-    {
-        decltype(sizeof(0)) count = 0;
-
-        while (first != last)
-        {
-            if (count + 1 >= capacity)
-                return false;
-
-            const auto byte =
-                    static_cast<unsigned char>(*first++);
-
-            /*
-             * Windows locale names / BCP-47 language tags are ASCII.
-             * Legacy CRT names containing non-ASCII text are deliberately
-             * left unresolved rather than guessed.
-             */
-            if (byte > 0x7f)
-                return false;
-
-            destination[count++] =
-                    static_cast<wchar_t>(byte);
-        }
-
-        destination[count] = L'\0';
-        return true;
-    }
-
-    inline resolved_code_page query_windows_locale_code_page(
-        const wchar_t* locale_name,
-        bool oem) noexcept
-    {
-        /*
-         * LOCALE_IDEFAULTANSICODEPAGE = 0x00001004
-         * LOCALE_IDEFAULTCODEPAGE     = 0x0000000b
-         */
-        constexpr unsigned long ansi_code_page = 0x00001004ul;
-        constexpr unsigned long oem_code_page = 0x0000000bul;
-
-        wchar_t buffer[16]{};
-
-        const int result =
-                GetLocaleInfoEx(
-                    locale_name,
-                    oem ? oem_code_page : ansi_code_page,
-                    buffer,
-                    static_cast<int>(sizeof(buffer) / sizeof(buffer[0])));
-
-        if (result == 0)
-            return {};
-
-        return parse_wide_decimal_code_page(buffer);
-    }
-
-    inline resolved_code_page query_user_code_page(bool oem) noexcept
-    {
-        /*
-         * LOCALE_NAME_MAX_LENGTH is 85 including the terminator.
-         */
-        wchar_t locale_name[85]{};
-
-        if (GetUserDefaultLocaleName(
-                locale_name,
-                static_cast<int>(
-                    sizeof(locale_name) / sizeof(locale_name[0]))) == 0)
-        {
-            return {};
-        }
-
-        return query_windows_locale_code_page(locale_name, oem);
-    }
-
-    inline resolved_code_page resolve_windows_code_page(
-        const char* name) noexcept
-    {
-        if (name == nullptr)
-            return {};
-
-        /*
-         * FTL deliberately models the portable C execution encoding
-         * as ASCII for multibyte conversion.
-         */
-        if (ascii_equal_case_insensitive(name, "C"))
-            return {20127u, true};
-
-        /*
-         * Empty locale means the implementation-defined native
-         * environment. On Windows, its character encoding is the
-         * user's default ANSI code page.
-         */
-        if (*name == '\0')
-            return query_user_code_page(false);
-
-        const char* end = name;
-
-        while (*end != '\0')
-            ++end;
-
-        const char* dot = nullptr;
-
-        for (const char* current = name; current != end; ++current)
-        {
-            if (*current == '.')
-                dot = current;
-        }
-
-        if (dot != nullptr)
-        {
-            const char* suffix = dot + 1;
-
-            if (ascii_equal_case_insensitive(suffix, "UTF-8") ||
-                ascii_equal_case_insensitive(suffix, "UTF8"))
-            {
-                return {65001u, true};
-            }
-
-            if (const auto numeric =
-                        parse_decimal_code_page(suffix);
-                numeric.known)
-            {
-                return numeric;
-            }
-
-            const bool ansi =
-                    ascii_equal_case_insensitive(suffix, "ACP");
-
-            const bool oem =
-                    ascii_equal_case_insensitive(suffix, "OCP");
-
-            if (!ansi && !oem)
-                return {};
-
-            /*
-             * ".ACP" / ".OCP" use the user's default locale.
-             */
-            if (dot == name)
-                return query_user_code_page(oem);
-
-            /*
-             * For an NLS-compatible locale name such as en-US.ACP,
-             * query Windows directly. Legacy CRT names such as
-             * English_United States.ACP may fail this lookup; in that
-             * case code_page_known simply remains false.
-             */
-            wchar_t locale_name[85]{};
-
-            if (!copy_ascii_locale_name(
-                locale_name,
-                sizeof(locale_name) / sizeof(locale_name[0]),
-                name,
-                dot))
-            {
-                return {};
-            }
-
-            return query_windows_locale_code_page(
-                locale_name, oem);
-        }
-
-        /*
-         * Modern locale-name form, e.g. "en-US".
-         *
-         * UCRT chooses that locale's default ANSI code page when no
-         * explicit code page is present.
-         */
-        wchar_t locale_name[85]{};
-
-        if (!copy_ascii_locale_name(
-            locale_name,
-            sizeof(locale_name) / sizeof(locale_name[0]),
-            name,
-            end))
-        {
-            return {};
-        }
-
-        return query_windows_locale_code_page(
-            locale_name, false);
-    }
-
-    inline native_handle create_native_locale(
-        int category,
-        const char* name) noexcept
-    {
-        if (name == nullptr)
+        if (locale == nullptr)
             return nullptr;
 
-        void* crt = _create_locale(category, name);
+        /*
+         * UCRT publicly defines _locale_t as __crt_locale_pointers*.
+         * locinfo points at __crt_locale_data, whose first member is
+         * __crt_locale_data_public. Snapshot only the public prefix;
+         * no pointer into UCRT locale data escapes this helper.
+         */
+        const auto* pointers =
+            static_cast<const windows_crt_locale_pointers*>(locale);
 
+        if (pointers->locinfo == nullptr)
+            return nullptr;
+
+        return static_cast<const windows_crt_locale_data_public*>(
+            pointers->locinfo);
+    }
+
+    inline native_handle adopt_windows_locale(void* crt) noexcept
+    {
         if (crt == nullptr)
             return nullptr;
 
+        const auto* data = windows_crt_public_data(crt);
+
+        if (data == nullptr)
+        {
+            _free_locale(crt);
+            return nullptr;
+        }
+
         native_handle result{};
         result.crt = crt;
+        result.code_page = data->code_page;
 
-        const int maximum =
-                ___mb_cur_max_l_func(crt);
+        /*
+         * UCRT uses code page zero for the portable "C" LC_CTYPE.
+         * Do not pass that value to Win32 conversion APIs: Win32
+         * interprets zero as CP_ACP, while FTL's C locale is ASCII.
+         */
+        result.c_locale = result.code_page == 0u;
+
+        if (result.c_locale)
+        {
+            result.multibyte_max = 1;
+            return result;
+        }
+
+        windows_cp_info info{};
+
+        if (GetCPInfo(result.code_page, &info) == 0 ||
+            info.max_char_size == 0 ||
+            info.max_char_size > 16)
+        {
+            _free_locale(crt);
+            return nullptr;
+        }
 
         result.multibyte_max =
-                maximum > 0 ? maximum : 1;
-
-        const auto code_page =
-                resolve_windows_code_page(name);
-
-        result.code_page = code_page.value;
-        result.code_page_known = code_page.known;
+            static_cast<int>(info.max_char_size);
 
         return result;
     }
 
+    inline native_handle create_native_locale(const char* name) noexcept
+    {
+        if (name == nullptr)
+            return nullptr;
+
+        /*
+         * Always create LC_ALL on Windows. The conversion metadata
+         * belongs to LC_CTYPE, and named numeric/collate/etc. facets
+         * also use this handle for widening locale-provided strings.
+         *
+         * _create_locale returns an independent locale object and does
+         * not modify the process or thread locale.
+         */
+        return adopt_windows_locale(
+            _create_locale(LC_ALL, name));
+    }
+
     inline native_handle create_ctype(const char* name) noexcept
     {
-        return create_native_locale(LC_CTYPE, name);
+        return create_native_locale(name);
     }
 
     inline native_handle create_collate(const char* name) noexcept
     {
-        return create_native_locale(LC_COLLATE, name);
+        return create_native_locale(name);
     }
 
     inline native_handle create_numeric(const char* name) noexcept
     {
-        /*
-         * LC_ALL intentionally gives the handle LC_CTYPE as well as
-         * LC_NUMERIC. numpunct<wchar_t> needs the locale's multibyte
-         * conversion rules to widen punctuation.
-         */
-        return create_native_locale(LC_ALL, name);
+        return create_native_locale(name);
     }
 
     inline native_handle create_time(const char* name) noexcept
     {
-        return create_native_locale(LC_ALL, name);
+        return create_native_locale(name);
     }
 
     inline native_handle create_monetary(const char* name) noexcept
     {
-        return create_native_locale(LC_ALL, name);
+        return create_native_locale(name);
     }
 
     inline native_handle create_messages(const char* name) noexcept
     {
-        return create_native_locale(LC_ALL, name);
+        return create_native_locale(name);
     }
 
     inline bool message_catalog_valid(native_catalog catalog) noexcept
@@ -578,26 +363,14 @@ namespace ftl_locale_runtime
 
     inline void close_message_catalog(native_catalog) noexcept {}
 
-    inline windows_locale_data_public*
-    windows_locale_data(native_handle locale) noexcept
-    {
-        if (locale == nullptr)
-            return nullptr;
-
-        const auto* pointers =
-                static_cast<const windows_locale_pointers*>(locale);
-
-        return pointers->locinfo;
-    }
-
     inline unsigned int
     windows_code_page(native_handle locale) noexcept
     {
-        const auto* data = windows_locale_data(locale);
-        return data != nullptr ? data->code_page : 0u;
+        return locale.code_page;
     }
 
-    inline int multibyte_max_length(native_handle locale) noexcept
+    inline int
+    multibyte_max_length(native_handle locale) noexcept
     {
         return locale.multibyte_max > 0
                    ? locale.multibyte_max
@@ -769,15 +542,20 @@ namespace ftl_locale_runtime
             0
         };
 
+        if (locale == nullptr ||
+            input == nullptr ||
+            count == 0)
+        {
+            return result;
+        }
+
         const unsigned int code_page =
-                windows_code_page(locale);
+                locale.code_page;
 
         /*
-         * UCRT's "C" locale reports code page zero. Do NOT feed that
-         * to MultiByteToWideChar: Windows interprets zero as CP_ACP,
-         * whereas FTL's C locale is the portable ASCII execution set.
+         * Do not delegate C-locale behavior to the OS.
          */
-        if (code_page == 0u)
+        if (locale.c_locale)
         {
             if (count != 1)
                 return result;
@@ -788,9 +566,14 @@ namespace ftl_locale_runtime
             if (byte > 0x7fu)
                 return result;
 
-            result.result = decoded_wide::status::complete;
-            result.value = static_cast<char32_t>(byte);
+            result.result =
+                    decoded_wide::status::complete;
+
+            result.value =
+                    static_cast<char32_t>(byte);
+
             result.consumed = 1;
+
             return result;
         }
 
@@ -812,15 +595,23 @@ namespace ftl_locale_runtime
 
         if (produced == 1)
         {
-            const auto first =
+            const auto value =
                     static_cast<unsigned int>(wide[0]);
 
-            if (first >= 0xd800u && first <= 0xdfffu)
+            if (value >= 0xd800u &&
+                value <= 0xdfffu)
+            {
                 return result;
+            }
 
-            result.result = decoded_wide::status::complete;
-            result.value = static_cast<char32_t>(first);
+            result.result =
+                    decoded_wide::status::complete;
+
+            result.value =
+                    static_cast<char32_t>(value);
+
             result.consumed = count;
+
             return result;
         }
 
@@ -828,21 +619,29 @@ namespace ftl_locale_runtime
         {
             const auto high =
                     static_cast<unsigned int>(wide[0]);
+
             const auto low =
                     static_cast<unsigned int>(wide[1]);
 
-            if (high < 0xd800u || high > 0xdbffu ||
-                low < 0xdc00u || low > 0xdfffu)
+            if (high < 0xd800u ||
+                high > 0xdbffu ||
+                low < 0xdc00u ||
+                low > 0xdfffu)
             {
                 return result;
             }
 
-            result.result = decoded_wide::status::complete;
-            result.value = static_cast<char32_t>(
-                0x10000u +
-                ((high - 0xd800u) << 10u) +
-                (low - 0xdc00u));
+            result.result =
+                    decoded_wide::status::complete;
+
+            result.value =
+                    static_cast<char32_t>(
+                        0x10000u +
+                        ((high - 0xd800u) << 10u) +
+                        (low - 0xdc00u));
+
             result.consumed = count;
+
             return result;
         }
 
@@ -869,7 +668,7 @@ namespace ftl_locale_runtime
         const auto available =
                 static_cast<decltype(sizeof(0))>(last - first);
 
-        if (code_page == 0u)
+        if (locale.c_locale)
             return windows_decode_exact(locale, first, 1);
 
         int required = -1;
@@ -974,13 +773,16 @@ namespace ftl_locale_runtime
     {
         encoded_scalar result{};
 
-        if (!valid_unicode_scalar(value))
+        if (locale == nullptr ||
+            !valid_unicode_scalar(value))
+        {
             return result;
+        }
 
         const unsigned int code_page =
-                windows_code_page(locale);
+                locale.code_page;
 
-        if (code_page == 0u)
+        if (locale.c_locale)
         {
             if (value > 0x7fu)
                 return result;
@@ -990,6 +792,7 @@ namespace ftl_locale_runtime
                     static_cast<char>(
                         static_cast<unsigned char>(value));
             result.produced = 1;
+
             return result;
         }
 
@@ -998,18 +801,25 @@ namespace ftl_locale_runtime
 
         if (value <= 0xffffu)
         {
-            wide[0] = static_cast<wchar_t>(value);
+            wide[0] =
+                    static_cast<wchar_t>(value);
+
             wide_count = 1;
         } else
         {
-            const auto adjusted =
-                    static_cast<unsigned int>(value - 0x10000u);
+            const unsigned int adjusted =
+                    static_cast<unsigned int>(
+                        value - 0x10000u);
 
-            wide[0] = static_cast<wchar_t>(
-                0xd800u + (adjusted >> 10u));
+            wide[0] =
+                    static_cast<wchar_t>(
+                        0xd800u +
+                        (adjusted >> 10u));
 
-            wide[1] = static_cast<wchar_t>(
-                0xdc00u + (adjusted & 0x3ffu));
+            wide[1] =
+                    static_cast<wchar_t>(
+                        0xdc00u +
+                        (adjusted & 0x3ffu));
 
             wide_count = 2;
         }
@@ -1021,14 +831,23 @@ namespace ftl_locale_runtime
         if (code_page == windows_cp_utf8 ||
             code_page == windows_cp_gb18030)
         {
-            flags = windows_wc_err_invalid_chars;
+            /*
+             * UTF-8 and GB18030 require default-character pointers
+             * to be null and permit WC_ERR_INVALID_CHARS.
+             */
+            flags =
+                    windows_wc_err_invalid_chars;
         } else if (!windows_requires_zero_flags(code_page))
         {
-            flags = windows_wc_no_best_fit_chars;
-            used_default_pointer = &used_default;
-        } else if (code_page != windows_cp_utf7)
-        {
-            used_default_pointer = &used_default;
+            /*
+             * For ordinary legacy code pages, reject best-fit
+             * substitutions.
+             */
+            flags =
+                    windows_wc_no_best_fit_chars;
+
+            used_default_pointer =
+                    &used_default;
         }
 
         const int produced =
@@ -1038,37 +857,43 @@ namespace ftl_locale_runtime
                     wide,
                     wide_count,
                     result.bytes,
-                    static_cast<int>(sizeof(result.bytes)),
+                    static_cast<int>(
+                        sizeof(result.bytes)),
                     nullptr,
                     used_default_pointer);
 
-        if (produced <= 0 || used_default != 0)
+        if (produced <= 0 ||
+            used_default != 0)
+        {
             return result;
+        }
 
         /*
-         * Zero-flag legacy code pages may silently substitute. Verify
-         * the resulting byte sequence decodes to the same scalar.
+         * Code pages that require zero flags cannot use
+         * WC_NO_BEST_FIT_CHARS. Verify reversibility ourselves.
          */
-        if (windows_requires_zero_flags(code_page) &&
-            code_page != windows_cp_utf7)
+        if (windows_requires_zero_flags(code_page))
         {
-            const auto roundtrip =
+            const auto decoded =
                     windows_decode_exact(
                         locale,
                         result.bytes,
-                        static_cast<decltype(sizeof(0))>(produced));
+                        static_cast<decltype(sizeof(0))>(
+                            produced));
 
-            if (roundtrip.result !=
+            if (decoded.result !=
                 decoded_wide::status::complete ||
-                roundtrip.value != value)
+                decoded.value != value)
             {
                 return encoded_scalar{};
             }
         }
 
         result.valid = true;
+
         result.produced =
-                static_cast<decltype(sizeof(0))>(produced);
+                static_cast<decltype(sizeof(0))>(
+                    produced);
 
         return result;
     }
@@ -1197,7 +1022,7 @@ namespace ftl_locale_runtime
     inline void destroy(native_handle locale) noexcept
     {
         if (locale != nullptr)
-            _free_locale(locale);
+            _free_locale(locale.crt);
     }
 
     inline bool classify_byte(native_handle locale, unsigned char value,
@@ -1878,8 +1703,281 @@ namespace ftl_locale_runtime
 
     inline native_handle snapshot_current_ctype() noexcept
     {
+#if defined(_WIN32)
+        /*
+         * _get_current_locale returns an owned _locale_t snapshot of
+         * this thread's current locale. This avoids querying/parsing a
+         * locale name and, critically, never mutates locale state.
+         */
+        return adopt_windows_locale(_get_current_locale());
+#else
         const char* name = ::setlocale(LC_CTYPE, nullptr);
         return create_ctype(name != nullptr ? name : "C");
+#endif
+    }
+
+    template<class State>
+    inline decoded_scalar decode_scalar_restartable(
+        native_handle locale,
+        State& state,
+        const char* first,
+        const char* last) noexcept
+    {
+#if defined(_WIN32)
+        constexpr auto capacity = sizeof(state.pending);
+        const auto available =
+            static_cast<decltype(sizeof(0))>(last - first);
+        const auto maximum =
+            static_cast<decltype(sizeof(0))>(
+                multibyte_max_length(locale));
+
+        if (maximum == 0 ||
+            maximum > capacity ||
+            state.pending_count > maximum)
+        {
+            state.pending_count = 0;
+            return {
+                decoded_wide::status::error,
+                char32_t{},
+                0
+            };
+        }
+
+        const auto room =
+            capacity - state.pending_count;
+
+        auto supplied =
+            available < room ? available : room;
+
+        if (supplied > maximum - state.pending_count)
+            supplied = maximum - state.pending_count;
+
+        unsigned char buffer[capacity]{};
+
+        for (decltype(sizeof(0)) index = 0;
+             index < state.pending_count;
+             ++index)
+        {
+            buffer[index] = state.pending[index];
+        }
+
+        for (decltype(sizeof(0)) index = 0;
+             index < supplied;
+             ++index)
+        {
+            buffer[state.pending_count + index] =
+                static_cast<unsigned char>(first[index]);
+        }
+
+        const auto previous =
+            static_cast<decltype(sizeof(0))>(
+                state.pending_count);
+
+        const auto decoded =
+            decode_scalar(
+                locale,
+                reinterpret_cast<const char*>(buffer),
+                reinterpret_cast<const char*>(
+                    buffer + previous + supplied));
+
+        if (decoded.result ==
+            decoded_wide::status::partial)
+        {
+            /*
+             * Windows code-page conversion has no persistent shift
+             * state at the FTL layer. Preserve only an incomplete
+             * encoded character in mbstate_t.
+             */
+            for (decltype(sizeof(0)) index = 0;
+                 index < supplied;
+                 ++index)
+            {
+                if (first[index] == '\0')
+                {
+                    state.pending_count = 0;
+                    return {
+                        decoded_wide::status::error,
+                        char32_t{},
+                        0
+                    };
+                }
+            }
+
+            for (decltype(sizeof(0)) index = 0;
+                 index < supplied;
+                 ++index)
+            {
+                state.pending[previous + index] =
+                    static_cast<unsigned char>(first[index]);
+            }
+
+            state.pending_count +=
+                static_cast<unsigned int>(supplied);
+
+            return {
+                decoded_wide::status::partial,
+                char32_t{},
+                supplied
+            };
+        }
+
+        state.pending_count = 0;
+
+        if (decoded.result ==
+            decoded_wide::status::error)
+        {
+            return {
+                decoded_wide::status::error,
+                char32_t{},
+                0
+            };
+        }
+
+        return {
+            decoded_wide::status::complete,
+            decoded.value,
+            decoded.consumed - previous
+        };
+#else
+        if (first == last)
+        {
+            return {
+                decoded_wide::status::partial,
+                char32_t{},
+                0
+            };
+        }
+
+        const auto available =
+            static_cast<decltype(sizeof(0))>(last - first);
+
+        wchar_t value{};
+
+        const auto result =
+            decode_wide_native(
+                locale,
+                &value,
+                first,
+                available,
+                state.native_state);
+
+        constexpr auto conversion_error =
+            static_cast<decltype(sizeof(0))>(-1);
+
+        constexpr auto conversion_partial =
+            static_cast<decltype(sizeof(0))>(-2);
+
+        if (result == conversion_error)
+        {
+            for (auto& byte : state.native_state)
+                byte = 0;
+
+            state.native_active = 0;
+
+            return {
+                decoded_wide::status::error,
+                char32_t{},
+                0
+            };
+        }
+
+        state.native_active =
+            native_state_is_initial(
+                locale,
+                state.native_state)
+                ? 0u
+                : 1u;
+
+        if (result == conversion_partial)
+        {
+            return {
+                decoded_wide::status::partial,
+                char32_t{},
+                available
+            };
+        }
+
+        const auto scalar =
+            static_cast<unsigned long long>(value);
+
+        if (scalar > 0x10ffffu ||
+            (scalar >= 0xd800u &&
+             scalar <= 0xdfffu))
+        {
+            for (auto& byte : state.native_state)
+                byte = 0;
+
+            state.native_active = 0;
+
+            return {
+                decoded_wide::status::error,
+                char32_t{},
+                0
+            };
+        }
+
+        return {
+            decoded_wide::status::complete,
+            static_cast<char32_t>(scalar),
+            result == 0 ? 1u : result
+        };
+#endif
+    }
+
+    template<class State>
+    inline encoded_scalar encode_scalar_restartable(
+        native_handle locale,
+        State& state,
+        char32_t value) noexcept
+    {
+        encoded_scalar result{};
+
+        if (!valid_unicode_scalar(value))
+            return result;
+
+#if defined(_WIN32)
+        /*
+         * Windows code-page encoders are stateless at this layer.
+         * A pending decoder prefix cannot meaningfully coexist with
+         * an encoder state.
+         */
+        state.pending_count = 0;
+        return encode_scalar(locale, value);
+#else
+        const wchar_t wide =
+            static_cast<wchar_t>(value);
+
+        if (static_cast<unsigned long long>(wide) !=
+            static_cast<unsigned long long>(value))
+        {
+            return result;
+        }
+
+        const auto produced =
+            encode_wide_native(
+                locale,
+                result.bytes,
+                wide,
+                state.native_state);
+
+        if (produced ==
+            static_cast<decltype(sizeof(0))>(-1))
+        {
+            return result;
+        }
+
+        state.native_active =
+            native_state_is_initial(
+                locale,
+                state.native_state)
+                ? 0u
+                : 1u;
+
+        result.valid = true;
+        result.produced = produced;
+
+        return result;
+#endif
     }
 
     template<class State>
@@ -1918,11 +2016,13 @@ namespace ftl_locale_runtime
         if (decoded.result == decoded_wide::status::partial)
         {
             /*
-             * Windows locale multibyte encodings exposed through _locale_t are
-             * stateless. A null byte therefore cannot legitimately occur in the
-             * middle of an incomplete character. _mbtowc_l cannot distinguish
-             * invalid from incomplete input when fewer than MB_CUR_MAX bytes are
-             * supplied, so make that distinction here when the terminator is known.
+             * The Windows codec itself is stateless at the FTL layer.
+             * Preserve an incomplete encoded character in mbstate_t so a
+             * later call may resume from an unrelated source buffer.
+             *
+             * A null byte cannot occur inside an incomplete non-null
+             * character, so encountering one here makes the sequence
+             * truncated/invalid.
              */
             for (decltype(sizeof(0)) index = 0; index < supplied; ++index)
             {
