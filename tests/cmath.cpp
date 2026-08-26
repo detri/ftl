@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <cfenv>
 #include <cmath>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/cfenv>
-#include <ftl/cmath>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 #if __cpp_lib_constexpr_cmath != 202202L || __cpp_lib_hypot != 201603L ||    \
     __cpp_lib_interpolate != 201902L ||                                      \

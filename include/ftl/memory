@@ -3,7 +3,6 @@
 #ifndef FTL_MEMORY_HEADER
 #define FTL_MEMORY_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__algorithms/result.hpp>
 #include <atomic>
 #include <compare>
@@ -12,18 +11,6 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#define FTL_MEMORY_NAMESPACE std
-#else
-#include <ftl/__algorithms/result.hpp>
-#include <ftl/atomic>
-#include <ftl/compare>
-#include <ftl/iterator>
-#include <ftl/new>
-#include <ftl/tuple>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#define FTL_MEMORY_NAMESPACE ftl
-#endif
 
 #if defined(_MSC_VER)
 #define FTL_MSVC_CONSTEXPR [[msvc::constexpr]]
@@ -31,7 +18,7 @@
 #define FTL_MSVC_CONSTEXPR
 #endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class T> struct hash;
 template <class Allocator> struct allocator_traits;
@@ -593,7 +580,7 @@ concept nothrow_forward_range =
 template <class O, class S>
 constexpr void destroy_constructed(O first, S last) noexcept {
   for (; first != last; ++first)
-    FTL_MEMORY_NAMESPACE::destroy_at(addressof(*first));
+    std::destroy_at(addressof(*first));
 }
 
 } // namespace detail
@@ -667,7 +654,7 @@ struct uninitialized_value_construct_fn {
     try {
 #endif
       for (; current != last; ++current)
-        FTL_MEMORY_NAMESPACE::construct_at(addressof(*current));
+        std::construct_at(addressof(*current));
 
       return current;
 
@@ -695,7 +682,7 @@ struct uninitialized_value_construct_n_fn {
     try {
 #endif
       for (; count > 0; --count, ++current)
-        FTL_MEMORY_NAMESPACE::construct_at(addressof(*current));
+        std::construct_at(addressof(*current));
 
       return current;
 
@@ -721,7 +708,7 @@ struct uninitialized_copy_fn {
     try {
 #endif
       for (; ifirst != ilast && current != olast; ++ifirst, ++current)
-        FTL_MEMORY_NAMESPACE::construct_at(addressof(*current), *ifirst);
+        std::construct_at(addressof(*current), *ifirst);
 
       return {move(ifirst), move(current)};
 
@@ -760,7 +747,7 @@ struct uninitialized_copy_n_fn {
     try {
 #endif
       for (; count > 0 && current != olast; --count, ++ifirst, ++current)
-        FTL_MEMORY_NAMESPACE::construct_at(addressof(*current), *ifirst);
+        std::construct_at(addressof(*current), *ifirst);
 
       return {move(ifirst), move(current)};
 
@@ -786,7 +773,7 @@ struct uninitialized_move_fn {
     try {
 #endif
       for (; ifirst != ilast && current != olast; ++ifirst, ++current)
-        FTL_MEMORY_NAMESPACE::construct_at(addressof(*current),
+        std::construct_at(addressof(*current),
                                            ranges::iter_move(ifirst));
 
       return {move(ifirst), move(current)};
@@ -826,7 +813,7 @@ struct uninitialized_move_n_fn {
     try {
 #endif
       for (; count > 0 && current != olast; --count, ++ifirst, ++current)
-        FTL_MEMORY_NAMESPACE::construct_at(addressof(*current),
+        std::construct_at(addressof(*current),
                                            ranges::iter_move(ifirst));
 
       return {move(ifirst), move(current)};
@@ -851,7 +838,7 @@ struct uninitialized_fill_fn {
     try {
 #endif
       for (; current != last; ++current)
-        FTL_MEMORY_NAMESPACE::construct_at(addressof(*current), value);
+        std::construct_at(addressof(*current), value);
 
       return current;
 
@@ -883,7 +870,7 @@ struct uninitialized_fill_n_fn {
     try {
 #endif
       for (; count > 0; --count, ++current)
-        FTL_MEMORY_NAMESPACE::construct_at(addressof(*current), value);
+        std::construct_at(addressof(*current), value);
 
       return current;
 
@@ -899,10 +886,10 @@ struct uninitialized_fill_n_fn {
 struct construct_at_fn {
   template <class T, class... Args>
     requires requires(T *location, Args &&...args) {
-      FTL_MEMORY_NAMESPACE::construct_at(location, forward<Args>(args)...);
+      std::construct_at(location, forward<Args>(args)...);
     }
   constexpr T *operator()(T *location, Args &&...args) const {
-    return FTL_MEMORY_NAMESPACE::construct_at(location, forward<Args>(args)...);
+    return std::construct_at(location, forward<Args>(args)...);
   }
 };
 
@@ -921,7 +908,7 @@ struct destroy_fn {
   template <detail::nothrow_input_iterator I, detail::nothrow_sentinel_for<I> S>
   constexpr I operator()(I first, S last) const noexcept {
     for (; first != last; ++first)
-      FTL_MEMORY_NAMESPACE::destroy_at(addressof(*first));
+      std::destroy_at(addressof(*first));
 
     return first;
   }
@@ -937,7 +924,7 @@ struct destroy_n_fn {
   template <detail::nothrow_input_iterator I>
   constexpr I operator()(I first, iter_difference_t<I> count) const noexcept {
     for (; count > 0; --count, ++first)
-      FTL_MEMORY_NAMESPACE::destroy_at(addressof(*first));
+      std::destroy_at(addressof(*first));
 
     return first;
   }
@@ -1086,9 +1073,9 @@ public:
   }
 
   constexpr void swap(unique_ptr &other) noexcept {
-    FTL_MEMORY_NAMESPACE::swap(deleter, other.deleter);
+    std::swap(deleter, other.deleter);
 
-    FTL_MEMORY_NAMESPACE::swap(pointer_value, other.pointer_value);
+    std::swap(pointer_value, other.pointer_value);
   }
 
   [[nodiscard]]
@@ -1240,9 +1227,9 @@ public:
   }
 
   constexpr void swap(unique_ptr &other) noexcept {
-    FTL_MEMORY_NAMESPACE::swap(deleter, other.deleter);
+    std::swap(deleter, other.deleter);
 
-    FTL_MEMORY_NAMESPACE::swap(pointer_value, other.pointer_value);
+    std::swap(pointer_value, other.pointer_value);
   }
 
   constexpr T &operator[](size_t index) const { return pointer_value[index]; }
@@ -1545,7 +1532,7 @@ constexpr auto to_address(const Pointer &value) noexcept {
   if constexpr (requires { pointer_traits<Pointer>::to_address(value); })
     return pointer_traits<Pointer>::to_address(value);
   else
-    return FTL_MEMORY_NAMESPACE::to_address(value.operator->());
+    return std::to_address(value.operator->());
 }
 
 template <class T> class allocator {
@@ -1561,7 +1548,7 @@ public:
   template <class U> constexpr allocator(const allocator<U> &) noexcept {}
 
   template <class U> constexpr void destroy(U *pointer) {
-#if defined(_MSC_VER) || !defined(FTL_REPLACE_STL)
+#if defined(_MSC_VER)
     if consteval {
       if constexpr (is_trivially_default_constructible_v<U> &&
                     is_trivially_destructible_v<U>)
@@ -1585,7 +1572,7 @@ public:
     }
 
     if consteval {
-#if defined(_MSC_VER) || !defined(FTL_REPLACE_STL)
+#if defined(_MSC_VER)
       if constexpr (is_trivially_default_constructible_v<T>)
         return new T[count];
 #else
@@ -1606,7 +1593,7 @@ public:
 
   constexpr void deallocate(T *pointer, size_t count) noexcept {
     if consteval {
-#if defined(_MSC_VER) || !defined(FTL_REPLACE_STL)
+#if defined(_MSC_VER)
       if constexpr (is_trivially_default_constructible_v<T>) {
         delete[] pointer;
         return;
@@ -2076,8 +2063,8 @@ public:
   }
 
   void swap(shared_ptr &other) noexcept {
-    FTL_MEMORY_NAMESPACE::swap(pointer_value, other.pointer_value);
-    FTL_MEMORY_NAMESPACE::swap(control, other.control);
+    std::swap(pointer_value, other.pointer_value);
+    std::swap(control, other.control);
   }
 
   [[nodiscard]] element_type *get() const noexcept { return pointer_value; }
@@ -2218,8 +2205,8 @@ public:
   void reset() noexcept { weak_ptr{}.swap(*this); }
 
   void swap(weak_ptr &other) noexcept {
-    FTL_MEMORY_NAMESPACE::swap(pointer_value, other.pointer_value);
-    FTL_MEMORY_NAMESPACE::swap(control, other.control);
+    std::swap(pointer_value, other.pointer_value);
+    std::swap(control, other.control);
   }
 
   [[nodiscard]] long use_count() const noexcept {
@@ -2951,9 +2938,8 @@ auto inout_ptr(Smart &smart, Args &&...args) {
                                                         forward<Args>(args)...);
 }
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_MEMORY_NAMESPACE
 
 #if !defined(__cpp_lib_raw_memory_algorithms) ||                               \
     __cpp_lib_raw_memory_algorithms < 201606L

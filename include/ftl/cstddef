@@ -15,15 +15,8 @@
 #endif
 #endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_CSTDDEF_BEGIN_NAMESPACE namespace std {
-#define FTL_CSTDDEF_END_NAMESPACE }
-#else
-#define FTL_CSTDDEF_BEGIN_NAMESPACE namespace ftl {
-#define FTL_CSTDDEF_END_NAMESPACE }
-#endif
 
-FTL_CSTDDEF_BEGIN_NAMESPACE
+namespace std {
 
 using size_t = decltype(sizeof(0));
 using ptrdiff_t = decltype(static_cast<int*>(nullptr) -
@@ -140,10 +133,8 @@ constexpr Integer to_integer(byte value) noexcept {
     return static_cast<Integer>(value);
 }
 
-FTL_CSTDDEF_END_NAMESPACE
+}
 
-#undef FTL_CSTDDEF_BEGIN_NAMESPACE
-#undef FTL_CSTDDEF_END_NAMESPACE
 
 #if !defined(__cpp_lib_byte) || __cpp_lib_byte < 201603L
 #undef __cpp_lib_byte

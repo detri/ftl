@@ -15,10 +15,6 @@ extern "C" int setjmp(ftl_jmp_buf);
 extern "C" [[noreturn]] void longjmp(ftl_jmp_buf, int);
 #endif
 
-#ifdef FTL_REPLACE_STL
 namespace std { using jmp_buf = ::ftl_jmp_buf; using ::longjmp; }
-#else
-namespace ftl { using jmp_buf = ::ftl_jmp_buf; using ::longjmp; }
-#endif
 
 #endif

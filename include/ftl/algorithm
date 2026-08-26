@@ -1,7 +1,6 @@
 #ifndef FTL_ALGORITHMS_HEADER
 #define FTL_ALGORITHMS_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__algorithms/result.hpp>
 #include <__algorithms/all_any_none.hpp>
 #include <__algorithms/count.hpp>
@@ -28,34 +27,6 @@
 #include <__algorithms/permutation.hpp>
 #include <__algorithms/lexicographical.hpp>
 #include <__algorithms/random.hpp>
-#else
-#include <ftl/__algorithms/result.hpp>
-#include <ftl/__algorithms/all_any_none.hpp>
-#include <ftl/__algorithms/count.hpp>
-#include <ftl/__algorithms/for_each.hpp>
-#include <ftl/__algorithms/find.hpp>
-#include <ftl/__algorithms/range_compare.hpp>
-#include <ftl/__algorithms/search.hpp>
-#include <ftl/__algorithms/copy_move.hpp>
-#include <ftl/__algorithms/transform_generate.hpp>
-#include <ftl/__algorithms/fill.hpp>
-#include <ftl/__algorithms/replace.hpp>
-#include <ftl/__algorithms/remove_unique.hpp>
-#include <ftl/__algorithms/reverse_rotate.hpp>
-#include <ftl/__algorithms/swap_shift.hpp>
-#include <ftl/__algorithms/partition.hpp>
-#include <ftl/__algorithms/sort.hpp>
-#include <ftl/__algorithms/binary_search.hpp>
-#include <ftl/__algorithms/merge.hpp>
-#include <ftl/__algorithms/set.hpp>
-#include <ftl/__algorithms/heap.hpp>
-#include <ftl/__algorithms/partial_sort.hpp>
-#include <ftl/__algorithms/min_max.hpp>
-#include <ftl/__algorithms/fold.hpp>
-#include <ftl/__algorithms/permutation.hpp>
-#include <ftl/__algorithms/lexicographical.hpp>
-#include <ftl/__algorithms/random.hpp>
-#endif
 
 #if !defined(__cpp_lib_ranges_starts_ends_with) || \
     __cpp_lib_ranges_starts_ends_with < 202106L

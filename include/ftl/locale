@@ -5,7 +5,6 @@
 
 extern "C" int snprintf(char *, decltype(sizeof(0)), const char *, ...);
 
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <clocale>
 #include <climits>
@@ -28,37 +27,9 @@ extern "C" int snprintf(char *, decltype(sizeof(0)), const char *, ...);
 #include <typeinfo>
 #include <vector>
 
-#else
-#include <ftl/atomic>
-#include <ftl/clocale>
-#include <ftl/climits>
-#include <ftl/cerrno>
-#include <ftl/cstddef>
-#include <ftl/cstdint>
-#include <ftl/cstdlib>
-#include <ftl/cwchar>
-#include <ftl/cwctype>
-#include <ftl/ctime>
-#include <ftl/detail/locale_runtime.hpp>
-#include <ftl/detail/rapidhash>
-#include <ftl/memory>
-#include <ftl/limits>
-#include <ftl/iosfwd>
-#include <ftl/iterator>
-#include <ftl/stdexcept>
-#include <ftl/string>
-#include <ftl/type_traits>
-#include <ftl/typeinfo>
-#include <ftl/vector>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_LOCALE_NAMESPACE std
-#else
-#define FTL_LOCALE_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 class locale;
 
@@ -5930,21 +5901,16 @@ template <class Character, class Traits, class Allocator>
 bool locale::operator()(
     const basic_string<Character, Traits, Allocator> &left,
     const basic_string<Character, Traits, Allocator> &right) const {
-  return use_facet<FTL_LOCALE_NAMESPACE::collate<Character>>(*this).compare(
+  return use_facet<std::collate<Character>>(*this).compare(
              left.data(), left.data() + left.size(), right.data(),
              right.data() + right.size()) < 0;
 }
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_LOCALE_NAMESPACE
 
 #if !defined(FTL_STREAMBUF_HEADER) && !defined(FTL_IOS_HEADER)
-#ifdef FTL_REPLACE_STL
 #include <streambuf>
-#else
-#include <ftl/streambuf>
-#endif
 #endif
 
 #if !defined(__cpp_lib_char8_t) || __cpp_lib_char8_t < 201907L

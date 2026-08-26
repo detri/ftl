@@ -3,7 +3,6 @@
 #ifndef FTL_PARTITION_HEADER
 #define FTL_PARTITION_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__algorithms/result.hpp>
 #include <__algorithms/reverse_rotate.hpp>
 #include <__execution/policy_access.hpp>
@@ -12,24 +11,9 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__algorithms/result.hpp>
-#include <ftl/__algorithms/reverse_rotate.hpp>
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_PARTITION_NAMESPACE std
-#else
-#define FTL_PARTITION_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -38,15 +22,15 @@ constexpr bool is_partitioned_loop(Iterator first, const Sentinel &last,
                                    Predicate &predicate,
                                    Projection &projection) {
   for (; first != last; ++first) {
-    if (!FTL_PARTITION_NAMESPACE::invoke(
-            predicate, FTL_PARTITION_NAMESPACE::invoke(projection, *first))) {
+    if (!std::invoke(
+            predicate, std::invoke(projection, *first))) {
       break;
     }
   }
 
   for (; first != last; ++first) {
-    if (FTL_PARTITION_NAMESPACE::invoke(
-            predicate, FTL_PARTITION_NAMESPACE::invoke(projection, *first))) {
+    if (std::invoke(
+            predicate, std::invoke(projection, *first))) {
       return false;
     }
   }
@@ -59,15 +43,15 @@ constexpr ranges::subrange<Iterator>
 partition_loop(Iterator first, Sentinel last, Predicate &predicate,
                Projection &projection) {
   while (first != last &&
-         FTL_PARTITION_NAMESPACE::invoke(
-             predicate, FTL_PARTITION_NAMESPACE::invoke(projection, *first))) {
+         std::invoke(
+             predicate, std::invoke(projection, *first))) {
     ++first;
   }
 
   if (first == last) {
     return {
-        FTL_PARTITION_NAMESPACE::move(first),
-        FTL_PARTITION_NAMESPACE::move(first),
+        std::move(first),
+        std::move(first),
     };
   }
 
@@ -76,16 +60,16 @@ partition_loop(Iterator first, Sentinel last, Predicate &predicate,
   ++current;
 
   for (; current != last; ++current) {
-    if (FTL_PARTITION_NAMESPACE::invoke(
-            predicate, FTL_PARTITION_NAMESPACE::invoke(projection, *current))) {
+    if (std::invoke(
+            predicate, std::invoke(projection, *current))) {
       ranges::iter_swap(partition_point, current);
       ++partition_point;
     }
   }
 
   return {
-      FTL_PARTITION_NAMESPACE::move(partition_point),
-      FTL_PARTITION_NAMESPACE::move(current),
+      std::move(partition_point),
+      std::move(current),
   };
 }
 
@@ -99,8 +83,8 @@ stable_partition_recursive(Iterator first, Iterator last,
   }
 
   if (length == 1) {
-    if (FTL_PARTITION_NAMESPACE::invoke(
-            predicate, FTL_PARTITION_NAMESPACE::invoke(projection, *first))) {
+    if (std::invoke(
+            predicate, std::invoke(projection, *first))) {
       ++first;
     }
 
@@ -120,9 +104,9 @@ stable_partition_recursive(Iterator first, Iterator last,
       static_cast<iter_difference_t<Iterator>>(length - left_length), predicate,
       projection);
 
-  return detail::rotate_loop(FTL_PARTITION_NAMESPACE::move(left_partition),
-                             FTL_PARTITION_NAMESPACE::move(middle),
-                             FTL_PARTITION_NAMESPACE::move(right_partition));
+  return detail::rotate_loop(std::move(left_partition),
+                             std::move(middle),
+                             std::move(right_partition));
 }
 
 template <class Iterator, class Sentinel, class Predicate, class Projection>
@@ -138,8 +122,8 @@ stable_partition_loop(Iterator first, Sentinel last, Predicate &predicate,
       stable_partition_recursive(first, end, length, predicate, projection);
 
   return {
-      FTL_PARTITION_NAMESPACE::move(partition_point),
-      FTL_PARTITION_NAMESPACE::move(end),
+      std::move(partition_point),
+      std::move(end),
   };
 }
 
@@ -150,8 +134,8 @@ constexpr void partition_copy_loop(Iterator &first, const Sentinel &last,
                                    Predicate &predicate,
                                    Projection &projection) {
   for (; first != last; ++first) {
-    if (FTL_PARTITION_NAMESPACE::invoke(
-            predicate, FTL_PARTITION_NAMESPACE::invoke(projection, *first))) {
+    if (std::invoke(
+            predicate, std::invoke(projection, *first))) {
       *out_true = *first;
       ++out_true;
     } else {
@@ -173,8 +157,8 @@ constexpr Iterator partition_point_loop(Iterator first, Sentinel last,
     Iterator middle = first;
     ranges::advance(middle, half);
 
-    if (FTL_PARTITION_NAMESPACE::invoke(
-            predicate, FTL_PARTITION_NAMESPACE::invoke(projection, *middle))) {
+    if (std::invoke(
+            predicate, std::invoke(projection, *middle))) {
       first = middle;
       ++first;
 
@@ -194,8 +178,8 @@ constexpr bool is_partitioned(InputIterator first, InputIterator last,
                               Predicate predicate) {
   identity projection{};
 
-  return detail::is_partitioned_loop(FTL_PARTITION_NAMESPACE::move(first),
-                                     FTL_PARTITION_NAMESPACE::move(last),
+  return detail::is_partitioned_loop(std::move(first),
+                                     std::move(last),
                                      predicate, projection);
 }
 
@@ -206,8 +190,8 @@ bool is_partitioned(ExecutionPolicy &&, ForwardIterator first,
   return [&]() noexcept {
     identity projection{};
 
-    return detail::is_partitioned_loop(FTL_PARTITION_NAMESPACE::move(first),
-                                       FTL_PARTITION_NAMESPACE::move(last),
+    return detail::is_partitioned_loop(std::move(first),
+                                       std::move(last),
                                        predicate, projection);
   }();
 }
@@ -217,8 +201,8 @@ constexpr ForwardIterator partition(ForwardIterator first, ForwardIterator last,
                                     Predicate predicate) {
   identity projection{};
 
-  return detail::partition_loop(FTL_PARTITION_NAMESPACE::move(first),
-                                FTL_PARTITION_NAMESPACE::move(last), predicate,
+  return detail::partition_loop(std::move(first),
+                                std::move(last), predicate,
                                 projection)
       .begin();
 }
@@ -230,8 +214,8 @@ ForwardIterator partition(ExecutionPolicy &&, ForwardIterator first,
   return [&]() noexcept {
     identity projection{};
 
-    return detail::partition_loop(FTL_PARTITION_NAMESPACE::move(first),
-                                  FTL_PARTITION_NAMESPACE::move(last),
+    return detail::partition_loop(std::move(first),
+                                  std::move(last),
                                   predicate, projection)
         .begin();
   }();
@@ -243,8 +227,8 @@ BidirectionalIterator stable_partition(BidirectionalIterator first,
                                        Predicate predicate) {
   identity projection{};
 
-  return detail::stable_partition_loop(FTL_PARTITION_NAMESPACE::move(first),
-                                       FTL_PARTITION_NAMESPACE::move(last),
+  return detail::stable_partition_loop(std::move(first),
+                                       std::move(last),
                                        predicate, projection)
       .begin();
 }
@@ -257,8 +241,8 @@ stable_partition(ExecutionPolicy &&, BidirectionalIterator first,
   return [&]() noexcept {
     identity projection{};
 
-    return detail::stable_partition_loop(FTL_PARTITION_NAMESPACE::move(first),
-                                         FTL_PARTITION_NAMESPACE::move(last),
+    return detail::stable_partition_loop(std::move(first),
+                                         std::move(last),
                                          predicate, projection)
         .begin();
   }();
@@ -276,8 +260,8 @@ partition_copy(InputIterator first, InputIterator last,
                               projection);
 
   return {
-      FTL_PARTITION_NAMESPACE::move(out_true),
-      FTL_PARTITION_NAMESPACE::move(out_false),
+      std::move(out_true),
+      std::move(out_false),
   };
 }
 
@@ -295,8 +279,8 @@ partition_copy(ExecutionPolicy &&, ForwardIterator first, ForwardIterator last,
                                 projection);
 
     return pair<ForwardIterator1, ForwardIterator2>{
-        FTL_PARTITION_NAMESPACE::move(out_true),
-        FTL_PARTITION_NAMESPACE::move(out_false),
+        std::move(out_true),
+        std::move(out_false),
     };
   }();
 }
@@ -307,8 +291,8 @@ constexpr ForwardIterator partition_point(ForwardIterator first,
                                           Predicate predicate) {
   identity projection{};
 
-  return detail::partition_point_loop(FTL_PARTITION_NAMESPACE::move(first),
-                                      FTL_PARTITION_NAMESPACE::move(last),
+  return detail::partition_point_loop(std::move(first),
+                                      std::move(last),
                                       predicate, projection);
 }
 
@@ -323,9 +307,9 @@ struct is_partitioned_fn {
             indirect_unary_predicate<projected<Iterator, Projection>> Predicate>
   constexpr bool operator()(Iterator first, Sentinel last, Predicate predicate,
                             Projection projection = {}) const {
-    return FTL_PARTITION_NAMESPACE::detail::is_partitioned_loop(
-        FTL_PARTITION_NAMESPACE::move(first),
-        FTL_PARTITION_NAMESPACE::move(last), predicate, projection);
+    return std::detail::is_partitioned_loop(
+        std::move(first),
+        std::move(last), predicate, projection);
   }
 
   template <input_range Range, class Projection = identity,
@@ -334,8 +318,8 @@ struct is_partitioned_fn {
   constexpr bool operator()(Range &&range, Predicate predicate,
                             Projection projection = {}) const {
     return (*this)(ranges::begin(range), ranges::end(range),
-                   FTL_PARTITION_NAMESPACE::move(predicate),
-                   FTL_PARTITION_NAMESPACE::move(projection));
+                   std::move(predicate),
+                   std::move(projection));
   }
 };
 
@@ -346,9 +330,9 @@ struct partition_fn {
   constexpr subrange<Iterator> operator()(Iterator first, Sentinel last,
                                           Predicate predicate,
                                           Projection projection = {}) const {
-    return FTL_PARTITION_NAMESPACE::detail::partition_loop(
-        FTL_PARTITION_NAMESPACE::move(first),
-        FTL_PARTITION_NAMESPACE::move(last), predicate, projection);
+    return std::detail::partition_loop(
+        std::move(first),
+        std::move(last), predicate, projection);
   }
 
   template <forward_range Range, class Projection = identity,
@@ -359,10 +343,10 @@ struct partition_fn {
   operator()(Range &&range, Predicate predicate,
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_PARTITION_NAMESPACE::move(predicate),
-                          FTL_PARTITION_NAMESPACE::move(projection));
+                          std::move(predicate),
+                          std::move(projection));
 
-    return FTL_PARTITION_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -374,9 +358,9 @@ struct stable_partition_fn {
   subrange<Iterator> operator()(Iterator first, Sentinel last,
                                 Predicate predicate,
                                 Projection projection = {}) const {
-    return FTL_PARTITION_NAMESPACE::detail::stable_partition_loop(
-        FTL_PARTITION_NAMESPACE::move(first),
-        FTL_PARTITION_NAMESPACE::move(last), predicate, projection);
+    return std::detail::stable_partition_loop(
+        std::move(first),
+        std::move(last), predicate, projection);
   }
 
   template <bidirectional_range Range, class Projection = identity,
@@ -386,10 +370,10 @@ struct stable_partition_fn {
   borrowed_subrange_t<Range> operator()(Range &&range, Predicate predicate,
                                         Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_PARTITION_NAMESPACE::move(predicate),
-                          FTL_PARTITION_NAMESPACE::move(projection));
+                          std::move(predicate),
+                          std::move(projection));
 
-    return FTL_PARTITION_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -403,13 +387,13 @@ struct partition_copy_fn {
   constexpr partition_copy_result<Iterator, Output1, Output2>
   operator()(Iterator first, Sentinel last, Output1 out_true, Output2 out_false,
              Predicate predicate, Projection projection = {}) const {
-    FTL_PARTITION_NAMESPACE::detail::partition_copy_loop(
+    std::detail::partition_copy_loop(
         first, last, out_true, out_false, predicate, projection);
 
     return {
-        FTL_PARTITION_NAMESPACE::move(first),
-        FTL_PARTITION_NAMESPACE::move(out_true),
-        FTL_PARTITION_NAMESPACE::move(out_false),
+        std::move(first),
+        std::move(out_true),
+        std::move(out_false),
     };
   }
 
@@ -423,15 +407,15 @@ struct partition_copy_fn {
   operator()(Range &&range, Output1 out_true, Output2 out_false,
              Predicate predicate, Projection projection = {}) const {
     auto converted = (*this)(ranges::begin(range), ranges::end(range),
-                             FTL_PARTITION_NAMESPACE::move(out_true),
-                             FTL_PARTITION_NAMESPACE::move(out_false),
-                             FTL_PARTITION_NAMESPACE::move(predicate),
-                             FTL_PARTITION_NAMESPACE::move(projection));
+                             std::move(out_true),
+                             std::move(out_false),
+                             std::move(predicate),
+                             std::move(projection));
 
     return {
-        FTL_PARTITION_NAMESPACE::move(converted.in),
-        FTL_PARTITION_NAMESPACE::move(converted.out1),
-        FTL_PARTITION_NAMESPACE::move(converted.out2),
+        std::move(converted.in),
+        std::move(converted.out1),
+        std::move(converted.out2),
     };
   }
 };
@@ -443,9 +427,9 @@ struct partition_point_fn {
   constexpr Iterator operator()(Iterator first, Sentinel last,
                                 Predicate predicate,
                                 Projection projection = {}) const {
-    return FTL_PARTITION_NAMESPACE::detail::partition_point_loop(
-        FTL_PARTITION_NAMESPACE::move(first),
-        FTL_PARTITION_NAMESPACE::move(last), predicate, projection);
+    return std::detail::partition_point_loop(
+        std::move(first),
+        std::move(last), predicate, projection);
   }
 
   template <forward_range Range, class Projection = identity,
@@ -455,10 +439,10 @@ struct partition_point_fn {
   operator()(Range &&range, Predicate predicate,
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_PARTITION_NAMESPACE::move(predicate),
-                          FTL_PARTITION_NAMESPACE::move(projection));
+                          std::move(predicate),
+                          std::move(projection));
 
-    return FTL_PARTITION_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -470,8 +454,7 @@ inline constexpr partition_point_fn partition_point{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_PARTITION_NAMESPACE
 
 #endif // FTL_PARTITION_HEADER

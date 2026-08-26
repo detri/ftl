@@ -3,13 +3,9 @@
 #ifndef FTL_CONCEPTS_HEADER
 #define FTL_CONCEPTS_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <type_traits>
-#else
-#include <ftl/type_traits>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -304,6 +300,6 @@ concept strict_weak_order = relation<Relation, T, U>;
 #define __cpp_lib_concepts 202207L
 #endif
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #endif // FTL_CONCEPTS_HEADER

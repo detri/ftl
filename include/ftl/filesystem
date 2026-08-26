@@ -3,7 +3,6 @@
 #ifndef FTL_FILESYSTEM_HEADER
 #define FTL_FILESYSTEM_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <chrono>
 #include <compare>
 #include <functional>
@@ -15,32 +14,10 @@
 #include <string_view>
 #include <system_error>
 #include <vector>
-#else
-#include <ftl/chrono>
-#include <ftl/compare>
-#include <ftl/functional>
-#include <ftl/istream>
-#include <ftl/memory>
-#include <ftl/ostream>
-#include <ftl/ranges>
-#include <ftl/string>
-#include <ftl/string_view>
-#include <ftl/system_error>
-#include <ftl/vector>
-#endif
-#ifdef FTL_REPLACE_STL
 #include <detail/native_filesystem.hpp>
-#else
-#include <ftl/detail/native_filesystem.hpp>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_FILESYSTEM_NAMESPACE std
-#else
-#define FTL_FILESYSTEM_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 namespace detail {
 using namespace ::ftl::detail;
 }
@@ -72,7 +49,7 @@ public:
   path(path &&) noexcept = default;
   path(const string_type &s, format = auto_format) : value_(s) { normalize(); }
   path(string_type &&s, format = auto_format)
-      : value_(FTL_FILESYSTEM_NAMESPACE::move(s)) {
+      : value_(std::move(s)) {
     normalize();
   }
   path(const value_type *s, format = auto_format) : value_(s) { normalize(); }
@@ -139,7 +116,7 @@ public:
     return *this;
   }
   path &operator=(string_type &&s) {
-    value_ = FTL_FILESYSTEM_NAMESPACE::move(s);
+    value_ = std::move(s);
     normalize();
     return *this;
   }
@@ -153,11 +130,11 @@ public:
   }
   path &assign(const path &p) { return *this = p; }
   path &assign(path &&p) noexcept {
-    return *this = FTL_FILESYSTEM_NAMESPACE::move(p);
+    return *this = std::move(p);
   }
   path &assign(const string_type &s) { return *this = s; }
   path &assign(string_type &&s) {
-    return *this = FTL_FILESYSTEM_NAMESPACE::move(s);
+    return *this = std::move(s);
   }
   path &assign(const value_type *s) { return *this = s; }
   template <class Source> path &assign(const Source &s) {
@@ -587,11 +564,11 @@ private:
   }
   void assign_locale(const char *first, const char *last, const locale &where) {
     const auto &conversion =
-        FTL_FILESYSTEM_NAMESPACE::use_facet<
-            FTL_FILESYSTEM_NAMESPACE::codecvt<wchar_t, char,
-                                               FTL_FILESYSTEM_NAMESPACE::mbstate_t>>(
+        std::use_facet<
+            std::codecvt<wchar_t, char,
+                                               std::mbstate_t>>(
             where);
-    FTL_FILESYSTEM_NAMESPACE::mbstate_t state{};
+    std::mbstate_t state{};
     while (first != last) {
       const char *original = first;
       wchar_t buffer[128];
@@ -601,12 +578,12 @@ private:
           conversion.in(state, first, last, next, buffer, buffer + 128, output);
       assign_encoded(buffer, output);
       first = next;
-      if (result == FTL_FILESYSTEM_NAMESPACE::codecvt_base::error ||
+      if (result == std::codecvt_base::error ||
           (next == original &&
-           result != FTL_FILESYSTEM_NAMESPACE::codecvt_base::ok))
-        throw FTL_FILESYSTEM_NAMESPACE::system_error(
-            FTL_FILESYSTEM_NAMESPACE::make_error_code(
-                FTL_FILESYSTEM_NAMESPACE::errc::illegal_byte_sequence));
+           result != std::codecvt_base::ok))
+        throw std::system_error(
+            std::make_error_code(
+                std::errc::illegal_byte_sequence));
     }
   }
 };
@@ -1084,7 +1061,7 @@ public:
 private:
   friend class directory_iterator;
   directory_entry(filesystem::path p, file_type type)
-      : path_(FTL_FILESYSTEM_NAMESPACE::move(p)) {
+      : path_(std::move(p)) {
     symlink_ = file_status(type);
     if (type != file_type::symlink)
       status_ = symlink_;
@@ -1207,7 +1184,7 @@ public:
     auto copy = *this;
     if (state_)
       copy.state_ =
-          FTL_FILESYSTEM_NAMESPACE::make_shared<traversal_state>(*state_);
+          std::make_shared<traversal_state>(*state_);
     ++*this;
     return copy;
   }
@@ -1271,12 +1248,12 @@ private:
       directory_iterator first(p, options, ec);
       if (ec || first == directory_iterator())
         return;
-      state_ = FTL_FILESYSTEM_NAMESPACE::make_shared<traversal_state>();
+      state_ = std::make_shared<traversal_state>();
       state_->options = options;
       state_->stack.push_back(first);
       state_->current = *first;
     } catch (...) {
-      ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(
+      ec = std::make_error_code(
           errc::not_enough_memory);
       state_.reset();
     }
@@ -1543,7 +1520,7 @@ inline void directory_iterator::open(const filesystem::path &p,
                                      error_code &ec) noexcept {
   try {
     auto values =
-        FTL_FILESYSTEM_NAMESPACE::make_shared<vector<directory_entry>>();
+        std::make_shared<vector<directory_entry>>();
     struct C {
       const filesystem::path *b;
       vector<directory_entry> *v;
@@ -1564,16 +1541,16 @@ inline void directory_iterator::open(const filesystem::path &p,
     };
     if (!detail::native_list_directory(p.c_str(), add, &c, e)) {
       ec = c.allocation_failed
-               ? FTL_FILESYSTEM_NAMESPACE::make_error_code(
+               ? std::make_error_code(
                      errc::not_enough_memory)
                                : detail_fs::code(e);
       return;
     }
     ec.clear();
     if (!values->empty())
-      entries_ = FTL_FILESYSTEM_NAMESPACE::move(values);
+      entries_ = std::move(values);
   } catch (...) {
-    ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(errc::not_enough_memory);
+    ec = std::make_error_code(errc::not_enough_memory);
   }
 }
 inline path absolute(const path &p, error_code &ec) {
@@ -1609,7 +1586,7 @@ inline path weakly_canonical(const path &p, error_code &ec) {
     auto parent = candidate.parent_path();
     if (parent == candidate)
       break;
-    candidate = FTL_FILESYSTEM_NAMESPACE::move(parent);
+    candidate = std::move(parent);
   }
   path result = candidate.empty() ? current_path(ec) : canonical(candidate, ec);
   if (ec)
@@ -1669,7 +1646,7 @@ inline bool create_directory(const path &p, const path &attributes,
 inline bool create_directories(const path &p, error_code &ec) {
   if (p.empty() || exists(p, ec)) {
     if (!ec && !is_directory(p, ec))
-      ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(errc::file_exists);
+      ec = std::make_error_code(errc::file_exists);
     return false;
   }
   auto parent = p.parent_path();
@@ -1729,12 +1706,12 @@ inline uintmax_t file_size(const path &p, error_code &ec) noexcept {
     return uintmax_t(-1);
   }
   if (i.kind == detail::native_file_kind::not_found) {
-    ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(
+    ec = std::make_error_code(
         errc::no_such_file_or_directory);
     return uintmax_t(-1);
   }
   if (i.kind != detail::native_file_kind::regular) {
-    ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(errc::is_a_directory);
+    ec = std::make_error_code(errc::is_a_directory);
     return uintmax_t(-1);
   }
   ec.clear();
@@ -1748,7 +1725,7 @@ inline uintmax_t hard_link_count(const path &p, error_code &ec) noexcept {
     return uintmax_t(-1);
   }
   if (i.kind == detail::native_file_kind::not_found) {
-    ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(
+    ec = std::make_error_code(
         errc::no_such_file_or_directory);
     return uintmax_t(-1);
   }
@@ -1763,7 +1740,7 @@ inline file_time_type last_write_time(const path &p, error_code &ec) noexcept {
     return file_time_type::min();
   }
   if (i.kind == detail::native_file_kind::not_found) {
-    ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(
+    ec = std::make_error_code(
         errc::no_such_file_or_directory);
     return file_time_type::min();
   }
@@ -1817,7 +1794,7 @@ inline bool equivalent(const path &a, const path &b, error_code &ec) noexcept {
   }
   if (x.kind == detail::native_file_kind::not_found ||
       y.kind == detail::native_file_kind::not_found) {
-    ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(
+    ec = std::make_error_code(
         errc::no_such_file_or_directory);
     return false;
   }
@@ -1870,7 +1847,7 @@ inline void copy_symlink(const path &a, const path &b,
     else if (!ec)
       create_symlink(target, b, ec);
   } catch (...) {
-    ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(errc::not_enough_memory);
+    ec = std::make_error_code(errc::not_enough_memory);
   }
 }
 inline bool copy_file(const path &a, const path &b, copy_options o,
@@ -1880,9 +1857,9 @@ inline bool copy_file(const path &a, const path &b, copy_options o,
     return false;
   if (!exists(source_status) || !is_regular_file(source_status)) {
     ec = !exists(source_status)
-             ? FTL_FILESYSTEM_NAMESPACE::make_error_code(
+             ? std::make_error_code(
                    errc::no_such_file_or_directory)
-             : FTL_FILESYSTEM_NAMESPACE::make_error_code(
+             : std::make_error_code(
                    errc::invalid_argument);
     return false;
   }
@@ -1891,12 +1868,12 @@ inline bool copy_file(const path &a, const path &b, copy_options o,
     return false;
   if (target_exists && !is_regular_file(b, ec)) {
     if (!ec)
-      ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(errc::invalid_argument);
+      ec = std::make_error_code(errc::invalid_argument);
     return false;
   }
   if (target_exists && equivalent(a, b, ec)) {
     if (!ec)
-      ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(errc::file_exists);
+      ec = std::make_error_code(errc::file_exists);
     return false;
   }
   bool overwrite = (o & copy_options::overwrite_existing) != copy_options{};
@@ -1915,7 +1892,7 @@ inline bool copy_file(const path &a, const path &b, copy_options o,
       return false;
   }
   if (target_exists && !overwrite && !update) {
-    ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(errc::file_exists);
+    ec = std::make_error_code(errc::file_exists);
     return false;
   }
   detail::native_io_error e;
@@ -1942,7 +1919,7 @@ inline void copy(const path &a, const path &b, copy_options o, error_code &ec) {
   if (ec)
     return;
   if (!exists(source)) {
-    ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(
+    ec = std::make_error_code(
         errc::no_such_file_or_directory);
     return;
   }
@@ -1951,12 +1928,12 @@ inline void copy(const path &a, const path &b, copy_options o, error_code &ec) {
     return;
   if (exists(target) && equivalent(a, b, ec)) {
     if (!ec)
-      ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(errc::file_exists);
+      ec = std::make_error_code(errc::file_exists);
     return;
   }
   if (is_other(source) || is_other(target) ||
       (is_directory(source) && is_regular_file(target))) {
-    ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(errc::invalid_argument);
+    ec = std::make_error_code(errc::invalid_argument);
     return;
   }
   if (is_symlink(source)) {
@@ -1969,7 +1946,7 @@ inline void copy(const path &a, const path &b, copy_options o, error_code &ec) {
       copy_symlink(a, b, ec);
       return;
     }
-    ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(errc::invalid_argument);
+    ec = std::make_error_code(errc::invalid_argument);
     return;
   }
   if (is_regular_file(source)) {
@@ -1987,11 +1964,11 @@ inline void copy(const path &a, const path &b, copy_options o, error_code &ec) {
     return;
   }
   if (!is_directory(source) || is_regular_file(target)) {
-    ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(errc::invalid_argument);
+    ec = std::make_error_code(errc::invalid_argument);
     return;
   }
   if ((o & copy_options::create_symlinks) != copy_options{}) {
-    ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(errc::is_a_directory);
+    ec = std::make_error_code(errc::is_a_directory);
     return;
   }
   if ((o & copy_options::recursive) == copy_options{} &&
@@ -2018,7 +1995,7 @@ inline path temp_directory_path(error_code &ec) {
   }
   path result(path::string_type(buffer, size));
   if (!is_directory(result, ec) && !ec)
-    ec = FTL_FILESYSTEM_NAMESPACE::make_error_code(errc::not_a_directory);
+    ec = std::make_error_code(errc::not_a_directory);
   return ec ? path() : result;
 }
 inline uintmax_t directory_entry::file_size(error_code &ec) const noexcept {
@@ -2106,7 +2083,7 @@ template <>
 inline constexpr bool enable_view<filesystem::recursive_directory_iterator> =
     true;
 } // namespace ranges
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_filesystem) || __cpp_lib_filesystem < 201703L
 #undef __cpp_lib_filesystem
@@ -2118,6 +2095,5 @@ FTL_END_NAMESPACE
 #define __cpp_lib_char8_t 201907L
 #endif
 
-#undef FTL_FILESYSTEM_NAMESPACE
 
 #endif

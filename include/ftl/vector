@@ -3,11 +3,7 @@
 #ifndef FTL_VECTOR_HEADER
 #define FTL_VECTOR_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__vector/vector.hpp>
-#else
-#include <ftl/__vector/vector.hpp>
-#endif
 
 #if !defined(__cpp_lib_constexpr_vector) || __cpp_lib_constexpr_vector < 201907L
 #undef __cpp_lib_constexpr_vector

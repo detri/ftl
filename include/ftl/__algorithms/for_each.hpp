@@ -3,7 +3,6 @@
 #ifndef FTL_FOR_EACH_HEADER
 #define FTL_FOR_EACH_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__algorithms/result.hpp>
 #include <__execution/policy_access.hpp>
 #include <functional>
@@ -11,23 +10,9 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__algorithms/result.hpp>
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_FOR_EACH_NAMESPACE std
-#else
-#define FTL_FOR_EACH_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -54,8 +39,8 @@ constexpr void ranges_for_each_loop(Iterator &first, const Sentinel &last,
                                     Function &function,
                                     Projection &projection) {
   for (; first != last; ++first) {
-    FTL_FOR_EACH_NAMESPACE::invoke(
-        function, FTL_FOR_EACH_NAMESPACE::invoke(projection, *first));
+    std::invoke(
+        function, std::invoke(projection, *first));
   }
 }
 
@@ -64,8 +49,8 @@ constexpr void
 ranges_for_each_n_loop(Iterator &first, iter_difference_t<Iterator> count,
                        Function &function, Projection &projection) {
   for (; count > 0; --count, ++first) {
-    FTL_FOR_EACH_NAMESPACE::invoke(
-        function, FTL_FOR_EACH_NAMESPACE::invoke(projection, *first));
+    std::invoke(
+        function, std::invoke(projection, *first));
   }
 }
 
@@ -75,7 +60,7 @@ template <class InputIterator, class Function>
 constexpr Function for_each(InputIterator first, InputIterator last,
                             Function function) {
   detail::for_each_loop(first, last, function);
-  return FTL_FOR_EACH_NAMESPACE::move(function);
+  return std::move(function);
 }
 
 template <class ExecutionPolicy, class ForwardIterator, class Function>
@@ -119,12 +104,12 @@ struct for_each_fn {
   constexpr for_each_result<Iterator, Function>
   operator()(Iterator first, Sentinel last, Function function,
              Projection projection = {}) const {
-    FTL_FOR_EACH_NAMESPACE::detail::ranges_for_each_loop(first, last, function,
+    std::detail::ranges_for_each_loop(first, last, function,
                                                          projection);
 
     return {
-        FTL_FOR_EACH_NAMESPACE::move(first),
-        FTL_FOR_EACH_NAMESPACE::move(function),
+        std::move(first),
+        std::move(function),
     };
   }
 
@@ -135,12 +120,12 @@ struct for_each_fn {
   operator()(Range &&range, Function function,
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_FOR_EACH_NAMESPACE::move(function),
-                          FTL_FOR_EACH_NAMESPACE::move(projection));
+                          std::move(function),
+                          std::move(projection));
 
     return {
-        FTL_FOR_EACH_NAMESPACE::move(result.in),
-        FTL_FOR_EACH_NAMESPACE::move(result.fun),
+        std::move(result.in),
+        std::move(result.fun),
     };
   }
 };
@@ -152,12 +137,12 @@ struct for_each_n_fn {
   constexpr for_each_n_result<Iterator, Function>
   operator()(Iterator first, iter_difference_t<Iterator> count,
              Function function, Projection projection = {}) const {
-    FTL_FOR_EACH_NAMESPACE::detail::ranges_for_each_n_loop(
+    std::detail::ranges_for_each_n_loop(
         first, count, function, projection);
 
     return {
-        FTL_FOR_EACH_NAMESPACE::move(first),
-        FTL_FOR_EACH_NAMESPACE::move(function),
+        std::move(first),
+        std::move(function),
     };
   }
 };
@@ -167,8 +152,7 @@ inline constexpr for_each_n_fn for_each_n{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_FOR_EACH_NAMESPACE
 
 #endif // FTL_FOR_EACH_HEADER

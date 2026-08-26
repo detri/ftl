@@ -3,7 +3,6 @@
 #ifndef FTL_CMATH_HEADER
 #define FTL_CMATH_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <bit>
 #include <cfloat>
 #include <limits>
@@ -11,15 +10,6 @@
 #include <detail/math_runtime>
 #define FTL_CMATH_BEGIN namespace std {
 #define FTL_CMATH_END }
-#else
-#include <ftl/bit>
-#include <ftl/cfloat>
-#include <ftl/limits>
-#include <ftl/type_traits>
-#include <ftl/detail/math_runtime>
-#define FTL_CMATH_BEGIN namespace ftl {
-#define FTL_CMATH_END }
-#endif
 
 #define FP_INFINITE 0x01
 #define FP_NAN 0x02
@@ -1880,19 +1870,11 @@ inline double sph_neumann(unsigned n, Arithmetic x) {
 
 FTL_CMATH_END
 
-#ifdef FTL_REPLACE_STL
 #define HUGE_VAL (::std::numeric_limits<double>::infinity())
 #define HUGE_VALF (::std::numeric_limits<float>::infinity())
 #define HUGE_VALL (::std::numeric_limits<long double>::infinity())
 #define INFINITY (::std::numeric_limits<float>::infinity())
 #define NAN (::std::numeric_limits<float>::quiet_NaN())
-#else
-#define HUGE_VAL (::ftl::numeric_limits<double>::infinity())
-#define HUGE_VALF (::ftl::numeric_limits<float>::infinity())
-#define HUGE_VALL (::ftl::numeric_limits<long double>::infinity())
-#define INFINITY (::ftl::numeric_limits<float>::infinity())
-#define NAN (::ftl::numeric_limits<float>::quiet_NaN())
-#endif
 
 #undef FTL_CMATH_BEGIN
 #undef FTL_CMATH_END

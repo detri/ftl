@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <locale>
 #include <string>
 namespace tested = std;
-#else
-#include <ftl/locale>
-#include <ftl/string>
-namespace tested = ftl;
-#endif
 
 struct reverse_collate final : tested::collate<char> {
   reverse_collate() : tested::collate<char>() {}

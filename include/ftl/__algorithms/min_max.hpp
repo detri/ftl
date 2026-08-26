@@ -3,7 +3,6 @@
 #ifndef FTL_MIN_MAX_HEADER
 #define FTL_MIN_MAX_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__algorithms/result.hpp>
 #include <__execution/policy_access.hpp>
 #include <functional>
@@ -12,36 +11,21 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__algorithms/result.hpp>
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/functional>
-#include <ftl/initializer_list>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_MIN_MAX_NAMESPACE std
-#else
-#define FTL_MIN_MAX_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
-using min_max_less = FTL_MIN_MAX_NAMESPACE::less<>;
+using min_max_less = std::less<>;
 
 template <class Comparator, class Projection, class T, class U>
 constexpr bool min_max_before(Comparator &comparator, Projection &projection,
                               T &&left, U &&right) {
-  return FTL_MIN_MAX_NAMESPACE::invoke(
+  return std::invoke(
       comparator,
-      FTL_MIN_MAX_NAMESPACE::invoke(projection, static_cast<T &&>(left)),
-      FTL_MIN_MAX_NAMESPACE::invoke(projection, static_cast<U &&>(right)));
+      std::invoke(projection, static_cast<T &&>(left)),
+      std::invoke(projection, static_cast<U &&>(right)));
 }
 
 template <class Iterator, class Sentinel, class Comparator, class Projection>
@@ -161,8 +145,8 @@ minmax_element_loop(Iterator first, Sentinel last, Comparator &comparator,
   }
 
   return {
-      FTL_MIN_MAX_NAMESPACE::move(minimum),
-      FTL_MIN_MAX_NAMESPACE::move(maximum),
+      std::move(minimum),
+      std::move(maximum),
   };
 }
 
@@ -231,10 +215,10 @@ minmax_value_loop(Iterator first, Sentinel last, Comparator &comparator,
 
     if (first == last) {
       if (min_max_before(comparator, projection, first_in_pair, minimum)) {
-        minimum = FTL_MIN_MAX_NAMESPACE::move(first_in_pair);
+        minimum = std::move(first_in_pair);
       } else if (!min_max_before(comparator, projection, first_in_pair,
                                  maximum)) {
-        maximum = FTL_MIN_MAX_NAMESPACE::move(first_in_pair);
+        maximum = std::move(first_in_pair);
       }
 
       break;
@@ -245,26 +229,26 @@ minmax_value_loop(Iterator first, Sentinel last, Comparator &comparator,
 
     if (min_max_before(comparator, projection, second_in_pair, first_in_pair)) {
       if (min_max_before(comparator, projection, second_in_pair, minimum)) {
-        minimum = FTL_MIN_MAX_NAMESPACE::move(second_in_pair);
+        minimum = std::move(second_in_pair);
       }
 
       if (!min_max_before(comparator, projection, first_in_pair, maximum)) {
-        maximum = FTL_MIN_MAX_NAMESPACE::move(first_in_pair);
+        maximum = std::move(first_in_pair);
       }
     } else {
       if (min_max_before(comparator, projection, first_in_pair, minimum)) {
-        minimum = FTL_MIN_MAX_NAMESPACE::move(first_in_pair);
+        minimum = std::move(first_in_pair);
       }
 
       if (!min_max_before(comparator, projection, second_in_pair, maximum)) {
-        maximum = FTL_MIN_MAX_NAMESPACE::move(second_in_pair);
+        maximum = std::move(second_in_pair);
       }
     }
   }
 
   return {
-      FTL_MIN_MAX_NAMESPACE::move(minimum),
-      FTL_MIN_MAX_NAMESPACE::move(maximum),
+      std::move(minimum),
+      std::move(maximum),
   };
 }
 
@@ -341,8 +325,8 @@ template <class T> constexpr pair<T, T> minmax(initializer_list<T> values) {
                                           comparator, projection);
 
   return {
-      FTL_MIN_MAX_NAMESPACE::move(result.min),
-      FTL_MIN_MAX_NAMESPACE::move(result.max),
+      std::move(result.min),
+      std::move(result.max),
   };
 }
 
@@ -354,8 +338,8 @@ constexpr pair<T, T> minmax(initializer_list<T> values, Comparator comparator) {
                                           comparator, projection);
 
   return {
-      FTL_MIN_MAX_NAMESPACE::move(result.min),
-      FTL_MIN_MAX_NAMESPACE::move(result.max),
+      std::move(result.min),
+      std::move(result.max),
   };
 }
 
@@ -365,8 +349,8 @@ constexpr ForwardIterator min_element(ForwardIterator first,
   detail::min_max_less comparator{};
   identity projection{};
 
-  return detail::min_element_loop(FTL_MIN_MAX_NAMESPACE::move(first),
-                                  FTL_MIN_MAX_NAMESPACE::move(last), comparator,
+  return detail::min_element_loop(std::move(first),
+                                  std::move(last), comparator,
                                   projection);
 }
 
@@ -376,8 +360,8 @@ constexpr ForwardIterator min_element(ForwardIterator first,
                                       Comparator comparator) {
   identity projection{};
 
-  return detail::min_element_loop(FTL_MIN_MAX_NAMESPACE::move(first),
-                                  FTL_MIN_MAX_NAMESPACE::move(last), comparator,
+  return detail::min_element_loop(std::move(first),
+                                  std::move(last), comparator,
                                   projection);
 }
 
@@ -389,8 +373,8 @@ ForwardIterator min_element(ExecutionPolicy &&, ForwardIterator first,
     detail::min_max_less comparator{};
     identity projection{};
 
-    return detail::min_element_loop(FTL_MIN_MAX_NAMESPACE::move(first),
-                                    FTL_MIN_MAX_NAMESPACE::move(last),
+    return detail::min_element_loop(std::move(first),
+                                    std::move(last),
                                     comparator, projection);
   }();
 }
@@ -402,8 +386,8 @@ ForwardIterator min_element(ExecutionPolicy &&, ForwardIterator first,
   return [&]() noexcept {
     identity projection{};
 
-    return detail::min_element_loop(FTL_MIN_MAX_NAMESPACE::move(first),
-                                    FTL_MIN_MAX_NAMESPACE::move(last),
+    return detail::min_element_loop(std::move(first),
+                                    std::move(last),
                                     comparator, projection);
   }();
 }
@@ -414,8 +398,8 @@ constexpr ForwardIterator max_element(ForwardIterator first,
   detail::min_max_less comparator{};
   identity projection{};
 
-  return detail::max_element_loop(FTL_MIN_MAX_NAMESPACE::move(first),
-                                  FTL_MIN_MAX_NAMESPACE::move(last), comparator,
+  return detail::max_element_loop(std::move(first),
+                                  std::move(last), comparator,
                                   projection);
 }
 
@@ -425,8 +409,8 @@ constexpr ForwardIterator max_element(ForwardIterator first,
                                       Comparator comparator) {
   identity projection{};
 
-  return detail::max_element_loop(FTL_MIN_MAX_NAMESPACE::move(first),
-                                  FTL_MIN_MAX_NAMESPACE::move(last), comparator,
+  return detail::max_element_loop(std::move(first),
+                                  std::move(last), comparator,
                                   projection);
 }
 
@@ -438,8 +422,8 @@ ForwardIterator max_element(ExecutionPolicy &&, ForwardIterator first,
     detail::min_max_less comparator{};
     identity projection{};
 
-    return detail::max_element_loop(FTL_MIN_MAX_NAMESPACE::move(first),
-                                    FTL_MIN_MAX_NAMESPACE::move(last),
+    return detail::max_element_loop(std::move(first),
+                                    std::move(last),
                                     comparator, projection);
   }();
 }
@@ -451,8 +435,8 @@ ForwardIterator max_element(ExecutionPolicy &&, ForwardIterator first,
   return [&]() noexcept {
     identity projection{};
 
-    return detail::max_element_loop(FTL_MIN_MAX_NAMESPACE::move(first),
-                                    FTL_MIN_MAX_NAMESPACE::move(last),
+    return detail::max_element_loop(std::move(first),
+                                    std::move(last),
                                     comparator, projection);
   }();
 }
@@ -463,8 +447,8 @@ minmax_element(ForwardIterator first, ForwardIterator last) {
   detail::min_max_less comparator{};
   identity projection{};
 
-  return detail::minmax_element_loop(FTL_MIN_MAX_NAMESPACE::move(first),
-                                     FTL_MIN_MAX_NAMESPACE::move(last),
+  return detail::minmax_element_loop(std::move(first),
+                                     std::move(last),
                                      comparator, projection);
 }
 
@@ -474,8 +458,8 @@ minmax_element(ForwardIterator first, ForwardIterator last,
                Comparator comparator) {
   identity projection{};
 
-  return detail::minmax_element_loop(FTL_MIN_MAX_NAMESPACE::move(first),
-                                     FTL_MIN_MAX_NAMESPACE::move(last),
+  return detail::minmax_element_loop(std::move(first),
+                                     std::move(last),
                                      comparator, projection);
 }
 
@@ -488,8 +472,8 @@ pair<ForwardIterator, ForwardIterator> minmax_element(ExecutionPolicy &&,
     detail::min_max_less comparator{};
     identity projection{};
 
-    return detail::minmax_element_loop(FTL_MIN_MAX_NAMESPACE::move(first),
-                                       FTL_MIN_MAX_NAMESPACE::move(last),
+    return detail::minmax_element_loop(std::move(first),
+                                       std::move(last),
                                        comparator, projection);
   }();
 }
@@ -502,8 +486,8 @@ minmax_element(ExecutionPolicy &&, ForwardIterator first, ForwardIterator last,
   return [&]() noexcept {
     identity projection{};
 
-    return detail::minmax_element_loop(FTL_MIN_MAX_NAMESPACE::move(first),
-                                       FTL_MIN_MAX_NAMESPACE::move(last),
+    return detail::minmax_element_loop(std::move(first),
+                                       std::move(last),
                                        comparator, projection);
   }();
 }
@@ -528,7 +512,7 @@ struct min_fn {
   constexpr const T &operator()(const T &left, const T &right,
                                 Comparator comparator = {},
                                 Projection projection = {}) const {
-    return FTL_MIN_MAX_NAMESPACE::detail::min_max_before(comparator, projection,
+    return std::detail::min_max_before(comparator, projection,
                                                          right, left)
                ? right
                : left;
@@ -539,7 +523,7 @@ struct min_fn {
                 Comparator = ranges::less>
   constexpr T operator()(initializer_list<T> values, Comparator comparator = {},
                          Projection projection = {}) const {
-    return FTL_MIN_MAX_NAMESPACE::detail::min_value_loop(
+    return std::detail::min_value_loop(
         values.begin(), values.end(), comparator, projection);
   }
 
@@ -551,7 +535,7 @@ struct min_fn {
   constexpr range_value_t<Range> operator()(Range &&range,
                                             Comparator comparator = {},
                                             Projection projection = {}) const {
-    return FTL_MIN_MAX_NAMESPACE::detail::min_value_loop(
+    return std::detail::min_value_loop(
         ranges::begin(range), ranges::end(range), comparator, projection);
   }
 };
@@ -563,7 +547,7 @@ struct max_fn {
   constexpr const T &operator()(const T &left, const T &right,
                                 Comparator comparator = {},
                                 Projection projection = {}) const {
-    return FTL_MIN_MAX_NAMESPACE::detail::min_max_before(comparator, projection,
+    return std::detail::min_max_before(comparator, projection,
                                                          left, right)
                ? right
                : left;
@@ -574,7 +558,7 @@ struct max_fn {
                 Comparator = ranges::less>
   constexpr T operator()(initializer_list<T> values, Comparator comparator = {},
                          Projection projection = {}) const {
-    return FTL_MIN_MAX_NAMESPACE::detail::max_value_loop(
+    return std::detail::max_value_loop(
         values.begin(), values.end(), comparator, projection);
   }
 
@@ -586,7 +570,7 @@ struct max_fn {
   constexpr range_value_t<Range> operator()(Range &&range,
                                             Comparator comparator = {},
                                             Projection projection = {}) const {
-    return FTL_MIN_MAX_NAMESPACE::detail::max_value_loop(
+    return std::detail::max_value_loop(
         ranges::begin(range), ranges::end(range), comparator, projection);
   }
 };
@@ -598,7 +582,7 @@ struct minmax_fn {
   constexpr min_max_result<const T &>
   operator()(const T &left, const T &right, Comparator comparator = {},
              Projection projection = {}) const {
-    if (FTL_MIN_MAX_NAMESPACE::detail::min_max_before(comparator, projection,
+    if (std::detail::min_max_before(comparator, projection,
                                                       right, left)) {
       return {right, left};
     }
@@ -612,7 +596,7 @@ struct minmax_fn {
   constexpr min_max_result<T> operator()(initializer_list<T> values,
                                          Comparator comparator = {},
                                          Projection projection = {}) const {
-    return FTL_MIN_MAX_NAMESPACE::detail::minmax_value_loop(
+    return std::detail::minmax_value_loop(
         values.begin(), values.end(), comparator, projection);
   }
 
@@ -624,7 +608,7 @@ struct minmax_fn {
   constexpr min_max_result<range_value_t<Range>>
   operator()(Range &&range, Comparator comparator = {},
              Projection projection = {}) const {
-    return FTL_MIN_MAX_NAMESPACE::detail::minmax_value_loop(
+    return std::detail::minmax_value_loop(
         ranges::begin(range), ranges::end(range), comparator, projection);
   }
 };
@@ -637,8 +621,8 @@ struct min_element_fn {
   constexpr Iterator operator()(Iterator first, Sentinel last,
                                 Comparator comparator = {},
                                 Projection projection = {}) const {
-    return FTL_MIN_MAX_NAMESPACE::detail::min_element_loop(
-        FTL_MIN_MAX_NAMESPACE::move(first), FTL_MIN_MAX_NAMESPACE::move(last),
+    return std::detail::min_element_loop(
+        std::move(first), std::move(last),
         comparator, projection);
   }
 
@@ -649,10 +633,10 @@ struct min_element_fn {
   operator()(Range &&range, Comparator comparator = {},
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_MIN_MAX_NAMESPACE::move(comparator),
-                          FTL_MIN_MAX_NAMESPACE::move(projection));
+                          std::move(comparator),
+                          std::move(projection));
 
-    return FTL_MIN_MAX_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -664,8 +648,8 @@ struct max_element_fn {
   constexpr Iterator operator()(Iterator first, Sentinel last,
                                 Comparator comparator = {},
                                 Projection projection = {}) const {
-    return FTL_MIN_MAX_NAMESPACE::detail::max_element_loop(
-        FTL_MIN_MAX_NAMESPACE::move(first), FTL_MIN_MAX_NAMESPACE::move(last),
+    return std::detail::max_element_loop(
+        std::move(first), std::move(last),
         comparator, projection);
   }
 
@@ -676,10 +660,10 @@ struct max_element_fn {
   operator()(Range &&range, Comparator comparator = {},
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_MIN_MAX_NAMESPACE::move(comparator),
-                          FTL_MIN_MAX_NAMESPACE::move(projection));
+                          std::move(comparator),
+                          std::move(projection));
 
-    return FTL_MIN_MAX_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -694,13 +678,13 @@ struct minmax_element_fn {
   constexpr minmax_element_result<Iterator>
   operator()(Iterator first, Sentinel last, Comparator comparator = {},
              Projection projection = {}) const {
-    auto result = FTL_MIN_MAX_NAMESPACE::detail::minmax_element_loop(
-        FTL_MIN_MAX_NAMESPACE::move(first), FTL_MIN_MAX_NAMESPACE::move(last),
+    auto result = std::detail::minmax_element_loop(
+        std::move(first), std::move(last),
         comparator, projection);
 
     return {
-        FTL_MIN_MAX_NAMESPACE::move(result.first),
-        FTL_MIN_MAX_NAMESPACE::move(result.second),
+        std::move(result.first),
+        std::move(result.second),
     };
   }
 
@@ -711,12 +695,12 @@ struct minmax_element_fn {
   operator()(Range &&range, Comparator comparator = {},
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_MIN_MAX_NAMESPACE::move(comparator),
-                          FTL_MIN_MAX_NAMESPACE::move(projection));
+                          std::move(comparator),
+                          std::move(projection));
 
     return {
-        FTL_MIN_MAX_NAMESPACE::move(result.min),
-        FTL_MIN_MAX_NAMESPACE::move(result.max),
+        std::move(result.min),
+        std::move(result.max),
     };
   }
 };
@@ -728,12 +712,12 @@ struct clamp_fn {
   constexpr const T &operator()(const T &value, const T &low, const T &high,
                                 Comparator comparator = {},
                                 Projection projection = {}) const {
-    if (FTL_MIN_MAX_NAMESPACE::detail::min_max_before(comparator, projection,
+    if (std::detail::min_max_before(comparator, projection,
                                                       value, low)) {
       return low;
     }
 
-    if (FTL_MIN_MAX_NAMESPACE::detail::min_max_before(comparator, projection,
+    if (std::detail::min_max_before(comparator, projection,
                                                       high, value)) {
       return high;
     }
@@ -752,8 +736,7 @@ inline constexpr clamp_fn clamp{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_MIN_MAX_NAMESPACE
 
 #endif // FTL_MIN_MAX_HEADER

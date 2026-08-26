@@ -22,11 +22,7 @@ int tolower(int);
 int toupper(int);
 }
 
-#ifdef FTL_REPLACE_STL
 namespace std {
-#else
-namespace ftl {
-#endif
 
 using ::isalnum;
 using ::isalpha;

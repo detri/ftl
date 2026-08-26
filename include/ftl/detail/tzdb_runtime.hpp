@@ -3,17 +3,11 @@
 #ifndef FTL_DETAIL_TZDB_RUNTIME_HEADER
 #define FTL_DETAIL_TZDB_RUNTIME_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <detail/tzdb_core.hpp>
 #include <type_traits>
-#else
-#include <ftl/cstddef>
-#include <ftl/detail/tzdb_core.hpp>
-#include <ftl/type_traits>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail::tzdb_runtime {
 
@@ -84,6 +78,6 @@ using ::ftl_tzdb_runtime_core::lookup_local;
 
 } // namespace detail::tzdb_runtime
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #endif

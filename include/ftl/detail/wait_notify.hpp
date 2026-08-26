@@ -3,21 +3,11 @@
 #ifndef FTL_DETAIL_WAIT_NOTIFY_HEADER
 #define FTL_DETAIL_WAIT_NOTIFY_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <cstdint>
 #include <detail/clock_runtime.hpp>
-#define FTL_WAIT_NOTIFY_BEGIN_NAMESPACE namespace std::detail {
-#define FTL_WAIT_NOTIFY_END_NAMESPACE }
-#else
-#include <ftl/cstddef>
-#include <ftl/cstdint>
-#include <ftl/detail/clock_runtime.hpp>
-#define FTL_WAIT_NOTIFY_BEGIN_NAMESPACE namespace ftl::detail {
-#define FTL_WAIT_NOTIFY_END_NAMESPACE }
-#endif
 
-FTL_WAIT_NOTIFY_BEGIN_NAMESPACE
+namespace std::detail {
 
 #if defined(_WIN32) && defined(_MSC_VER)
 
@@ -470,9 +460,7 @@ void atomic_notify_all(const volatile void *address) noexcept {
 #undef FTL_HAS_LINUX_FUTEX
 #endif
 
-FTL_WAIT_NOTIFY_END_NAMESPACE
+}
 
-#undef FTL_WAIT_NOTIFY_BEGIN_NAMESPACE
-#undef FTL_WAIT_NOTIFY_END_NAMESPACE
 
 #endif // FTL_DETAIL_WAIT_NOTIFY_HEADER

@@ -78,34 +78,14 @@
   X(ENOSTR)                                                                    \
   X(ETIME)
 
-#ifndef FTL_REPLACE_STL
-#include <cerrno>
-
-namespace host_errno {
-#define FTL_CAPTURE_HOST_ERRNO(name) inline constexpr int value_##name = name;
-FTL_ERRNO_MACROS(FTL_CAPTURE_HOST_ERRNO)
-#undef FTL_CAPTURE_HOST_ERRNO
-} // namespace host_errno
-
-#include <ftl/cerrno>
-#include <ftl/system_error>
-namespace tested = ftl;
-#else
 #include <cerrno>
 #include <system_error>
 namespace tested = std;
-#endif
 
 #ifndef errno
 #error "errno must be a macro"
 #endif
 
-#ifndef FTL_REPLACE_STL
-#define FTL_CHECK_HOST_ERRNO(name)                                             \
-  static_assert(FTL_DETAIL_ERRNO_##name == host_errno::value_##name);
-FTL_ERRNO_MACROS(FTL_CHECK_HOST_ERRNO)
-#undef FTL_CHECK_HOST_ERRNO
-#endif
 
 #define FTL_CHECK_PUBLIC_ERRNO(name)                                           \
   static_assert(name == FTL_DETAIL_ERRNO_##name);

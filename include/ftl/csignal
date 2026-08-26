@@ -23,18 +23,10 @@ extern "C" int raise(int);
 #define SIGSEGV 11
 #define SIGTERM 15
 
-#ifdef FTL_REPLACE_STL
 namespace std {
 using sig_atomic_t = int;
 using ::signal;
 using ::raise;
 }
-#else
-namespace ftl {
-using sig_atomic_t = int;
-using ::signal;
-using ::raise;
-}
-#endif
 
 #endif

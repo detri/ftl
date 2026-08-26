@@ -3,13 +3,9 @@
 #ifndef FTL_EXECUTION_POLICY_ACCESS_HEADER
 #define FTL_EXECUTION_POLICY_ACCESS_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <type_traits>
-#else
-#include <ftl/type_traits>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace execution {
 
@@ -43,6 +39,6 @@ struct is_execution_policy<execution::unsequenced_policy> : true_type {};
 template <class T>
 inline constexpr bool is_execution_policy_v = is_execution_policy<T>::value;
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #endif

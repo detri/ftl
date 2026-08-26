@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <concepts>
 #include <forward_list>
@@ -6,15 +5,6 @@
 #include <ranges>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/array>
-#include <ftl/concepts>
-#include <ftl/forward_list>
-#include <ftl/memory_resource>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 #include "equal_state_allocator.hpp"
 

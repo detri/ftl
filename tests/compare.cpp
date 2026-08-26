@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <compare>
 namespace tested = std;
-#else
-#include <ftl/compare>
-namespace tested = ftl;
-#endif
 
 #if __cpp_lib_three_way_comparison != 201907L
 #error invalid <compare> feature-test macro
@@ -233,11 +228,7 @@ constexpr bool operator==(const comparison_right &left,
   return left.value == right.value;
 }
 
-#ifdef FTL_REPLACE_STL
 namespace std {
-#else
-namespace ftl {
-#endif
 
 template <template <class> class TQual, template <class> class UQual>
 struct basic_common_reference<::comparison_left, ::comparison_right, TQual,

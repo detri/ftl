@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 #if __cpp_lib_is_invocable != 201703L || __cpp_lib_is_scoped_enum != 202011L
 #error invalid <type_traits> feature-test macros

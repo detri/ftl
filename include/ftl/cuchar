@@ -3,21 +3,11 @@
 #ifndef FTL_CUCHAR_HEADER
 #define FTL_CUCHAR_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__c_wide_types.hpp>
 #include <cerrno>
 #include <detail/locale_runtime.hpp>
-#else
-#include <ftl/__c_wide_types.hpp>
-#include <ftl/cerrno>
-#include <ftl/detail/locale_runtime.hpp>
-#endif
 
-#ifdef FTL_REPLACE_STL
 namespace std {
-#else
-namespace ftl {
-#endif
 
 using size_t = decltype(sizeof(0));
 

@@ -6,7 +6,18 @@
 #include <cstdlib>
 #include <cstring>
 
+#if !defined(_WIN32)
+extern "C" char *realpath(const char *, char *);
+#endif
+
 #if defined(_WIN32)
+
+extern "C" int __cdecl _wcsicmp(const wchar_t *, const wchar_t *);
+extern "C" int __cdecl wcscmp(const wchar_t *, const wchar_t *);
+extern "C" int __cdecl wcsncmp(const wchar_t *, const wchar_t *,
+                                decltype(sizeof(0)));
+extern "C" decltype(sizeof(0)) __cdecl wcslen(const wchar_t *);
+
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
@@ -403,7 +414,7 @@ bool native_current_path(char *out, native_io_size cap, native_io_size &n,
     e.value = errno;
     return false;
   }
-  n = strlen(out);
+  n = std::strlen(out);
   return true;
 }
 bool native_set_current_path(const char *p, native_io_error &e) noexcept {
@@ -529,7 +540,7 @@ bool native_list_directory(const char *p, native_directory_callback cb,
   bool ok = true;
   errno = 0;
   while (auto *x = readdir(d)) {
-    if (!strcmp(x->d_name, ".") || !strcmp(x->d_name, ".."))
+    if (!std::strcmp(x->d_name, ".") || !std::strcmp(x->d_name, ".."))
       continue;
     native_file_kind k = native_file_kind::unknown;
 #ifdef DT_REG
@@ -611,44 +622,44 @@ bool native_copy_file(const char *a, const char *b, bool overwrite,
 bool native_absolute_path(const char *p, char *out, native_io_size cap,
                           native_io_size &n, native_io_error &e) noexcept {
   if (p[0] == '/') {
-    n = strlen(p);
+    n = std::strlen(p);
     if (n >= cap) {
       e.value = ENAMETOOLONG;
       return false;
     }
-    memcpy(out, p, n + 1);
+    std::memcpy(out, p, n + 1);
     return true;
   }
   if (!getcwd(out, cap)) {
     e.value = errno;
     return false;
   }
-  n = strlen(out);
-  auto m = strlen(p);
+  n = std::strlen(out);
+  auto m = std::strlen(p);
   if (n + 1 + m >= cap) {
     e.value = ENAMETOOLONG;
     return false;
   }
   if (n && out[n - 1] != '/')
     out[n++] = '/';
-  memcpy(out + n, p, m + 1);
+  std::memcpy(out + n, p, m + 1);
   n += m;
   return true;
 }
 bool native_canonical_path(const char *p, char *out, native_io_size cap,
                            native_io_size &n, native_io_error &e) noexcept {
-  char *value = realpath(p, nullptr);
+  char *value = ::realpath(p, nullptr);
   if (!value) {
     e.value = errno;
     return false;
   }
-  n = strlen(value);
+  n = std::strlen(value);
   if (n >= cap) {
     free(value);
     e.value = ENAMETOOLONG;
     return false;
   }
-  memcpy(out, value, n + 1);
+  std::memcpy(out, value, n + 1);
   free(value);
   return true;
 }
@@ -657,12 +668,12 @@ bool native_temp_directory(char *out, native_io_size cap, native_io_size &n,
   const char *value = getenv("TMPDIR");
   if (!value || !*value)
     value = "/tmp";
-  n = strlen(value);
+  n = std::strlen(value);
   if (n >= cap) {
     e.value = ENAMETOOLONG;
     return false;
   }
-  memcpy(out, value, n + 1);
+  std::memcpy(out, value, n + 1);
   return true;
 }
 } // namespace ftl::detail

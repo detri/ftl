@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <ranges>
 namespace tested = std;
-#else
-#include <ftl/ranges>
-namespace tested = ftl;
-#endif
 
 constexpr bool slide_works() {
     int values[] = {1, 2, 3, 4};

@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <limits>
 namespace tested = std;
-#else
-#include <ftl/limits>
-namespace tested = ftl;
-#endif
 
 static_assert(!tested::numeric_limits<void>::is_specialized);
 static_assert(tested::numeric_limits<bool>::min() == false);
@@ -28,13 +23,5 @@ static_assert(tested::numeric_limits<unsigned __int128>::digits == 128);
 static_assert(tested::numeric_limits<__int128>::min() < 0);
 #endif
 
-#ifndef FTL_REPLACE_STL
-template<class T>
-concept has_obsolete_denorm_members = requires {
-    T::has_denorm;
-    T::has_denorm_loss;
-};
-static_assert(!has_obsolete_denorm_members<tested::numeric_limits<float>>);
-#endif
 
 bool ftl_test() { return true; }

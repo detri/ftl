@@ -3,7 +3,6 @@
 #ifndef FTL_RANDOM_HEADER
 #define FTL_RANDOM_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <cmath>
 #include <concepts>
@@ -18,28 +17,12 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-#else
-#include <ftl/array>
-#include <ftl/cmath>
-#include <ftl/concepts>
-#include <ftl/cstddef>
-#include <ftl/cstdint>
-#include <ftl/initializer_list>
-#include <ftl/istream>
-#include <ftl/limits>
-#include <ftl/ostream>
-#include <ftl/string>
-#include <ftl/stdexcept>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#include <ftl/vector>
-#endif
 
 #if defined(_WIN32) && defined(_MSC_VER)
 #pragma comment(lib, "advapi32.lib")
 #endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class G>
 concept uniform_random_bit_generator =
@@ -2219,5 +2202,5 @@ basic_istream<Character, Traits> &operator>>(basic_istream<Character, Traits> &s
   return stream;
 }
 
-FTL_END_NAMESPACE
+} // namespace std
 #endif

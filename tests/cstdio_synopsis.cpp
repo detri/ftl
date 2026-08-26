@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <cstdio>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/cstdio>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 #if !defined(NULL) || !defined(_IOFBF) || !defined(_IOLBF) ||                  \
     !defined(_IONBF) || !defined(BUFSIZ) || !defined(EOF) ||                   \

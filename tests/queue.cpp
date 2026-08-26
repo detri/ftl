@@ -1,18 +1,9 @@
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <format>
 #include <memory>
 #include <queue>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/array>
-#include <ftl/format>
-#include <ftl/memory>
-#include <ftl/queue>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 static_assert(tested::uses_allocator_v<tested::queue<int>, tested::allocator<int>>);
 static_assert(tested::uses_allocator_v<tested::priority_queue<int>, tested::allocator<int>>);

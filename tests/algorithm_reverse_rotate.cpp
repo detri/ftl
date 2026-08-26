@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <algorithm>
 #include <concepts>
 #include <cstddef>
@@ -8,17 +7,6 @@
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/algorithm>
-#include <ftl/concepts>
-#include <ftl/cstddef>
-#include <ftl/execution>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 template <class T> struct pointer_sentinel {
   T *last = nullptr;

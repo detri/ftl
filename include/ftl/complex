@@ -3,21 +3,12 @@
 #ifndef FTL_COMPLEX_HEADER
 #define FTL_COMPLEX_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cmath>
 #include <iosfwd>
 #include <type_traits>
 #include <detail/complex_runtime>
 #define FTL_COMPLEX_BEGIN namespace std {
 #define FTL_COMPLEX_END }
-#else
-#include <ftl/cmath>
-#include <ftl/iosfwd>
-#include <ftl/type_traits>
-#include <ftl/detail/complex_runtime>
-#define FTL_COMPLEX_BEGIN namespace ftl {
-#define FTL_COMPLEX_END }
-#endif
 
 FTL_COMPLEX_BEGIN
 

@@ -3,7 +3,6 @@
 #ifndef FTL_MDSPAN_HEADER
 #define FTL_MDSPAN_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <concepts>
 #include <cstddef>
@@ -11,17 +10,8 @@
 #include <span>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/array>
-#include <ftl/concepts>
-#include <ftl/cstddef>
-#include <ftl/limits>
-#include <ftl/span>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class IndexType, size_t... Extents> class extents;
 
@@ -1276,7 +1266,7 @@ mdspan(const typename AccessorType::data_handle_type &,
               typename MappingType::extents_type,
               typename MappingType::layout_type, AccessorType>;
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_mdspan) || __cpp_lib_mdspan < 202207L
 #undef __cpp_lib_mdspan

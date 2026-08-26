@@ -3,7 +3,6 @@
 #ifndef FTL_TRANSFORM_GENERATE_HEADER
 #define FTL_TRANSFORM_GENERATE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__algorithms/result.hpp>
 #include <__execution/policy_access.hpp>
 #include <functional>
@@ -11,23 +10,9 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__algorithms/result.hpp>
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_TRANSFORM_GENERATE_NAMESPACE std
-#else
-#define FTL_TRANSFORM_GENERATE_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -56,9 +41,9 @@ constexpr void ranges_transform_unary_loop(Iterator &first,
                                            Operation &operation,
                                            Projection &projection) {
   for (; first != last; ++first, ++result) {
-    *result = FTL_TRANSFORM_GENERATE_NAMESPACE::invoke(
+    *result = std::invoke(
         operation,
-        FTL_TRANSFORM_GENERATE_NAMESPACE::invoke(projection, *first));
+        std::invoke(projection, *first));
   }
 }
 
@@ -69,10 +54,10 @@ constexpr void ranges_transform_binary_loop(
     const Sentinel2 &last2, Output &result, Operation &operation,
     Projection1 &projection1, Projection2 &projection2) {
   for (; first1 != last1 && first2 != last2; ++first1, ++first2, ++result) {
-    *result = FTL_TRANSFORM_GENERATE_NAMESPACE::invoke(
+    *result = std::invoke(
         operation,
-        FTL_TRANSFORM_GENERATE_NAMESPACE::invoke(projection1, *first1),
-        FTL_TRANSFORM_GENERATE_NAMESPACE::invoke(projection2, *first2));
+        std::invoke(projection1, *first1),
+        std::invoke(projection2, *first2));
   }
 }
 
@@ -197,12 +182,12 @@ struct transform_fn {
   constexpr unary_transform_result<Iterator, Output>
   operator()(Iterator first, Sentinel last, Output result, Function operation,
              Projection projection = {}) const {
-    FTL_TRANSFORM_GENERATE_NAMESPACE::detail::ranges_transform_unary_loop(
+    std::detail::ranges_transform_unary_loop(
         first, last, result, operation, projection);
 
     return {
-        FTL_TRANSFORM_GENERATE_NAMESPACE::move(first),
-        FTL_TRANSFORM_GENERATE_NAMESPACE::move(result),
+        std::move(first),
+        std::move(result),
     };
   }
 
@@ -216,13 +201,13 @@ struct transform_fn {
              Projection projection = {}) const {
     auto converted =
         (*this)(ranges::begin(range), ranges::end(range),
-                FTL_TRANSFORM_GENERATE_NAMESPACE::move(result),
-                FTL_TRANSFORM_GENERATE_NAMESPACE::move(operation),
-                FTL_TRANSFORM_GENERATE_NAMESPACE::move(projection));
+                std::move(result),
+                std::move(operation),
+                std::move(projection));
 
     return {
-        FTL_TRANSFORM_GENERATE_NAMESPACE::move(converted.in),
-        FTL_TRANSFORM_GENERATE_NAMESPACE::move(converted.out),
+        std::move(converted.in),
+        std::move(converted.out),
     };
   }
 
@@ -237,14 +222,14 @@ struct transform_fn {
   operator()(Iterator1 first1, Sentinel1 last1, Iterator2 first2,
              Sentinel2 last2, Output result, Function operation,
              Projection1 projection1 = {}, Projection2 projection2 = {}) const {
-    FTL_TRANSFORM_GENERATE_NAMESPACE::detail::ranges_transform_binary_loop(
+    std::detail::ranges_transform_binary_loop(
         first1, last1, first2, last2, result, operation, projection1,
         projection2);
 
     return {
-        FTL_TRANSFORM_GENERATE_NAMESPACE::move(first1),
-        FTL_TRANSFORM_GENERATE_NAMESPACE::move(first2),
-        FTL_TRANSFORM_GENERATE_NAMESPACE::move(result),
+        std::move(first1),
+        std::move(first2),
+        std::move(result),
     };
   }
 
@@ -262,15 +247,15 @@ struct transform_fn {
              Projection2 projection2 = {}) const {
     auto converted = (*this)(
         ranges::begin(range1), ranges::end(range1), ranges::begin(range2),
-        ranges::end(range2), FTL_TRANSFORM_GENERATE_NAMESPACE::move(result),
-        FTL_TRANSFORM_GENERATE_NAMESPACE::move(operation),
-        FTL_TRANSFORM_GENERATE_NAMESPACE::move(projection1),
-        FTL_TRANSFORM_GENERATE_NAMESPACE::move(projection2));
+        ranges::end(range2), std::move(result),
+        std::move(operation),
+        std::move(projection1),
+        std::move(projection2));
 
     return {
-        FTL_TRANSFORM_GENERATE_NAMESPACE::move(converted.in1),
-        FTL_TRANSFORM_GENERATE_NAMESPACE::move(converted.in2),
-        FTL_TRANSFORM_GENERATE_NAMESPACE::move(converted.out),
+        std::move(converted.in1),
+        std::move(converted.in2),
+        std::move(converted.out),
     };
   }
 };
@@ -282,10 +267,10 @@ struct generate_fn {
              indirectly_writable<Output, invoke_result_t<Function &>>)
   constexpr Output operator()(Output first, Sentinel last,
                               Function generator) const {
-    FTL_TRANSFORM_GENERATE_NAMESPACE::detail::generate_loop(first, last,
+    std::detail::generate_loop(first, last,
                                                             generator);
 
-    return FTL_TRANSFORM_GENERATE_NAMESPACE::move(first);
+    return std::move(first);
   }
 
   template <class Range, copy_constructible Function>
@@ -294,9 +279,9 @@ struct generate_fn {
   constexpr borrowed_iterator_t<Range> operator()(Range &&range,
                                                   Function generator) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_TRANSFORM_GENERATE_NAMESPACE::move(generator));
+                          std::move(generator));
 
-    return FTL_TRANSFORM_GENERATE_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -306,10 +291,10 @@ struct generate_n_fn {
              indirectly_writable<Output, invoke_result_t<Function &>>)
   constexpr Output operator()(Output first, iter_difference_t<Output> count,
                               Function generator) const {
-    FTL_TRANSFORM_GENERATE_NAMESPACE::detail::generate_n_loop(first, count,
+    std::detail::generate_n_loop(first, count,
                                                               generator);
 
-    return FTL_TRANSFORM_GENERATE_NAMESPACE::move(first);
+    return std::move(first);
   }
 };
 
@@ -319,8 +304,7 @@ inline constexpr generate_n_fn generate_n{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_TRANSFORM_GENERATE_NAMESPACE
 
 #endif // FTL_TRANSFORM_GENERATE_HEADER

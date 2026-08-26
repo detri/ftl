@@ -8,11 +8,7 @@
 #error FTL native MSVC cstdarg support currently requires the supported x64 target
 #endif
 extern "C" void __cdecl __va_start(char**, ...);
-#ifdef FTL_REPLACE_STL
 namespace std { using va_list = char*; }
-#else
-namespace ftl { using va_list = char*; }
-#endif
 #define va_start(V, P) ((void)__va_start(&(V), P))
 #define va_arg(V, P)                                                        \
     ((sizeof(P) > 8 || (sizeof(P) & (sizeof(P) - 1)) != 0)                 \
@@ -21,11 +17,7 @@ namespace ftl { using va_list = char*; }
 #define va_copy(D, S) ((void)((D) = (S)))
 #define va_end(V) ((void)((V) = nullptr))
 #else
-#ifdef FTL_REPLACE_STL
 namespace std { using va_list = __builtin_va_list; }
-#else
-namespace ftl { using va_list = __builtin_va_list; }
-#endif
 #define va_start(V, P) __builtin_va_start(V, P)
 #define va_arg(V, P) __builtin_va_arg(V, P)
 #define va_copy(D, S) __builtin_va_copy(D, S)

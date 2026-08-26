@@ -3,17 +3,10 @@
 #ifndef FTL_CSTDLIB_HEADER
 #define FTL_CSTDLIB_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cmath>
 #include <cstddef>
 #define FTL_CSTDLIB_BEGIN namespace std {
 #define FTL_CSTDLIB_END }
-#else
-#include <ftl/cmath>
-#include <ftl/cstddef>
-#define FTL_CSTDLIB_BEGIN namespace ftl {
-#define FTL_CSTDLIB_END }
-#endif
 
 extern "C" {
 #if defined(__APPLE__)

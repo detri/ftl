@@ -3,17 +3,10 @@
 #ifndef FTL_TYPEINFO_HEADER
 #define FTL_TYPEINFO_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <exception>
 #if !defined(_MSC_VER)
 #include <detail/rapidhash>
-#endif
-#else
-#include <ftl/exception>
-#ifndef _MSC_VER
-#include <typeinfo>
-#endif
 #endif
 
 #if defined(_MSC_VER)
@@ -57,7 +50,6 @@ private:
 };
 #endif
 
-#ifdef FTL_REPLACE_STL
 namespace std {
 #if defined(_MSC_VER)
 using ::type_info;
@@ -110,25 +102,6 @@ public:
     [[nodiscard]] const char* what() const noexcept override { return "bad typeid"; }
 };
 }
-#else
-namespace ftl {
-#if defined(_MSC_VER)
-using type_info = ::type_info;
-class bad_cast : public exception {
-public:
-    [[nodiscard]] const char* what() const noexcept override { return "bad cast"; }
-};
-class bad_typeid : public exception {
-public:
-    [[nodiscard]] const char* what() const noexcept override { return "bad typeid"; }
-};
-#else
-using type_info = ::std::type_info;
-using bad_cast = ::std::bad_cast;
-using bad_typeid = ::std::bad_typeid;
-#endif
-}
-#endif
 
 #if !defined(__cpp_lib_constexpr_typeinfo) || \
     __cpp_lib_constexpr_typeinfo < 202106L

@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <streambuf>
 namespace tested = std;
-#else
-#include <ftl/streambuf>
-namespace tested = ftl;
-#endif
 
 struct test_char_traits : tested::char_traits<char> {};
 

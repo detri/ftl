@@ -3,7 +3,6 @@
 #ifndef FTL_STACKTRACE_HEADER
 #define FTL_STACKTRACE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <compare>
 #include <cstdint>
 #include <functional>
@@ -15,19 +14,6 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-#else
-#include <ftl/compare>
-#include <ftl/cstdint>
-#include <ftl/functional>
-#include <ftl/format>
-#include <ftl/iterator>
-#include <ftl/memory>
-#include <ftl/memory_resource>
-#include <ftl/ostream>
-#include <ftl/stdexcept>
-#include <ftl/string>
-#include <ftl/vector>
-#endif
 
 #if defined(_WIN32)
 extern "C" unsigned short RtlCaptureStackBackTrace(unsigned long, unsigned long,
@@ -36,7 +22,7 @@ extern "C" unsigned short RtlCaptureStackBackTrace(unsigned long, unsigned long,
 extern "C" int backtrace(void **, int);
 #endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class Allocator> class basic_stacktrace;
 
@@ -331,7 +317,7 @@ template <class Allocator> struct hash<basic_stacktrace<Allocator>> {
   }
 };
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_stacktrace) || __cpp_lib_stacktrace < 202011L
 #undef __cpp_lib_stacktrace

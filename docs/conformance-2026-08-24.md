@@ -13,16 +13,15 @@ source-interface product boundary explicitly stated in `ROADMAP.md`.
 The fresh findings were remediated against the ISO/IEC 14882:2024 text in
 `C:\Users\Aaron\Documents\CppStandards`. All ordinary remediation and
 dependency rows below now certify. The remaining limitations are the explicit
-compiler, ABI, locale-data, extended-floating, and platform-ABI blockers
-in the final table.
+extended-floating blocker in the final table. Earlier mode-qualified compiler
+and ABI limitations applied only to the discontinued parallel `ftl` namespace
+mode.
 
-Windows closure was re-certified on 2026-08-24 with the canonical Release
-MSVC and Clang-CL configurations. Each compiler completed its full build and
-passed all 388 tests in both normal and `FTL_REPLACE_STL` modes, including the
-freestanding linkage and feature-macro checks. Native WSL2 GCC and Clang also
-completed their canonical full builds and passed all 388 tests in both modes.
-AppleClang CI also completed its build and test matrix after the locale-codec
-portability repairs.
+The replacement-only Windows closure was re-certified on 2026-08-26 with the
+canonical Release MSVC and Clang-CL configurations. Each compiler completed its
+full build and passed all 197 tests, including the freestanding linkage and
+feature-macro checks. Native WSL2 GCC and Clang likewise completed their full
+builds and passed all 197 tests. AppleClang remains covered by the CI matrix.
 
 ## Certified
 
@@ -44,7 +43,7 @@ portability repairs.
 | `<version>`                             | REMEDIATED           | Removed the stale `__cpp_lib_uses_allocator_construction` advertisement.                                                                                                                                               |
 | `<limits>`                              | REMEDIATED           | Corrected integral `traps` and extended signaling-NaN representation.                                                                                                                                                  |
 | `<initializer_list>`                    | REMEDIATED           | Avoided null-pointer subtraction for an empty MSVC initializer list.                                                                                                                                                   |
-| `<exception>`                           | REMEDIATED           | Added the missing `bad_exception::what()` override in MSVC replacement mode.                                                                                                                                           |
+| `<exception>`                           | REMEDIATED           | Added the missing `bad_exception::what()` override for the MSVC standard-library configuration.                                                                                                                        |
 | `<compare>`                             | REMEDIATED           | Made the third partial-fallback `<` expression a validity check and enforced boolean-testable synthesized ordering.                                                                                                    |
 | `<system_error>`                        | REMEDIATED           | Added `operator<<` for `error_code` and the declared `system_error::what()` override.                                                                                                                                  |
 | `<utility>`                             | REMEDIATED           | Enforced `integer_sequence`'s integer Mandate, restored cmp Mandates, and repaired synthesized ordering.                                                                                                               |
@@ -66,11 +65,11 @@ portability repairs.
 | `<queue>` / `priority_queue`, `<stack>` | CERTIFIED            | Closed after default `deque` / `vector` remediation.                                                                                                                                                                   |
 | `<flat_set>` / `<flat_multiset>`        | CERTIFIED            | Historical bulk-insertion/guide repairs hold and shared ordering is closed; unconditional swap `noexcept` is ISO-correct.                                                                                              |
 | `<flat_map>` / `<flat_multimap>`        | CERTIFIED            | Closed with shared ordering and default-vector remediation; unconditional swap `noexcept` is ISO-correct.                                                                                                              |
-| `<iterator>` / range access             | REMEDIATED           | Gave normal and replacement `basic_const_iterator::operator<=>` the same direct constrained surface.                                                                                                                   |
-| `<ranges>`                              | CERTIFIED            | Closed with the iterator mode-consistency repair; no independent defect remained.                                                                                                                                      |
+| `<iterator>` / range access             | REMEDIATED           | Gave `basic_const_iterator::operator<=>` the required direct constrained surface.                                                                                                                                       |
+| `<ranges>`                              | CERTIFIED            | Closed with the iterator repair; no independent defect remained.                                                                                                                                                       |
 | `<algorithm>`                           | CERTIFIED            | The required `ranges::minmax_result` alias was already present; the comparison dependency is closed.                                                                                                                   |
 | `<numeric>`                             | REMEDIATED           | Implemented pointer `midpoint` without a potentially unrepresentable `b-a`.                                                                                                                                            |
-| `<memory>` ownership                    | REMEDIATED + BLOCKED | Preserved an effective raw-pointer `shared_ptr` cleanup deleter until control-block commit; normal-mode constexpr allocation remains blocked below.                                                                    |
+| `<memory>` ownership                    | REMEDIATED           | Preserved an effective raw-pointer `shared_ptr` cleanup deleter until control-block commit; replacement-only `std::allocator` has the required compiler constexpr-allocation treatment.                                |
 | `<cstdlib>` / `<stdlib.h>`              | REMEDIATED           | Wrapped Apple's non-`noexcept` global C `abort` declaration with the required `noexcept` namespace function.                                                                                                           |
 | `<cmath>` core                          | BLOCKED              | A genuinely fused constant-evaluated `fma` needs a compiler intrinsic or software correctly-rounded backend; extended math remains blocked below.                                                                      |
 | `<filesystem>`                          | REMEDIATED           | Changed the Windows ABI to native-wide `path::value_type`, `string_type`, and `L'\\'`, while retaining explicit UTF-8 conversion APIs and native-wide filesystem/stream I/O.                                            |
@@ -79,13 +78,9 @@ portability repairs.
 
 | Audit unit                                             | Path forward                                                                                                                                                                                                                  |
 |--------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `<typeinfo>`                                           | Own or bridge the MSVC RTTI exception ABI so compiler-generated and FTL `bad_cast` / `bad_typeid` share one identity; until then certify the unaffected modes only.                                                           |
-| `<generator>`                                          | Add a compiler/runtime coroutine-traits bridge for normal-mode range `elements_of`; replacement mode already owns the needed traits.                                                                                          |
-| `<memory>` constexpr allocator                         | Seek compiler recognition for `ftl::allocator` or document normal-mode exclusion; the language privilege currently applies specifically to `std::allocator`, so replacement mode is the conforming path.                      |
 | `<complex>`, `<cmath>` core and special functions      | Add per-extended-type runtime backends (for example binary128 via compiler-rt/libquadmath where available) and decline unsupported types explicitly rather than narrowing through `long double`.                              |
 
 The ordinary remediation ledger is now clear. The remaining practical runtime
-project is extended floating support. RTTI, pre-intrinsic constant-evaluated
-`fma`, normal-mode
-allocator constant evaluation, and generator integration may require compiler
-cooperation and remain explicitly mode-qualified.
+project and sole substantive conformance blocker is extended floating support.
+The former MSVC RTTI identity, generator integration, and constexpr allocator
+limitations disappear with removal of the parallel `ftl` namespace mode.

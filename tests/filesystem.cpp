@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 namespace tested = std;
-#else
-#include <ftl/filesystem>
-#include <ftl/fstream>
-#include <ftl/sstream>
-namespace tested = ftl;
-#endif
 
 struct invalid_path_source {
   const int *data() const;
@@ -111,11 +104,7 @@ bool ftl_test() {
       tested::hash<fs::path>{}(quoted_path) != fs::hash_value(quoted_path))
     return false;
 
-#ifdef FTL_REPLACE_STL
-  fs::path root = fs::path("ftl_filesystem_test_replace");
-#else
-  fs::path root = fs::path("ftl_filesystem_test_normal");
-#endif
+  fs::path root = fs::path("ftl_filesystem_test");
   tested::error_code ec;
   fs::remove_all(root, ec);
   if (!fs::create_directories(root / "a/b", ec) || ec)

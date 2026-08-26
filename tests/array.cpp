@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <array>
 namespace tested = std;
-#else
-#include <ftl/array>
-namespace tested = ftl;
-#endif
 
 struct legacy_ordered {
     int value;

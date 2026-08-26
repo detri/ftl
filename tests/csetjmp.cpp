@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <csetjmp>
 namespace tested = std;
-#else
-#include <ftl/csetjmp>
-namespace tested = ftl;
-#endif
 
 bool ftl_test() {
     tested::jmp_buf environment{};

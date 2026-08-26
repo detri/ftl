@@ -3,7 +3,6 @@
 #ifndef FTL_CTIME_HEADER
 #define FTL_CTIME_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__c_time_types.hpp>
 #include <cstddef>
 #include <detail/clock_runtime.hpp>
@@ -11,15 +10,6 @@
 #include <detail/time_storage.hpp>
 #include <limits>
 #include <type_traits>
-#else
-#include <ftl/__c_time_types.hpp>
-#include <ftl/cstddef>
-#include <ftl/detail/clock_runtime.hpp>
-#include <ftl/detail/time_core.hpp>
-#include <ftl/detail/time_storage.hpp>
-#include <ftl/limits>
-#include <ftl/type_traits>
-#endif
 
 #ifndef CLOCKS_PER_SEC
 #if defined(_WIN32)
@@ -59,7 +49,7 @@ decltype(sizeof(0)) strftime(char *, decltype(sizeof(0)), const char *,
 }
 } // namespace ftl_time_runtime
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 inline clock_t clock() noexcept { return ftl_time_runtime::clock(); }
 inline double difftime(time_t end, time_t beginning) noexcept {
@@ -192,5 +182,5 @@ inline size_t strftime(char *buffer, size_t count, const char *format,
   return ftl_time_runtime::strftime(buffer, count, format, value);
 }
 
-FTL_END_NAMESPACE
+} // namespace std
 #endif

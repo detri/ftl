@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <cstdarg>
 namespace tested = std;
-#else
-#include <ftl/cstdarg>
-namespace tested = ftl;
-#endif
 
 int sum(int count, ...) {
     tested::va_list arguments;

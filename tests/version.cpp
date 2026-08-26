@@ -1,8 +1,4 @@
-#ifdef FTL_REPLACE_STL
 #include <version>
-#else
-#include <ftl/version>
-#endif
 
 #ifdef __cpp_lib_uses_allocator_construction
 #error "FTL does not implement uses-allocator construction"

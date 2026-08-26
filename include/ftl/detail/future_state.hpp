@@ -3,7 +3,6 @@
 #ifndef FTL_DETAIL_FUTURE_STATE_HEADER
 #define FTL_DETAIL_FUTURE_STATE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <cstdint>
 #include <detail/mutex.hpp>
@@ -12,24 +11,8 @@
 #include <memory>
 #include <new>
 #include <utility>
-#define FTL_FUTURE_STATE_NAMESPACE std
-#define FTL_FUTURE_STATE_BEGIN_NAMESPACE namespace std::detail {
-#define FTL_FUTURE_STATE_END_NAMESPACE }
-#else
-#include <ftl/atomic>
-#include <ftl/cstdint>
-#include <ftl/detail/mutex.hpp>
-#include <ftl/detail/wait_notify.hpp>
-#include <ftl/exception>
-#include <ftl/memory>
-#include <ftl/new>
-#include <ftl/utility>
-#define FTL_FUTURE_STATE_NAMESPACE ftl
-#define FTL_FUTURE_STATE_BEGIN_NAMESPACE namespace ftl::detail {
-#define FTL_FUTURE_STATE_END_NAMESPACE }
-#endif
 
-FTL_FUTURE_STATE_BEGIN_NAMESPACE
+namespace std::detail {
 
 enum class future_wait_result {
   ready,
@@ -184,7 +167,7 @@ public:
     }
 
 #if FTL_HAS_EXCEPTIONS
-    FTL_FUTURE_STATE_NAMESPACE::rethrow_exception(exception_);
+    std::rethrow_exception(exception_);
 #else
     terminate();
 #endif
@@ -460,10 +443,7 @@ private:
   }
 };
 
-FTL_FUTURE_STATE_END_NAMESPACE
+}
 
-#undef FTL_FUTURE_STATE_BEGIN_NAMESPACE
-#undef FTL_FUTURE_STATE_END_NAMESPACE
-#undef FTL_FUTURE_STATE_NAMESPACE
 
 #endif // FTL_DETAIL_FUTURE_STATE_HEADER

@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <iomanip>
 #include <sstream>
 namespace tested = std;
-#else
-#include <ftl/iomanip>
-#include <ftl/sstream>
-namespace tested = ftl;
-#endif
 
 #if FTL_HAS_EXCEPTIONS
 struct streambuf_exception {};

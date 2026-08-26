@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <cstdio>
 #include <fstream>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/cstdio>
-#include <ftl/fstream>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 #if defined(_WIN32)
 extern "C" __declspec(dllimport) void *__stdcall CreateFileA(
@@ -115,11 +108,7 @@ static_assert(tested::is_base_of_v<tested::istream, tested::ifstream>);
 static_assert(tested::is_base_of_v<tested::ostream, tested::ofstream>);
 bool ftl_test() {
   const char *name =
-#ifdef FTL_REPLACE_STL
-      "ftl_fstream_replace.tmp";
-#else
-      "ftl_fstream_normal.tmp";
-#endif
+      "ftl_fstream.tmp";
   {
     tested::ofstream out(name,
                          tested::ios_base::binary | tested::ios_base::trunc);
@@ -180,11 +169,7 @@ bool ftl_test() {
   }
 
   const char *wide_name =
-#ifdef FTL_REPLACE_STL
       "ftl_fstream_wide_replace.tmp";
-#else
-      "ftl_fstream_wide_normal.tmp";
-#endif
   tested::locale wide_locale(tested::locale::classic(),
                              new two_byte_wide_codecvt);
   {

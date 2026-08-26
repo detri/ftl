@@ -3,7 +3,6 @@
 #ifndef FTL_NUMERIC_HEADER
 #define FTL_NUMERIC_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__execution/policy_access.hpp>
 #include <algorithm>
 #include <functional>
@@ -12,18 +11,8 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/algorithm>
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/limits>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -77,22 +66,12 @@ constexpr T accumulate(InputIterator first, InputIterator last, T init,
 template <class InputIterator, class T, class BinaryOperation>
 constexpr T reduce(InputIterator first, InputIterator last, T init,
                    BinaryOperation binary_op) {
-
-  static_assert(
-      requires(BinaryOperation &operation, T &value) {
-        requires is_convertible_v<
-            decltype(operation(value, *declval<InputIterator &>())), T>;
-
-        requires is_convertible_v<
-            decltype(operation(*declval<InputIterator &>(), value)), T>;
-
-        requires is_convertible_v<decltype(operation(value, value)), T>;
-
-        requires is_convertible_v<decltype(operation(
-                                      *declval<InputIterator &>(),
-                                      *declval<InputIterator &>())),
-                                  T>;
-      }, "reduce binary operation does not satisfy N4950 mandates");
+  using reference = decltype(*declval<InputIterator &>());
+  static_assert(is_invocable_r_v<T, BinaryOperation &, T &, reference> &&
+                    is_invocable_r_v<T, BinaryOperation &, reference, T &> &&
+                    is_invocable_r_v<T, BinaryOperation &, T &, T &> &&
+                    is_invocable_r_v<T, BinaryOperation &, reference, reference>,
+                "reduce binary operation does not satisfy N4950 mandates");
 
   // A left-associated reduction is one permitted generalized sum.
   for (; first != last; ++first)
@@ -911,7 +890,7 @@ constexpr T *midpoint(T *a, T *b) {
   }
 }
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_algorithm_iterator_requirements) ||                     \
     __cpp_lib_algorithm_iterator_requirements < 202207L

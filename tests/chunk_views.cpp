@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <ranges>
 namespace tested = std;
-#else
-#include <ftl/ranges>
-namespace tested = ftl;
-#endif
 
 struct input_view : tested::ranges::view_base {
     int* first{}; int* last{};

@@ -1,7 +1,6 @@
 #ifndef FTL_MAP_HEADER
 #define FTL_MAP_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <algorithm>
 #include <compare>
 #include <functional>
@@ -14,24 +13,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#define FTL_ASSOCIATIVE_NAMESPACE std
 #include <__associative/ordered.hpp>
-#else
-#include <ftl/algorithm>
-#include <ftl/compare>
-#include <ftl/functional>
-#include <ftl/initializer_list>
-#include <ftl/iterator>
-#include <ftl/memory>
-#include <ftl/memory_resource>
-#include <ftl/optional>
-#include <ftl/ranges>
-#include <ftl/tuple>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#define FTL_ASSOCIATIVE_NAMESPACE ftl
-#include <ftl/__associative/ordered.hpp>
-#endif
 
 #if defined(_MSC_VER) && !defined(__clang__)
 extern "C" void __cdecl __fastfail(unsigned int);
@@ -41,7 +23,7 @@ extern "C" void __cdecl __fastfail(unsigned int);
 #define FTL_MAP_TRAP() __builtin_trap()
 #endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 namespace detail {
 [[noreturn]] inline void map_range_failure() {
 #if FTL_HAS_EXCEPTIONS
@@ -284,14 +266,14 @@ erase_if(multimap<Key, T, Compare, Allocator> &values, Predicate predicate) {
 namespace pmr {
 template <class Key, class T, class Compare = less<Key>>
 using map =
-    FTL_ASSOCIATIVE_NAMESPACE::map<Key, T, Compare,
+    std::map<Key, T, Compare,
                                    polymorphic_allocator<pair<const Key, T>>>;
 template <class Key, class T, class Compare = less<Key>>
-using multimap = FTL_ASSOCIATIVE_NAMESPACE::multimap<
+using multimap = std::multimap<
     Key, T, Compare, polymorphic_allocator<pair<const Key, T>>>;
 } // namespace pmr
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_allocator_traits_is_always_equal) || \
     __cpp_lib_allocator_traits_is_always_equal < 201411L
@@ -344,6 +326,5 @@ FTL_END_NAMESPACE
 #define __cpp_lib_tuple_like 202207L
 #endif
 
-#undef FTL_ASSOCIATIVE_NAMESPACE
 #undef FTL_MAP_TRAP
 #endif

@@ -3,24 +3,16 @@
 #ifndef FTL_SOURCE_LOCATION_HEADER
 #define FTL_SOURCE_LOCATION_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cstdint>
-#else
-#include <ftl/cstdint>
-#endif
 
 #ifndef __has_builtin
 #define __has_builtin(x) 0
 #endif
 
-#ifdef FTL_REPLACE_STL
 namespace std {
-#else
-namespace ftl {
-#endif
 
 struct source_location {
-#if defined(FTL_REPLACE_STL) && __has_builtin(__builtin_source_location)
+#if __has_builtin(__builtin_source_location)
 private:
     struct __impl {
         const char* _M_file_name;

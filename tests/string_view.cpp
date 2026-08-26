@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <compare>
 #include <functional>
@@ -6,15 +5,6 @@
 #include <string_view>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/array>
-#include <ftl/compare>
-#include <ftl/functional>
-#include <ftl/ranges>
-#include <ftl/string_view>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 #if __cpp_lib_string_view < 201803L
 #error <string_view> must advertise string_view

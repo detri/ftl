@@ -3,11 +3,7 @@
 #ifndef FTL_DETAIL_LOCALE_RUNTIME_HPP
 #define FTL_DETAIL_LOCALE_RUNTIME_HPP
 
-#ifdef FTL_REPLACE_STL
 #include <locale.h>
-#else
-#include <ftl/locale.h>
-#endif
 
 #if !defined(_WIN32)
 #include <nl_types.h>

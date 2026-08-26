@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <scoped_allocator>
 namespace tested = std;
-#else
-#include <ftl/scoped_allocator>
-namespace tested = ftl;
-#endif
 
 using test_size_t = decltype(sizeof(0));
 

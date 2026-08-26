@@ -1,18 +1,9 @@
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <ranges>
 #include <span>
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/cstddef>
-#include <ftl/ranges>
-#include <ftl/span>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 struct test_range {
     int* first = nullptr;

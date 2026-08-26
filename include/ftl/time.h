@@ -3,33 +3,26 @@
 #ifndef FTL_TIME_H_HEADER
 #define FTL_TIME_H_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <ctime>
-#define FTL_TIME_NAMESPACE std
-#else
-#include <ftl/ctime>
-#define FTL_TIME_NAMESPACE ftl
-#endif
 
-using FTL_TIME_NAMESPACE::clock_t;
-using FTL_TIME_NAMESPACE::size_t;
-using FTL_TIME_NAMESPACE::time_t;
+using std::clock_t;
+using std::size_t;
+using std::time_t;
 
-using FTL_TIME_NAMESPACE::timespec;
-using FTL_TIME_NAMESPACE::tm;
+using std::timespec;
+using std::tm;
 
-using FTL_TIME_NAMESPACE::clock;
-using FTL_TIME_NAMESPACE::difftime;
-using FTL_TIME_NAMESPACE::mktime;
-using FTL_TIME_NAMESPACE::time;
-using FTL_TIME_NAMESPACE::timespec_get;
+using std::clock;
+using std::difftime;
+using std::mktime;
+using std::time;
+using std::timespec_get;
 
-using FTL_TIME_NAMESPACE::asctime;
-using FTL_TIME_NAMESPACE::ctime;
-using FTL_TIME_NAMESPACE::gmtime;
-using FTL_TIME_NAMESPACE::localtime;
-using FTL_TIME_NAMESPACE::strftime;
+using std::asctime;
+using std::ctime;
+using std::gmtime;
+using std::localtime;
+using std::strftime;
 
-#undef FTL_TIME_NAMESPACE
 
 #endif // FTL_TIME_H_HEADER

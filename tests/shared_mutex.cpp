@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <chrono>
 #include <shared_mutex>
@@ -6,15 +5,6 @@
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/atomic>
-#include <ftl/chrono>
-#include <ftl/shared_mutex>
-#include <ftl/thread>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 #ifndef __cpp_lib_shared_timed_mutex
 #error __cpp_lib_shared_timed_mutex missing

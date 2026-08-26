@@ -3,21 +3,11 @@
 #ifndef FTL_CSTDIO_HEADER
 #define FTL_CSTDIO_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__c_file_types.hpp>
 #include <__c_wide_types.hpp>
 #include <cstdarg>
 #include <cstddef>
 #include <detail/stdio_runtime.hpp>
-#define FTL_CSTDIO_NAMESPACE std
-#else
-#include <ftl/__c_file_types.hpp>
-#include <ftl/__c_wide_types.hpp>
-#include <ftl/cstdarg>
-#include <ftl/cstddef>
-#include <ftl/detail/stdio_runtime.hpp>
-#define FTL_CSTDIO_NAMESPACE ftl
-#endif
 
 #ifndef EOF
 #define EOF (-1)
@@ -69,7 +59,7 @@ using FILE = ::ftl_file;
 using size_t = decltype(sizeof(0));
 struct fpos_t {
   long long position;
-  FTL_CSTDIO_NAMESPACE::mbstate_t state;
+  std::mbstate_t state;
 };
 
 int remove(const char *);
@@ -91,13 +81,13 @@ int scanf(const char *, ...);
 int snprintf(char *, size_t, const char *, ...);
 int sprintf(char *, const char *, ...);
 int sscanf(const char *, const char *, ...);
-int vfprintf(FILE *, const char *, FTL_CSTDIO_NAMESPACE::va_list);
-int vfscanf(FILE *, const char *, FTL_CSTDIO_NAMESPACE::va_list);
-int vprintf(const char *, FTL_CSTDIO_NAMESPACE::va_list);
-int vscanf(const char *, FTL_CSTDIO_NAMESPACE::va_list);
-int vsnprintf(char *, size_t, const char *, FTL_CSTDIO_NAMESPACE::va_list);
-int vsprintf(char *, const char *, FTL_CSTDIO_NAMESPACE::va_list);
-int vsscanf(const char *, const char *, FTL_CSTDIO_NAMESPACE::va_list);
+int vfprintf(FILE *, const char *, std::va_list);
+int vfscanf(FILE *, const char *, std::va_list);
+int vprintf(const char *, std::va_list);
+int vscanf(const char *, std::va_list);
+int vsnprintf(char *, size_t, const char *, std::va_list);
+int vsprintf(char *, const char *, std::va_list);
+int vsscanf(const char *, const char *, std::va_list);
 int fgetc(FILE *);
 char *fgets(char *, int, FILE *);
 int fputc(int, FILE *);
@@ -124,7 +114,6 @@ using ::ftl_stdio_runtime::fflush;
 using ::ftl_stdio_runtime::fwrite;
 } // namespace ftl_cstdio_runtime
 
-#ifdef FTL_REPLACE_STL
 #ifdef stdin
 #undef stdin
 #endif
@@ -137,19 +126,8 @@ using ::ftl_stdio_runtime::fwrite;
 #define stdin (::ftl_stdio_runtime::input_stream())
 #define stdout (::ftl_stdio_runtime::output_stream())
 #define stderr (::ftl_stdio_runtime::error_stream())
-#else
-#ifndef stdin
-#define stdin (::ftl_stdio_runtime::input_stream())
-#endif
-#ifndef stdout
-#define stdout (::ftl_stdio_runtime::output_stream())
-#endif
-#ifndef stderr
-#define stderr (::ftl_stdio_runtime::error_stream())
-#endif
-#endif
 
-namespace FTL_CSTDIO_NAMESPACE {
+namespace std {
 using FILE = ::ftl_file;
 using fpos_t = ::ftl_cstdio_runtime::fpos_t;
 using ::ftl_cstdio_runtime::clearerr;
@@ -197,7 +175,6 @@ using ::ftl_cstdio_runtime::vscanf;
 using ::ftl_cstdio_runtime::vsnprintf;
 using ::ftl_cstdio_runtime::vsprintf;
 using ::ftl_cstdio_runtime::vsscanf;
-} // namespace FTL_CSTDIO_NAMESPACE
+} // namespace std
 
-#undef FTL_CSTDIO_NAMESPACE
 #endif

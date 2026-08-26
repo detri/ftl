@@ -26,35 +26,6 @@ function(ftl_require_feature_macro header macro value)
     endif ()
 endfunction()
 
-function(ftl_require_feature_macros_after header marker)
-    set(path "${FTL_SOURCE_DIR}/include/ftl/${header}")
-    file(READ "${path}" content)
-
-    string(FIND "${content}" "${marker}" marker_position REVERSE)
-    string(FIND "${content}" "__cpp_lib_" macro_position)
-
-    if (marker_position EQUAL -1)
-        message(
-                FATAL_ERROR
-                "<${header}> feature-macro footer marker '${marker}' was not found"
-        )
-    endif ()
-
-    if (macro_position EQUAL -1)
-        message(
-                FATAL_ERROR
-                "<${header}> has no library feature-test macros"
-        )
-    endif ()
-
-    if (macro_position LESS marker_position)
-        message(
-                FATAL_ERROR
-                "<${header}> defines a library feature-test macro before its footer"
-        )
-    endif ()
-endfunction()
-
 # ---------------------------------------------------------------------------
 # Cross-header / foundation exports added by the N4950 feature-macro closure.
 # ---------------------------------------------------------------------------
@@ -459,7 +430,7 @@ ftl_require_feature_macro(
 )
 
 # ---------------------------------------------------------------------------
-# Existing macros that were relocated to footer position in this closure.
+# Existing macros whose direct header exports are retained by this closure.
 # ---------------------------------------------------------------------------
 
 ftl_require_feature_macro(
@@ -467,29 +438,17 @@ ftl_require_feature_macro(
         __cpp_lib_ios_noreplace
         202207L
 )
-ftl_require_feature_macros_after(
-        ios
-        "FTL_END_NAMESPACE"
-)
 
 ftl_require_feature_macro(
         span
         __cpp_lib_span
         202002L
 )
-ftl_require_feature_macros_after(
-        span
-        "FTL_END_NAMESPACE"
-)
 
 ftl_require_feature_macro(
         thread
         __cpp_lib_formatters
         202302L
-)
-ftl_require_feature_macros_after(
-        thread
-        "FTL_THREAD_END_NAMESPACE"
 )
 
 ftl_require_feature_macro(
@@ -502,19 +461,11 @@ ftl_require_feature_macro(
         __cpp_lib_constexpr_complex
         201711L
 )
-ftl_require_feature_macros_after(
-        complex
-        "FTL_COMPLEX_END"
-)
 
 ftl_require_feature_macro(
         cstdlib
         __cpp_lib_constexpr_cmath
         202202L
-)
-ftl_require_feature_macros_after(
-        cstdlib
-        "FTL_CSTDLIB_END"
 )
 
 ftl_require_feature_macro(
@@ -537,19 +488,11 @@ ftl_require_feature_macro(
         __cpp_lib_math_special_functions
         201603L
 )
-ftl_require_feature_macros_after(
-        cmath
-        "FTL_CMATH_END"
-)
 
 ftl_require_feature_macro(
         syncstream
         __cpp_lib_syncbuf
         201803L
-)
-ftl_require_feature_macros_after(
-        syncstream
-        "FTL_END_NAMESPACE"
 )
 
 ftl_require_feature_macro(
@@ -562,19 +505,11 @@ ftl_require_feature_macro(
         __cpp_lib_formatters
         202302L
 )
-ftl_require_feature_macros_after(
-        stacktrace
-        "FTL_END_NAMESPACE"
-)
 
 ftl_require_feature_macro(
         spanstream
         __cpp_lib_spanstream
         202106L
-)
-ftl_require_feature_macros_after(
-        spanstream
-        "FTL_END_NAMESPACE"
 )
 
 ftl_require_feature_macro(
@@ -587,19 +522,11 @@ ftl_require_feature_macro(
         __cpp_lib_shared_mutex
         201505L
 )
-ftl_require_feature_macros_after(
-        shared_mutex
-        "FTL_SHARED_MUTEX_END_NAMESPACE"
-)
 
 ftl_require_feature_macro(
         flat_set
         __cpp_lib_flat_set
         202207L
-)
-ftl_require_feature_macros_after(
-        flat_set
-        "FTL_END_NAMESPACE"
 )
 
 ftl_require_feature_macro(
@@ -607,19 +534,11 @@ ftl_require_feature_macro(
         __cpp_lib_flat_map
         202207L
 )
-ftl_require_feature_macros_after(
-        flat_map
-        "FTL_END_NAMESPACE"
-)
 
 ftl_require_feature_macro(
         filesystem
         __cpp_lib_filesystem
         201703L
-)
-ftl_require_feature_macros_after(
-        filesystem
-        "FTL_END_NAMESPACE"
 )
 
 # ---------------------------------------------------------------------------

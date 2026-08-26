@@ -8,23 +8,9 @@
 #ifndef FTL_TYPE_TRAITS_HEADER
 #define FTL_TYPE_TRAITS_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
-#else
-#include <ftl/cstddef>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_BEGIN_NAMESPACE namespace std {
-#else
-#define FTL_BEGIN_NAMESPACE namespace ftl {
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_END_NAMESPACE } // namespace std
-#else
-#define FTL_END_NAMESPACE } // namespace ftl
-#endif
 
 #ifndef __has_builtin
 #define __has_builtin(x) 0
@@ -327,7 +313,7 @@
 #error "FTL requires compiler support for its core type-trait intrinsics"
 #endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class T, T Value> struct integral_constant {
   static constexpr T value = Value;
@@ -2135,6 +2121,6 @@ constexpr bool is_corresponding_member(Member1 Class1::*left,
 #define __cpp_lib_result_of_sfinae 201210L
 #endif
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #endif // FTL_TYPE_TRAITS_HEADER

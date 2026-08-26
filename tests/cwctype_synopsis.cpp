@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <cwctype>
 namespace tested = std;
-#else
-#include <ftl/cwctype>
-namespace tested = ftl;
-#endif
 
 #ifndef WEOF
 #error "<cwctype> must define WEOF"

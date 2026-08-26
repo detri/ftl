@@ -3,29 +3,15 @@
 #ifndef FTL_ALGORITHM_RANDOM_HEADER
 #define FTL_ALGORITHM_RANDOM_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <concepts>
 #include <iterator>
 #include <limits>
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/concepts>
-#include <ftl/iterator>
-#include <ftl/limits>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_ALGORITHM_RANDOM_NAMESPACE std
-#else
-#define FTL_ALGORITHM_RANDOM_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -268,15 +254,15 @@ SampleIterator
 algorithm_sample_loop(PopulationIterator first, PopulationSentinel last,
                       SampleIterator out, Distance n, Generator &generator) {
   if constexpr (forward_iterator<PopulationIterator>) {
-    return algorithm_sample_forward(FTL_ALGORITHM_RANDOM_NAMESPACE::move(first),
-                                    FTL_ALGORITHM_RANDOM_NAMESPACE::move(last),
-                                    FTL_ALGORITHM_RANDOM_NAMESPACE::move(out),
+    return algorithm_sample_forward(std::move(first),
+                                    std::move(last),
+                                    std::move(out),
                                     n, generator);
   } else {
     return algorithm_sample_reservoir(
-        FTL_ALGORITHM_RANDOM_NAMESPACE::move(first),
-        FTL_ALGORITHM_RANDOM_NAMESPACE::move(last),
-        FTL_ALGORITHM_RANDOM_NAMESPACE::move(out), n, generator);
+        std::move(first),
+        std::move(last),
+        std::move(out), n, generator);
   }
 }
 
@@ -290,16 +276,16 @@ SampleIterator sample(PopulationIterator first, PopulationIterator last,
   static_assert(is_integral_v<Distance>);
 
   return detail::algorithm_sample_loop(
-      FTL_ALGORITHM_RANDOM_NAMESPACE::move(first),
-      FTL_ALGORITHM_RANDOM_NAMESPACE::move(last),
-      FTL_ALGORITHM_RANDOM_NAMESPACE::move(out), n, generator);
+      std::move(first),
+      std::move(last),
+      std::move(out), n, generator);
 }
 
 template <class RandomAccessIterator, class UniformRandomBitGenerator>
 void shuffle(RandomAccessIterator first, RandomAccessIterator last,
              UniformRandomBitGenerator &&generator) {
-  detail::algorithm_shuffle_loop(FTL_ALGORITHM_RANDOM_NAMESPACE::move(first),
-                                 FTL_ALGORITHM_RANDOM_NAMESPACE::move(last),
+  detail::algorithm_shuffle_loop(std::move(first),
+                                 std::move(last),
                                  generator);
 }
 
@@ -310,37 +296,37 @@ struct sample_fn {
             weakly_incrementable Output, class Generator>
     requires((forward_iterator<Iterator> || random_access_iterator<Output>) &&
              indirectly_copyable<Iterator, Output> &&
-             FTL_ALGORITHM_RANDOM_NAMESPACE::detail::
+             std::detail::
                  algorithm_uniform_random_bit_generator<
                      remove_reference_t<Generator>>)
   Output operator()(Iterator first, Sentinel last, Output out,
                     iter_difference_t<Iterator> n,
                     Generator &&generator) const {
-    return FTL_ALGORITHM_RANDOM_NAMESPACE::detail::algorithm_sample_loop(
-        FTL_ALGORITHM_RANDOM_NAMESPACE::move(first),
-        FTL_ALGORITHM_RANDOM_NAMESPACE::move(last),
-        FTL_ALGORITHM_RANDOM_NAMESPACE::move(out), n, generator);
+    return std::detail::algorithm_sample_loop(
+        std::move(first),
+        std::move(last),
+        std::move(out), n, generator);
   }
 
   template <input_range Range, weakly_incrementable Output, class Generator>
     requires((forward_range<Range> || random_access_iterator<Output>) &&
              indirectly_copyable<iterator_t<Range>, Output> &&
-             FTL_ALGORITHM_RANDOM_NAMESPACE::detail::
+             std::detail::
                  algorithm_uniform_random_bit_generator<
                      remove_reference_t<Generator>>)
   Output operator()(Range &&range, Output out, range_difference_t<Range> n,
                     Generator &&generator) const {
     return (*this)(
         ranges::begin(range), ranges::end(range),
-        FTL_ALGORITHM_RANDOM_NAMESPACE::move(out), n,
-        FTL_ALGORITHM_RANDOM_NAMESPACE::forward<Generator>(generator));
+        std::move(out), n,
+        std::forward<Generator>(generator));
   }
 };
 
 struct shuffle_fn {
   template <random_access_iterator Iterator, sentinel_for<Iterator> Sentinel,
             class Generator>
-    requires(permutable<Iterator> && FTL_ALGORITHM_RANDOM_NAMESPACE::detail::
+    requires(permutable<Iterator> && std::detail::
                                          algorithm_uniform_random_bit_generator<
                                              remove_reference_t<Generator>>)
   Iterator operator()(Iterator first, Sentinel last,
@@ -351,7 +337,7 @@ struct shuffle_fn {
       ++end;
     }
 
-    FTL_ALGORITHM_RANDOM_NAMESPACE::detail::algorithm_shuffle_loop(first, end,
+    std::detail::algorithm_shuffle_loop(first, end,
                                                                    generator);
 
     return end;
@@ -359,16 +345,16 @@ struct shuffle_fn {
 
   template <random_access_range Range, class Generator>
     requires(permutable<iterator_t<Range>> &&
-             FTL_ALGORITHM_RANDOM_NAMESPACE::detail::
+             std::detail::
                  algorithm_uniform_random_bit_generator<
                      remove_reference_t<Generator>>)
   borrowed_iterator_t<Range> operator()(Range &&range,
                                         Generator &&generator) const {
     auto result =
         (*this)(ranges::begin(range), ranges::end(range),
-                FTL_ALGORITHM_RANDOM_NAMESPACE::forward<Generator>(generator));
+                std::forward<Generator>(generator));
 
-    return FTL_ALGORITHM_RANDOM_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -377,8 +363,7 @@ inline constexpr shuffle_fn shuffle{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_ALGORITHM_RANDOM_NAMESPACE
 
 #endif // FTL_ALGORITHM_RANDOM_HEADER

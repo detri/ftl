@@ -1,18 +1,9 @@
-#ifdef FTL_REPLACE_STL
 #include <cstdint>
 #include <detail/big_uint>
 #include <detail/floating_bits>
 #include <detail/floating_conversion>
 #include <limits>
 namespace tested = std;
-#else
-#include <ftl/cstdint>
-#include <ftl/detail/big_uint>
-#include <ftl/detail/floating_bits>
-#include <ftl/detail/floating_conversion>
-#include <ftl/limits>
-namespace tested = ftl;
-#endif
 
 using ftl_float_conversion::big_uint;
 using ftl_float_conversion::conversion_status;

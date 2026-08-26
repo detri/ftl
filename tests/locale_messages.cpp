@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <locale>
 #include <string>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/locale>
-#include <ftl/string>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 struct custom_messages final : tested::messages<char> {
   mutable int closes = 0;

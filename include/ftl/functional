@@ -3,7 +3,6 @@
 #ifndef FTL_FUNCTIONAL_HEADER
 #define FTL_FUNCTIONAL_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cmath>
 #include <compare>
 #include <detail/rapidhash>
@@ -14,20 +13,8 @@
 #include <type_traits>
 #include <typeinfo>
 #include <utility>
-#else
-#include <ftl/cmath>
-#include <ftl/compare>
-#include <ftl/detail/rapidhash>
-#include <ftl/exception>
-#include <ftl/iterator>
-#include <ftl/new>
-#include <ftl/tuple>
-#include <ftl/type_traits>
-#include <ftl/typeinfo>
-#include <ftl/utility>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class T> class reference_wrapper;
 template <class T> struct hash;
@@ -1268,7 +1255,7 @@ FTL_DETAIL_FLOAT_HASH(double);
 FTL_DETAIL_FLOAT_HASH(long double);
 #undef FTL_DETAIL_FLOAT_HASH
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_invoke) || __cpp_lib_invoke < 201411L
 #undef __cpp_lib_invoke

@@ -1,13 +1,9 @@
 #ifndef FTL_ASSOCIATIVE_UNORDERED_HPP
 #define FTL_ASSOCIATIVE_UNORDERED_HPP
 
-#ifdef FTL_REPLACE_STL
 #include <__associative/hash_table.hpp>
-#else
-#include <ftl/__associative/hash_table.hpp>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 namespace detail {
 
 template <class Allocator>
@@ -557,5 +553,5 @@ public:
   key_equal key_eq() const { return table_.key_eq(); }
 };
 } // namespace detail
-FTL_END_NAMESPACE
+} // namespace std
 #endif

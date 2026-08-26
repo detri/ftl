@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <algorithm>
 #include <concepts>
 #include <cstddef>
@@ -8,17 +7,6 @@
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/algorithm>
-#include <ftl/concepts>
-#include <ftl/cstddef>
-#include <ftl/iterator>
-#include <ftl/optional>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 static_assert(__cpp_lib_ranges_fold >= 202207L);
 

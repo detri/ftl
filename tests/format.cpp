@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <format>
 #include <limits>
@@ -6,21 +5,11 @@
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/array>
-#include <ftl/format>
-#include <ftl/limits>
-#include <ftl/tuple>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 struct handled_value {
   char character;
 };
 
-#ifdef FTL_REPLACE_STL
 
 template <> struct std::formatter<handled_value, char> {
   constexpr auto parse(std::format_parse_context &context) {
@@ -39,26 +28,6 @@ template <> struct std::formatter<handled_value, char> {
   }
 };
 
-#else
-
-template <> struct ftl::formatter<handled_value, char> {
-  constexpr auto parse(ftl::format_parse_context &context) {
-    return context.begin();
-  }
-
-  template <class FormatContext>
-  typename FormatContext::iterator format(const handled_value &value,
-                                          FormatContext &context) const {
-    auto output = context.out();
-
-    *output = value.character;
-    ++output;
-
-    return output;
-  }
-};
-
-#endif
 
 struct unavailable_format_type {};
 
@@ -184,7 +153,6 @@ struct mutable_only_range {
   int *end() noexcept { return values + 2; }
 };
 
-#ifdef FTL_REPLACE_STL
 
 namespace std {
 
@@ -198,21 +166,6 @@ inline constexpr range_format format_kind<debug_string_kind_range> =
 
 } // namespace std
 
-#else
-
-namespace ftl {
-
-template <>
-inline constexpr range_format format_kind<string_kind_range> =
-    range_format::string;
-
-template <>
-inline constexpr range_format format_kind<debug_string_kind_range> =
-    range_format::debug_string;
-
-} // namespace ftl
-
-#endif
 
 static_assert(tested::format_kind<sequence_range> ==
               tested::range_format::sequence);

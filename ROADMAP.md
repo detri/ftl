@@ -4,11 +4,9 @@ FTL is a C++23, header-only standard-library replacement for environments where
 a hosted vendor STL is unavailable, undesirable, or incompatible with the
 desired portability model.
 
-It targets MSVC, Clang, and GCC and supports two usage modes:
-
-- normal mode, with the library exposed through `ftl`
-- `FTL_REPLACE_STL`, with FTL headers placed directly on the include path and
-  the standard-library interface exposed through `std`
+It targets MSVC, Clang, and GCC as a selectable standard-library
+implementation. FTL headers are placed directly on the include path and expose
+the standard-library interface through `std`.
 
 The goal is source-interface compatibility with the C++23 standard library,
 not binary compatibility with MSVC STL, libstdc++, or libc++.
@@ -27,14 +25,14 @@ FTL targets the complete C++23 standard-library source interface, including:
 - required specializations
 - feature-test macros
 - C compatibility headers
-- normal and replacement-mode behavior
+- replacement behavior without a hosted vendor C++ standard library
 
 FTL does not promise ABI compatibility with vendor standard libraries.
 
-Replacement mode is therefore an all-or-nothing choice across any binary
-interface that exchanges standard-library types. Source-built dependencies may
-participate in the same FTL replacement environment; incompatible prebuilt
-libraries remain explicit ABI boundaries.
+Selecting FTL is an all-or-nothing choice across any binary interface that
+exchanges standard-library types. Source-built dependencies may participate in
+the same FTL environment; incompatible prebuilt libraries remain explicit ABI
+boundaries. FTL does not provide a parallel `ftl` namespace mode.
 
 `optional<T&>` is currently provided as a C++26-compatible extension. It must
 not alter the required C++23 `optional<T>` interface or semantics.
@@ -70,7 +68,7 @@ A public facility is considered complete only when:
    behavior, and customization rules are represented.
 3. Relevant feature-test macros have the correct C++23 values and appear in
    every required header.
-4. Normal and `FTL_REPLACE_STL` modes are both covered.
+4. Tests resolve unprefixed standard headers exclusively through FTL.
 5. MSVC, Clang, and GCC pass the supported configuration matrix.
 6. Relevant compile-fail, `constexpr`, triviality, layout, allocator,
    runtime-dependency, and behavioral tests exist.
@@ -92,8 +90,8 @@ and have passed their implementation closures. No C++23 headers are currently
 classified as seeded or absent.
 
 The C compatibility-header surface is also implemented. Required `.h`
-spellings route to FTL-owned facilities in both normal and replacement modes,
-including the special compatibility headers such as:
+spellings route to FTL-owned facilities, including the special compatibility
+headers such as:
 
 - `<complex.h>`
 - `<ctype.h>`
@@ -105,10 +103,9 @@ including the special compatibility headers such as:
 - `<tgmath.h>`
 - `<time.h>`
 
-Normal-mode compatibility tests use the `ftl/` header spellings directly so
-they cannot silently fall through to vendor CRT or STL headers. Replacement
-mode tests resolve the corresponding unprefixed standard spellings through the
-FTL replacement include path.
+Tests resolve unprefixed standard spellings through the FTL include path with
+vendor C++ headers disabled, so they cannot silently fall through to a hosted
+STL.
 
 `<text_encoding>` is not a C++23 facility and is out of scope for the current
 baseline.
@@ -133,22 +130,17 @@ remediation pass included:
 - `<cassert>` repeated inclusion when `NDEBUG` changes
 - missing and incorrectly routed C compatibility headers
 - discovery and implementation of the missing `<cctype>` surface
-- removal of normal-mode C-header paths that accidentally consumed hosted
-  vendor C++ headers
+- removal of C-header paths that accidentally consumed hosted vendor C++
+  headers
 - missing `<ctime>` `timespec`, `timespec_get`, and `TIME_UTC` facilities
 - platform-correct `CLOCKS_PER_SEC`
 - `<generator>` support for over-aligned allocator objects without changing
   the standard-mandated default-aligned rebound allocation unit
 - stale, incorrect, or non-standard feature-test advertisement
 
-The remediation findings are fixed and current tests are green.
-
-A fresh whole-repository audit against N4950 remains required. It must be
-performed from the standard and current repository state rather than merely
-checking that the previous finding list was repaired.
-
-Passing that clean re-audit is the final verification milestone for the C++23
-surface.
+The remediation findings are fixed. The fresh whole-repository audit is
+recorded in `docs/conformance-2026-08-24.md`; its sole remaining substantive
+conformance blocker is extended floating-point math.
 
 ## Runtime and portability model
 
@@ -176,15 +168,14 @@ implementations.
 Platform implementation details must not leak into the public standard-library
 interface.
 
-## Replacement product
+## Standard-library product
 
-The next major development phase is turning the completed library surface into
-a deliberate whole-program replacement product.
+The next major development phase is hardening the completed library surface as
+a deliberate whole-program standard-library product.
 
 Priority work:
 
-1. Implement `ftl_replace_stl()` as a transitive per-target CMake integration
-   mechanism.
+1. Provide a transitive per-target CMake integration mechanism.
 
 2. Make runtime dependencies feature-sensitive per target instead of attaching
    unnecessary hosted/runtime dependencies universally.
@@ -202,7 +193,7 @@ Priority work:
 5. Add whole-program replacement examples using non-trivial source-built
    dependency graphs.
 
-6. Add replacement-mode integration tests designed specifically to detect
+6. Add integration tests designed specifically to detect
    accidental vendor-STL mixing across multiple translation units and
    dependencies.
 
@@ -234,7 +225,7 @@ Priority work:
     constraints, feature-test advertisement, and observable behavior without
     assuming vendor ABI or implementation details.
 
-The replacement-product milestone is complete when a non-trivial application
+The standard-library-product milestone is complete when a non-trivial application
 and its source-built dependency graph can select FTL without accidental
 vendor-STL mixing and with documented runtime and ABI boundaries.
 
@@ -256,7 +247,7 @@ Potential opt-in system/game-oriented facilities may include:
 - other facilities justified by measured game/system workloads
 
 Extensions must not compromise standard-compatible interfaces or complicate
-replacement mode.
+whole-program selection.
 
 ## Non-goals
 

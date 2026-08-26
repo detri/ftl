@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <limits>
 #include <numeric>
 namespace tested = std;
-#else
-#include <ftl/limits>
-#include <ftl/numeric>
-namespace tested = ftl;
-#endif
 
 #ifndef __cpp_lib_constexpr_numeric
 #error "__cpp_lib_constexpr_numeric must be defined by <numeric>"

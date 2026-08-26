@@ -3,22 +3,8 @@
 #ifndef FTL_EXCEPTION_HEADER
 #define FTL_EXCEPTION_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <type_traits>
 #include <utility>
-#define FTL_EXCEPTION_BEGIN_NAMESPACE namespace std {
-#define FTL_EXCEPTION_END_NAMESPACE }
-#define FTL_EXCEPTION_NAMESPACE std
-#else
-#ifndef _MSC_VER
-#include <exception>
-#endif
-#include <ftl/type_traits>
-#include <ftl/utility>
-#define FTL_EXCEPTION_BEGIN_NAMESPACE namespace ftl {
-#define FTL_EXCEPTION_END_NAMESPACE }
-#define FTL_EXCEPTION_NAMESPACE ftl
-#endif
 
 #if defined(_MSC_VER)
 #if defined(_DEBUG)
@@ -59,7 +45,7 @@ ftl_runtime_terminate_handler __cdecl _get_terminate() noexcept;
 }
 #endif
 
-#if defined(FTL_REPLACE_STL) && defined(__APPLE__) && !defined(_MSC_VER)
+#if defined(__APPLE__) && !defined(_MSC_VER)
 extern "C" {
 void* __cxa_current_primary_exception() noexcept;
 void __cxa_increment_exception_refcount(void*) noexcept;
@@ -68,9 +54,9 @@ unsigned int __cxa_uncaught_exceptions() noexcept;
 }
 #endif
 
-FTL_EXCEPTION_BEGIN_NAMESPACE
+namespace std {
 
-#if defined(FTL_REPLACE_STL) && !defined(_MSC_VER)
+#if !defined(_MSC_VER)
 #if defined(__APPLE__)
 class exception_ptr;
 #else
@@ -84,7 +70,7 @@ class exception_ptr;
 #endif
 [[noreturn]] void rethrow_exception(exception_ptr);
 
-#if defined(FTL_REPLACE_STL) && !defined(_MSC_VER)
+#if !defined(_MSC_VER)
 class exception {
 public:
     exception() noexcept = default;
@@ -100,7 +86,7 @@ public:
     ~bad_exception() override;
     [[nodiscard]] const char* what() const noexcept override;
 };
-#elif defined(FTL_REPLACE_STL) && defined(_MSC_VER)
+#elif defined(_MSC_VER)
 class exception {
 public:
     exception() noexcept : data{} {}
@@ -172,34 +158,21 @@ inline terminate_handler set_terminate(terminate_handler handler) noexcept {
 inline int uncaught_exceptions() noexcept {
     return ::__uncaught_exceptions();
 }
-#elif defined(FTL_REPLACE_STL) && defined(__APPLE__)
+#elif defined(__APPLE__)
 terminate_handler set_terminate(terminate_handler) noexcept;
 [[nodiscard]] terminate_handler get_terminate() noexcept;
 [[noreturn]] void terminate() noexcept;
 inline int uncaught_exceptions() noexcept {
     return static_cast<int>(::__cxa_uncaught_exceptions());
 }
-#elif defined(FTL_REPLACE_STL)
+#else
 terminate_handler set_terminate(terminate_handler) noexcept;
 [[nodiscard]] terminate_handler get_terminate() noexcept;
 [[noreturn]] void terminate() noexcept;
 int uncaught_exceptions() noexcept;
-#else
-inline terminate_handler set_terminate(terminate_handler handler) noexcept {
-    return ::std::set_terminate(handler);
-}
-[[nodiscard]] inline terminate_handler get_terminate() noexcept {
-    return ::std::get_terminate();
-}
-[[noreturn]] inline void terminate() noexcept {
-    ::std::terminate();
-}
-inline int uncaught_exceptions() noexcept {
-    return ::std::uncaught_exceptions();
-}
 #endif
 
-#if defined(FTL_REPLACE_STL) && !defined(_MSC_VER)
+#if !defined(_MSC_VER)
 #if !defined(__APPLE__)
 namespace __exception_ptr {
 #endif
@@ -294,11 +267,11 @@ inline void swap(exception_ptr& left, exception_ptr& right) noexcept {
     right = temporary;
 }
 
-#if defined(FTL_REPLACE_STL) && defined(__APPLE__) && !defined(_MSC_VER)
+#if defined(__APPLE__) && !defined(_MSC_VER)
 [[nodiscard]] inline exception_ptr current_exception() noexcept {
     return exception_ptr(::__cxa_current_primary_exception());
 }
-#elif defined(FTL_REPLACE_STL) && !defined(_MSC_VER)
+#elif !defined(_MSC_VER)
 [[nodiscard]] exception_ptr current_exception() noexcept;
 #else
 [[nodiscard]] inline exception_ptr current_exception() noexcept {
@@ -312,7 +285,7 @@ inline void swap(exception_ptr& left, exception_ptr& right) noexcept {
 }
 #endif
 
-#if !defined(FTL_REPLACE_STL) || defined(_MSC_VER)
+#if defined(_MSC_VER)
 [[noreturn]] inline void rethrow_exception(exception_ptr value) {
 #if defined(_MSC_VER)
     __ExceptionPtrRethrow(&value);
@@ -344,7 +317,7 @@ public:
 
     [[noreturn]] void rethrow_nested() const {
         if (pointer)
-            FTL_EXCEPTION_NAMESPACE::rethrow_exception(pointer);
+            std::rethrow_exception(pointer);
         terminate();
     }
 
@@ -362,7 +335,7 @@ class nested_exception_wrapper : public T, public nested_exception {
 public:
     template<class U>
     explicit nested_exception_wrapper(U&& value)
-        : T(FTL_EXCEPTION_NAMESPACE::forward<U>(value)) {}
+        : T(std::forward<U>(value)) {}
 };
 }
 
@@ -373,9 +346,9 @@ template<class T>
     if constexpr (is_class_v<U> && !is_final_v<U> &&
                   !is_base_of_v<nested_exception, U>)
         throw detail::nested_exception_wrapper<U>{
-            FTL_EXCEPTION_NAMESPACE::forward<T>(value)};
+            std::forward<T>(value)};
     else
-        throw FTL_EXCEPTION_NAMESPACE::forward<T>(value);
+        throw std::forward<T>(value);
 }
 #else
 [[noreturn]] void throw_with_nested(T&&);
@@ -403,11 +376,8 @@ void rethrow_if_nested(const T& value) {
 void rethrow_if_nested(const T&);
 #endif
 
-FTL_EXCEPTION_END_NAMESPACE
+}
 
-#undef FTL_EXCEPTION_BEGIN_NAMESPACE
-#undef FTL_EXCEPTION_END_NAMESPACE
-#undef FTL_EXCEPTION_NAMESPACE
 
 #if !defined(__cpp_lib_uncaught_exceptions) || \
     __cpp_lib_uncaught_exceptions < 201411L

@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <string>
 #include <syncstream>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/string>
-#include <ftl/syncstream>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 #if __cpp_lib_syncbuf != 201803L
 #error bad syncbuf feature macro
 #endif

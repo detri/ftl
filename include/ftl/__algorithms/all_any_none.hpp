@@ -3,29 +3,15 @@
 #ifndef FTL_ALL_ANY_NONE_HEADER
 #define FTL_ALL_ANY_NONE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__execution/policy_access.hpp>
 #include <functional>
 #include <iterator>
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_ALL_ANY_NONE_NAMESPACE std
-#else
-#define FTL_ALL_ANY_NONE_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -70,9 +56,9 @@ constexpr bool ranges_all_of_loop(Iterator &first, const Sentinel &last,
                                   Predicate &predicate,
                                   Projection &projection) {
   for (; first != last; ++first) {
-    if (!FTL_ALL_ANY_NONE_NAMESPACE::invoke(
+    if (!std::invoke(
             predicate,
-            FTL_ALL_ANY_NONE_NAMESPACE::invoke(projection, *first))) {
+            std::invoke(projection, *first))) {
       return false;
     }
   }
@@ -85,9 +71,9 @@ constexpr bool ranges_any_of_loop(Iterator &first, const Sentinel &last,
                                   Predicate &predicate,
                                   Projection &projection) {
   for (; first != last; ++first) {
-    if (FTL_ALL_ANY_NONE_NAMESPACE::invoke(
+    if (std::invoke(
             predicate,
-            FTL_ALL_ANY_NONE_NAMESPACE::invoke(projection, *first))) {
+            std::invoke(projection, *first))) {
       return true;
     }
   }
@@ -100,9 +86,9 @@ constexpr bool ranges_none_of_loop(Iterator &first, const Sentinel &last,
                                    Predicate &predicate,
                                    Projection &projection) {
   for (; first != last; ++first) {
-    if (FTL_ALL_ANY_NONE_NAMESPACE::invoke(
+    if (std::invoke(
             predicate,
-            FTL_ALL_ANY_NONE_NAMESPACE::invoke(projection, *first))) {
+            std::invoke(projection, *first))) {
       return false;
     }
   }
@@ -162,7 +148,7 @@ struct all_of_fn {
             indirect_unary_predicate<projected<Iterator, Projection>> Predicate>
   constexpr bool operator()(Iterator first, Sentinel last, Predicate predicate,
                             Projection projection = {}) const {
-    return FTL_ALL_ANY_NONE_NAMESPACE::detail::ranges_all_of_loop(
+    return std::detail::ranges_all_of_loop(
         first, last, predicate, projection);
   }
 
@@ -172,8 +158,8 @@ struct all_of_fn {
   constexpr bool operator()(Range &&range, Predicate predicate,
                             Projection projection = {}) const {
     return (*this)(ranges::begin(range), ranges::end(range),
-                   FTL_ALL_ANY_NONE_NAMESPACE::move(predicate),
-                   FTL_ALL_ANY_NONE_NAMESPACE::move(projection));
+                   std::move(predicate),
+                   std::move(projection));
   }
 };
 
@@ -183,7 +169,7 @@ struct any_of_fn {
             indirect_unary_predicate<projected<Iterator, Projection>> Predicate>
   constexpr bool operator()(Iterator first, Sentinel last, Predicate predicate,
                             Projection projection = {}) const {
-    return FTL_ALL_ANY_NONE_NAMESPACE::detail::ranges_any_of_loop(
+    return std::detail::ranges_any_of_loop(
         first, last, predicate, projection);
   }
 
@@ -193,8 +179,8 @@ struct any_of_fn {
   constexpr bool operator()(Range &&range, Predicate predicate,
                             Projection projection = {}) const {
     return (*this)(ranges::begin(range), ranges::end(range),
-                   FTL_ALL_ANY_NONE_NAMESPACE::move(predicate),
-                   FTL_ALL_ANY_NONE_NAMESPACE::move(projection));
+                   std::move(predicate),
+                   std::move(projection));
   }
 };
 
@@ -204,7 +190,7 @@ struct none_of_fn {
             indirect_unary_predicate<projected<Iterator, Projection>> Predicate>
   constexpr bool operator()(Iterator first, Sentinel last, Predicate predicate,
                             Projection projection = {}) const {
-    return FTL_ALL_ANY_NONE_NAMESPACE::detail::ranges_none_of_loop(
+    return std::detail::ranges_none_of_loop(
         first, last, predicate, projection);
   }
 
@@ -214,8 +200,8 @@ struct none_of_fn {
   constexpr bool operator()(Range &&range, Predicate predicate,
                             Projection projection = {}) const {
     return (*this)(ranges::begin(range), ranges::end(range),
-                   FTL_ALL_ANY_NONE_NAMESPACE::move(predicate),
-                   FTL_ALL_ANY_NONE_NAMESPACE::move(projection));
+                   std::move(predicate),
+                   std::move(projection));
   }
 };
 
@@ -225,6 +211,6 @@ inline constexpr none_of_fn none_of{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #endif // FTL_ALL_ANY_NONE_HEADER

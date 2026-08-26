@@ -3,15 +3,10 @@
 #ifndef FTL_UTILITY_HEADER
 #define FTL_UTILITY_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <compare>
 #include <initializer_list>
-#else
-#include <ftl/compare>
-#include <ftl/initializer_list>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template<class T>
 constexpr T&& forward(remove_reference_t<T>&) noexcept;
@@ -214,16 +209,20 @@ struct pair {
     pair(U1&& first_value, U2&& second_value)
         requires (is_constructible_v<First, U1> &&
                   is_constructible_v<Second, U2> &&
-                  !detail::pair_dangles_v<First, U1&&> &&
-                  !detail::pair_dangles_v<Second, U2&&>)
+                  !(is_lvalue_reference_v<First> &&
+                    detail::pair_dangles_v<First, U1>) &&
+                  !(is_lvalue_reference_v<Second> &&
+                    detail::pair_dangles_v<Second, U2>))
         : first(forward<U1>(first_value)), second(forward<U2>(second_value)) {}
 
     template<class U1 = First, class U2 = Second>
     pair(U1&&, U2&&)
         requires (is_constructible_v<First, U1> &&
                   is_constructible_v<Second, U2> &&
-                  (detail::pair_dangles_v<First, U1&&> ||
-                   detail::pair_dangles_v<Second, U2&&>)) = delete;
+                  ((is_lvalue_reference_v<First> &&
+                    detail::pair_dangles_v<First, U1>) ||
+                   (is_lvalue_reference_v<Second> &&
+                    detail::pair_dangles_v<Second, U2>))) = delete;
 
     pair(const pair&) = default;
     pair(pair&&) = default;
@@ -849,6 +848,6 @@ constexpr bool in_range(T value) noexcept {
 #define __cpp_lib_tuple_like 202207L
 #endif
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #endif // FTL_UTILITY_HEADER

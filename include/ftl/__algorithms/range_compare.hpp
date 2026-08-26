@@ -3,7 +3,6 @@
 #ifndef FTL_RANGE_COMPARE_HEADER
 #define FTL_RANGE_COMPARE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <functional>
 #include <iterator>
 #include <ranges>
@@ -11,23 +10,9 @@
 #include <utility>
 #include <__algorithms/result.hpp>
 #include <__execution/policy_access.hpp>
-#else
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#include <ftl/__algorithms/result.hpp>
-#include <ftl/__execution/policy_access.hpp>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_RANGE_COMPARE_NAMESPACE std
-#else
-#define FTL_RANGE_COMPARE_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -129,10 +114,10 @@ constexpr void ranges_mismatch_loop(
     Predicate &predicate, Projection1 &projection1,
     Projection2 &projection2) {
   while (first1 != last1 && first2 != last2) {
-    if (!FTL_RANGE_COMPARE_NAMESPACE::invoke(
+    if (!std::invoke(
             predicate,
-            FTL_RANGE_COMPARE_NAMESPACE::invoke(projection1, *first1),
-            FTL_RANGE_COMPARE_NAMESPACE::invoke(projection2, *first2))) {
+            std::invoke(projection1, *first1),
+            std::invoke(projection2, *first2))) {
       return;
     }
 
@@ -158,10 +143,10 @@ constexpr bool ranges_equal_loop(
   }
 
   while (first1 != last1 && first2 != last2) {
-    if (!FTL_RANGE_COMPARE_NAMESPACE::invoke(
+    if (!std::invoke(
             predicate,
-            FTL_RANGE_COMPARE_NAMESPACE::invoke(projection1, *first1),
-            FTL_RANGE_COMPARE_NAMESPACE::invoke(projection2, *first2))) {
+            std::invoke(projection1, *first1),
+            std::invoke(projection2, *first2))) {
       return false;
     }
 
@@ -184,8 +169,8 @@ mismatch(InputIterator1 first1, InputIterator1 last1,
       first1, last1, first2, predicate);
 
   return {
-      FTL_RANGE_COMPARE_NAMESPACE::move(first1),
-      FTL_RANGE_COMPARE_NAMESPACE::move(first2),
+      std::move(first1),
+      std::move(first2),
   };
 }
 
@@ -202,8 +187,8 @@ mismatch(ExecutionPolicy &&, ForwardIterator1 first1,
         first1, last1, first2, predicate);
 
     return pair<ForwardIterator1, ForwardIterator2>{
-        FTL_RANGE_COMPARE_NAMESPACE::move(first1),
-        FTL_RANGE_COMPARE_NAMESPACE::move(first2),
+        std::move(first1),
+        std::move(first2),
     };
   }();
 }
@@ -217,8 +202,8 @@ mismatch(InputIterator1 first1, InputIterator1 last1,
       first1, last1, first2, predicate);
 
   return {
-      FTL_RANGE_COMPARE_NAMESPACE::move(first1),
-      FTL_RANGE_COMPARE_NAMESPACE::move(first2),
+      std::move(first1),
+      std::move(first2),
   };
 }
 
@@ -234,8 +219,8 @@ mismatch(ExecutionPolicy &&, ForwardIterator1 first1,
         first1, last1, first2, predicate);
 
     return pair<ForwardIterator1, ForwardIterator2>{
-        FTL_RANGE_COMPARE_NAMESPACE::move(first1),
-        FTL_RANGE_COMPARE_NAMESPACE::move(first2),
+        std::move(first1),
+        std::move(first2),
     };
   }();
 }
@@ -250,8 +235,8 @@ mismatch(InputIterator1 first1, InputIterator1 last1,
       first1, last1, first2, last2, predicate);
 
   return {
-      FTL_RANGE_COMPARE_NAMESPACE::move(first1),
-      FTL_RANGE_COMPARE_NAMESPACE::move(first2),
+      std::move(first1),
+      std::move(first2),
   };
 }
 
@@ -269,8 +254,8 @@ mismatch(ExecutionPolicy &&, ForwardIterator1 first1,
         first1, last1, first2, last2, predicate);
 
     return pair<ForwardIterator1, ForwardIterator2>{
-        FTL_RANGE_COMPARE_NAMESPACE::move(first1),
-        FTL_RANGE_COMPARE_NAMESPACE::move(first2),
+        std::move(first1),
+        std::move(first2),
     };
   }();
 }
@@ -285,8 +270,8 @@ mismatch(InputIterator1 first1, InputIterator1 last1,
       first1, last1, first2, last2, predicate);
 
   return {
-      FTL_RANGE_COMPARE_NAMESPACE::move(first1),
-      FTL_RANGE_COMPARE_NAMESPACE::move(first2),
+      std::move(first1),
+      std::move(first2),
   };
 }
 
@@ -302,8 +287,8 @@ mismatch(ExecutionPolicy &&, ForwardIterator1 first1,
         first1, last1, first2, last2, predicate);
 
     return pair<ForwardIterator1, ForwardIterator2>{
-        FTL_RANGE_COMPARE_NAMESPACE::move(first1),
-        FTL_RANGE_COMPARE_NAMESPACE::move(first2),
+        std::move(first1),
+        std::move(first2),
     };
   }();
 }
@@ -414,13 +399,13 @@ struct mismatch_fn {
              Predicate predicate = {},
              Projection1 projection1 = {},
              Projection2 projection2 = {}) const {
-    FTL_RANGE_COMPARE_NAMESPACE::detail::ranges_mismatch_loop(
+    std::detail::ranges_mismatch_loop(
         first1, last1, first2, last2,
         predicate, projection1, projection2);
 
     return {
-        FTL_RANGE_COMPARE_NAMESPACE::move(first1),
-        FTL_RANGE_COMPARE_NAMESPACE::move(first2),
+        std::move(first1),
+        std::move(first2),
     };
   }
 
@@ -442,13 +427,13 @@ struct mismatch_fn {
     auto result = (*this)(
         ranges::begin(range1), ranges::end(range1),
         ranges::begin(range2), ranges::end(range2),
-        FTL_RANGE_COMPARE_NAMESPACE::move(predicate),
-        FTL_RANGE_COMPARE_NAMESPACE::move(projection1),
-        FTL_RANGE_COMPARE_NAMESPACE::move(projection2));
+        std::move(predicate),
+        std::move(projection1),
+        std::move(projection2));
 
     return {
-        FTL_RANGE_COMPARE_NAMESPACE::move(result.in1),
-        FTL_RANGE_COMPARE_NAMESPACE::move(result.in2),
+        std::move(result.in1),
+        std::move(result.in2),
     };
   }
 };
@@ -467,9 +452,9 @@ struct equal_fn {
              Predicate predicate = {},
              Projection1 projection1 = {},
              Projection2 projection2 = {}) const {
-    return FTL_RANGE_COMPARE_NAMESPACE::detail::ranges_equal_loop(
-        FTL_RANGE_COMPARE_NAMESPACE::move(first1), last1,
-        FTL_RANGE_COMPARE_NAMESPACE::move(first2), last2,
+    return std::detail::ranges_equal_loop(
+        std::move(first1), last1,
+        std::move(first2), last2,
         predicate, projection1, projection2);
   }
 
@@ -495,9 +480,9 @@ struct equal_fn {
     return (*this)(
         ranges::begin(range1), ranges::end(range1),
         ranges::begin(range2), ranges::end(range2),
-        FTL_RANGE_COMPARE_NAMESPACE::move(predicate),
-        FTL_RANGE_COMPARE_NAMESPACE::move(projection1),
-        FTL_RANGE_COMPARE_NAMESPACE::move(projection2));
+        std::move(predicate),
+        std::move(projection1),
+        std::move(projection2));
   }
 };
 
@@ -519,11 +504,11 @@ struct starts_with_fn {
              Projection1 projection1 = {},
              Projection2 projection2 = {}) const {
     return ranges::mismatch(
-               FTL_RANGE_COMPARE_NAMESPACE::move(first1), last1,
-               FTL_RANGE_COMPARE_NAMESPACE::move(first2), last2,
-               FTL_RANGE_COMPARE_NAMESPACE::move(predicate),
-               FTL_RANGE_COMPARE_NAMESPACE::move(projection1),
-               FTL_RANGE_COMPARE_NAMESPACE::move(projection2))
+               std::move(first1), last1,
+               std::move(first2), last2,
+               std::move(predicate),
+               std::move(projection1),
+               std::move(projection2))
                .in2 == last2;
   }
 
@@ -543,9 +528,9 @@ struct starts_with_fn {
     return (*this)(
         ranges::begin(range1), ranges::end(range1),
         ranges::begin(range2), ranges::end(range2),
-        FTL_RANGE_COMPARE_NAMESPACE::move(predicate),
-        FTL_RANGE_COMPARE_NAMESPACE::move(projection1),
-        FTL_RANGE_COMPARE_NAMESPACE::move(projection2));
+        std::move(predicate),
+        std::move(projection1),
+        std::move(projection2));
   }
 };
 
@@ -589,11 +574,11 @@ struct ends_with_fn {
             length1 - length2));
 
     return ranges::equal(
-        FTL_RANGE_COMPARE_NAMESPACE::move(first1), last1,
-        FTL_RANGE_COMPARE_NAMESPACE::move(first2), last2,
-        FTL_RANGE_COMPARE_NAMESPACE::move(predicate),
-        FTL_RANGE_COMPARE_NAMESPACE::move(projection1),
-        FTL_RANGE_COMPARE_NAMESPACE::move(projection2));
+        std::move(first1), last1,
+        std::move(first2), last2,
+        std::move(predicate),
+        std::move(projection1),
+        std::move(projection2));
   }
 
   template <
@@ -615,9 +600,9 @@ struct ends_with_fn {
     return (*this)(
         ranges::begin(range1), ranges::end(range1),
         ranges::begin(range2), ranges::end(range2),
-        FTL_RANGE_COMPARE_NAMESPACE::move(predicate),
-        FTL_RANGE_COMPARE_NAMESPACE::move(projection1),
-        FTL_RANGE_COMPARE_NAMESPACE::move(projection2));
+        std::move(predicate),
+        std::move(projection1),
+        std::move(projection2));
   }
 };
 
@@ -626,8 +611,7 @@ inline constexpr ends_with_fn ends_with{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_RANGE_COMPARE_NAMESPACE
 
 #endif // FTL_RANGE_COMPARE_HEADER

@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <ranges>
 #include <tuple>
 namespace tested = std;
-#else
-#include <ftl/array>
-#include <ftl/ranges>
-#include <ftl/tuple>
-namespace tested = ftl;
-#endif
 
 struct no_throw_call {
   constexpr int operator()(int value) const noexcept { return value; }
@@ -149,7 +142,6 @@ constexpr bool subrange_tuple_interop_works() {
    * Structured bindings use tuple_size,
    * tuple_element, and ADL get.
    */
-#ifdef FTL_REPLACE_STL
 
   auto [first, last] = subrange;
 
@@ -165,7 +157,6 @@ constexpr bool subrange_tuple_interop_works() {
     return false;
   }
 
-#endif
 
   pointer_tuple tuple_value{values, values + 4};
 

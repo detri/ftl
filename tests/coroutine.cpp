@@ -1,20 +1,10 @@
-#ifdef FTL_REPLACE_STL
 #include <coroutine>
 #include <exception>
 #include <functional>
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/coroutine>
-#include <ftl/exception>
-#include <ftl/functional>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
-#ifdef FTL_REPLACE_STL
 
 struct task {
     struct promise_type {
@@ -82,7 +72,6 @@ task make_task(int value) {
     co_return value + 1;
 }
 
-#endif
 
 struct test_promise {
     int value = 0;
@@ -99,14 +88,12 @@ static_assert(tested::is_same_v<
 static_assert(tested::is_default_constructible_v<
     tested::coroutine_handle<>>);
 
-#if FTL_REPLACE_STL
 static_assert(tested::is_default_constructible_v<
     tested::coroutine_handle<task::promise_type>>);
 
 static_assert(tested::is_convertible_v<
     tested::coroutine_handle<task::promise_type>,
     tested::coroutine_handle<>>);
-#endif
 
 static_assert(tested::is_same_v<
     tested::noop_coroutine_handle,
@@ -187,7 +174,6 @@ bool ftl_test() {
     if (!never.await_ready() || always.await_ready())
         return false;
 
-#ifdef FTL_REPLACE_STL
     auto operation = make_task(41);
 
     if (!operation.handle || operation.handle.done())
@@ -220,7 +206,6 @@ bool ftl_test() {
 
     if (reconstructed || reconstructed.address() != nullptr)
         return false;
-#endif
 
     return true;
 }

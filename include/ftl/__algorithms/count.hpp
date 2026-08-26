@@ -3,29 +3,15 @@
 #ifndef FTL_COUNT_HEADER
 #define FTL_COUNT_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <functional>
 #include <iterator>
 #include <ranges>
 #include <type_traits>
 #include <utility>
 #include <__execution/policy_access.hpp>
-#else
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#include <ftl/__execution/policy_access.hpp>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_COUNT_NAMESPACE std
-#else
-#define FTL_COUNT_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -65,7 +51,7 @@ constexpr Difference ranges_count_loop(Iterator &first, const Sentinel &last,
   Difference result = 0;
 
   for (; first != last; ++first) {
-    if (FTL_COUNT_NAMESPACE::invoke(projection, *first) == value) {
+    if (std::invoke(projection, *first) == value) {
       ++result;
     }
   }
@@ -82,9 +68,9 @@ constexpr Difference ranges_count_if_loop(Iterator &first,
   Difference result = 0;
 
   for (; first != last; ++first) {
-    if (FTL_COUNT_NAMESPACE::invoke(
+    if (std::invoke(
             predicate,
-            FTL_COUNT_NAMESPACE::invoke(projection, *first))) {
+            std::invoke(projection, *first))) {
       ++result;
     }
   }
@@ -150,7 +136,7 @@ struct count_fn {
              Projection projection = {}) const {
     using difference_type = iter_difference_t<Iterator>;
 
-    return FTL_COUNT_NAMESPACE::detail::ranges_count_loop<difference_type>(
+    return std::detail::ranges_count_loop<difference_type>(
         first, last, value, projection);
   }
 
@@ -161,7 +147,7 @@ struct count_fn {
   operator()(Range &&range, const T &value,
              Projection projection = {}) const {
     return (*this)(ranges::begin(range), ranges::end(range), value,
-                   FTL_COUNT_NAMESPACE::move(projection));
+                   std::move(projection));
   }
 };
 
@@ -175,7 +161,7 @@ struct count_if_fn {
              Projection projection = {}) const {
     using difference_type = iter_difference_t<Iterator>;
 
-    return FTL_COUNT_NAMESPACE::detail::ranges_count_if_loop<difference_type>(
+    return std::detail::ranges_count_if_loop<difference_type>(
         first, last, predicate, projection);
   }
 
@@ -187,8 +173,8 @@ struct count_if_fn {
   operator()(Range &&range, Predicate predicate,
              Projection projection = {}) const {
     return (*this)(ranges::begin(range), ranges::end(range),
-                   FTL_COUNT_NAMESPACE::move(predicate),
-                   FTL_COUNT_NAMESPACE::move(projection));
+                   std::move(predicate),
+                   std::move(projection));
   }
 };
 
@@ -197,8 +183,7 @@ inline constexpr count_if_fn count_if{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_COUNT_NAMESPACE
 
 #endif // FTL_COUNT_HEADER

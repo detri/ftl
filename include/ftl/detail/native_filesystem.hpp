@@ -3,11 +3,7 @@
 #ifndef FTL_DETAIL_NATIVE_FILESYSTEM_HEADER
 #define FTL_DETAIL_NATIVE_FILESYSTEM_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <detail/native_io.hpp>
-#else
-#include <ftl/detail/native_io.hpp>
-#endif
 
 namespace ftl::detail {
 

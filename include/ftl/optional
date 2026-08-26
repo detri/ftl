@@ -3,7 +3,6 @@
 #ifndef FTL_OPTIONAL_HEADER
 #define FTL_OPTIONAL_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <compare>
 #include <exception>
 #include <functional>
@@ -12,18 +11,8 @@
 #include <new>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/compare>
-#include <ftl/exception>
-#include <ftl/functional>
-#include <ftl/initializer_list>
-#include <ftl/memory>
-#include <ftl/new>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 struct nullopt_t {
     struct tag {};
@@ -718,7 +707,7 @@ struct hash<optional<T>> {
     }
 };
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_optional) || __cpp_lib_optional < 202110L
 #undef __cpp_lib_optional

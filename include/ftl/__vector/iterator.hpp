@@ -1,19 +1,11 @@
 #ifndef FTL_VECTOR_ITERATOR_HEADER
 #define FTL_VECTOR_ITERATOR_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <compare>
 #include <iterator>
 #include <memory>
-#define FTL_VECTOR_ITERATOR_NAMESPACE std
-#else
-#include <ftl/compare>
-#include <ftl/iterator>
-#include <ftl/memory>
-#define FTL_VECTOR_ITERATOR_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template<class Vector>
 class vector_const_iterator {
@@ -91,7 +83,7 @@ struct pointer_traits<vector_const_iterator<Vector>, void> {
   using element_type = const typename Vector::value_type;
   using difference_type = typename Vector::difference_type;
   [[nodiscard]] static constexpr element_type* to_address(const pointer& value) noexcept {
-    return FTL_VECTOR_ITERATOR_NAMESPACE::to_address(value.pointer_);
+    return std::to_address(value.pointer_);
   }
 };
 
@@ -101,10 +93,10 @@ struct pointer_traits<vector_iterator<Vector>, void> {
   using element_type = typename Vector::value_type;
   using difference_type = typename Vector::difference_type;
   [[nodiscard]] static constexpr element_type* to_address(const pointer& value) noexcept {
-    return FTL_VECTOR_ITERATOR_NAMESPACE::to_address(value.pointer_);
+    return std::to_address(value.pointer_);
   }
 };
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #endif

@@ -1,16 +1,8 @@
-#ifdef FTL_REPLACE_STL
 #include <cerrno>
 #include <clocale>
 #include <cstdio>
 #include <cwchar>
 namespace tested = std;
-#else
-#include <ftl/cerrno>
-#include <ftl/clocale>
-#include <ftl/cstdio>
-#include <ftl/cwchar>
-namespace tested = ftl;
-#endif
 
 int test_vswprintf(wchar_t* destination, tested::size_t capacity,
                    const wchar_t* format, ...)

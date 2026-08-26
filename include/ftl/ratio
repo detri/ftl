@@ -3,15 +3,10 @@
 #ifndef FTL_RATIO_HEADER
 #define FTL_RATIO_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cstdint>
 #include <type_traits>
-#else
-#include <ftl/cstdint>
-#include <ftl/type_traits>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 constexpr uintmax_t ratio_abs(intmax_t value) noexcept {
@@ -213,5 +208,5 @@ using tera = ratio<1000000000000LL, 1>;
 using peta = ratio<1000000000000000LL, 1>;
 using exa = ratio<1000000000000000000LL, 1>;
 
-FTL_END_NAMESPACE
+} // namespace std
 #endif

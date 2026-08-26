@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <cerrno>
 #include <clocale>
 #include <cuchar>
 namespace tested = std;
-#else
-#include <ftl/cerrno>
-#include <ftl/clocale>
-#include <ftl/cuchar>
-namespace tested = ftl;
-#endif
 
 bool ftl_test()
 {

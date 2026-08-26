@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <generator>
 #include <mdspan>
@@ -7,16 +6,6 @@
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/cstddef>
-#include <ftl/generator>
-#include <ftl/mdspan>
-#include <ftl/ranges>
-#include <ftl/span>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 using storage_span = tested::span<int, 6>;
 
@@ -76,16 +65,13 @@ static_assert(
 static_assert(tested::is_same_v<
               tested::ranges::range_reference_t<mutation_pipeline>, int &>);
 
-#ifdef FTL_REPLACE_STL
 
 tested::generator<int &> yield_span(tested::span<int> values) {
   co_yield tested::ranges::elements_of(values);
 }
 
-#endif
 
 bool ftl_test() {
-#ifdef FTL_REPLACE_STL
   int values[] = {1, 2, 3, 4, 5, 6};
 
   storage_span storage{values};
@@ -147,7 +133,6 @@ bool ftl_test() {
       matrix[1, 0] != 140 || matrix[1, 1] != 5 || matrix[1, 2] != 6) {
     return false;
   }
-#endif
 
   return true;
 }

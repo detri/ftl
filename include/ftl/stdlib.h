@@ -3,32 +3,25 @@
 #ifndef FTL_STDLIB_H_HEADER
 #define FTL_STDLIB_H_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cstdlib>
-#define FTL_STDLIB_NAMESPACE std
-#else
-#include <ftl/cstdlib>
-#define FTL_STDLIB_NAMESPACE ftl
-#endif
 
-using FTL_STDLIB_NAMESPACE::size_t;
+using std::size_t;
 
-using FTL_STDLIB_NAMESPACE::div_t;
-using FTL_STDLIB_NAMESPACE::ldiv_t;
-using FTL_STDLIB_NAMESPACE::lldiv_t;
+using std::div_t;
+using std::ldiv_t;
+using std::lldiv_t;
 
-using FTL_STDLIB_NAMESPACE::abs;
-using FTL_STDLIB_NAMESPACE::labs;
-using FTL_STDLIB_NAMESPACE::llabs;
+using std::abs;
+using std::labs;
+using std::llabs;
 
-using FTL_STDLIB_NAMESPACE::div;
-using FTL_STDLIB_NAMESPACE::ldiv;
-using FTL_STDLIB_NAMESPACE::lldiv;
+using std::div;
+using std::ldiv;
+using std::lldiv;
 
 #if defined(_WIN32)
-using FTL_STDLIB_NAMESPACE::aligned_alloc;
+using std::aligned_alloc;
 #endif
 
-#undef FTL_STDLIB_NAMESPACE
 
 #endif // FTL_STDLIB_H_HEADER

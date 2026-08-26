@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <concepts>
 #include <flat_map>
@@ -6,15 +5,6 @@
 #include <ranges>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/array>
-#include <ftl/concepts>
-#include <ftl/flat_map>
-#include <ftl/memory_resource>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 #if __cpp_lib_flat_map < 202207L
 #error bad flat_map feature-test macro
 #endif

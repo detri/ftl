@@ -86,18 +86,5 @@ constexpr const T* end(initializer_list<T> values) noexcept {
 #undef FTL_INITIALIZER_LIST_NO_SPECIALIZATIONS
 #endif
 
-#ifndef FTL_REPLACE_STL
-namespace ftl {
-using std::initializer_list;
-template<class T>
-constexpr const T* begin(initializer_list<T> values) noexcept {
-    return values.begin();
-}
-template<class T>
-constexpr const T* end(initializer_list<T> values) noexcept {
-    return values.end();
-}
-} // namespace ftl
-#endif
 
 #endif // FTL_INITIALIZER_LIST_HEADER

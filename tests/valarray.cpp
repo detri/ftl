@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <limits>
 #include <type_traits>
 #include <valarray>
 namespace tested = std;
-#else
-#include <ftl/limits>
-#include <ftl/type_traits>
-#include <ftl/valarray>
-namespace tested = ftl;
-#endif
 
 static_assert(tested::is_same_v<tested::valarray<int>::value_type, int>);
 static_assert(

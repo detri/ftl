@@ -11,7 +11,7 @@
 namespace {
 using size_type = decltype(sizeof(0));
 using file_type = ::ftl_file;
-using va_list_type = ftl::va_list;
+using va_list_type = std::va_list;
 
 struct output_sink {
   file_type *file{};
@@ -47,7 +47,7 @@ struct scratch_allocation {
   char *value{};
   ~scratch_allocation() {
     if (value != nullptr)
-      ftl::free(value);
+      std::free(value);
   }
 };
 
@@ -157,12 +157,12 @@ unsigned long long unsigned_argument(va_list_type &args, length_type length) {
   case length_type::l:
     return va_arg(args, unsigned long);
   case length_type::j:
-    return va_arg(args, ftl::uintmax_t);
+    return va_arg(args, std::uintmax_t);
   case length_type::z:
     return va_arg(args, size_type);
   case length_type::t:
     return static_cast<unsigned long long>(
-        va_arg(args, ftl::make_unsigned_t<decltype((char *)0 - (char *)0)>));
+        va_arg(args, std::make_unsigned_t<decltype((char *)0 - (char *)0)>));
   case length_type::hh:
     return static_cast<unsigned char>(va_arg(args, unsigned int));
   case length_type::h:
@@ -179,7 +179,7 @@ long long signed_argument(va_list_type &args, length_type length) {
   case length_type::l:
     return va_arg(args, long);
   case length_type::j:
-    return va_arg(args, ftl::intmax_t);
+    return va_arg(args, std::intmax_t);
   case length_type::z:
   case length_type::t:
     return va_arg(args, decltype((char *)0 - (char *)0));
@@ -195,9 +195,9 @@ long long signed_argument(va_list_type &args, length_type length) {
 void integer(output_sink &sink, conversion item, unsigned long long magnitude,
              bool negative, unsigned base, bool upper) {
   char digits[65];
-  auto result = ftl::to_chars(digits, digits + sizeof(digits), magnitude,
+  auto result = std::to_chars(digits, digits + sizeof(digits), magnitude,
                               static_cast<int>(base));
-  if (result.ec != ftl::errc{}) {
+  if (result.ec != std::errc{}) {
     sink.failed = true;
     return;
   }
@@ -235,16 +235,16 @@ void floating(output_sink &sink, conversion item, va_list_type &args) {
                           ? va_arg(args, long double)
                           : va_arg(args, double);
   auto format =
-      item.type == 'f' || item.type == 'F'   ? ftl::chars_format::fixed
-      : item.type == 'e' || item.type == 'E' ? ftl::chars_format::scientific
-      : item.type == 'a' || item.type == 'A' ? ftl::chars_format::hex
-                                             : ftl::chars_format::general;
+      item.type == 'f' || item.type == 'F'   ? std::chars_format::fixed
+      : item.type == 'e' || item.type == 'E' ? std::chars_format::scientific
+      : item.type == 'a' || item.type == 'A' ? std::chars_format::hex
+                                             : std::chars_format::general;
   if (item.precision < 0) {
     item.precision =
         item.type == 'a' || item.type == 'A'
             ? (item.length == length_type::big_l
-                   ? (ftl::numeric_limits<long double>::digits - 1 + 3) / 4
-                   : (ftl::numeric_limits<double>::digits - 1 + 3) / 4)
+                   ? (std::numeric_limits<long double>::digits - 1 + 3) / 4
+                   : (std::numeric_limits<double>::digits - 1 + 3) / 4)
             : 6;
   } else if ((item.type == 'g' || item.type == 'G') && item.precision == 0) {
     item.precision = 1;
@@ -260,7 +260,7 @@ void floating(output_sink &sink, conversion item, va_list_type &args) {
   char *text = local_text;
   size_type text_capacity = sizeof(local_text);
   if (required_capacity > text_capacity) {
-    storage.value = static_cast<char *>(ftl::malloc(required_capacity));
+    storage.value = static_cast<char *>(std::malloc(required_capacity));
     if (storage.value == nullptr) {
       sink.failed = true;
       return;
@@ -269,10 +269,10 @@ void floating(output_sink &sink, conversion item, va_list_type &args) {
     text_capacity = required_capacity;
   }
   auto result = item.precision >= 0
-                    ? ftl::to_chars(text, text + text_capacity, value, format,
+                    ? std::to_chars(text, text + text_capacity, value, format,
                                     item.precision)
-                    : ftl::to_chars(text, text + text_capacity, value, format);
-  if (result.ec != ftl::errc{}) {
+                    : std::to_chars(text, text + text_capacity, value, format);
+  if (result.ec != std::errc{}) {
     sink.failed = true;
     return;
   }
@@ -452,7 +452,7 @@ int format_to(output_sink &sink, const char *format, va_list_type &arguments) {
     } else if (item.type == 'p') {
       item.alternate = true;
       integer(sink, item,
-              reinterpret_cast<ftl::uintptr_t>(va_arg(arguments, void *)),
+              reinterpret_cast<std::uintptr_t>(va_arg(arguments, void *)),
               false, 16, false);
     } else if (item.type == 'n') {
       if (item.length == length_type::hh)
@@ -465,11 +465,11 @@ int format_to(output_sink &sink, const char *format, va_list_type &arguments) {
       else if (item.length == length_type::ll)
         *va_arg(arguments, long long *) = static_cast<long long>(sink.count);
       else if (item.length == length_type::j)
-        *va_arg(arguments, ftl::intmax_t *) =
-            static_cast<ftl::intmax_t>(sink.count);
+        *va_arg(arguments, std::intmax_t *) =
+            static_cast<std::intmax_t>(sink.count);
       else if (item.length == length_type::z)
-        *va_arg(arguments, ftl::make_signed_t<size_type> *) =
-            static_cast<ftl::make_signed_t<size_type>>(sink.count);
+        *va_arg(arguments, std::make_signed_t<size_type> *) =
+            static_cast<std::make_signed_t<size_type>>(sink.count);
       else if (item.length == length_type::t)
         *va_arg(arguments, decltype((char *)0 - (char *)0) *) =
             static_cast<decltype((char *)0 - (char *)0)>(sink.count);
@@ -560,7 +560,7 @@ void store_signed(va_list_type &args, length_type length, long long value) {
   else if (length == length_type::ll)
     *va_arg(args, long long *) = value;
   else if (length == length_type::j)
-    *va_arg(args, ftl::intmax_t *) = static_cast<ftl::intmax_t>(value);
+    *va_arg(args, std::intmax_t *) = static_cast<std::intmax_t>(value);
   else if (length == length_type::z || length == length_type::t)
     *va_arg(args, decltype((char *)0 - (char *)0) *) =
         static_cast<decltype((char *)0 - (char *)0)>(value);
@@ -579,12 +579,12 @@ void store_unsigned(va_list_type &args, length_type length,
   else if (length == length_type::ll)
     *va_arg(args, unsigned long long *) = value;
   else if (length == length_type::j)
-    *va_arg(args, ftl::uintmax_t *) = static_cast<ftl::uintmax_t>(value);
+    *va_arg(args, std::uintmax_t *) = static_cast<std::uintmax_t>(value);
   else if (length == length_type::z)
     *va_arg(args, size_type *) = static_cast<size_type>(value);
   else if (length == length_type::t)
-    *va_arg(args, ftl::make_unsigned_t<decltype((char *)0 - (char *)0)> *) =
-        static_cast<ftl::make_unsigned_t<decltype((char *)0 - (char *)0)>>(
+    *va_arg(args, std::make_unsigned_t<decltype((char *)0 - (char *)0)> *) =
+        static_cast<std::make_unsigned_t<decltype((char *)0 - (char *)0)>>(
             value);
   else
     *va_arg(args, unsigned int *) = static_cast<unsigned int>(value);
@@ -665,7 +665,7 @@ bool scan_integer(input_source &source, conversion item, va_list_type &args,
                             : static_cast<long long>(result));
     else if (item.type == 'p')
       *va_arg(args, void **) =
-          reinterpret_cast<void *>(static_cast<ftl::uintptr_t>(result));
+          reinterpret_cast<void *>(static_cast<std::uintptr_t>(result));
     else
       store_unsigned(args, item.length, negative ? 0ULL - result : result);
   }
@@ -761,14 +761,14 @@ bool scan_float(input_source &source, conversion item, va_list_type &args,
       adjusted[adjusted_count++] = buffer[0];
     for (int index = prefix + 2; index != count; ++index)
       adjusted[adjusted_count++] = buffer[index];
-    auto parsed = ftl::from_chars(adjusted, adjusted + adjusted_count, result,
-                                  ftl::chars_format::hex);
+    auto parsed = std::from_chars(adjusted, adjusted + adjusted_count, result,
+                                  std::chars_format::hex);
     if (parsed.ptr != adjusted + adjusted_count)
       return false;
   } else {
     const char *first = buffer[0] == '+' ? buffer + 1 : buffer;
-    auto parsed = ftl::from_chars(first, buffer + count, result,
-                                  ftl::chars_format::general);
+    auto parsed = std::from_chars(first, buffer + count, result,
+                                  std::chars_format::general);
     if (parsed.ptr != buffer + count)
       return false;
   }
@@ -977,10 +977,10 @@ int scan_from(input_source &source, const FormatCharacter *format,
 } // namespace
 
 namespace ftl_cstdio_runtime {
-int vfprintf(FILE *stream, const char *format, ftl::va_list args) {
+int vfprintf(FILE *stream, const char *format, std::va_list args) {
   output_sink sink{stream};
   sink.locked = true;
-  ftl::va_list arguments;
+  std::va_list arguments;
   va_copy(arguments, args);
   ::ftl_stdio_runtime::lock_file(stream);
   int result = format_to(sink, format, arguments);
@@ -989,59 +989,59 @@ int vfprintf(FILE *stream, const char *format, ftl::va_list args) {
   return result;
 }
 int fprintf(FILE *stream, const char *format, ...) {
-  ftl::va_list args;
+  std::va_list args;
   va_start(args, format);
   int result = vfprintf(stream, format, args);
   va_end(args);
   return result;
 }
-int vprintf(const char *format, ftl::va_list args) {
+int vprintf(const char *format, std::va_list args) {
   return vfprintf(::ftl_stdio_runtime::output_stream(), format, args);
 }
 int printf(const char *format, ...) {
-  ftl::va_list args;
+  std::va_list args;
   va_start(args, format);
   int result = vprintf(format, args);
   va_end(args);
   return result;
 }
 int vsnprintf(char *buffer, size_t size, const char *format,
-              ftl::va_list args) {
+              std::va_list args) {
   if (!buffer && size != 0)
     return -1;
   output_sink sink{nullptr, buffer, size};
-  ftl::va_list arguments;
+  std::va_list arguments;
   va_copy(arguments, args);
   int result = format_to(sink, format, arguments);
   va_end(arguments);
   return result;
 }
 int snprintf(char *buffer, size_t size, const char *format, ...) {
-  ftl::va_list args;
+  std::va_list args;
   va_start(args, format);
   int result = vsnprintf(buffer, size, format, args);
   va_end(args);
   return result;
 }
-int vsprintf(char *buffer, const char *format, ftl::va_list args) {
+int vsprintf(char *buffer, const char *format, std::va_list args) {
   output_sink sink{nullptr, buffer, static_cast<size_t>(-1)};
-  ftl::va_list arguments;
+  std::va_list arguments;
   va_copy(arguments, args);
   int result = format_to(sink, format, arguments);
   va_end(arguments);
   return result;
 }
 int sprintf(char *buffer, const char *format, ...) {
-  ftl::va_list args;
+  std::va_list args;
   va_start(args, format);
   int result = vsprintf(buffer, format, args);
   va_end(args);
   return result;
 }
-int vfscanf(FILE *stream, const char *format, ftl::va_list args) {
+int vfscanf(FILE *stream, const char *format, std::va_list args) {
   input_source source{stream};
   source.locked = true;
-  ftl::va_list arguments;
+  std::va_list arguments;
   va_copy(arguments, args);
   ::ftl_stdio_runtime::lock_file(stream);
   int result = scan_from(source, format, arguments);
@@ -1050,32 +1050,32 @@ int vfscanf(FILE *stream, const char *format, ftl::va_list args) {
   return result;
 }
 int fscanf(FILE *stream, const char *format, ...) {
-  ftl::va_list args;
+  std::va_list args;
   va_start(args, format);
   int result = vfscanf(stream, format, args);
   va_end(args);
   return result;
 }
-int vscanf(const char *format, ftl::va_list args) {
+int vscanf(const char *format, std::va_list args) {
   return vfscanf(::ftl_stdio_runtime::input_stream(), format, args);
 }
 int scanf(const char *format, ...) {
-  ftl::va_list args;
+  std::va_list args;
   va_start(args, format);
   int result = vscanf(format, args);
   va_end(args);
   return result;
 }
-int vsscanf(const char *buffer, const char *format, ftl::va_list args) {
+int vsscanf(const char *buffer, const char *format, std::va_list args) {
   input_source source{nullptr, buffer};
-  ftl::va_list arguments;
+  std::va_list arguments;
   va_copy(arguments, args);
   int result = scan_from(source, format, arguments);
   va_end(arguments);
   return result;
 }
 int sscanf(const char *buffer, const char *format, ...) {
-  ftl::va_list args;
+  std::va_list args;
   va_start(args, format);
   int result = vsscanf(buffer, format, args);
   va_end(args);
@@ -1084,14 +1084,14 @@ int sscanf(const char *buffer, const char *format, ...) {
 } // namespace ftl_cstdio_runtime
 
 namespace ftl_wstdio_runtime {
-int vfwscanf(file_type *stream, const wchar_t *format, ftl::va_list args) {
+int vfwscanf(file_type *stream, const wchar_t *format, std::va_list args) {
   if (::ftl_stdio_runtime::orient(stream, 1) < 0)
     return EOF;
   input_source source;
   source.file = stream;
   source.wide_file = true;
   source.locked = true;
-  ftl::va_list arguments;
+  std::va_list arguments;
   va_copy(arguments, args);
   ::ftl_stdio_runtime::lock_file(stream);
   int result = scan_from(source, format, arguments);
@@ -1100,10 +1100,10 @@ int vfwscanf(file_type *stream, const wchar_t *format, ftl::va_list args) {
   return result;
 }
 
-int vswscanf(const wchar_t *buffer, const wchar_t *format, ftl::va_list args) {
+int vswscanf(const wchar_t *buffer, const wchar_t *format, std::va_list args) {
   input_source source;
   source.wide_text = buffer;
-  ftl::va_list arguments;
+  std::va_list arguments;
   va_copy(arguments, args);
   int result = scan_from(source, format, arguments);
   va_end(arguments);

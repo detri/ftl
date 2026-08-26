@@ -33,11 +33,7 @@ int strcoll(const char *, const char *);
 decltype(sizeof(0)) strxfrm(char *, const char *, decltype(sizeof(0)));
 }
 
-#ifdef FTL_REPLACE_STL
 namespace std {
-#else
-namespace ftl {
-#endif
 
 #if defined(__clang__)
 

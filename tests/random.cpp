@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <random>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/random>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 static_assert(tested::uniform_random_bit_generator<tested::minstd_rand0>);
 static_assert(tested::uniform_random_bit_generator<tested::mt19937>);

@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <execution>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/execution>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 #if !defined(__cpp_lib_execution)
 #error "__cpp_lib_execution must be defined"

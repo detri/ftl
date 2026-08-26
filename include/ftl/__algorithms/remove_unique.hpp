@@ -3,7 +3,6 @@
 #ifndef FTL_REMOVE_UNIQUE_HEADER
 #define FTL_REMOVE_UNIQUE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__algorithms/result.hpp>
 #include <__execution/policy_access.hpp>
 #include <functional>
@@ -11,23 +10,9 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__algorithms/result.hpp>
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_REMOVE_UNIQUE_NAMESPACE std
-#else
-#define FTL_REMOVE_UNIQUE_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -45,7 +30,7 @@ constexpr Iterator remove_loop(Iterator first, Iterator last, const T &value) {
   for (Iterator current = first; current != last; ++current) {
     if (!(*current == value)) {
       if (result != current) {
-        *result = FTL_REMOVE_UNIQUE_NAMESPACE::move(*current);
+        *result = std::move(*current);
       }
 
       ++result;
@@ -63,7 +48,7 @@ constexpr Iterator remove_if_loop(Iterator first, Iterator last,
   for (Iterator current = first; current != last; ++current) {
     if (!predicate(*current)) {
       if (result != current) {
-        *result = FTL_REMOVE_UNIQUE_NAMESPACE::move(*current);
+        *result = std::move(*current);
       }
 
       ++result;
@@ -82,8 +67,8 @@ ranges_remove_loop(Iterator first, Sentinel last, const T &value,
   Iterator current = first;
 
   for (; current != last; ++current) {
-    if (!FTL_REMOVE_UNIQUE_NAMESPACE::invoke(
-            equal, FTL_REMOVE_UNIQUE_NAMESPACE::invoke(projection, *current),
+    if (!std::invoke(
+            equal, std::invoke(projection, *current),
             value)) {
       if (result != current) {
         *result = ranges::iter_move(current);
@@ -94,8 +79,8 @@ ranges_remove_loop(Iterator first, Sentinel last, const T &value,
   }
 
   return {
-      FTL_REMOVE_UNIQUE_NAMESPACE::move(result),
-      FTL_REMOVE_UNIQUE_NAMESPACE::move(current),
+      std::move(result),
+      std::move(current),
   };
 }
 
@@ -107,9 +92,9 @@ ranges_remove_if_loop(Iterator first, Sentinel last, Predicate &predicate,
   Iterator current = first;
 
   for (; current != last; ++current) {
-    if (!FTL_REMOVE_UNIQUE_NAMESPACE::invoke(
+    if (!std::invoke(
             predicate,
-            FTL_REMOVE_UNIQUE_NAMESPACE::invoke(projection, *current))) {
+            std::invoke(projection, *current))) {
       if (result != current) {
         *result = ranges::iter_move(current);
       }
@@ -119,8 +104,8 @@ ranges_remove_if_loop(Iterator first, Sentinel last, Predicate &predicate,
   }
 
   return {
-      FTL_REMOVE_UNIQUE_NAMESPACE::move(result),
-      FTL_REMOVE_UNIQUE_NAMESPACE::move(current),
+      std::move(result),
+      std::move(current),
   };
 }
 
@@ -154,8 +139,8 @@ constexpr void ranges_remove_copy_loop(Iterator &first, const Sentinel &last,
   ranges::equal_to equal{};
 
   for (; first != last; ++first) {
-    if (!FTL_REMOVE_UNIQUE_NAMESPACE::invoke(
-            equal, FTL_REMOVE_UNIQUE_NAMESPACE::invoke(projection, *first),
+    if (!std::invoke(
+            equal, std::invoke(projection, *first),
             value)) {
       *result = *first;
       ++result;
@@ -169,9 +154,9 @@ constexpr void ranges_remove_copy_if_loop(Iterator &first, const Sentinel &last,
                                           Output &result, Predicate &predicate,
                                           Projection &projection) {
   for (; first != last; ++first) {
-    if (!FTL_REMOVE_UNIQUE_NAMESPACE::invoke(
+    if (!std::invoke(
             predicate,
-            FTL_REMOVE_UNIQUE_NAMESPACE::invoke(projection, *first))) {
+            std::invoke(projection, *first))) {
       *result = *first;
       ++result;
     }
@@ -194,7 +179,7 @@ constexpr Iterator unique_loop(Iterator first, Iterator last,
       ++result;
 
       if (result != current) {
-        *result = FTL_REMOVE_UNIQUE_NAMESPACE::move(*current);
+        *result = std::move(*current);
       }
     }
   }
@@ -216,10 +201,10 @@ ranges_unique_loop(Iterator first, Sentinel last, Comparator &comparator,
   ++current;
 
   for (; current != last; ++current) {
-    if (!FTL_REMOVE_UNIQUE_NAMESPACE::invoke(
+    if (!std::invoke(
             comparator,
-            FTL_REMOVE_UNIQUE_NAMESPACE::invoke(projection, *result),
-            FTL_REMOVE_UNIQUE_NAMESPACE::invoke(projection, *current))) {
+            std::invoke(projection, *result),
+            std::invoke(projection, *current))) {
       ++result;
 
       if (result != current) {
@@ -231,8 +216,8 @@ ranges_unique_loop(Iterator first, Sentinel last, Comparator &comparator,
   ++result;
 
   return {
-      FTL_REMOVE_UNIQUE_NAMESPACE::move(result),
-      FTL_REMOVE_UNIQUE_NAMESPACE::move(current),
+      std::move(result),
+      std::move(current),
   };
 }
 
@@ -243,8 +228,8 @@ unique_copy_loop(Iterator first, Sentinel last, Output result,
                  Comparator &comparator, Projection &projection) {
   if (first == last) {
     return {
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(first),
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(result),
+        std::move(first),
+        std::move(result),
     };
   }
 
@@ -256,10 +241,10 @@ unique_copy_loop(Iterator first, Sentinel last, Output result,
     ++first;
 
     for (; first != last; ++first) {
-      if (!FTL_REMOVE_UNIQUE_NAMESPACE::invoke(
+      if (!std::invoke(
               comparator,
-              FTL_REMOVE_UNIQUE_NAMESPACE::invoke(projection, *previous),
-              FTL_REMOVE_UNIQUE_NAMESPACE::invoke(projection, *first))) {
+              std::invoke(projection, *previous),
+              std::invoke(projection, *first))) {
         previous = first;
         *result = *first;
         ++result;
@@ -274,10 +259,10 @@ unique_copy_loop(Iterator first, Sentinel last, Output result,
     ++first;
 
     for (; first != last; ++first) {
-      if (!FTL_REMOVE_UNIQUE_NAMESPACE::invoke(
+      if (!std::invoke(
               comparator,
-              FTL_REMOVE_UNIQUE_NAMESPACE::invoke(projection, *previous),
-              FTL_REMOVE_UNIQUE_NAMESPACE::invoke(projection, *first))) {
+              std::invoke(projection, *previous),
+              std::invoke(projection, *first))) {
         *result = *first;
         previous = result;
         ++result;
@@ -291,10 +276,10 @@ unique_copy_loop(Iterator first, Sentinel last, Output result,
     ++first;
 
     for (; first != last; ++first) {
-      if (!FTL_REMOVE_UNIQUE_NAMESPACE::invoke(
+      if (!std::invoke(
               comparator,
-              FTL_REMOVE_UNIQUE_NAMESPACE::invoke(projection, previous),
-              FTL_REMOVE_UNIQUE_NAMESPACE::invoke(projection, *first))) {
+              std::invoke(projection, previous),
+              std::invoke(projection, *first))) {
         previous = *first;
         *result = previous;
         ++result;
@@ -303,8 +288,8 @@ unique_copy_loop(Iterator first, Sentinel last, Output result,
   }
 
   return {
-      FTL_REMOVE_UNIQUE_NAMESPACE::move(first),
-      FTL_REMOVE_UNIQUE_NAMESPACE::move(result),
+      std::move(first),
+      std::move(result),
   };
 }
 
@@ -479,9 +464,9 @@ struct remove_fn {
   constexpr subrange<Iterator> operator()(Iterator first, Sentinel last,
                                           const T &value,
                                           Projection projection = {}) const {
-    return FTL_REMOVE_UNIQUE_NAMESPACE::detail::ranges_remove_loop(
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(first),
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(last), value, projection);
+    return std::detail::ranges_remove_loop(
+        std::move(first),
+        std::move(last), value, projection);
   }
 
   template <forward_range Range, class T, class Projection = identity>
@@ -492,9 +477,9 @@ struct remove_fn {
   constexpr borrowed_subrange_t<Range>
   operator()(Range &&range, const T &value, Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range), value,
-                          FTL_REMOVE_UNIQUE_NAMESPACE::move(projection));
+                          std::move(projection));
 
-    return FTL_REMOVE_UNIQUE_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -505,9 +490,9 @@ struct remove_if_fn {
   constexpr subrange<Iterator> operator()(Iterator first, Sentinel last,
                                           Predicate predicate,
                                           Projection projection = {}) const {
-    return FTL_REMOVE_UNIQUE_NAMESPACE::detail::ranges_remove_if_loop(
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(first),
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(last), predicate, projection);
+    return std::detail::ranges_remove_if_loop(
+        std::move(first),
+        std::move(last), predicate, projection);
   }
 
   template <forward_range Range, class Projection = identity,
@@ -518,10 +503,10 @@ struct remove_if_fn {
   operator()(Range &&range, Predicate predicate,
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_REMOVE_UNIQUE_NAMESPACE::move(predicate),
-                          FTL_REMOVE_UNIQUE_NAMESPACE::move(projection));
+                          std::move(predicate),
+                          std::move(projection));
 
-    return FTL_REMOVE_UNIQUE_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -534,12 +519,12 @@ struct remove_copy_fn {
   constexpr remove_copy_result<Iterator, Output>
   operator()(Iterator first, Sentinel last, Output result, const T &value,
              Projection projection = {}) const {
-    FTL_REMOVE_UNIQUE_NAMESPACE::detail::ranges_remove_copy_loop(
+    std::detail::ranges_remove_copy_loop(
         first, last, result, value, projection);
 
     return {
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(first),
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(result),
+        std::move(first),
+        std::move(result),
     };
   }
 
@@ -553,12 +538,12 @@ struct remove_copy_fn {
   operator()(Range &&range, Output result, const T &value,
              Projection projection = {}) const {
     auto converted = (*this)(ranges::begin(range), ranges::end(range),
-                             FTL_REMOVE_UNIQUE_NAMESPACE::move(result), value,
-                             FTL_REMOVE_UNIQUE_NAMESPACE::move(projection));
+                             std::move(result), value,
+                             std::move(projection));
 
     return {
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(converted.in),
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(converted.out),
+        std::move(converted.in),
+        std::move(converted.out),
     };
   }
 };
@@ -571,12 +556,12 @@ struct remove_copy_if_fn {
   constexpr remove_copy_if_result<Iterator, Output>
   operator()(Iterator first, Sentinel last, Output result, Predicate predicate,
              Projection projection = {}) const {
-    FTL_REMOVE_UNIQUE_NAMESPACE::detail::ranges_remove_copy_if_loop(
+    std::detail::ranges_remove_copy_if_loop(
         first, last, result, predicate, projection);
 
     return {
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(first),
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(result),
+        std::move(first),
+        std::move(result),
     };
   }
 
@@ -589,13 +574,13 @@ struct remove_copy_if_fn {
   operator()(Range &&range, Output result, Predicate predicate,
              Projection projection = {}) const {
     auto converted = (*this)(ranges::begin(range), ranges::end(range),
-                             FTL_REMOVE_UNIQUE_NAMESPACE::move(result),
-                             FTL_REMOVE_UNIQUE_NAMESPACE::move(predicate),
-                             FTL_REMOVE_UNIQUE_NAMESPACE::move(projection));
+                             std::move(result),
+                             std::move(predicate),
+                             std::move(projection));
 
     return {
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(converted.in),
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(converted.out),
+        std::move(converted.in),
+        std::move(converted.out),
     };
   }
 };
@@ -608,9 +593,9 @@ struct unique_fn {
   constexpr subrange<Iterator> operator()(Iterator first, Sentinel last,
                                           Comparator comparator = {},
                                           Projection projection = {}) const {
-    return FTL_REMOVE_UNIQUE_NAMESPACE::detail::ranges_unique_loop(
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(first),
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(last), comparator, projection);
+    return std::detail::ranges_unique_loop(
+        std::move(first),
+        std::move(last), comparator, projection);
   }
 
   template <
@@ -622,10 +607,10 @@ struct unique_fn {
   operator()(Range &&range, Comparator comparator = {},
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_REMOVE_UNIQUE_NAMESPACE::move(comparator),
-                          FTL_REMOVE_UNIQUE_NAMESPACE::move(projection));
+                          std::move(comparator),
+                          std::move(projection));
 
-    return FTL_REMOVE_UNIQUE_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -642,10 +627,10 @@ struct unique_copy_fn {
   constexpr unique_copy_result<Iterator, Output>
   operator()(Iterator first, Sentinel last, Output result,
              Comparator comparator = {}, Projection projection = {}) const {
-    return FTL_REMOVE_UNIQUE_NAMESPACE::detail::unique_copy_loop(
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(first),
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(last),
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(result), comparator, projection);
+    return std::detail::unique_copy_loop(
+        std::move(first),
+        std::move(last),
+        std::move(result), comparator, projection);
   }
 
   template <
@@ -662,13 +647,13 @@ struct unique_copy_fn {
   operator()(Range &&range, Output result, Comparator comparator = {},
              Projection projection = {}) const {
     auto converted = (*this)(ranges::begin(range), ranges::end(range),
-                             FTL_REMOVE_UNIQUE_NAMESPACE::move(result),
-                             FTL_REMOVE_UNIQUE_NAMESPACE::move(comparator),
-                             FTL_REMOVE_UNIQUE_NAMESPACE::move(projection));
+                             std::move(result),
+                             std::move(comparator),
+                             std::move(projection));
 
     return {
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(converted.in),
-        FTL_REMOVE_UNIQUE_NAMESPACE::move(converted.out),
+        std::move(converted.in),
+        std::move(converted.out),
     };
   }
 };
@@ -682,8 +667,7 @@ inline constexpr unique_copy_fn unique_copy{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_REMOVE_UNIQUE_NAMESPACE
 
 #endif // FTL_REMOVE_UNIQUE_HEADER

@@ -3,11 +3,7 @@
 #ifndef FTL_DETAIL_CLOCK_RUNTIME_HEADER
 #define FTL_DETAIL_CLOCK_RUNTIME_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cstdint>
-#else
-#include <ftl/cstdint>
-#endif
 
 namespace ftl_clock_runtime {
 #if defined(_WIN32)

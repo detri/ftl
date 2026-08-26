@@ -3,7 +3,6 @@
 #ifndef FTL_IOS_HEADER
 #define FTL_IOS_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <exception>
 #include <iosfwd>
@@ -12,24 +11,9 @@
 #include <system_error>
 #include <utility>
 #include <vector>
-#else
-#include <ftl/atomic>
-#include <ftl/exception>
-#include <ftl/iosfwd>
-#include <ftl/locale>
-#include <ftl/new>
-#include <ftl/system_error>
-#include <ftl/utility>
-#include <ftl/vector>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_IOS_NAMESPACE std
-#else
-#define FTL_IOS_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class State> class fpos {
 public:
@@ -242,12 +226,12 @@ protected:
   }
   void move(ios_base &&other) { move(other); }
   void swap(ios_base &other) noexcept {
-    FTL_IOS_NAMESPACE::swap(flags_, other.flags_);
-    FTL_IOS_NAMESPACE::swap(precision_, other.precision_);
-    FTL_IOS_NAMESPACE::swap(width_, other.width_);
-    FTL_IOS_NAMESPACE::swap(locale_, other.locale_);
-    FTL_IOS_NAMESPACE::swap(words_, other.words_);
-    FTL_IOS_NAMESPACE::swap(callbacks_, other.callbacks_);
+    std::swap(flags_, other.flags_);
+    std::swap(precision_, other.precision_);
+    std::swap(width_, other.width_);
+    std::swap(locale_, other.locale_);
+    std::swap(words_, other.words_);
+    std::swap(callbacks_, other.callbacks_);
   }
   void copyfmt_from(const ios_base &other) {
     call_callbacks(erase_event);
@@ -595,16 +579,11 @@ inline error_condition make_error_condition(io_errc value) noexcept {
 }
 template <> struct is_error_code_enum<io_errc> : true_type {};
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_IOS_NAMESPACE
 
 #ifndef FTL_STREAMBUF_HEADER
-#ifdef FTL_REPLACE_STL
 #include <streambuf>
-#else
-#include <ftl/streambuf>
-#endif
 #endif
 
 #if !defined(__cpp_lib_ios_noreplace) || __cpp_lib_ios_noreplace < 202207L

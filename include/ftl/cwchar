@@ -3,7 +3,6 @@
 #ifndef FTL_CWCHAR_HEADER
 #define FTL_CWCHAR_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__c_file_types.hpp>
 #include <__c_time_types.hpp>
 #include <__c_wide_types.hpp>
@@ -15,19 +14,6 @@
 #include <limits>
 #include <type_traits>
 #include <detail/locale_runtime.hpp>
-#else
-#include <ftl/__c_file_types.hpp>
-#include <ftl/__c_time_types.hpp>
-#include <ftl/__c_wide_types.hpp>
-#include <ftl/cerrno>
-#include <ftl/cstdarg>
-#include <ftl/cstdint>
-#include <ftl/cstdio>
-#include <ftl/cstring>
-#include <ftl/limits>
-#include <ftl/type_traits>
-#include <ftl/detail/locale_runtime.hpp>
-#endif
 
 #if defined(_MSC_VER)
 
@@ -66,11 +52,7 @@ int vswscanf(const wchar_t *, const wchar_t *, ftl_cwchar_native_va_list);
 
 #endif
 
-#ifdef FTL_REPLACE_STL
 namespace std {
-#else
-namespace ftl {
-#endif
 
 #ifndef NULL
 #define NULL nullptr
@@ -97,11 +79,7 @@ namespace ftl {
 #endif
 
 #ifndef WEOF
-#ifdef FTL_REPLACE_STL
 #define WEOF static_cast<std::wint_t>(-1)
-#else
-#define WEOF static_cast<ftl::wint_t>(-1)
-#endif
 #endif
 
 using size_t = decltype(sizeof(0));

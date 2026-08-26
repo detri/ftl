@@ -1,24 +1,13 @@
-#ifdef FTL_REPLACE_STL
 #include <latch>
-#else
-#include <ftl/latch>
-#endif
 
 #if __cpp_lib_latch < 201907L
 #error <latch> must advertise __cpp_lib_latch
 #endif
 
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <thread>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/atomic>
-#include <ftl/thread>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 static_assert(!tested::is_copy_constructible_v<tested::latch>);
 

@@ -3,7 +3,7 @@
 #ifndef FTL_DETAIL_WBUFFER_CONVERT_HPP
 #define FTL_DETAIL_WBUFFER_CONVERT_HPP
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class Codecvt, class Elem = wchar_t, class Tr = char_traits<Elem>>
 class wbuffer_convert : public basic_streambuf<Elem, Tr> {
@@ -184,6 +184,6 @@ private:
   size_t pending_size_{};
 };
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #endif

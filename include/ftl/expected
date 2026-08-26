@@ -3,23 +3,14 @@
 #ifndef FTL_EXPECTED_HEADER
 #define FTL_EXPECTED_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <exception>
 #include <functional>
 #include <initializer_list>
 #include <memory>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/exception>
-#include <ftl/functional>
-#include <ftl/initializer_list>
-#include <ftl/memory>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template<class E> class unexpected;
 template<class T, class E> class expected;
@@ -794,7 +785,7 @@ constexpr void swap(expected<T, E>& left, expected<T, E>& right)
     noexcept(noexcept(left.swap(right)))
     requires requires { left.swap(right); } { left.swap(right); }
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_expected) || __cpp_lib_expected < 202211L
 #undef __cpp_lib_expected

@@ -1,19 +1,8 @@
-#ifdef FTL_REPLACE_STL
 #include <clocale>
 #include <cstdio>
 #include <cwchar>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <cstdio>
-#include <ftl/clocale>
-#include <ftl/cstdio>
-#include <ftl/cwchar>
-#include <ftl/type_traits>
-namespace tested = ftl;
-static_assert(!tested::is_same_v<::FILE, tested::FILE>);
-static_assert(tested::is_same_v<decltype(stdout), ::FILE *>);
-#endif
 using print_type = int (*)(const char *, ...);
 static_assert(tested::is_same_v<
               decltype(static_cast<print_type>(&tested::printf)), print_type>);
@@ -97,13 +86,8 @@ bool ftl_test() {
   if (tested::sscanf("", "x") != EOF || tested::sscanf("", "%%") != EOF)
     return false;
 
-#ifdef FTL_REPLACE_STL
-  const char *path = "ftl-cstdio-replace.tmp";
-  const char *renamed = "ftl-cstdio-replace-renamed.tmp";
-#else
-  const char *path = "ftl-cstdio-normal.tmp";
-  const char *renamed = "ftl-cstdio-normal-renamed.tmp";
-#endif
+  const char *path = "ftl-cstdio.tmp";
+  const char *renamed = "ftl-cstdio-renamed.tmp";
   tested::FILE *text_file = tested::fopen(path, "w+");
   char user_buffer[32];
   if (!text_file ||

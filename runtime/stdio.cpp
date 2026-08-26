@@ -5,11 +5,6 @@
 #include <ftl/detail/locale_runtime.hpp>
 #include <ftl/detail/native_io.hpp>
 
-#ifdef FTL_REPLACE_STL
-#define FTL_STDIO_RUNTIME_NAMESPACE std
-#else
-#define FTL_STDIO_RUNTIME_NAMESPACE ftl
-#endif
 
 struct ftl_file
 {
@@ -34,7 +29,7 @@ struct ftl_file
     ftl_locale_runtime::native_handle wide_locale{};
     wchar_t wide_pushback{};
     unsigned wide_pushback_bytes = 0;
-    FTL_STDIO_RUNTIME_NAMESPACE::mbstate_t wide_state{};
+    std::mbstate_t wide_state{};
 };
 
 namespace
@@ -667,7 +662,7 @@ namespace ftl_stdio_runtime
             return EOF;
         };
 
-        FTL_STDIO_RUNTIME_NAMESPACE::mbstate_t next_state = stream->wide_state;
+        std::mbstate_t next_state = stream->wide_state;
 
         const auto encoded =
                 ftl_locale_runtime::encode_wide_restartable(
@@ -711,7 +706,7 @@ namespace ftl_stdio_runtime
          * Probe the external representation without changing the stream's
          * live conversion state.
          */
-        FTL_STDIO_RUNTIME_NAMESPACE::mbstate_t probe_state = stream->wide_state;
+        std::mbstate_t probe_state = stream->wide_state;
 
         const auto encoded =
                 ftl_locale_runtime::encode_wide_restartable(

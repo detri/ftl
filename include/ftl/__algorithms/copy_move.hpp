@@ -3,7 +3,6 @@
 #ifndef FTL_COPY_MOVE_HEADER
 #define FTL_COPY_MOVE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__algorithms/result.hpp>
 #include <__execution/policy_access.hpp>
 #include <functional>
@@ -11,23 +10,9 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__algorithms/result.hpp>
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_COPY_MOVE_NAMESPACE std
-#else
-#define FTL_COPY_MOVE_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -65,8 +50,8 @@ constexpr void ranges_copy_if_loop(Iterator &first, const Sentinel &last,
                                    Output &result, Predicate &predicate,
                                    Projection &projection) {
   for (; first != last; ++first) {
-    if (FTL_COPY_MOVE_NAMESPACE::invoke(
-            predicate, FTL_COPY_MOVE_NAMESPACE::invoke(projection, *first))) {
+    if (std::invoke(
+            predicate, std::invoke(projection, *first))) {
       *result = *first;
       ++result;
     }
@@ -94,7 +79,7 @@ template <class Iterator, class Sentinel, class Output>
 constexpr void move_loop(Iterator &first, const Sentinel &last,
                          Output &result) {
   for (; first != last; ++first, ++result) {
-    *result = FTL_COPY_MOVE_NAMESPACE::move(*first);
+    *result = std::move(*first);
   }
 }
 
@@ -216,7 +201,7 @@ constexpr BidirectionalIterator2 move_backward(BidirectionalIterator1 first,
   while (first != last) {
     --last;
     --result;
-    *result = FTL_COPY_MOVE_NAMESPACE::move(*last);
+    *result = std::move(*last);
   }
 
   return result;
@@ -248,11 +233,11 @@ struct copy_fn {
     requires indirectly_copyable<Iterator, Output>
   constexpr copy_result<Iterator, Output>
   operator()(Iterator first, Sentinel last, Output result) const {
-    FTL_COPY_MOVE_NAMESPACE::detail::copy_loop(first, last, result);
+    std::detail::copy_loop(first, last, result);
 
     return {
-        FTL_COPY_MOVE_NAMESPACE::move(first),
-        FTL_COPY_MOVE_NAMESPACE::move(result),
+        std::move(first),
+        std::move(result),
     };
   }
 
@@ -261,11 +246,11 @@ struct copy_fn {
   constexpr copy_result<borrowed_iterator_t<Range>, Output>
   operator()(Range &&range, Output result) const {
     auto converted = (*this)(ranges::begin(range), ranges::end(range),
-                             FTL_COPY_MOVE_NAMESPACE::move(result));
+                             std::move(result));
 
     return {
-        FTL_COPY_MOVE_NAMESPACE::move(converted.in),
-        FTL_COPY_MOVE_NAMESPACE::move(converted.out),
+        std::move(converted.in),
+        std::move(converted.out),
     };
   }
 };
@@ -276,11 +261,11 @@ struct copy_n_fn {
   constexpr copy_n_result<Iterator, Output>
   operator()(Iterator first, iter_difference_t<Iterator> count,
              Output result) const {
-    FTL_COPY_MOVE_NAMESPACE::detail::copy_n_loop(first, count, result);
+    std::detail::copy_n_loop(first, count, result);
 
     return {
-        FTL_COPY_MOVE_NAMESPACE::move(first),
-        FTL_COPY_MOVE_NAMESPACE::move(result),
+        std::move(first),
+        std::move(result),
     };
   }
 };
@@ -293,12 +278,12 @@ struct copy_if_fn {
   constexpr copy_if_result<Iterator, Output>
   operator()(Iterator first, Sentinel last, Output result, Predicate predicate,
              Projection projection = {}) const {
-    FTL_COPY_MOVE_NAMESPACE::detail::ranges_copy_if_loop(first, last, result,
+    std::detail::ranges_copy_if_loop(first, last, result,
                                                          predicate, projection);
 
     return {
-        FTL_COPY_MOVE_NAMESPACE::move(first),
-        FTL_COPY_MOVE_NAMESPACE::move(result),
+        std::move(first),
+        std::move(result),
     };
   }
 
@@ -311,13 +296,13 @@ struct copy_if_fn {
   operator()(Range &&range, Output result, Predicate predicate,
              Projection projection = {}) const {
     auto converted = (*this)(ranges::begin(range), ranges::end(range),
-                             FTL_COPY_MOVE_NAMESPACE::move(result),
-                             FTL_COPY_MOVE_NAMESPACE::move(predicate),
-                             FTL_COPY_MOVE_NAMESPACE::move(projection));
+                             std::move(result),
+                             std::move(predicate),
+                             std::move(projection));
 
     return {
-        FTL_COPY_MOVE_NAMESPACE::move(converted.in),
-        FTL_COPY_MOVE_NAMESPACE::move(converted.out),
+        std::move(converted.in),
+        std::move(converted.out),
     };
   }
 };
@@ -328,13 +313,13 @@ struct copy_backward_fn {
     requires indirectly_copyable<Iterator, Output>
   constexpr copy_backward_result<Iterator, Output>
   operator()(Iterator first, Sentinel last, Output result) const {
-    auto input_end = FTL_COPY_MOVE_NAMESPACE::detail::ranges_copy_backward_loop(
-        FTL_COPY_MOVE_NAMESPACE::move(first),
-        FTL_COPY_MOVE_NAMESPACE::move(last), result);
+    auto input_end = std::detail::ranges_copy_backward_loop(
+        std::move(first),
+        std::move(last), result);
 
     return {
-        FTL_COPY_MOVE_NAMESPACE::move(input_end),
-        FTL_COPY_MOVE_NAMESPACE::move(result),
+        std::move(input_end),
+        std::move(result),
     };
   }
 
@@ -343,11 +328,11 @@ struct copy_backward_fn {
   constexpr copy_backward_result<borrowed_iterator_t<Range>, Output>
   operator()(Range &&range, Output result) const {
     auto converted = (*this)(ranges::begin(range), ranges::end(range),
-                             FTL_COPY_MOVE_NAMESPACE::move(result));
+                             std::move(result));
 
     return {
-        FTL_COPY_MOVE_NAMESPACE::move(converted.in),
-        FTL_COPY_MOVE_NAMESPACE::move(converted.out),
+        std::move(converted.in),
+        std::move(converted.out),
     };
   }
 };
@@ -358,11 +343,11 @@ struct move_fn {
     requires indirectly_movable<Iterator, Output>
   constexpr move_result<Iterator, Output>
   operator()(Iterator first, Sentinel last, Output result) const {
-    FTL_COPY_MOVE_NAMESPACE::detail::ranges_move_loop(first, last, result);
+    std::detail::ranges_move_loop(first, last, result);
 
     return {
-        FTL_COPY_MOVE_NAMESPACE::move(first),
-        FTL_COPY_MOVE_NAMESPACE::move(result),
+        std::move(first),
+        std::move(result),
     };
   }
 
@@ -371,11 +356,11 @@ struct move_fn {
   constexpr move_result<borrowed_iterator_t<Range>, Output>
   operator()(Range &&range, Output result) const {
     auto converted = (*this)(ranges::begin(range), ranges::end(range),
-                             FTL_COPY_MOVE_NAMESPACE::move(result));
+                             std::move(result));
 
     return {
-        FTL_COPY_MOVE_NAMESPACE::move(converted.in),
-        FTL_COPY_MOVE_NAMESPACE::move(converted.out),
+        std::move(converted.in),
+        std::move(converted.out),
     };
   }
 };
@@ -386,13 +371,13 @@ struct move_backward_fn {
     requires indirectly_movable<Iterator, Output>
   constexpr move_backward_result<Iterator, Output>
   operator()(Iterator first, Sentinel last, Output result) const {
-    auto input_end = FTL_COPY_MOVE_NAMESPACE::detail::ranges_move_backward_loop(
-        FTL_COPY_MOVE_NAMESPACE::move(first),
-        FTL_COPY_MOVE_NAMESPACE::move(last), result);
+    auto input_end = std::detail::ranges_move_backward_loop(
+        std::move(first),
+        std::move(last), result);
 
     return {
-        FTL_COPY_MOVE_NAMESPACE::move(input_end),
-        FTL_COPY_MOVE_NAMESPACE::move(result),
+        std::move(input_end),
+        std::move(result),
     };
   }
 
@@ -401,11 +386,11 @@ struct move_backward_fn {
   constexpr move_backward_result<borrowed_iterator_t<Range>, Output>
   operator()(Range &&range, Output result) const {
     auto converted = (*this)(ranges::begin(range), ranges::end(range),
-                             FTL_COPY_MOVE_NAMESPACE::move(result));
+                             std::move(result));
 
     return {
-        FTL_COPY_MOVE_NAMESPACE::move(converted.in),
-        FTL_COPY_MOVE_NAMESPACE::move(converted.out),
+        std::move(converted.in),
+        std::move(converted.out),
     };
   }
 };
@@ -419,8 +404,7 @@ inline constexpr move_backward_fn move_backward{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_COPY_MOVE_NAMESPACE
 
 #endif // FTL_COPY_MOVE_HEADER

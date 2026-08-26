@@ -3,13 +3,9 @@
 #ifndef FTL_SCOPED_ALLOCATOR_HEADER
 #define FTL_SCOPED_ALLOCATOR_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <memory>
-#else
-#include <ftl/memory>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class OuterAlloc, class... InnerAllocs>
 class scoped_allocator_adaptor;
@@ -287,6 +283,6 @@ bool operator==(const scoped_allocator_adaptor<O1, Inner...> &left,
 #define __cpp_lib_allocator_traits_is_always_equal 201411L
 #endif
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #endif

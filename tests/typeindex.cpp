@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <typeindex>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/typeindex>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 static_assert(tested::is_copy_constructible_v<tested::type_index>);
 static_assert(tested::is_copy_assignable_v<tested::type_index>);

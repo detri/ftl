@@ -3,11 +3,7 @@
 #ifndef FTL_C_TIME_TYPES_HEADER
 #define FTL_C_TIME_TYPES_HEADER
 
-#ifdef FTL_REPLACE_STL
 namespace std {
-#else
-namespace ftl {
-#endif
 
 #if defined(__APPLE__)
     using clock_t = unsigned long;

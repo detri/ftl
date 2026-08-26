@@ -3,7 +3,6 @@
 #ifndef FTL_DETAIL_MUTEX_HEADER
 #define FTL_DETAIL_MUTEX_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -11,21 +10,8 @@
 #include <detail/thread.hpp>
 #include <detail/wait_notify.hpp>
 #include <limits>
-#define FTL_MUTEX_DETAIL_BEGIN_NAMESPACE namespace std::detail {
-#define FTL_MUTEX_DETAIL_END_NAMESPACE }
-#else
-#include <ftl/atomic>
-#include <ftl/chrono>
-#include <ftl/cstddef>
-#include <ftl/cstdint>
-#include <ftl/detail/thread.hpp>
-#include <ftl/detail/wait_notify.hpp>
-#include <ftl/limits>
-#define FTL_MUTEX_DETAIL_BEGIN_NAMESPACE namespace ftl::detail {
-#define FTL_MUTEX_DETAIL_END_NAMESPACE }
-#endif
 
-FTL_MUTEX_DETAIL_BEGIN_NAMESPACE
+namespace std::detail {
 
 template <class Rep, class Period>
 uint64_t mutex_timeout_nanoseconds(
@@ -301,9 +287,7 @@ private:
       uninitialized;
 };
 
-FTL_MUTEX_DETAIL_END_NAMESPACE
+}
 
-#undef FTL_MUTEX_DETAIL_BEGIN_NAMESPACE
-#undef FTL_MUTEX_DETAIL_END_NAMESPACE
 
 #endif // FTL_DETAIL_MUTEX_HEADER

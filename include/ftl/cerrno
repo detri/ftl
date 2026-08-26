@@ -3,11 +3,7 @@
 #ifndef FTL_CERRNO_HEADER
 #define FTL_CERRNO_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__system_error/errno_values.hpp>
-#else
-#include <ftl/__system_error/errno_values.hpp>
-#endif
 
 #ifndef errno
 #if defined(_WIN32)

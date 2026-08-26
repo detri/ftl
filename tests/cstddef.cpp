@@ -1,17 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <cstddef>
-#include <ftl/cstddef>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
-#ifndef FTL_REPLACE_STL
-static_assert(ftl::is_same_v<ftl::size_t, std::size_t>);
-#endif
 
 struct empty {};
 struct compressed {

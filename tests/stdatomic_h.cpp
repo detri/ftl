@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <stdatomic.h>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/stdatomic.h>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 #if __cpp_lib_stdatomic_h < 202011L
 #error <stdatomic.h> must advertise __cpp_lib_stdatomic_h

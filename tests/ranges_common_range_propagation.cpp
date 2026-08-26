@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <concepts>
 #include <cstddef>
 #include <iterator>
@@ -7,16 +6,6 @@
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/concepts>
-#include <ftl/cstddef>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/tuple>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 template <class T> class input_test_iterator {
   T *current_ = nullptr;

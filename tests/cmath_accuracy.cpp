@@ -1,13 +1,7 @@
 // Reference values adapted from Boost.Math 1.91.0 test data (BSL-1.0).
-#ifdef FTL_REPLACE_STL
 #include <cmath>
 #include <limits>
 namespace tested = std;
-#else
-#include <ftl/cmath>
-#include <ftl/limits>
-namespace tested = ftl;
-#endif
 
 template <class T>
 bool within_ulps(T actual, T expected, unsigned limit) {

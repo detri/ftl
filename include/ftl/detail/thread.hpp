@@ -3,25 +3,12 @@
 #ifndef FTL_DETAIL_THREAD_HEADER
 #define FTL_DETAIL_THREAD_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
-#else
-#include <ftl/cerrno>
-#include <ftl/cstddef>
-#include <ftl/cstdint>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_THREAD_DETAIL_BEGIN_NAMESPACE namespace std::detail {
-#define FTL_THREAD_DETAIL_END_NAMESPACE }
-#else
-#define FTL_THREAD_DETAIL_BEGIN_NAMESPACE namespace ftl::detail {
-#define FTL_THREAD_DETAIL_END_NAMESPACE }
-#endif
 
-FTL_THREAD_DETAIL_BEGIN_NAMESPACE
+namespace std::detail {
 
 struct thread_start_state {
   using run_type = void (*)(thread_start_state *) noexcept;
@@ -289,9 +276,7 @@ native_thread_hardware_concurrency() noexcept {
 
 #endif
 
-FTL_THREAD_DETAIL_END_NAMESPACE
+}
 
-#undef FTL_THREAD_DETAIL_BEGIN_NAMESPACE
-#undef FTL_THREAD_DETAIL_END_NAMESPACE
 
 #endif // FTL_DETAIL_THREAD_HEADER

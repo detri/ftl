@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <limits>
 #include <spanstream>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/limits>
-#include <ftl/spanstream>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 #if __cpp_lib_spanstream != 202106L
 #error bad spanstream feature macro
 #endif

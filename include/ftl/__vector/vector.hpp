@@ -1,7 +1,6 @@
 #ifndef FTL_VECTOR_IMPL_HEADER
 #define FTL_VECTOR_IMPL_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__vector/iterator.hpp>
 #include <algorithm>
 #include <detail/rapidhash>
@@ -11,19 +10,6 @@
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
-#define FTL_VECTOR_NAMESPACE std
-#else
-#include <ftl/__vector/iterator.hpp>
-#include <ftl/algorithm>
-#include <ftl/detail/rapidhash>
-#include <ftl/initializer_list>
-#include <ftl/limits>
-#include <ftl/ranges>
-#include <ftl/stdexcept>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#define FTL_VECTOR_NAMESPACE ftl
-#endif
 
 #if defined(_MSC_VER) && !defined(__clang__)
 extern "C" void __cdecl __fastfail(unsigned int);
@@ -33,7 +19,7 @@ extern "C" void __cdecl __fastfail(unsigned int);
 #define FTL_VECTOR_TRAP() __builtin_trap()
 #endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 [[noreturn]] inline void vector_length_failure() {
@@ -89,9 +75,9 @@ public:
   using difference_type = typename traits::difference_type;
   using iterator = vector_iterator<vector>;
   using const_iterator = vector_const_iterator<vector>;
-  using reverse_iterator = FTL_VECTOR_NAMESPACE::reverse_iterator<iterator>;
+  using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator =
-      FTL_VECTOR_NAMESPACE::reverse_iterator<const_iterator>;
+      std::reverse_iterator<const_iterator>;
 
   constexpr vector() noexcept(noexcept(Allocator())) : vector(Allocator()) {}
   constexpr explicit vector(const Allocator &allocator) noexcept
@@ -313,10 +299,10 @@ public:
       if (this == static_cast<const vector *>(&range)) {
         vector copy(range, allocator_);
         if constexpr (
-            FTL_VECTOR_NAMESPACE::is_same_v<
-                Allocator, FTL_VECTOR_NAMESPACE::allocator<T>> &&
-            FTL_VECTOR_NAMESPACE::is_trivially_copyable_v<T> &&
-            FTL_VECTOR_NAMESPACE::is_trivially_copy_constructible_v<T>) {
+            std::is_same_v<
+                Allocator, std::allocator<T>> &&
+            std::is_trivially_copyable_v<T> &&
+            std::is_trivially_copy_constructible_v<T>) {
           append_iterators(copy.begin(), copy.end());
         } else {
           reserve_for(copy.size());
@@ -326,10 +312,10 @@ public:
         return;
       }
     }
-    if constexpr (FTL_VECTOR_NAMESPACE::ranges::contiguous_range<Range> &&
-                  FTL_VECTOR_NAMESPACE::ranges::common_range<Range>) {
-      append_iterators(FTL_VECTOR_NAMESPACE::ranges::begin(range),
-                       FTL_VECTOR_NAMESPACE::ranges::end(range));
+    if constexpr (std::ranges::contiguous_range<Range> &&
+                  std::ranges::common_range<Range>) {
+      append_iterators(std::ranges::begin(range),
+                       std::ranges::end(range));
       return;
     }
     if constexpr (ranges::sized_range<Range>)
@@ -354,10 +340,10 @@ public:
       ++last_;
     } else {
       if constexpr (byte_shiftable<T>) {
-        if (!FTL_VECTOR_NAMESPACE::is_constant_evaluated()) {
-          FTL_VECTOR_NAMESPACE::memmove(
-              FTL_VECTOR_NAMESPACE::to_address(place + 1),
-              FTL_VECTOR_NAMESPACE::to_address(place),
+        if (!std::is_constant_evaluated()) {
+          std::memmove(
+              std::to_address(place + 1),
+              std::to_address(place),
               static_cast<size_type>(last_ - place) * sizeof(T));
           *place = move(value);
           ++last_;
@@ -409,11 +395,11 @@ public:
     pointer input = first_ + (last - cbegin());
     pointer result = output;
     if constexpr (byte_erasable<T>) {
-      if (!FTL_VECTOR_NAMESPACE::is_constant_evaluated()) {
+      if (!std::is_constant_evaluated()) {
         const size_type tail = static_cast<size_type>(last_ - input);
-        FTL_VECTOR_NAMESPACE::memmove(
-            FTL_VECTOR_NAMESPACE::to_address(output),
-            FTL_VECTOR_NAMESPACE::to_address(input), tail * sizeof(T));
+        std::memmove(
+            std::to_address(output),
+            std::to_address(input), tail * sizeof(T));
         output += static_cast<difference_type>(tail);
       } else {
         while (input != last_)
@@ -433,7 +419,7 @@ public:
   swap(vector &other) noexcept(traits::propagate_on_container_swap::value ||
                                traits::is_always_equal::value) {
     if constexpr (traits::propagate_on_container_swap::value)
-      FTL_VECTOR_NAMESPACE::swap(allocator_, other.allocator_);
+      std::swap(allocator_, other.allocator_);
     swap_storage(other);
   }
   constexpr void clear() noexcept {
@@ -444,25 +430,25 @@ public:
 private:
   template <class U = T>
   static constexpr bool default_byte_operations =
-      FTL_VECTOR_NAMESPACE::is_same_v<
-          Allocator, FTL_VECTOR_NAMESPACE::allocator<U>> &&
-      FTL_VECTOR_NAMESPACE::is_trivially_copyable_v<U>;
+      std::is_same_v<
+          Allocator, std::allocator<U>> &&
+      std::is_trivially_copyable_v<U>;
   template <class U = T>
   static constexpr bool byte_relocatable =
       default_byte_operations<U> &&
-      ((FTL_VECTOR_NAMESPACE::is_nothrow_move_constructible_v<U> ||
-        !FTL_VECTOR_NAMESPACE::is_copy_constructible_v<U>)
-           ? FTL_VECTOR_NAMESPACE::is_trivially_move_constructible_v<U>
-           : FTL_VECTOR_NAMESPACE::is_trivially_copy_constructible_v<U>);
+      ((std::is_nothrow_move_constructible_v<U> ||
+        !std::is_copy_constructible_v<U>)
+           ? std::is_trivially_move_constructible_v<U>
+           : std::is_trivially_copy_constructible_v<U>);
   template <class U = T>
   static constexpr bool byte_shiftable =
       default_byte_operations<U> &&
-      FTL_VECTOR_NAMESPACE::is_trivially_move_constructible_v<U> &&
-      FTL_VECTOR_NAMESPACE::is_trivially_move_assignable_v<U>;
+      std::is_trivially_move_constructible_v<U> &&
+      std::is_trivially_move_assignable_v<U>;
   template <class U = T>
   static constexpr bool byte_erasable =
       default_byte_operations<U> &&
-      FTL_VECTOR_NAMESPACE::is_trivially_move_assignable_v<U>;
+      std::is_trivially_move_assignable_v<U>;
 
   constexpr void check_add(size_type count) const {
     if (count > max_size() - size())
@@ -637,19 +623,19 @@ private:
 #endif
       if constexpr (forward_iterator<InputIterator>) {
         const size_type count = static_cast<size_type>(
-            FTL_VECTOR_NAMESPACE::distance(first, last));
+            std::distance(first, last));
         reserve_for(count);
         if constexpr (default_byte_operations<T> &&
-                      FTL_VECTOR_NAMESPACE::is_trivially_copy_constructible_v<T> &&
-                      FTL_VECTOR_NAMESPACE::contiguous_iterator<InputIterator> &&
-                      FTL_VECTOR_NAMESPACE::is_same_v<
-                          typename FTL_VECTOR_NAMESPACE::iterator_traits<
+                      std::is_trivially_copy_constructible_v<T> &&
+                      std::contiguous_iterator<InputIterator> &&
+                      std::is_same_v<
+                          typename std::iterator_traits<
                               InputIterator>::value_type,
                           T>) {
-          if (!FTL_VECTOR_NAMESPACE::is_constant_evaluated() && count != 0) {
-            FTL_VECTOR_NAMESPACE::memcpy(
-                FTL_VECTOR_NAMESPACE::to_address(last_),
-                FTL_VECTOR_NAMESPACE::to_address(first), count * sizeof(T));
+          if (!std::is_constant_evaluated() && count != 0) {
+            std::memcpy(
+                std::to_address(last_),
+                std::to_address(first), count * sizeof(T));
             last_ += static_cast<difference_type>(count);
             return;
           }
@@ -674,13 +660,13 @@ private:
       const size_type tail = static_cast<size_type>(last_ - place);
       const pointer old_last = last_;
       if constexpr (byte_shiftable<T>) {
-        if (!FTL_VECTOR_NAMESPACE::is_constant_evaluated()) {
-          FTL_VECTOR_NAMESPACE::memmove(
-              FTL_VECTOR_NAMESPACE::to_address(
+        if (!std::is_constant_evaluated()) {
+          std::memmove(
+              std::to_address(
                   place + static_cast<difference_type>(count)),
-              FTL_VECTOR_NAMESPACE::to_address(place), tail * sizeof(T));
-          FTL_VECTOR_NAMESPACE::memcpy(
-              FTL_VECTOR_NAMESPACE::to_address(place), inserted.data(),
+              std::to_address(place), tail * sizeof(T));
+          std::memcpy(
+              std::to_address(place), inserted.data(),
               count * sizeof(T));
           last_ += static_cast<difference_type>(count);
           return iterator(place);
@@ -733,12 +719,12 @@ private:
   }
   constexpr void relocate(pointer &destination, pointer first, pointer last) {
     if constexpr (byte_relocatable<T>) {
-      if (!FTL_VECTOR_NAMESPACE::is_constant_evaluated()) {
+      if (!std::is_constant_evaluated()) {
         const size_type count = static_cast<size_type>(last - first);
         if (count != 0)
-          FTL_VECTOR_NAMESPACE::memcpy(
-              FTL_VECTOR_NAMESPACE::to_address(destination),
-              FTL_VECTOR_NAMESPACE::to_address(first), count * sizeof(T));
+          std::memcpy(
+              std::to_address(destination),
+              std::to_address(first), count * sizeof(T));
         destination += static_cast<difference_type>(count);
         return;
       }
@@ -751,7 +737,7 @@ private:
   }
   template<class... Args>
   constexpr void construct_value(pointer location, Args&&... args) {
-#if defined(_MSC_VER) || !defined(FTL_REPLACE_STL)
+#if defined(_MSC_VER)
     if consteval {
       if constexpr (is_same_v<Allocator, allocator<T>> &&
                     is_trivially_default_constructible_v<T>) {
@@ -763,7 +749,7 @@ private:
     traits::construct(allocator_, to_address(location), forward<Args>(args)...);
   }
   constexpr void destroy_value(pointer location) noexcept {
-#if defined(_MSC_VER) || !defined(FTL_REPLACE_STL)
+#if defined(_MSC_VER)
     if consteval {
       if constexpr (is_same_v<Allocator, allocator<T>> &&
                     is_trivially_default_constructible_v<T>)
@@ -787,9 +773,9 @@ private:
     other.first_ = other.last_ = other.end_ = pointer{};
   }
   constexpr void swap_storage(vector &other) noexcept {
-    FTL_VECTOR_NAMESPACE::swap(first_, other.first_);
-    FTL_VECTOR_NAMESPACE::swap(last_, other.last_);
-    FTL_VECTOR_NAMESPACE::swap(end_, other.end_);
+    std::swap(first_, other.first_);
+    std::swap(last_, other.last_);
+    std::swap(end_, other.end_);
   }
 
   FTL_NO_UNIQUE_ADDRESS Allocator allocator_;
@@ -949,9 +935,9 @@ public:
   using const_iterator = bit_iterator<true>;
   using pointer = iterator;
   using const_pointer = const_iterator;
-  using reverse_iterator = FTL_VECTOR_NAMESPACE::reverse_iterator<iterator>;
+  using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator =
-      FTL_VECTOR_NAMESPACE::reverse_iterator<const_iterator>;
+      std::reverse_iterator<const_iterator>;
 
   constexpr vector() noexcept(noexcept(Allocator())) : vector(Allocator()) {}
   constexpr explicit vector(const Allocator &allocator) noexcept
@@ -1193,7 +1179,7 @@ public:
       allocator_traits_type::propagate_on_container_swap::value ||
       allocator_traits_type::is_always_equal::value) {
     storage_.swap(other.storage_);
-    FTL_VECTOR_NAMESPACE::swap(size_, other.size_);
+    std::swap(size_, other.size_);
   }
   static constexpr void swap(reference left, reference right) noexcept {
     const bool value = left;
@@ -1261,7 +1247,7 @@ template <class T, class Allocator>
 [[nodiscard]] constexpr bool operator==(const vector<T, Allocator> &left,
                                         const vector<T, Allocator> &right) {
   return left.size() == right.size() &&
-         FTL_VECTOR_NAMESPACE::equal(left.begin(), left.end(), right.begin());
+         std::equal(left.begin(), left.end(), right.begin());
 }
 template <class T, class Allocator>
 [[nodiscard]] constexpr auto operator<=>(const vector<T, Allocator> &left,
@@ -1305,6 +1291,6 @@ template <class Allocator> struct hash<vector<bool, Allocator>> {
   }
 };
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #endif

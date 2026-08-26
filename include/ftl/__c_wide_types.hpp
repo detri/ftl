@@ -3,11 +3,7 @@
 #ifndef FTL_C_WIDE_TYPES_HEADER
 #define FTL_C_WIDE_TYPES_HEADER
 
-#ifdef FTL_REPLACE_STL
 namespace std {
-#else
-namespace ftl {
-#endif
 
 /*
  * FTL owns its multibyte conversion state rather than inheriting the host

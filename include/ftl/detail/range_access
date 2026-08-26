@@ -3,13 +3,8 @@
 #ifndef FTL_DETAIL_RANGE_ACCESS_HEADER
 #define FTL_DETAIL_RANGE_ACCESS_HEADER
 
-#ifdef FTL_REPLACE_STL
-#define FTL_RANGE_ACCESS_NAMESPACE std
-#else
-#define FTL_RANGE_ACCESS_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 struct from_range_t {
   explicit from_range_t() = default;
@@ -231,7 +226,7 @@ struct cbegin_fn {
     auto current = ranges::begin(selected);
 
     return const_iterator<decltype(current)>(
-        FTL_RANGE_ACCESS_NAMESPACE::move(current));
+        std::move(current));
   }
 };
 
@@ -256,7 +251,7 @@ struct cend_fn {
     auto current = ranges::end(selected);
 
     return const_sentinel<decltype(current)>(
-        FTL_RANGE_ACCESS_NAMESPACE::move(current));
+        std::move(current));
   }
 };
 
@@ -394,7 +389,7 @@ struct crbegin_fn {
     auto current = ranges::rbegin(selected);
 
     return const_iterator<decltype(current)>(
-        FTL_RANGE_ACCESS_NAMESPACE::move(current));
+        std::move(current));
   }
 };
 
@@ -420,7 +415,7 @@ struct crend_fn {
     auto current = ranges::rend(selected);
 
     return const_sentinel<decltype(current)>(
-        FTL_RANGE_ACCESS_NAMESPACE::move(current));
+        std::move(current));
   }
 };
 
@@ -569,7 +564,7 @@ template <class T>
 concept iterator_data =
     contiguous_iterator<iterator_t<T>> &&
     requires(T &value) {
-      FTL_RANGE_ACCESS_NAMESPACE::detail::iterator_to_address(
+      std::detail::iterator_to_address(
           ranges::begin(value));
     };
 
@@ -577,7 +572,7 @@ template <class T> consteval bool data_noexcept() {
   if constexpr (member_data<T>) {
     return noexcept(declval<T &>().data());
   } else {
-    return noexcept(FTL_RANGE_ACCESS_NAMESPACE::detail::iterator_to_address(
+    return noexcept(std::detail::iterator_to_address(
         ranges::begin(declval<T &>())));
   }
 }
@@ -595,7 +590,7 @@ struct data_fn {
     if constexpr (member_data<U>) {
       return value.data();
     } else {
-      return FTL_RANGE_ACCESS_NAMESPACE::detail::iterator_to_address(
+      return std::detail::iterator_to_address(
           ranges::begin(value));
     }
   }
@@ -740,8 +735,7 @@ concept viewable_range =
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_RANGE_ACCESS_NAMESPACE
 
 #endif // FTL_DETAIL_RANGE_ACCESS_HEADER

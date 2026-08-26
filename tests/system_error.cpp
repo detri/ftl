@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <system_error>
 #include <type_traits>
 #include <sstream>
 namespace tested = std;
-#else
-#include <ftl/system_error>
-#include <ftl/sstream>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 static_assert(tested::is_error_condition_enum_v<tested::errc>);
 static_assert(!tested::is_error_code_enum_v<tested::errc>);

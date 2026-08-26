@@ -3,15 +3,7 @@
 #ifndef FTL_CSTDINT_HEADER
 #define FTL_CSTDINT_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
-#define FTL_CSTDINT_BEGIN_NAMESPACE namespace std {
-#define FTL_CSTDINT_END_NAMESPACE }
-#else
-#include <ftl/cstddef>
-#define FTL_CSTDINT_BEGIN_NAMESPACE namespace ftl {
-#define FTL_CSTDINT_END_NAMESPACE }
-#endif
 
 #if defined(_MSC_VER)
 #define FTL_INT8 signed char
@@ -42,7 +34,7 @@
 #define FTL_UINTPTR __UINTPTR_TYPE__
 #endif
 
-FTL_CSTDINT_BEGIN_NAMESPACE
+namespace std {
 
 using int8_t = FTL_INT8;
 using uint8_t = FTL_UINT8;
@@ -102,7 +94,7 @@ using intmax_t = __INTMAX_TYPE__;
 using uintmax_t = __UINTMAX_TYPE__;
 #endif
 
-FTL_CSTDINT_END_NAMESPACE
+}
 
 #ifndef INT8_MIN
 #define INT8_MIN (-127 - 1)
@@ -264,7 +256,5 @@ FTL_CSTDINT_END_NAMESPACE
 #undef FTL_UINT64
 #undef FTL_INTPTR
 #undef FTL_UINTPTR
-#undef FTL_CSTDINT_BEGIN_NAMESPACE
-#undef FTL_CSTDINT_END_NAMESPACE
 
 #endif // FTL_CSTDINT_HEADER

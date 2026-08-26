@@ -1,23 +1,12 @@
 #ifndef FTL_STACK_HEADER
 #define FTL_STACK_HEADER
-#ifdef FTL_REPLACE_STL
 #include <compare>
 #include <deque>
 #include <iterator>
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#define FTL_STACK_NAMESPACE std
-#else
-#include <ftl/compare>
-#include <ftl/deque>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#define FTL_STACK_NAMESPACE ftl
-#endif
-FTL_BEGIN_NAMESPACE
+namespace std {
 namespace detail {
 template<class A> concept stack_allocator =
   requires { typename A::value_type; } && copy_constructible<A> &&
@@ -64,7 +53,7 @@ public:
   }
   template<class... Args> decltype(auto) emplace(Args&&... args) { return c.emplace_back(forward<Args>(args)...); }
   void pop() { c.pop_back(); }
-  void swap(stack& other) noexcept(is_nothrow_swappable_v<Container>) { using FTL_STACK_NAMESPACE::swap; swap(c, other.c); }
+  void swap(stack& other) noexcept(is_nothrow_swappable_v<Container>) { using std::swap; swap(c, other.c); }
   template<class U, class C> friend bool operator==(const stack<U, C>&, const stack<U, C>&);
   template<class U, class C> friend bool operator!=(const stack<U, C>&, const stack<U, C>&);
   template<class U, class C> friend bool operator<(const stack<U, C>&, const stack<U, C>&);
@@ -89,7 +78,7 @@ template<class T, class C> bool operator<=(const stack<T, C>& x, const stack<T, 
 template<class T, class C> bool operator>=(const stack<T, C>& x, const stack<T, C>& y) { return x.c >= y.c; }
 template<class T, three_way_comparable C> compare_three_way_result_t<C> operator<=>(const stack<T, C>& x, const stack<T, C>& y) { return x.c <=> y.c; }
 template<class T, class C> void swap(stack<T, C>& x, stack<T, C>& y) noexcept(noexcept(x.swap(y))) { x.swap(y); }
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_adaptor_iterator_pair_constructor) || \
     __cpp_lib_adaptor_iterator_pair_constructor < 202106L
@@ -103,5 +92,4 @@ FTL_END_NAMESPACE
 #define __cpp_lib_containers_ranges 202202L
 #endif
 
-#undef FTL_STACK_NAMESPACE
 #endif

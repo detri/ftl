@@ -1,8 +1,8 @@
-#include <ftl/array>
-#include <ftl/functional>
+#include <array>
+#include <functional>
 
 static int allocations;
-alignas(ftl::max_align_t) static unsigned char storage[1024];
+alignas(std::max_align_t) static unsigned char storage[1024];
 
 void* operator new(decltype(sizeof(0))) {
     ++allocations;
@@ -24,11 +24,11 @@ struct callable {
 };
 
 int main() {
-    constexpr ftl::array<int, 3> values{1, 2, 3};
+    constexpr std::array<int, 3> values{1, 2, 3};
     static_assert(values.size() == 3);
-    ftl::move_only_function<int(int)> pointer = &increment;
+    std::move_only_function<int(int)> pointer = &increment;
     callable object;
-    ftl::move_only_function<int(int)> reference = ftl::ref(object);
+    std::move_only_function<int(int)> reference = std::ref(object);
     if (pointer(1) != 2 || reference(1) != 3)
         return 1;
     return allocations;

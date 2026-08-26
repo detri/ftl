@@ -3,19 +3,12 @@
 #ifndef FTL_IOSFWD_HEADER
 #define FTL_IOSFWD_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <cstdint>
 #include <cwchar>
 #include <type_traits>
-#else
-#include <ftl/cstddef>
-#include <ftl/cstdint>
-#include <ftl/cwchar>
-#include <ftl/type_traits>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 using streamoff = ptrdiff_t;
 using streamsize = ptrdiff_t;
@@ -250,6 +243,6 @@ using u8streampos = fpos<char_traits<char8_t>::state_type>;
 using u16streampos = fpos<char_traits<char16_t>::state_type>;
 using u32streampos = fpos<char_traits<char32_t>::state_type>;
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #endif // FTL_IOSFWD_HEADER

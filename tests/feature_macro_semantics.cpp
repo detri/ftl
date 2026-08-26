@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <algorithm>
 #include <atomic>
 #include <filesystem>
@@ -20,29 +19,6 @@
 #include <unordered_set>
 #include <vector>
 namespace tested = std;
-#else
-#include <ftl/algorithm>
-#include <ftl/atomic>
-#include <ftl/filesystem>
-#include <ftl/iterator>
-#include <ftl/limits>
-#include <ftl/list>
-#include <ftl/map>
-#include <ftl/memory>
-#include <ftl/new>
-#include <ftl/ostream>
-#include <ftl/queue>
-#include <ftl/set>
-#include <ftl/stack>
-#include <ftl/string>
-#include <ftl/string_view>
-#include <ftl/type_traits>
-#include <ftl/typeinfo>
-#include <ftl/unordered_map>
-#include <ftl/unordered_set>
-#include <ftl/vector>
-namespace tested = ftl;
-#endif
 
 struct projected_move_only {
   projected_move_only() = default;
@@ -433,15 +409,12 @@ bool heterogeneous_associative_operations_work() {
  *
  * The core language recognizes destroying delete specifically through
  * std::destroying_delete_t. Therefore actual delete-expression dispatch can
- * only be tested when FTL_REPLACE_STL installs the facility in namespace std.
- *
- * In normal mode, verify the FTL library surface exists.
+ * only be tested when FTL installs the facility in namespace std.
  */
 
 static_assert(tested::is_same_v<decltype(tested::destroying_delete),
                                 const tested::destroying_delete_t>);
 
-#ifdef FTL_REPLACE_STL
 
 struct destroying_delete_probe {
   inline static bool destroyed = false;
@@ -465,17 +438,12 @@ bool destroying_delete_works() {
   return destroying_delete_probe::destroyed;
 }
 
-#else
-
-bool destroying_delete_works() { return true; }
-
-#endif
 
 /*
  * __cpp_lib_constexpr_typeinfo
  *
  * This is intentionally the test expected to catch the current non-MSVC
- * replacement-mode hole until type_info::operator== is genuinely constexpr.
+ * implementation hole until type_info::operator== is genuinely constexpr.
  */
 #if defined(_CPPRTTI) || defined(__GXX_RTTI)
 

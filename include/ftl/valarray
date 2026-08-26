@@ -3,21 +3,13 @@
 #ifndef FTL_VALARRAY_HEADER
 #define FTL_VALARRAY_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cmath>
 #include <cstddef>
 #include <initializer_list>
 #include <new>
 #include <utility>
-#else
-#include <ftl/cmath>
-#include <ftl/cstddef>
-#include <ftl/initializer_list>
-#include <ftl/new>
-#include <ftl/utility>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class T> class valarray;
 class slice;
@@ -657,5 +649,5 @@ FTL_VALARRAY_MATH_BINARY(atan2)
 FTL_VALARRAY_MATH_BINARY(pow)
 #undef FTL_VALARRAY_MATH_BINARY
 
-FTL_END_NAMESPACE
+} // namespace std
 #endif

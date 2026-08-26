@@ -3,7 +3,6 @@
 #ifndef FTL_LEXICOGRAPHICAL_HEADER
 #define FTL_LEXICOGRAPHICAL_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__execution/policy_access.hpp>
 #include <compare>
 #include <functional>
@@ -11,27 +10,13 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/compare>
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_LEXICOGRAPHICAL_NAMESPACE std
-#else
-#define FTL_LEXICOGRAPHICAL_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
-using lexicographical_less = FTL_LEXICOGRAPHICAL_NAMESPACE::less<>;
+using lexicographical_less = std::less<>;
 
 template <class Iterator1, class Sentinel1, class Iterator2, class Sentinel2,
           class Comparator>
@@ -58,17 +43,17 @@ constexpr bool ranges_lexicographical_compare_loop(
     Comparator &comparator, Projection1 &projection1,
     Projection2 &projection2) {
   for (; first1 != last1 && first2 != last2; ++first1, ++first2) {
-    if (FTL_LEXICOGRAPHICAL_NAMESPACE::invoke(
+    if (std::invoke(
             comparator,
-            FTL_LEXICOGRAPHICAL_NAMESPACE::invoke(projection1, *first1),
-            FTL_LEXICOGRAPHICAL_NAMESPACE::invoke(projection2, *first2))) {
+            std::invoke(projection1, *first1),
+            std::invoke(projection2, *first2))) {
       return true;
     }
 
-    if (FTL_LEXICOGRAPHICAL_NAMESPACE::invoke(
+    if (std::invoke(
             comparator,
-            FTL_LEXICOGRAPHICAL_NAMESPACE::invoke(projection2, *first2),
-            FTL_LEXICOGRAPHICAL_NAMESPACE::invoke(projection1, *first1))) {
+            std::invoke(projection2, *first2),
+            std::invoke(projection1, *first1))) {
       return false;
     }
   }
@@ -128,10 +113,10 @@ lexicographical_compare(InputIterator1 first1, InputIterator1 last1,
   detail::lexicographical_less comparator{};
 
   return detail::lexicographical_compare_loop(
-      FTL_LEXICOGRAPHICAL_NAMESPACE::move(first1),
-      FTL_LEXICOGRAPHICAL_NAMESPACE::move(last1),
-      FTL_LEXICOGRAPHICAL_NAMESPACE::move(first2),
-      FTL_LEXICOGRAPHICAL_NAMESPACE::move(last2), comparator);
+      std::move(first1),
+      std::move(last1),
+      std::move(first2),
+      std::move(last2), comparator);
 }
 
 template <class InputIterator1, class InputIterator2, class Comparator>
@@ -140,10 +125,10 @@ lexicographical_compare(InputIterator1 first1, InputIterator1 last1,
                         InputIterator2 first2, InputIterator2 last2,
                         Comparator comparator) {
   return detail::lexicographical_compare_loop(
-      FTL_LEXICOGRAPHICAL_NAMESPACE::move(first1),
-      FTL_LEXICOGRAPHICAL_NAMESPACE::move(last1),
-      FTL_LEXICOGRAPHICAL_NAMESPACE::move(first2),
-      FTL_LEXICOGRAPHICAL_NAMESPACE::move(last2), comparator);
+      std::move(first1),
+      std::move(last1),
+      std::move(first2),
+      std::move(last2), comparator);
 }
 
 template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2>
@@ -155,10 +140,10 @@ bool lexicographical_compare(ExecutionPolicy &&, ForwardIterator1 first1,
     detail::lexicographical_less comparator{};
 
     return detail::lexicographical_compare_loop(
-        FTL_LEXICOGRAPHICAL_NAMESPACE::move(first1),
-        FTL_LEXICOGRAPHICAL_NAMESPACE::move(last1),
-        FTL_LEXICOGRAPHICAL_NAMESPACE::move(first2),
-        FTL_LEXICOGRAPHICAL_NAMESPACE::move(last2), comparator);
+        std::move(first1),
+        std::move(last1),
+        std::move(first2),
+        std::move(last2), comparator);
   }();
 }
 
@@ -170,10 +155,10 @@ bool lexicographical_compare(ExecutionPolicy &&, ForwardIterator1 first1,
                              ForwardIterator2 last2, Comparator comparator) {
   return [&]() noexcept {
     return detail::lexicographical_compare_loop(
-        FTL_LEXICOGRAPHICAL_NAMESPACE::move(first1),
-        FTL_LEXICOGRAPHICAL_NAMESPACE::move(last1),
-        FTL_LEXICOGRAPHICAL_NAMESPACE::move(first2),
-        FTL_LEXICOGRAPHICAL_NAMESPACE::move(last2), comparator);
+        std::move(first1),
+        std::move(last1),
+        std::move(first2),
+        std::move(last2), comparator);
   }();
 }
 
@@ -184,10 +169,10 @@ lexicographical_compare_three_way(InputIterator1 first1, InputIterator1 last1,
                                   Comparator comparator)
     -> decltype(comparator(*first1, *first2)) {
   return detail::lexicographical_compare_three_way_loop(
-      FTL_LEXICOGRAPHICAL_NAMESPACE::move(first1),
-      FTL_LEXICOGRAPHICAL_NAMESPACE::move(last1),
-      FTL_LEXICOGRAPHICAL_NAMESPACE::move(first2),
-      FTL_LEXICOGRAPHICAL_NAMESPACE::move(last2), comparator);
+      std::move(first1),
+      std::move(last1),
+      std::move(first2),
+      std::move(last2), comparator);
 }
 
 template <class InputIterator1, class InputIterator2>
@@ -197,10 +182,10 @@ lexicographical_compare_three_way(InputIterator1 first1, InputIterator1 last1,
   compare_three_way comparator{};
 
   return detail::lexicographical_compare_three_way_loop(
-      FTL_LEXICOGRAPHICAL_NAMESPACE::move(first1),
-      FTL_LEXICOGRAPHICAL_NAMESPACE::move(last1),
-      FTL_LEXICOGRAPHICAL_NAMESPACE::move(first2),
-      FTL_LEXICOGRAPHICAL_NAMESPACE::move(last2), comparator);
+      std::move(first1),
+      std::move(last1),
+      std::move(first2),
+      std::move(last2), comparator);
 }
 
 namespace ranges {
@@ -216,12 +201,12 @@ struct lexicographical_compare_fn {
                             Sentinel2 last2, Comparator comparator = {},
                             Projection1 projection1 = {},
                             Projection2 projection2 = {}) const {
-    return FTL_LEXICOGRAPHICAL_NAMESPACE::detail::
+    return std::detail::
         ranges_lexicographical_compare_loop(
-            FTL_LEXICOGRAPHICAL_NAMESPACE::move(first1),
-            FTL_LEXICOGRAPHICAL_NAMESPACE::move(last1),
-            FTL_LEXICOGRAPHICAL_NAMESPACE::move(first2),
-            FTL_LEXICOGRAPHICAL_NAMESPACE::move(last2), comparator, projection1,
+            std::move(first1),
+            std::move(last1),
+            std::move(first2),
+            std::move(last2), comparator, projection1,
             projection2);
   }
 
@@ -236,9 +221,9 @@ struct lexicographical_compare_fn {
              Projection1 projection1 = {}, Projection2 projection2 = {}) const {
     return (*this)(ranges::begin(range1), ranges::end(range1),
                    ranges::begin(range2), ranges::end(range2),
-                   FTL_LEXICOGRAPHICAL_NAMESPACE::move(comparator),
-                   FTL_LEXICOGRAPHICAL_NAMESPACE::move(projection1),
-                   FTL_LEXICOGRAPHICAL_NAMESPACE::move(projection2));
+                   std::move(comparator),
+                   std::move(projection1),
+                   std::move(projection2));
   }
 };
 
@@ -246,8 +231,7 @@ inline constexpr lexicographical_compare_fn lexicographical_compare{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_LEXICOGRAPHICAL_NAMESPACE
 
 #endif // FTL_LEXICOGRAPHICAL_HEADER

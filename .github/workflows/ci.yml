@@ -28,7 +28,8 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == workflow_dispatch ]] ||
              [[ "$BASE_SHA" =~ ^0+$ ]] ||
-             ! git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- include tests; then
+             ! git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
+                 CMakeLists.txt cmake include runtime tests .github/workflows/ci.yml; then
             echo "code=true" >> "$GITHUB_OUTPUT"
           else
             echo "code=false" >> "$GITHUB_OUTPUT"
@@ -136,13 +137,14 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build "${{ matrix.build_dir }}" --parallel
+        run: cmake --build "${{ matrix.build_dir }}" --parallel 22
 
       - name: Run tests
         run: >
           ctest
           --test-dir "${{ matrix.build_dir }}"
           --build-config Release
+          --parallel 22
           --output-on-failure
 
   ci:

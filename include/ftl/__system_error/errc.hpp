@@ -3,11 +3,7 @@
 #ifndef FTL_SYSTEM_ERROR_ERRC_HPP
 #define FTL_SYSTEM_ERROR_ERRC_HPP
 
-#ifdef FTL_REPLACE_STL
 #include <__system_error/errno_values.hpp>
-#else
-#include <ftl/__system_error/errno_values.hpp>
-#endif
 
 #define FTL_DETAIL_ERRC_VALUES(X)                                              \
   X(address_family_not_supported, FTL_DETAIL_ERRNO_EAFNOSUPPORT)               \
@@ -89,11 +85,7 @@
   X(not_a_stream, FTL_DETAIL_ERRNO_ENOSTR)                                     \
   X(stream_timeout, FTL_DETAIL_ERRNO_ETIME)
 
-#ifdef FTL_REPLACE_STL
 namespace std {
-#else
-namespace ftl {
-#endif
 
 enum class errc {
 #define FTL_DETAIL_ERRC_ENUM(name, value) name = value,
@@ -111,11 +103,7 @@ constexpr bool is_errc_value(int value) noexcept {
 }
 } // namespace detail
 
-#ifdef FTL_REPLACE_STL
 } // namespace std
-#else
-} // namespace ftl
-#endif
 
 #undef FTL_DETAIL_ERRC_VALUES
 

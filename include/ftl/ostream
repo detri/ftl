@@ -3,27 +3,14 @@
 #ifndef FTL_OSTREAM_HEADER
 #define FTL_OSTREAM_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <concepts>
 #include <exception>
 #include <ios>
 #include <streambuf>
 #include <type_traits>
-#else
-#include <ftl/concepts>
-#include <ftl/exception>
-#include <ftl/ios>
-#include <ftl/streambuf>
-#include <ftl/type_traits>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_OSTREAM_NAMESPACE std
-#else
-#define FTL_OSTREAM_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class Character, class Traits>
 class basic_ostream : virtual public basic_ios<Character, Traits> {
@@ -222,7 +209,7 @@ private:
     const bool rethrow = (this->exceptions() & state) != 0;
     this->__setstate_nothrow(state);
     if (rethrow)
-      FTL_OSTREAM_NAMESPACE::rethrow_exception(caught);
+      std::rethrow_exception(caught);
   }
 #endif
 
@@ -253,7 +240,7 @@ private:
       exception_ptr caught = current_exception();
       bool rethrow = (this->exceptions() & ios_base::badbit) != 0;
       this->__setstate_nothrow(ios_base::badbit);
-      if (rethrow) FTL_OSTREAM_NAMESPACE::rethrow_exception(caught);
+      if (rethrow) std::rethrow_exception(caught);
     }
 #else
     output = use_facet<facet_type>(this->getloc()).put(
@@ -401,7 +388,7 @@ Stream &&operator<<(Stream &&stream, const Value &value) {
   return static_cast<Stream &&>(stream);
 }
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_char8_t) || __cpp_lib_char8_t < 201907L
 #undef __cpp_lib_char8_t
@@ -413,6 +400,5 @@ FTL_END_NAMESPACE
 #define __cpp_lib_print 202207L
 #endif
 
-#undef FTL_OSTREAM_NAMESPACE
 
 #endif // FTL_OSTREAM_HEADER

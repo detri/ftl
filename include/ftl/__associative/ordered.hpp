@@ -1,13 +1,9 @@
 #ifndef FTL_ASSOCIATIVE_ORDERED_HPP
 #define FTL_ASSOCIATIVE_ORDERED_HPP
 
-#ifdef FTL_REPLACE_STL
 #include <__associative/tree.hpp>
-#else
-#include <ftl/__associative/tree.hpp>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 namespace detail {
 
 template <class Compare>
@@ -71,9 +67,9 @@ public:
   using iterator = typename tree_type::iterator;
   using const_iterator = typename tree_type::const_iterator;
   using reverse_iterator =
-      FTL_ASSOCIATIVE_NAMESPACE::reverse_iterator<iterator>;
+      std::reverse_iterator<iterator>;
   using const_reverse_iterator =
-      FTL_ASSOCIATIVE_NAMESPACE::reverse_iterator<const_iterator>;
+      std::reverse_iterator<const_iterator>;
   using node_type = typename tree_type::node_type;
   using insert_return_type = typename tree_type::insert_return_type;
 
@@ -391,9 +387,9 @@ public:
   using iterator = typename tree_type::const_iterator;
   using const_iterator = typename tree_type::const_iterator;
   using reverse_iterator =
-      FTL_ASSOCIATIVE_NAMESPACE::reverse_iterator<iterator>;
+      std::reverse_iterator<iterator>;
   using const_reverse_iterator =
-      FTL_ASSOCIATIVE_NAMESPACE::reverse_iterator<const_iterator>;
+      std::reverse_iterator<const_iterator>;
   using node_type = typename tree_type::node_type;
   using insert_return_type = typename tree_type::insert_return_type;
 
@@ -554,5 +550,5 @@ public:
 };
 
 } // namespace detail
-FTL_END_NAMESPACE
+} // namespace std
 #endif

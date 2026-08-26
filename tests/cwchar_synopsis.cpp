@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <cwchar>
 namespace tested = std;
-#else
-#include <ftl/cwchar>
-namespace tested = ftl;
-#endif
 
 #ifndef NULL
 #error "<cwchar> must define NULL"

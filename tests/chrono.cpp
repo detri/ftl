@@ -1,26 +1,14 @@
-#ifdef FTL_REPLACE_STL
 #include <chrono>
 #include <detail/tzdb_runtime.hpp>
 #include <format>
 #include <sstream>
 namespace tested = std;
-#else
-#include <ftl/chrono>
-#include <ftl/detail/tzdb_runtime.hpp>
-#include <ftl/format>
-#include <ftl/sstream>
-namespace tested = ftl;
-#endif
 
 struct incompatible_zone_pointer {
   incompatible_zone_pointer(int) {}
 };
 
-#ifdef FTL_REPLACE_STL
 namespace std::chrono {
-#else
-namespace ftl::chrono {
-#endif
 template <> struct zoned_traits<::incompatible_zone_pointer> {
   static int locate_zone(string_view);
 };

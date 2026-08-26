@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <algorithm>
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/algorithm>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 struct move_only {
   int value = 0;

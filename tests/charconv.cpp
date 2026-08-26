@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <charconv>
 #include <limits>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/charconv>
-#include <ftl/limits>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 #if __cpp_lib_to_chars < 201611L
 #error <charconv> must advertise primitive numeric conversions

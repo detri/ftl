@@ -5,18 +5,10 @@
 
 struct ftl_file;
 
-namespace ftl {
-using FILE = ::ftl_file;
-}
-
-#ifdef FTL_REPLACE_STL
 using FILE = ftl_file;
 namespace std {
 using FILE = ::ftl_file;
 }
 #define FTL_C_FILE_TYPE FILE
-#else
-#define FTL_C_FILE_TYPE ::ftl_file
-#endif
 
 #endif // FTL_C_FILE_TYPES_HEADER

@@ -3,29 +3,17 @@
 #ifndef FTL_BINARY_SEARCH_HEADER
 #define FTL_BINARY_SEARCH_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <functional>
 #include <iterator>
 #include <ranges>
 #include <utility>
-#else
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_BINARY_SEARCH_NAMESPACE std
-#else
-#define FTL_BINARY_SEARCH_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
-using binary_search_less = FTL_BINARY_SEARCH_NAMESPACE::less<>;
+using binary_search_less = std::less<>;
 
 template <class Iterator, class Sentinel, class T, class Comparator,
           class Projection>
@@ -40,9 +28,9 @@ constexpr Iterator lower_bound_loop(Iterator first, Sentinel last,
     Iterator middle = first;
     ranges::advance(middle, half);
 
-    if (FTL_BINARY_SEARCH_NAMESPACE::invoke(
+    if (std::invoke(
             comparator,
-            FTL_BINARY_SEARCH_NAMESPACE::invoke(projection, *middle), value)) {
+            std::invoke(projection, *middle), value)) {
       first = middle;
       ++first;
 
@@ -68,9 +56,9 @@ constexpr Iterator upper_bound_loop(Iterator first, Sentinel last,
     Iterator middle = first;
     ranges::advance(middle, half);
 
-    if (!FTL_BINARY_SEARCH_NAMESPACE::invoke(
+    if (!std::invoke(
             comparator, value,
-            FTL_BINARY_SEARCH_NAMESPACE::invoke(projection, *middle))) {
+            std::invoke(projection, *middle))) {
       first = middle;
       ++first;
 
@@ -93,8 +81,8 @@ equal_range_loop(Iterator first, Sentinel last, const T &value,
   Iterator upper = upper_bound_loop(lower, last, value, comparator, projection);
 
   return {
-      FTL_BINARY_SEARCH_NAMESPACE::move(lower),
-      FTL_BINARY_SEARCH_NAMESPACE::move(upper),
+      std::move(lower),
+      std::move(upper),
   };
 }
 
@@ -103,13 +91,13 @@ template <class Iterator, class Sentinel, class T, class Comparator,
 constexpr bool binary_search_loop(Iterator first, Sentinel last, const T &value,
                                   Comparator &comparator,
                                   Projection &projection) {
-  Iterator result = lower_bound_loop(FTL_BINARY_SEARCH_NAMESPACE::move(first),
+  Iterator result = lower_bound_loop(std::move(first),
                                      last, value, comparator, projection);
 
   return result != last &&
-         !FTL_BINARY_SEARCH_NAMESPACE::invoke(
+         !std::invoke(
              comparator, value,
-             FTL_BINARY_SEARCH_NAMESPACE::invoke(projection, *result));
+             std::invoke(projection, *result));
 }
 
 } // namespace detail
@@ -120,8 +108,8 @@ constexpr ForwardIterator lower_bound(ForwardIterator first,
   detail::binary_search_less comparator{};
   identity projection{};
 
-  return detail::lower_bound_loop(FTL_BINARY_SEARCH_NAMESPACE::move(first),
-                                  FTL_BINARY_SEARCH_NAMESPACE::move(last),
+  return detail::lower_bound_loop(std::move(first),
+                                  std::move(last),
                                   value, comparator, projection);
 }
 
@@ -131,8 +119,8 @@ constexpr ForwardIterator lower_bound(ForwardIterator first,
                                       Comparator comparator) {
   identity projection{};
 
-  return detail::lower_bound_loop(FTL_BINARY_SEARCH_NAMESPACE::move(first),
-                                  FTL_BINARY_SEARCH_NAMESPACE::move(last),
+  return detail::lower_bound_loop(std::move(first),
+                                  std::move(last),
                                   value, comparator, projection);
 }
 
@@ -142,8 +130,8 @@ constexpr ForwardIterator upper_bound(ForwardIterator first,
   detail::binary_search_less comparator{};
   identity projection{};
 
-  return detail::upper_bound_loop(FTL_BINARY_SEARCH_NAMESPACE::move(first),
-                                  FTL_BINARY_SEARCH_NAMESPACE::move(last),
+  return detail::upper_bound_loop(std::move(first),
+                                  std::move(last),
                                   value, comparator, projection);
 }
 
@@ -153,8 +141,8 @@ constexpr ForwardIterator upper_bound(ForwardIterator first,
                                       Comparator comparator) {
   identity projection{};
 
-  return detail::upper_bound_loop(FTL_BINARY_SEARCH_NAMESPACE::move(first),
-                                  FTL_BINARY_SEARCH_NAMESPACE::move(last),
+  return detail::upper_bound_loop(std::move(first),
+                                  std::move(last),
                                   value, comparator, projection);
 }
 
@@ -165,12 +153,12 @@ equal_range(ForwardIterator first, ForwardIterator last, const T &value) {
   identity projection{};
 
   auto result = detail::equal_range_loop(
-      FTL_BINARY_SEARCH_NAMESPACE::move(first),
-      FTL_BINARY_SEARCH_NAMESPACE::move(last), value, comparator, projection);
+      std::move(first),
+      std::move(last), value, comparator, projection);
 
   return {
-      FTL_BINARY_SEARCH_NAMESPACE::move(result.begin()),
-      FTL_BINARY_SEARCH_NAMESPACE::move(result.end()),
+      std::move(result.begin()),
+      std::move(result.end()),
   };
 }
 
@@ -181,12 +169,12 @@ equal_range(ForwardIterator first, ForwardIterator last, const T &value,
   identity projection{};
 
   auto result = detail::equal_range_loop(
-      FTL_BINARY_SEARCH_NAMESPACE::move(first),
-      FTL_BINARY_SEARCH_NAMESPACE::move(last), value, comparator, projection);
+      std::move(first),
+      std::move(last), value, comparator, projection);
 
   return {
-      FTL_BINARY_SEARCH_NAMESPACE::move(result.begin()),
-      FTL_BINARY_SEARCH_NAMESPACE::move(result.end()),
+      std::move(result.begin()),
+      std::move(result.end()),
   };
 }
 
@@ -196,8 +184,8 @@ constexpr bool binary_search(ForwardIterator first, ForwardIterator last,
   detail::binary_search_less comparator{};
   identity projection{};
 
-  return detail::binary_search_loop(FTL_BINARY_SEARCH_NAMESPACE::move(first),
-                                    FTL_BINARY_SEARCH_NAMESPACE::move(last),
+  return detail::binary_search_loop(std::move(first),
+                                    std::move(last),
                                     value, comparator, projection);
 }
 
@@ -206,8 +194,8 @@ constexpr bool binary_search(ForwardIterator first, ForwardIterator last,
                              const T &value, Comparator comparator) {
   identity projection{};
 
-  return detail::binary_search_loop(FTL_BINARY_SEARCH_NAMESPACE::move(first),
-                                    FTL_BINARY_SEARCH_NAMESPACE::move(last),
+  return detail::binary_search_loop(std::move(first),
+                                    std::move(last),
                                     value, comparator, projection);
 }
 
@@ -222,9 +210,9 @@ struct lower_bound_fn {
   constexpr Iterator operator()(Iterator first, Sentinel last, const T &value,
                                 Comparator comparator = {},
                                 Projection projection = {}) const {
-    return FTL_BINARY_SEARCH_NAMESPACE::detail::lower_bound_loop(
-        FTL_BINARY_SEARCH_NAMESPACE::move(first),
-        FTL_BINARY_SEARCH_NAMESPACE::move(last), value, comparator, projection);
+    return std::detail::lower_bound_loop(
+        std::move(first),
+        std::move(last), value, comparator, projection);
   }
 
   template <forward_range Range, class T, class Projection = identity,
@@ -235,10 +223,10 @@ struct lower_bound_fn {
   operator()(Range &&range, const T &value, Comparator comparator = {},
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range), value,
-                          FTL_BINARY_SEARCH_NAMESPACE::move(comparator),
-                          FTL_BINARY_SEARCH_NAMESPACE::move(projection));
+                          std::move(comparator),
+                          std::move(projection));
 
-    return FTL_BINARY_SEARCH_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -251,9 +239,9 @@ struct upper_bound_fn {
   constexpr Iterator operator()(Iterator first, Sentinel last, const T &value,
                                 Comparator comparator = {},
                                 Projection projection = {}) const {
-    return FTL_BINARY_SEARCH_NAMESPACE::detail::upper_bound_loop(
-        FTL_BINARY_SEARCH_NAMESPACE::move(first),
-        FTL_BINARY_SEARCH_NAMESPACE::move(last), value, comparator, projection);
+    return std::detail::upper_bound_loop(
+        std::move(first),
+        std::move(last), value, comparator, projection);
   }
 
   template <forward_range Range, class T, class Projection = identity,
@@ -264,10 +252,10 @@ struct upper_bound_fn {
   operator()(Range &&range, const T &value, Comparator comparator = {},
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range), value,
-                          FTL_BINARY_SEARCH_NAMESPACE::move(comparator),
-                          FTL_BINARY_SEARCH_NAMESPACE::move(projection));
+                          std::move(comparator),
+                          std::move(projection));
 
-    return FTL_BINARY_SEARCH_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -280,9 +268,9 @@ struct equal_range_fn {
   constexpr subrange<Iterator>
   operator()(Iterator first, Sentinel last, const T &value,
              Comparator comparator = {}, Projection projection = {}) const {
-    return FTL_BINARY_SEARCH_NAMESPACE::detail::equal_range_loop(
-        FTL_BINARY_SEARCH_NAMESPACE::move(first),
-        FTL_BINARY_SEARCH_NAMESPACE::move(last), value, comparator, projection);
+    return std::detail::equal_range_loop(
+        std::move(first),
+        std::move(last), value, comparator, projection);
   }
 
   template <forward_range Range, class T, class Projection = identity,
@@ -293,10 +281,10 @@ struct equal_range_fn {
   operator()(Range &&range, const T &value, Comparator comparator = {},
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range), value,
-                          FTL_BINARY_SEARCH_NAMESPACE::move(comparator),
-                          FTL_BINARY_SEARCH_NAMESPACE::move(projection));
+                          std::move(comparator),
+                          std::move(projection));
 
-    return FTL_BINARY_SEARCH_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -309,9 +297,9 @@ struct binary_search_fn {
   constexpr bool operator()(Iterator first, Sentinel last, const T &value,
                             Comparator comparator = {},
                             Projection projection = {}) const {
-    return FTL_BINARY_SEARCH_NAMESPACE::detail::binary_search_loop(
-        FTL_BINARY_SEARCH_NAMESPACE::move(first),
-        FTL_BINARY_SEARCH_NAMESPACE::move(last), value, comparator, projection);
+    return std::detail::binary_search_loop(
+        std::move(first),
+        std::move(last), value, comparator, projection);
   }
 
   template <forward_range Range, class T, class Projection = identity,
@@ -322,8 +310,8 @@ struct binary_search_fn {
                             Comparator comparator = {},
                             Projection projection = {}) const {
     return (*this)(ranges::begin(range), ranges::end(range), value,
-                   FTL_BINARY_SEARCH_NAMESPACE::move(comparator),
-                   FTL_BINARY_SEARCH_NAMESPACE::move(projection));
+                   std::move(comparator),
+                   std::move(projection));
   }
 };
 
@@ -334,8 +322,7 @@ inline constexpr binary_search_fn binary_search{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_BINARY_SEARCH_NAMESPACE
 
 #endif // FTL_BINARY_SEARCH_HEADER

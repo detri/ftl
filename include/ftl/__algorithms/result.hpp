@@ -3,23 +3,12 @@
 #ifndef FTL_ALGORITHMS_RESULT_HEADER
 #define FTL_ALGORITHMS_RESULT_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <concepts>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/concepts>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_ALGORITHMS_RESULT_NAMESPACE std
-#else
-#define FTL_ALGORITHMS_RESULT_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace ranges {
 template <class Input, class Func> struct in_fun_result {
@@ -37,7 +26,7 @@ template <class Input, class Func> struct in_fun_result {
     requires convertible_to<Input, InputOther> &&
              convertible_to<Func, FuncOther>
   constexpr operator in_fun_result<InputOther, FuncOther>() && {
-    return {FTL_ALGORITHMS_RESULT_NAMESPACE::move(in), FTL_ALGORITHMS_RESULT_NAMESPACE::move(fun)};
+    return {std::move(in), std::move(fun)};
   }
 };
 
@@ -56,7 +45,7 @@ template <class Input1, class Input2> struct in_in_result {
     requires convertible_to<Input1, Input1Other> &&
              convertible_to<Input2, Input2Other>
   constexpr operator in_in_result<Input1Other, Input2Other>() && {
-    return {FTL_ALGORITHMS_RESULT_NAMESPACE::move(in1), FTL_ALGORITHMS_RESULT_NAMESPACE::move(in2)};
+    return {std::move(in1), std::move(in2)};
   }
 };
 
@@ -75,7 +64,7 @@ template <class Input, class Output> struct in_out_result {
     requires convertible_to<Input, InputOther> &&
              convertible_to<Output, OutputOther>
   constexpr operator in_out_result<InputOther, OutputOther>() && {
-    return {FTL_ALGORITHMS_RESULT_NAMESPACE::move(in), FTL_ALGORITHMS_RESULT_NAMESPACE::move(out)};
+    return {std::move(in), std::move(out)};
   }
 };
 
@@ -99,7 +88,7 @@ template <class Input1, class Input2, class Output> struct in_in_out_result {
              convertible_to<Output, OutputOther>
   constexpr
   operator in_in_out_result<Input1Other, Input2Other, OutputOther>() && {
-    return {FTL_ALGORITHMS_RESULT_NAMESPACE::move(in1), FTL_ALGORITHMS_RESULT_NAMESPACE::move(in2), FTL_ALGORITHMS_RESULT_NAMESPACE::move(out)};
+    return {std::move(in1), std::move(in2), std::move(out)};
   }
 };
 
@@ -123,7 +112,7 @@ template <class Input, class Output1, class Output2> struct in_out_out_result {
              convertible_to<Output2, Output2Other>
   constexpr
   operator in_out_out_result<InputOther, Output1Other, Output2Other>() && {
-    return {FTL_ALGORITHMS_RESULT_NAMESPACE::move(in), FTL_ALGORITHMS_RESULT_NAMESPACE::move(out1), FTL_ALGORITHMS_RESULT_NAMESPACE::move(out2)};
+    return {std::move(in), std::move(out1), std::move(out2)};
   }
 };
 
@@ -140,7 +129,7 @@ template <class T> struct min_max_result {
   template <class Other>
     requires convertible_to<T, Other>
   constexpr operator min_max_result<Other>() && {
-    return {FTL_ALGORITHMS_RESULT_NAMESPACE::move(min), FTL_ALGORITHMS_RESULT_NAMESPACE::move(max)};
+    return {std::move(min), std::move(max)};
   }
 };
 
@@ -159,7 +148,7 @@ template <class T> struct in_found_result {
   template <class Other>
     requires convertible_to<T, Other>
   constexpr operator in_found_result<Other>() && {
-    return {FTL_ALGORITHMS_RESULT_NAMESPACE::move(in), found};
+    return {std::move(in), found};
   }
 };
 
@@ -176,7 +165,7 @@ template <class Input, class T> struct in_value_result {
   template <class InputOther, class Other>
     requires convertible_to<Input, InputOther> && convertible_to<T, Other>
   constexpr operator in_value_result<InputOther, Other>() && {
-    return {FTL_ALGORITHMS_RESULT_NAMESPACE::move(in), FTL_ALGORITHMS_RESULT_NAMESPACE::move(value)};
+    return {std::move(in), std::move(value)};
   }
 };
 
@@ -193,14 +182,13 @@ template <class Output, class T> struct out_value_result {
   template <class OutputOther, class Other>
     requires convertible_to<Output, OutputOther> && convertible_to<T, Other>
   constexpr operator out_value_result<OutputOther, Other>() && {
-    return {FTL_ALGORITHMS_RESULT_NAMESPACE::move(out), FTL_ALGORITHMS_RESULT_NAMESPACE::move(value)};
+    return {std::move(out), std::move(value)};
   }
 };
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_ALGORITHMS_RESULT_NAMESPACE
 
 #endif // FTL_ALGORITHMS_RESULT_HEADER

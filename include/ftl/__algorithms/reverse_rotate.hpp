@@ -3,29 +3,15 @@
 #ifndef FTL_REVERSE_ROTATE_HEADER
 #define FTL_REVERSE_ROTATE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__algorithms/result.hpp>
 #include <__execution/policy_access.hpp>
 #include <iterator>
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__algorithms/result.hpp>
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_REVERSE_ROTATE_NAMESPACE std
-#else
-#define FTL_REVERSE_ROTATE_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -52,7 +38,7 @@ constexpr Iterator ranges_reverse_loop(Iterator first, Sentinel last) {
   Iterator end = first;
   ranges::advance(end, last);
 
-  reverse_loop(FTL_REVERSE_ROTATE_NAMESPACE::move(first), end);
+  reverse_loop(std::move(first), end);
 
   return end;
 }
@@ -127,12 +113,12 @@ ranges_rotate_loop(Iterator first, Iterator middle, Sentinel last) {
   ranges::advance(end, last);
 
   Iterator result =
-      rotate_loop(FTL_REVERSE_ROTATE_NAMESPACE::move(first),
-                  FTL_REVERSE_ROTATE_NAMESPACE::move(middle), end);
+      rotate_loop(std::move(first),
+                  std::move(middle), end);
 
   return {
-      FTL_REVERSE_ROTATE_NAMESPACE::move(result),
-      FTL_REVERSE_ROTATE_NAMESPACE::move(end),
+      std::move(result),
+      std::move(end),
   };
 }
 
@@ -157,8 +143,8 @@ constexpr Iterator rotate_copy_loop(Iterator first, Iterator middle,
 template <class BidirectionalIterator>
 constexpr void reverse(BidirectionalIterator first,
                        BidirectionalIterator last) {
-  detail::reverse_loop(FTL_REVERSE_ROTATE_NAMESPACE::move(first),
-                       FTL_REVERSE_ROTATE_NAMESPACE::move(last));
+  detail::reverse_loop(std::move(first),
+                       std::move(last));
 }
 
 template <class ExecutionPolicy, class BidirectionalIterator>
@@ -166,8 +152,8 @@ template <class ExecutionPolicy, class BidirectionalIterator>
 void reverse(ExecutionPolicy &&, BidirectionalIterator first,
              BidirectionalIterator last) {
   [&]() noexcept {
-    detail::reverse_loop(FTL_REVERSE_ROTATE_NAMESPACE::move(first),
-                         FTL_REVERSE_ROTATE_NAMESPACE::move(last));
+    detail::reverse_loop(std::move(first),
+                         std::move(last));
   }();
 }
 
@@ -175,8 +161,8 @@ template <class BidirectionalIterator, class OutputIterator>
 constexpr OutputIterator reverse_copy(BidirectionalIterator first,
                                       BidirectionalIterator last,
                                       OutputIterator result) {
-  detail::reverse_copy_loop(FTL_REVERSE_ROTATE_NAMESPACE::move(first),
-                            FTL_REVERSE_ROTATE_NAMESPACE::move(last), result);
+  detail::reverse_copy_loop(std::move(first),
+                            std::move(last), result);
 
   return result;
 }
@@ -188,8 +174,8 @@ ForwardIterator reverse_copy(ExecutionPolicy &&, BidirectionalIterator first,
                              BidirectionalIterator last,
                              ForwardIterator result) {
   return [&]() noexcept {
-    detail::reverse_copy_loop(FTL_REVERSE_ROTATE_NAMESPACE::move(first),
-                              FTL_REVERSE_ROTATE_NAMESPACE::move(last), result);
+    detail::reverse_copy_loop(std::move(first),
+                              std::move(last), result);
 
     return result;
   }();
@@ -198,9 +184,9 @@ ForwardIterator reverse_copy(ExecutionPolicy &&, BidirectionalIterator first,
 template <class ForwardIterator>
 constexpr ForwardIterator rotate(ForwardIterator first, ForwardIterator middle,
                                  ForwardIterator last) {
-  return detail::rotate_loop(FTL_REVERSE_ROTATE_NAMESPACE::move(first),
-                             FTL_REVERSE_ROTATE_NAMESPACE::move(middle),
-                             FTL_REVERSE_ROTATE_NAMESPACE::move(last));
+  return detail::rotate_loop(std::move(first),
+                             std::move(middle),
+                             std::move(last));
 }
 
 template <class ExecutionPolicy, class ForwardIterator>
@@ -208,9 +194,9 @@ template <class ExecutionPolicy, class ForwardIterator>
 ForwardIterator rotate(ExecutionPolicy &&, ForwardIterator first,
                        ForwardIterator middle, ForwardIterator last) {
   return [&]() noexcept {
-    return detail::rotate_loop(FTL_REVERSE_ROTATE_NAMESPACE::move(first),
-                               FTL_REVERSE_ROTATE_NAMESPACE::move(middle),
-                               FTL_REVERSE_ROTATE_NAMESPACE::move(last));
+    return detail::rotate_loop(std::move(first),
+                               std::move(middle),
+                               std::move(last));
   }();
 }
 
@@ -218,9 +204,9 @@ template <class ForwardIterator, class OutputIterator>
 constexpr OutputIterator
 rotate_copy(ForwardIterator first, ForwardIterator middle, ForwardIterator last,
             OutputIterator result) {
-  detail::rotate_copy_loop(FTL_REVERSE_ROTATE_NAMESPACE::move(first),
-                           FTL_REVERSE_ROTATE_NAMESPACE::move(middle),
-                           FTL_REVERSE_ROTATE_NAMESPACE::move(last), result);
+  detail::rotate_copy_loop(std::move(first),
+                           std::move(middle),
+                           std::move(last), result);
 
   return result;
 }
@@ -231,9 +217,9 @@ ForwardIterator2 rotate_copy(ExecutionPolicy &&, ForwardIterator1 first,
                              ForwardIterator1 middle, ForwardIterator1 last,
                              ForwardIterator2 result) {
   return [&]() noexcept {
-    detail::rotate_copy_loop(FTL_REVERSE_ROTATE_NAMESPACE::move(first),
-                             FTL_REVERSE_ROTATE_NAMESPACE::move(middle),
-                             FTL_REVERSE_ROTATE_NAMESPACE::move(last), result);
+    detail::rotate_copy_loop(std::move(first),
+                             std::move(middle),
+                             std::move(last), result);
 
     return result;
   }();
@@ -251,9 +237,9 @@ struct reverse_fn {
   template <bidirectional_iterator Iterator, sentinel_for<Iterator> Sentinel>
     requires permutable<Iterator>
   constexpr Iterator operator()(Iterator first, Sentinel last) const {
-    return FTL_REVERSE_ROTATE_NAMESPACE::detail::ranges_reverse_loop(
-        FTL_REVERSE_ROTATE_NAMESPACE::move(first),
-        FTL_REVERSE_ROTATE_NAMESPACE::move(last));
+    return std::detail::ranges_reverse_loop(
+        std::move(first),
+        std::move(last));
   }
 
   template <bidirectional_range Range>
@@ -261,7 +247,7 @@ struct reverse_fn {
   constexpr borrowed_iterator_t<Range> operator()(Range &&range) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range));
 
-    return FTL_REVERSE_ROTATE_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -272,13 +258,13 @@ struct reverse_copy_fn {
   constexpr reverse_copy_result<Iterator, Output>
   operator()(Iterator first, Sentinel last, Output result) const {
     Iterator input_end =
-        FTL_REVERSE_ROTATE_NAMESPACE::detail::reverse_copy_loop(
-            FTL_REVERSE_ROTATE_NAMESPACE::move(first),
-            FTL_REVERSE_ROTATE_NAMESPACE::move(last), result);
+        std::detail::reverse_copy_loop(
+            std::move(first),
+            std::move(last), result);
 
     return {
-        FTL_REVERSE_ROTATE_NAMESPACE::move(input_end),
-        FTL_REVERSE_ROTATE_NAMESPACE::move(result),
+        std::move(input_end),
+        std::move(result),
     };
   }
 
@@ -287,11 +273,11 @@ struct reverse_copy_fn {
   constexpr reverse_copy_result<borrowed_iterator_t<Range>, Output>
   operator()(Range &&range, Output result) const {
     auto converted = (*this)(ranges::begin(range), ranges::end(range),
-                             FTL_REVERSE_ROTATE_NAMESPACE::move(result));
+                             std::move(result));
 
     return {
-        FTL_REVERSE_ROTATE_NAMESPACE::move(converted.in),
-        FTL_REVERSE_ROTATE_NAMESPACE::move(converted.out),
+        std::move(converted.in),
+        std::move(converted.out),
     };
   }
 };
@@ -300,10 +286,10 @@ struct rotate_fn {
   template <permutable Iterator, sentinel_for<Iterator> Sentinel>
   constexpr subrange<Iterator> operator()(Iterator first, Iterator middle,
                                           Sentinel last) const {
-    return FTL_REVERSE_ROTATE_NAMESPACE::detail::ranges_rotate_loop(
-        FTL_REVERSE_ROTATE_NAMESPACE::move(first),
-        FTL_REVERSE_ROTATE_NAMESPACE::move(middle),
-        FTL_REVERSE_ROTATE_NAMESPACE::move(last));
+    return std::detail::ranges_rotate_loop(
+        std::move(first),
+        std::move(middle),
+        std::move(last));
   }
 
   template <forward_range Range>
@@ -312,9 +298,9 @@ struct rotate_fn {
   operator()(Range &&range, iterator_t<Range> middle) const {
     auto result =
         (*this)(ranges::begin(range),
-                FTL_REVERSE_ROTATE_NAMESPACE::move(middle), ranges::end(range));
+                std::move(middle), ranges::end(range));
 
-    return FTL_REVERSE_ROTATE_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -325,14 +311,14 @@ struct rotate_copy_fn {
   constexpr rotate_copy_result<Iterator, Output>
   operator()(Iterator first, Iterator middle, Sentinel last,
              Output result) const {
-    Iterator input_end = FTL_REVERSE_ROTATE_NAMESPACE::detail::rotate_copy_loop(
-        FTL_REVERSE_ROTATE_NAMESPACE::move(first),
-        FTL_REVERSE_ROTATE_NAMESPACE::move(middle),
-        FTL_REVERSE_ROTATE_NAMESPACE::move(last), result);
+    Iterator input_end = std::detail::rotate_copy_loop(
+        std::move(first),
+        std::move(middle),
+        std::move(last), result);
 
     return {
-        FTL_REVERSE_ROTATE_NAMESPACE::move(input_end),
-        FTL_REVERSE_ROTATE_NAMESPACE::move(result),
+        std::move(input_end),
+        std::move(result),
     };
   }
 
@@ -341,12 +327,12 @@ struct rotate_copy_fn {
   constexpr rotate_copy_result<borrowed_iterator_t<Range>, Output>
   operator()(Range &&range, iterator_t<Range> middle, Output result) const {
     auto converted = (*this)(
-        ranges::begin(range), FTL_REVERSE_ROTATE_NAMESPACE::move(middle),
-        ranges::end(range), FTL_REVERSE_ROTATE_NAMESPACE::move(result));
+        ranges::begin(range), std::move(middle),
+        ranges::end(range), std::move(result));
 
     return {
-        FTL_REVERSE_ROTATE_NAMESPACE::move(converted.in),
-        FTL_REVERSE_ROTATE_NAMESPACE::move(converted.out),
+        std::move(converted.in),
+        std::move(converted.out),
     };
   }
 };
@@ -358,8 +344,7 @@ inline constexpr rotate_copy_fn rotate_copy{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_REVERSE_ROTATE_NAMESPACE
 
 #endif // FTL_REVERSE_ROTATE_HEADER

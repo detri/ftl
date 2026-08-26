@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <ranges>
 #include <tuple>
 namespace tested = std;
-#else
-#include <ftl/ranges>
-#include <ftl/tuple>
-namespace tested = ftl;
-#endif
 
 constexpr bool cartesian_product_works() {
     int numbers[] = {1, 2};

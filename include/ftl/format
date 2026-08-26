@@ -3,7 +3,6 @@
 #ifndef FTL_FORMAT_HEADER
 #define FTL_FORMAT_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <charconv>
 #include <chrono>
@@ -24,36 +23,10 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
-#else
-#include <ftl/array>
-#include <ftl/charconv>
-#include <ftl/chrono>
-#include <ftl/concepts>
-#include <ftl/cstddef>
-#include <ftl/cstdint>
-#include <ftl/detail/unicode_format>
-#include <ftl/iterator>
-#include <ftl/limits>
-#include <ftl/locale>
-#include <ftl/memory>
-#include <ftl/ranges>
-#include <ftl/sstream>
-#include <ftl/stdexcept>
-#include <ftl/string>
-#include <ftl/string_view>
-#include <ftl/tuple>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#include <ftl/variant>
-#endif
 
-#ifdef FTL_REPLACE_STL
 #define FTL_FORMAT_NS std
-#else
-#define FTL_FORMAT_NS ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class T, class Container> class queue;
 template <class T, class Container, class Compare> class priority_queue;
@@ -6120,7 +6093,7 @@ struct formatter<chrono::file_time<Duration>, charT>
     : detail::chrono_time_point_formatter<detail::chrono_clock_kind::file,
                                           Duration, charT> {};
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_format) || __cpp_lib_format < 202207L
 #undef __cpp_lib_format

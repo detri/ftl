@@ -3,15 +3,10 @@
 #ifndef FTL_BIT_HEADER
 #define FTL_BIT_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <limits>
 #include <type_traits>
-#else
-#include <ftl/limits>
-#include <ftl/type_traits>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 enum class endian {
 #if defined(_WIN32) || defined(__LITTLE_ENDIAN__) || \
@@ -174,6 +169,6 @@ constexpr T byteswap(T value) noexcept {
 #define __cpp_lib_byteswap 202110L
 #endif
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #endif // FTL_BIT_HEADER

@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <stop_token>
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/stop_token>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 struct increment_callback {
   int *value;

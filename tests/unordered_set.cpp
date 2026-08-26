@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <concepts>
 #include <memory_resource>
@@ -6,15 +5,6 @@
 #include <type_traits>
 #include <unordered_set>
 namespace tested = std;
-#else
-#include <ftl/array>
-#include <ftl/concepts>
-#include <ftl/memory_resource>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/unordered_set>
-namespace tested = ftl;
-#endif
 struct set_hash_probe {};
 struct set_transparent_hash {
   using is_transparent = void;

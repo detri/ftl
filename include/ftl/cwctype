@@ -3,11 +3,7 @@
 #ifndef FTL_CWCTYPE_HEADER
 #define FTL_CWCTYPE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__c_wide_types.hpp>
-#else
-#include <ftl/__c_wide_types.hpp>
-#endif
 
 #if defined(_MSC_VER)
 using ftl_native_wctype_t = unsigned short;
@@ -38,11 +34,7 @@ unsigned int towctrans(unsigned int, ftl_native_wctrans_t);
 ftl_native_wctrans_t wctrans(const char *);
 }
 
-#ifdef FTL_REPLACE_STL
 namespace std {
-#else
-namespace ftl {
-#endif
 
 using wctype_t = ftl_native_wctype_t;
 using wctrans_t = ftl_native_wctrans_t;
@@ -68,11 +60,7 @@ using ::wctrans;
 } // namespace std or ftl
 
 #ifndef WEOF
-#ifdef FTL_REPLACE_STL
 #define WEOF static_cast<std::wint_t>(-1)
-#else
-#define WEOF static_cast<ftl::wint_t>(-1)
-#endif
 #endif
 
 #endif // FTL_CWCTYPE_HEADER

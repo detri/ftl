@@ -3,15 +3,9 @@
 #ifndef FTL_CINTTYPES_HEADER
 #define FTL_CINTTYPES_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cstdint>
 #define FTL_CINTTYPES_BEGIN namespace std {
 #define FTL_CINTTYPES_END }
-#else
-#include <ftl/cstdint>
-#define FTL_CINTTYPES_BEGIN namespace ftl {
-#define FTL_CINTTYPES_END }
-#endif
 
 #if defined(_MSC_VER)
 #define FTL_INTMAX_TYPE long long

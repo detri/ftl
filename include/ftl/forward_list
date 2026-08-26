@@ -1,7 +1,6 @@
 #ifndef FTL_FORWARD_LIST_HEADER
 #define FTL_FORWARD_LIST_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <algorithm>
 #include <compare>
 #include <initializer_list>
@@ -12,22 +11,8 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#define FTL_FORWARD_LIST_NAMESPACE std
-#else
-#include <ftl/algorithm>
-#include <ftl/compare>
-#include <ftl/initializer_list>
-#include <ftl/iterator>
-#include <ftl/limits>
-#include <ftl/memory>
-#include <ftl/memory_resource>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#define FTL_FORWARD_LIST_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 template <class R, class T>
@@ -304,7 +289,7 @@ public:
   }
   void swap(forward_list &other) noexcept(traits::is_always_equal::value) {
     if constexpr (traits::propagate_on_container_swap::value)
-      FTL_FORWARD_LIST_NAMESPACE::swap(allocator_, other.allocator_);
+      std::swap(allocator_, other.allocator_);
     swap_nodes(other);
   }
   void resize(size_type n) { resize_impl(n, nullptr); }
@@ -454,7 +439,7 @@ private:
         p = value ? emplace_after(p, *value) : emplace_after(p);
   }
   void swap_nodes(forward_list &other) noexcept {
-    FTL_FORWARD_LIST_NAMESPACE::swap(head_.next, other.head_.next);
+    std::swap(head_.next, other.head_.next);
   }
   static void transfer_after(node_base *position, node_base *before_first,
                              node_base *last) {
@@ -566,10 +551,10 @@ typename forward_list<T, A>::size_type erase_if(forward_list<T, A> &c, P pred) {
 namespace pmr {
 template <class T>
 using forward_list =
-    FTL_FORWARD_LIST_NAMESPACE::forward_list<T, polymorphic_allocator<T>>;
+    std::forward_list<T, polymorphic_allocator<T>>;
 }
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_allocator_traits_is_always_equal) || \
     __cpp_lib_allocator_traits_is_always_equal < 201411L
@@ -606,5 +591,4 @@ FTL_END_NAMESPACE
 #define __cpp_lib_nonmember_container_access 201411L
 #endif
 
-#undef FTL_FORWARD_LIST_NAMESPACE
 #endif

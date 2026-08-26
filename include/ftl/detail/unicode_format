@@ -3,17 +3,10 @@
 #ifndef FTL_DETAIL_UNICODE_FORMAT_HEADER
 #define FTL_DETAIL_UNICODE_FORMAT_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <cstddef>
 #include <type_traits>
 #define FTL_UNICODE_FORMAT_NS std
-#else
-#include <ftl/array>
-#include <ftl/cstddef>
-#include <ftl/type_traits>
-#define FTL_UNICODE_FORMAT_NS ftl
-#endif
 
 namespace ftl_unicode_format {
 

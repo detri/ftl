@@ -3,25 +3,13 @@
 #ifndef FTL_SHARED_MUTEX_HEADER
 #define FTL_SHARED_MUTEX_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <chrono>
 #include <detail/shared_mutex.hpp>
 #include <memory>
 #include <mutex>
 #include <utility>
-#define FTL_SHARED_MUTEX_BEGIN_NAMESPACE namespace std {
-#define FTL_SHARED_MUTEX_END_NAMESPACE }
-#else
-#include <ftl/chrono>
-#include <ftl/detail/shared_mutex.hpp>
-#include <ftl/memory>
-#include <ftl/mutex>
-#include <ftl/utility>
-#define FTL_SHARED_MUTEX_BEGIN_NAMESPACE namespace ftl {
-#define FTL_SHARED_MUTEX_END_NAMESPACE }
-#endif
 
-FTL_SHARED_MUTEX_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -261,10 +249,8 @@ void swap(shared_lock<Mutex> &left, shared_lock<Mutex> &right) noexcept {
   left.swap(right);
 }
 
-FTL_SHARED_MUTEX_END_NAMESPACE
+}
 
-#undef FTL_SHARED_MUTEX_BEGIN_NAMESPACE
-#undef FTL_SHARED_MUTEX_END_NAMESPACE
 
 #if !defined(__cpp_lib_shared_timed_mutex) ||                                  \
     __cpp_lib_shared_timed_mutex < 201402L

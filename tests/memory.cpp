@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <memory>
 namespace tested = std;
-#else
-#include <ftl/memory>
-namespace tested = ftl;
-#endif
 #define ftl tested
 
 struct object {
@@ -283,9 +278,7 @@ constexpr bool constexpr_allocator_handles_nontrivial_construction() {
   allocator.deallocate(value, 1);
   return result;
 }
-#ifdef FTL_REPLACE_STL
 static_assert(constexpr_allocator_handles_nontrivial_construction());
-#endif
 static_assert(!noexcept(ftl::construct_at(ftl::declval<object *>(), 1)));
 
 struct throwing_destructor { ~throwing_destructor() noexcept(false) {} };
