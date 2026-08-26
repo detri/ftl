@@ -36,8 +36,10 @@ static_assert(tested::is_same_v<decltype(&tested::tmpfile), file *(*)()>);
 static_assert(tested::is_same_v<decltype(&tested::tmpnam), char *(*)(char *)>);
 static_assert(tested::is_same_v<decltype(&tested::fclose), int (*)(file *)>);
 static_assert(tested::is_same_v<decltype(&tested::fflush), int (*)(file *)>);
-static_assert(tested::is_same_v<decltype(&tested::fopen),
-                                file *(*)(const char *, const char *)>);
+static_assert(tested::is_same_v<
+              decltype(static_cast<file *(*)(const char *, const char *)>(
+                  tested::fopen)),
+              file *(*)(const char *, const char *)>);
 static_assert(tested::is_same_v<decltype(&tested::freopen),
                                 file *(*)(const char *, const char *, file *)>);
 static_assert(
