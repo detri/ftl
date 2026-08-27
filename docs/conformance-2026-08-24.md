@@ -71,16 +71,16 @@ builds and passed all 197 tests. AppleClang remains covered by the CI matrix.
 | `<numeric>`                             | REMEDIATED | Implemented pointer `midpoint` without a potentially unrepresentable `b-a`.                                                                                                                                            |
 | `<memory>` ownership                    | REMEDIATED | Preserved an effective raw-pointer `shared_ptr` cleanup deleter until control-block commit; replacement-only `std::allocator` has the required compiler constexpr-allocation treatment.                                |
 | `<cstdlib>` / `<stdlib.h>`              | REMEDIATED | Wrapped Apple's non-`noexcept` global C `abort` declaration with the required `noexcept` namespace function.                                                                                                           |
-| `<cmath>` core                          | BLOCKED    | A genuinely fused constant-evaluated `fma` needs a compiler intrinsic or software correctly-rounded backend; extended math remains blocked below.                                                                      |
+| `<cmath>` core                          | REMEDIATED | Added exact extended-type overloads, native binary128 runtime dispatch, mixed-rank overload selection, and explicit rejection of extended `nexttoward`; constant evaluation uses compiler builtins where available.   |
 | `<filesystem>`                          | REMEDIATED | Changed the Windows ABI to native-wide `path::value_type`, `string_type`, and `L'\\'`, while retaining explicit UTF-8 conversion APIs and native-wide filesystem/stream I/O.                                           |
 
-## Known blockers and realistic paths
+## Closed blocker
 
-| Audit unit                                             | Path forward                                                                                                                                                                                                                  |
-|--------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `<complex>`, `<cmath>` core and special functions      | Add per-extended-type runtime backends (for example binary128 via compiler-rt/libquadmath where available) and decline unsupported types explicitly rather than narrowing through `long double`.                              |
+| Audit unit                                        | Resolution                                                                                                                                                                                                                |
+|---------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `<complex>`, `<cmath>` core and special functions | Added exact overloads for each compiler-advertised extended type. Binary128 uses native compiler/libm entry points; narrower interchange types evaluate in a non-narrowing standard type, and unsupported calls are rejected. |
 
-The ordinary remediation ledger is now clear. The remaining practical runtime
-project and sole substantive conformance blocker is extended floating support.
+The ordinary remediation ledger is now clear, including extended floating
+support across the compiler-advertised C++23 interchange types.
 The former MSVC RTTI identity, generator integration, and constexpr allocator
 limitations disappear with removal of the parallel `ftl` namespace mode.

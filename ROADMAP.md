@@ -139,8 +139,8 @@ remediation pass included:
 - stale, incorrect, or non-standard feature-test advertisement
 
 The remediation findings are fixed. The fresh whole-repository audit is
-recorded in `docs/conformance-2026-08-24.md`; its sole remaining substantive
-conformance blocker is extended floating-point math.
+recorded in `docs/conformance-2026-08-24.md`; its final substantive blocker,
+extended floating-point math, is now closed.
 
 ## Runtime and portability model
 
