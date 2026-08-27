@@ -1,18 +1,9 @@
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <ranges>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/cstddef>
-#include <ftl/ranges>
-#include <ftl/tuple>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 struct move_only_value {
   int value;

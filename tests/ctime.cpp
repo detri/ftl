@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <ctime>
 #include <limits>
 namespace tested = std;
-#else
-#include <ftl/ctime>
-#include <ftl/limits>
-namespace tested = ftl;
-#endif
 
 static_assert(TIME_UTC > 0);
 

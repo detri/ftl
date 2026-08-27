@@ -1,16 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <initializer_list>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/initializer_list>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
-#ifndef FTL_REPLACE_STL
-#include <initializer_list>
-#endif
 
 constexpr int sum(tested::initializer_list<int> values) {
     int result = 0;

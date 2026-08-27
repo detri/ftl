@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <cstring>
 namespace tested = std;
-#else
-#include <ftl/cstring>
-namespace tested = ftl;
-#endif
 
 #ifndef NULL
 #error "<cstring> must define NULL"

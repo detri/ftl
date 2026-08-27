@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <cstdio>
 #include <print>
 namespace tested = std;
-#else
-#include <ftl/cstdio>
-#include <ftl/print>
-namespace tested = ftl;
-#endif
 
 namespace test_stdio_runtime {
 

@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 #if __cpp_lib_forward_like != 202207L || __cpp_lib_unreachable != 202202L
 #error invalid <utility> feature-test macros

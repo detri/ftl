@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <cfenv>
 namespace tested = std;
-#else
-#include <ftl/cfenv>
-namespace tested = ftl;
-#endif
 
 static_assert(sizeof(tested::fenv_t) >= sizeof(tested::fexcept_t));
 

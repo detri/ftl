@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <locale>
 #include <string>
 namespace tested = std;
-#else
-#include <ftl/locale>
-#include <ftl/string>
-namespace tested = ftl;
-#endif
 
 struct custom_numpunct final : tested::numpunct<char> {
   custom_numpunct() : tested::numpunct<char>() {}

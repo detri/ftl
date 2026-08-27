@@ -1,16 +1,8 @@
-#ifdef FTL_REPLACE_STL
 #include <complex>
 #include <istream>
 #include <ostream>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/complex>
-#include <ftl/istream>
-#include <ftl/ostream>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 #if __cpp_lib_complex_udls != 201309L || __cpp_lib_constexpr_complex != 201711L
 #error <complex> feature-test macros are incomplete
@@ -56,6 +48,56 @@ static_assert(tested::is_same_v<
               decltype(tested::pow(complex<double>{}, extended_float{})),
               complex<extended_float>>);
 #endif
+
+template <class T>
+constexpr bool extended_complex_signatures() {
+#define FTL_CHECK_COMPLEX_UNARY(name)                                        \
+  static_assert(tested::is_same_v<decltype(tested::name(complex<T>{})),      \
+                                  complex<T>>)
+  FTL_CHECK_COMPLEX_UNARY(acos); FTL_CHECK_COMPLEX_UNARY(asin);
+  FTL_CHECK_COMPLEX_UNARY(atan); FTL_CHECK_COMPLEX_UNARY(cos);
+  FTL_CHECK_COMPLEX_UNARY(sin); FTL_CHECK_COMPLEX_UNARY(tan);
+  FTL_CHECK_COMPLEX_UNARY(acosh); FTL_CHECK_COMPLEX_UNARY(asinh);
+  FTL_CHECK_COMPLEX_UNARY(atanh); FTL_CHECK_COMPLEX_UNARY(cosh);
+  FTL_CHECK_COMPLEX_UNARY(sinh); FTL_CHECK_COMPLEX_UNARY(tanh);
+  FTL_CHECK_COMPLEX_UNARY(exp); FTL_CHECK_COMPLEX_UNARY(log);
+  FTL_CHECK_COMPLEX_UNARY(log10); FTL_CHECK_COMPLEX_UNARY(sqrt);
+  FTL_CHECK_COMPLEX_UNARY(proj);
+#undef FTL_CHECK_COMPLEX_UNARY
+  static_assert(tested::is_same_v<decltype(tested::abs(complex<T>{})), T>);
+  static_assert(tested::is_same_v<decltype(tested::arg(complex<T>{})), T>);
+  static_assert(tested::is_same_v<decltype(tested::pow(complex<T>{},
+                                                       complex<T>{})),
+                                  complex<T>>);
+  return true;
+}
+
+#ifdef __STDCPP_FLOAT16_T__
+static_assert(extended_complex_signatures<decltype(0.0f16)>());
+#endif
+#ifdef __STDCPP_FLOAT32_T__
+static_assert(extended_complex_signatures<decltype(0.0f32)>());
+#endif
+#ifdef __STDCPP_FLOAT64_T__
+static_assert(extended_complex_signatures<decltype(0.0f64)>());
+#endif
+#ifdef __STDCPP_FLOAT128_T__
+static_assert(extended_complex_signatures<decltype(0.0f128)>());
+#endif
+#ifdef __STDCPP_BFLOAT16_T__
+static_assert(extended_complex_signatures<decltype(0.0bf16)>());
+#endif
+
+template <class T>
+bool extended_complex_runtime() {
+  volatile T one = T{1};
+  const T real = one;
+  const complex<T> value{real, T{}};
+  return tested::sqrt(value) == value && tested::exp(complex<T>{}) == value &&
+         tested::log(value) == complex<T>{} && tested::sin(complex<T>{}) ==
+         complex<T>{} && tested::cos(complex<T>{}) == value &&
+         tested::pow(value, value) == value;
+}
 
 class complex_input_buffer : public tested::streambuf {
 public:
@@ -166,7 +208,24 @@ bool ftl_test() {
   const auto nan = tested::numeric_limits<double>::quiet_NaN();
   const auto nan_quotient = value / complex<double>{nan, 1.0};
   const double *layout = reinterpret_cast<const double *>(&value);
-  return tested::abs(value) == 5.0 && square_root.real() == 0.0 &&
+  bool extended_works = true;
+#ifdef __STDCPP_FLOAT16_T__
+  extended_works = extended_works && extended_complex_runtime<decltype(0.0f16)>();
+#endif
+#ifdef __STDCPP_FLOAT32_T__
+  extended_works = extended_works && extended_complex_runtime<decltype(0.0f32)>();
+#endif
+#ifdef __STDCPP_FLOAT64_T__
+  extended_works = extended_works && extended_complex_runtime<decltype(0.0f64)>();
+#endif
+#ifdef __STDCPP_FLOAT128_T__
+  extended_works = extended_works && extended_complex_runtime<decltype(0.0f128)>();
+#endif
+#ifdef __STDCPP_BFLOAT16_T__
+  extended_works = extended_works && extended_complex_runtime<decltype(0.0bf16)>();
+#endif
+
+  return extended_works && tested::abs(value) == 5.0 && square_root.real() == 0.0 &&
          square_root.imag() == 1.0 && exponential == complex<double>{1.0} &&
          logarithm == complex<double>{0.0} && power == complex<double>{8.0} &&
          tested::conj(value) == complex<double>{3.0, -4.0} &&

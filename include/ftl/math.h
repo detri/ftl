@@ -3,15 +3,9 @@
 #ifndef FTL_MATH_H_HEADER
 #define FTL_MATH_H_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cmath>
-#define FTL_C_MATH_NAMESPACE std
-#else
-#include <ftl/cmath>
-#define FTL_C_MATH_NAMESPACE ftl
-#endif
 
-#define FTL_C_MATH_USING(name) using FTL_C_MATH_NAMESPACE::name
+#define FTL_C_MATH_USING(name) using std::name
 
 FTL_C_MATH_USING(float_t);
 FTL_C_MATH_USING(double_t);
@@ -263,5 +257,4 @@ FTL_C_MATH_USING(sph_neumannf);
 FTL_C_MATH_USING(sph_neumannl);
 
 #undef FTL_C_MATH_USING
-#undef FTL_C_MATH_NAMESPACE
 #endif

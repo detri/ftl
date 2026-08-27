@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 
 #include <assert.h>
 #include <complex.h>
@@ -27,36 +26,6 @@
 #include <wchar.h>
 #include <wctype.h>
 
-#else
-
-#include <ftl/assert.h>
-#include <ftl/complex.h>
-#include <ftl/ctype.h>
-#include <ftl/errno.h>
-#include <ftl/float.h>
-#include <ftl/fenv.h>
-#include <ftl/inttypes.h>
-#include <ftl/iso646.h>
-#include <ftl/limits.h>
-#include <ftl/locale.h>
-#include <ftl/math.h>
-#include <ftl/setjmp.h>
-#include <ftl/signal.h>
-#include <ftl/stdalign.h>
-#include <ftl/stdarg.h>
-#include <ftl/stdbool.h>
-#include <ftl/stddef.h>
-#include <ftl/stdint.h>
-#include <ftl/stdio.h>
-#include <ftl/stdlib.h>
-#include <ftl/string.h>
-#include <ftl/tgmath.h>
-#include <ftl/time.h>
-#include <ftl/uchar.h>
-#include <ftl/wchar.h>
-#include <ftl/wctype.h>
-
-#endif
 
 static_assert(sizeof(va_list) >= 1);
 static_assert(sizeof(jmp_buf) >= 1);
@@ -106,6 +75,11 @@ static_assert(TIME_UTC > 0);
 
 [[maybe_unused]]
 timespec* timespec_pointer = nullptr;
+
+#if defined(__APPLE__)
+static_assert(sizeof(clock_t) == sizeof(unsigned long));
+static_assert(clock_t(-1) > clock_t(0));
+#endif
 
 bool ftl_test() {
   assert(true);

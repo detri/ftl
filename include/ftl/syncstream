@@ -3,17 +3,11 @@
 #ifndef FTL_SYNCSTREAM_HEADER
 #define FTL_SYNCSTREAM_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <mutex>
 #include <ostream>
 #include <string>
-#else
-#include <ftl/mutex>
-#include <ftl/ostream>
-#include <ftl/string>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 namespace detail {
 template <class C, class T>
 mutex &syncbuf_mutex(basic_streambuf<C, T> *buffer) {
@@ -202,7 +196,7 @@ private:
   syncbuf_type sb_;
 };
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_syncbuf) || __cpp_lib_syncbuf < 201803L
 #undef __cpp_lib_syncbuf

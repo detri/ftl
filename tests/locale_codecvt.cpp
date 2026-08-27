@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <locale>
 namespace tested = std;
-#else
-#include <ftl/locale>
-namespace tested = ftl;
-#endif
 
 bool ftl_test() {
   const tested::locale &classic = tested::locale::classic();

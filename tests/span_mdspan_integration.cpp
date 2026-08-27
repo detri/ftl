@@ -1,18 +1,9 @@
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <mdspan>
 #include <ranges>
 #include <span>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/cstddef>
-#include <ftl/mdspan>
-#include <ftl/ranges>
-#include <ftl/span>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 using fixed_span = tested::span<int, 6>;
 

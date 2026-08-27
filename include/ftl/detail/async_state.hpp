@@ -3,7 +3,6 @@
 #ifndef FTL_DETAIL_ASYNC_STATE_HEADER
 #define FTL_DETAIL_ASYNC_STATE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <cstdint>
 #include <detail/future_state.hpp>
@@ -16,26 +15,8 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#define FTL_ASYNC_STATE_BEGIN_NAMESPACE namespace std::detail {
-#define FTL_ASYNC_STATE_END_NAMESPACE }
-#else
-#include <ftl/atomic>
-#include <ftl/cstdint>
-#include <ftl/detail/future_state.hpp>
-#include <ftl/detail/mutex.hpp>
-#include <ftl/detail/wait_notify.hpp>
-#include <ftl/exception>
-#include <ftl/functional>
-#include <ftl/memory>
-#include <ftl/thread>
-#include <ftl/tuple>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#define FTL_ASYNC_STATE_BEGIN_NAMESPACE namespace ftl::detail {
-#define FTL_ASYNC_STATE_END_NAMESPACE }
-#endif
 
-FTL_ASYNC_STATE_BEGIN_NAMESPACE
+namespace std::detail {
 
 template <class R, class Function, class... StoredArgs>
 class async_state final : public future_state<R> {
@@ -239,9 +220,7 @@ private:
       0;
 };
 
-FTL_ASYNC_STATE_END_NAMESPACE
+}
 
-#undef FTL_ASYNC_STATE_BEGIN_NAMESPACE
-#undef FTL_ASYNC_STATE_END_NAMESPACE
 
 #endif // FTL_DETAIL_ASYNC_STATE_HEADER

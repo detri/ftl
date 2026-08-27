@@ -1,6 +1,5 @@
 #ifndef FTL_UNORDERED_MAP_HEADER
 #define FTL_UNORDERED_MAP_HEADER
-#ifdef FTL_REPLACE_STL
 #include <algorithm>
 #include <functional>
 #include <initializer_list>
@@ -14,25 +13,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-#define FTL_ASSOCIATIVE_NAMESPACE std
 #include <__associative/unordered.hpp>
-#else
-#include <ftl/algorithm>
-#include <ftl/functional>
-#include <ftl/initializer_list>
-#include <ftl/iterator>
-#include <ftl/memory>
-#include <ftl/memory_resource>
-#include <ftl/optional>
-#include <ftl/ranges>
-#include <ftl/stdexcept>
-#include <ftl/tuple>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#include <ftl/vector>
-#define FTL_ASSOCIATIVE_NAMESPACE ftl
-#include <ftl/__associative/unordered.hpp>
-#endif
 #if defined(_MSC_VER)
 #if !defined(__clang__)
 extern "C" void __cdecl __fastfail(unsigned int);
@@ -50,7 +31,7 @@ extern "C" __declspec(selectany) int _fltused = 1;
 #else
 #define FTL_UNORDERED_MAP_TRAP() __builtin_trap()
 #endif
-FTL_BEGIN_NAMESPACE
+namespace std {
 namespace detail {
 [[noreturn]] inline void unordered_map_range_failure() {
 #if FTL_HAS_EXCEPTIONS
@@ -272,14 +253,14 @@ erase_if(unordered_multimap<Key, T, Hash, Equal, Allocator> &values,
 namespace pmr {
 template <class Key, class T, class Hash = hash<Key>,
           class Predicate = equal_to<Key>>
-using unordered_map = FTL_ASSOCIATIVE_NAMESPACE::unordered_map<
+using unordered_map = std::unordered_map<
     Key, T, Hash, Predicate, polymorphic_allocator<pair<const Key, T>>>;
 template <class Key, class T, class Hash = hash<Key>,
           class Predicate = equal_to<Key>>
-using unordered_multimap = FTL_ASSOCIATIVE_NAMESPACE::unordered_multimap<
+using unordered_multimap = std::unordered_multimap<
     Key, T, Hash, Predicate, polymorphic_allocator<pair<const Key, T>>>;
 } // namespace pmr
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_allocator_traits_is_always_equal) || \
     __cpp_lib_allocator_traits_is_always_equal < 201411L
@@ -332,6 +313,5 @@ FTL_END_NAMESPACE
 #define __cpp_lib_unordered_map_try_emplace 201411L
 #endif
 
-#undef FTL_ASSOCIATIVE_NAMESPACE
 #undef FTL_UNORDERED_MAP_TRAP
 #endif

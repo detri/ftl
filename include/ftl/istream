@@ -3,27 +3,14 @@
 #ifndef FTL_ISTREAM_HEADER
 #define FTL_ISTREAM_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <ios>
 #include <limits>
 #include <ostream>
 #include <streambuf>
 #include <type_traits>
-#else
-#include <ftl/ios>
-#include <ftl/limits>
-#include <ftl/ostream>
-#include <ftl/streambuf>
-#include <ftl/type_traits>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_ISTREAM_NAMESPACE std
-#else
-#define FTL_ISTREAM_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class Character, class Traits>
 class basic_istream : virtual public basic_ios<Character, Traits> {
@@ -339,7 +326,7 @@ private:
     exception_ptr caught = current_exception();
     const bool rethrow = (this->exceptions() & ios_base::badbit) != 0;
     this->__setstate_nothrow(ios_base::badbit);
-    if (rethrow) FTL_ISTREAM_NAMESPACE::rethrow_exception(caught);
+    if (rethrow) std::rethrow_exception(caught);
   }
 #endif
 
@@ -374,7 +361,7 @@ private:
         exception_ptr caught = current_exception();
         bool rethrow = (this->exceptions() & ios_base::badbit) != 0;
         this->__setstate_nothrow(ios_base::badbit);
-        if (rethrow) FTL_ISTREAM_NAMESPACE::rethrow_exception(caught);
+        if (rethrow) std::rethrow_exception(caught);
       }
 #else
       use_facet<facet_type>(this->getloc()).get(
@@ -566,13 +553,12 @@ Stream &&operator>>(Stream &&stream, Value &&value) {
   return static_cast<Stream &&>(stream);
 }
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_char8_t) || __cpp_lib_char8_t < 201907L
 #undef __cpp_lib_char8_t
 #define __cpp_lib_char8_t 201907L
 #endif
 
-#undef FTL_ISTREAM_NAMESPACE
 
 #endif // FTL_ISTREAM_HEADER

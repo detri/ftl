@@ -3,7 +3,6 @@
 #ifndef FTL_SORT_HEADER
 #define FTL_SORT_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__algorithms/reverse_rotate.hpp>
 #include <__execution/policy_access.hpp>
 #include <functional>
@@ -11,35 +10,21 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__algorithms/reverse_rotate.hpp>
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_SORT_NAMESPACE std
-#else
-#define FTL_SORT_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
-using algorithm_less = FTL_SORT_NAMESPACE::less<>;
+using algorithm_less = std::less<>;
 
 template <class Comparator, class Projection, class T, class U>
 constexpr bool sort_before(Comparator &comparator, Projection &projection,
                            T &&left, U &&right) {
-  return FTL_SORT_NAMESPACE::invoke(
+  return std::invoke(
       comparator,
-      FTL_SORT_NAMESPACE::invoke(projection, static_cast<T &&>(left)),
-      FTL_SORT_NAMESPACE::invoke(projection, static_cast<U &&>(right)));
+      std::invoke(projection, static_cast<T &&>(left)),
+      std::invoke(projection, static_cast<U &&>(right)));
 }
 
 template <class Iterator, class Comparator, class Projection>
@@ -111,7 +96,7 @@ constexpr void insertion_sort_loop(Iterator first, Iterator last,
       hole = previous;
     }
 
-    *hole = FTL_SORT_NAMESPACE::move(value);
+    *hole = std::move(value);
   }
 }
 
@@ -403,8 +388,8 @@ constexpr ForwardIterator is_sorted_until(ForwardIterator first,
   detail::algorithm_less comparator{};
   identity projection{};
 
-  return detail::is_sorted_until_loop(FTL_SORT_NAMESPACE::move(first),
-                                      FTL_SORT_NAMESPACE::move(last),
+  return detail::is_sorted_until_loop(std::move(first),
+                                      std::move(last),
                                       comparator, projection);
 }
 
@@ -416,8 +401,8 @@ ForwardIterator is_sorted_until(ExecutionPolicy &&, ForwardIterator first,
     detail::algorithm_less comparator{};
     identity projection{};
 
-    return detail::is_sorted_until_loop(FTL_SORT_NAMESPACE::move(first),
-                                        FTL_SORT_NAMESPACE::move(last),
+    return detail::is_sorted_until_loop(std::move(first),
+                                        std::move(last),
                                         comparator, projection);
   }();
 }
@@ -428,8 +413,8 @@ constexpr ForwardIterator is_sorted_until(ForwardIterator first,
                                           Comparator comparator) {
   identity projection{};
 
-  return detail::is_sorted_until_loop(FTL_SORT_NAMESPACE::move(first),
-                                      FTL_SORT_NAMESPACE::move(last),
+  return detail::is_sorted_until_loop(std::move(first),
+                                      std::move(last),
                                       comparator, projection);
 }
 
@@ -440,40 +425,40 @@ ForwardIterator is_sorted_until(ExecutionPolicy &&, ForwardIterator first,
   return [&]() noexcept {
     identity projection{};
 
-    return detail::is_sorted_until_loop(FTL_SORT_NAMESPACE::move(first),
-                                        FTL_SORT_NAMESPACE::move(last),
+    return detail::is_sorted_until_loop(std::move(first),
+                                        std::move(last),
                                         comparator, projection);
   }();
 }
 
 template <class ForwardIterator>
 constexpr bool is_sorted(ForwardIterator first, ForwardIterator last) {
-  return FTL_SORT_NAMESPACE::is_sorted_until(first, last) == last;
+  return std::is_sorted_until(first, last) == last;
 }
 
 template <class ExecutionPolicy, class ForwardIterator>
   requires is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>
 bool is_sorted(ExecutionPolicy &&policy, ForwardIterator first,
                ForwardIterator last) {
-  return FTL_SORT_NAMESPACE::is_sorted_until(
-             FTL_SORT_NAMESPACE::forward<ExecutionPolicy>(policy), first,
+  return std::is_sorted_until(
+             std::forward<ExecutionPolicy>(policy), first,
              last) == last;
 }
 
 template <class ForwardIterator, class Comparator>
 constexpr bool is_sorted(ForwardIterator first, ForwardIterator last,
                          Comparator comparator) {
-  return FTL_SORT_NAMESPACE::is_sorted_until(
-             first, last, FTL_SORT_NAMESPACE::move(comparator)) == last;
+  return std::is_sorted_until(
+             first, last, std::move(comparator)) == last;
 }
 
 template <class ExecutionPolicy, class ForwardIterator, class Comparator>
   requires is_execution_policy_v<remove_cvref_t<ExecutionPolicy>>
 bool is_sorted(ExecutionPolicy &&policy, ForwardIterator first,
                ForwardIterator last, Comparator comparator) {
-  return FTL_SORT_NAMESPACE::is_sorted_until(
-             FTL_SORT_NAMESPACE::forward<ExecutionPolicy>(policy), first, last,
-             FTL_SORT_NAMESPACE::move(comparator)) == last;
+  return std::is_sorted_until(
+             std::forward<ExecutionPolicy>(policy), first, last,
+             std::move(comparator)) == last;
 }
 
 template <class RandomAccessIterator>
@@ -481,8 +466,8 @@ constexpr void sort(RandomAccessIterator first, RandomAccessIterator last) {
   detail::algorithm_less comparator{};
   identity projection{};
 
-  detail::sort_loop(FTL_SORT_NAMESPACE::move(first),
-                    FTL_SORT_NAMESPACE::move(last), comparator, projection);
+  detail::sort_loop(std::move(first),
+                    std::move(last), comparator, projection);
 }
 
 template <class ExecutionPolicy, class RandomAccessIterator>
@@ -493,8 +478,8 @@ void sort(ExecutionPolicy &&, RandomAccessIterator first,
     detail::algorithm_less comparator{};
     identity projection{};
 
-    detail::sort_loop(FTL_SORT_NAMESPACE::move(first),
-                      FTL_SORT_NAMESPACE::move(last), comparator, projection);
+    detail::sort_loop(std::move(first),
+                      std::move(last), comparator, projection);
   }();
 }
 
@@ -503,8 +488,8 @@ constexpr void sort(RandomAccessIterator first, RandomAccessIterator last,
                     Comparator comparator) {
   identity projection{};
 
-  detail::sort_loop(FTL_SORT_NAMESPACE::move(first),
-                    FTL_SORT_NAMESPACE::move(last), comparator, projection);
+  detail::sort_loop(std::move(first),
+                    std::move(last), comparator, projection);
 }
 
 template <class ExecutionPolicy, class RandomAccessIterator, class Comparator>
@@ -514,8 +499,8 @@ void sort(ExecutionPolicy &&, RandomAccessIterator first,
   [&]() noexcept {
     identity projection{};
 
-    detail::sort_loop(FTL_SORT_NAMESPACE::move(first),
-                      FTL_SORT_NAMESPACE::move(last), comparator, projection);
+    detail::sort_loop(std::move(first),
+                      std::move(last), comparator, projection);
   }();
 }
 
@@ -524,8 +509,8 @@ void stable_sort(RandomAccessIterator first, RandomAccessIterator last) {
   detail::algorithm_less comparator{};
   identity projection{};
 
-  detail::stable_sort_loop(FTL_SORT_NAMESPACE::move(first),
-                           FTL_SORT_NAMESPACE::move(last), comparator,
+  detail::stable_sort_loop(std::move(first),
+                           std::move(last), comparator,
                            projection);
 }
 
@@ -537,8 +522,8 @@ void stable_sort(ExecutionPolicy &&, RandomAccessIterator first,
     detail::algorithm_less comparator{};
     identity projection{};
 
-    detail::stable_sort_loop(FTL_SORT_NAMESPACE::move(first),
-                             FTL_SORT_NAMESPACE::move(last), comparator,
+    detail::stable_sort_loop(std::move(first),
+                             std::move(last), comparator,
                              projection);
   }();
 }
@@ -548,8 +533,8 @@ void stable_sort(RandomAccessIterator first, RandomAccessIterator last,
                  Comparator comparator) {
   identity projection{};
 
-  detail::stable_sort_loop(FTL_SORT_NAMESPACE::move(first),
-                           FTL_SORT_NAMESPACE::move(last), comparator,
+  detail::stable_sort_loop(std::move(first),
+                           std::move(last), comparator,
                            projection);
 }
 
@@ -560,8 +545,8 @@ void stable_sort(ExecutionPolicy &&, RandomAccessIterator first,
   [&]() noexcept {
     identity projection{};
 
-    detail::stable_sort_loop(FTL_SORT_NAMESPACE::move(first),
-                             FTL_SORT_NAMESPACE::move(last), comparator,
+    detail::stable_sort_loop(std::move(first),
+                             std::move(last), comparator,
                              projection);
   }();
 }
@@ -576,8 +561,8 @@ struct is_sorted_until_fn {
   constexpr Iterator operator()(Iterator first, Sentinel last,
                                 Comparator comparator = {},
                                 Projection projection = {}) const {
-    return FTL_SORT_NAMESPACE::detail::ranges_is_sorted_until_loop(
-        FTL_SORT_NAMESPACE::move(first), FTL_SORT_NAMESPACE::move(last),
+    return std::detail::ranges_is_sorted_until_loop(
+        std::move(first), std::move(last),
         comparator, projection);
   }
 
@@ -588,10 +573,10 @@ struct is_sorted_until_fn {
   operator()(Range &&range, Comparator comparator = {},
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_SORT_NAMESPACE::move(comparator),
-                          FTL_SORT_NAMESPACE::move(projection));
+                          std::move(comparator),
+                          std::move(projection));
 
-    return FTL_SORT_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -605,9 +590,9 @@ struct is_sorted_fn {
   constexpr bool operator()(Iterator first, Sentinel last,
                             Comparator comparator = {},
                             Projection projection = {}) const {
-    return ranges::is_sorted_until(FTL_SORT_NAMESPACE::move(first), last,
-                                   FTL_SORT_NAMESPACE::move(comparator),
-                                   FTL_SORT_NAMESPACE::move(projection)) ==
+    return ranges::is_sorted_until(std::move(first), last,
+                                   std::move(comparator),
+                                   std::move(projection)) ==
            last;
   }
 
@@ -617,8 +602,8 @@ struct is_sorted_fn {
   constexpr bool operator()(Range &&range, Comparator comparator = {},
                             Projection projection = {}) const {
     return (*this)(ranges::begin(range), ranges::end(range),
-                   FTL_SORT_NAMESPACE::move(comparator),
-                   FTL_SORT_NAMESPACE::move(projection));
+                   std::move(comparator),
+                   std::move(projection));
   }
 };
 
@@ -634,7 +619,7 @@ struct sort_fn {
     Iterator end = first;
     ranges::advance(end, last);
 
-    FTL_SORT_NAMESPACE::detail::sort_loop(first, end, comparator, projection);
+    std::detail::sort_loop(first, end, comparator, projection);
 
     return end;
   }
@@ -646,10 +631,10 @@ struct sort_fn {
   operator()(Range &&range, Comparator comparator = {},
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_SORT_NAMESPACE::move(comparator),
-                          FTL_SORT_NAMESPACE::move(projection));
+                          std::move(comparator),
+                          std::move(projection));
 
-    return FTL_SORT_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -662,7 +647,7 @@ struct stable_sort_fn {
     Iterator end = first;
     ranges::advance(end, last);
 
-    FTL_SORT_NAMESPACE::detail::stable_sort_loop(first, end, comparator,
+    std::detail::stable_sort_loop(first, end, comparator,
                                                  projection);
 
     return end;
@@ -675,10 +660,10 @@ struct stable_sort_fn {
                                         Comparator comparator = {},
                                         Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_SORT_NAMESPACE::move(comparator),
-                          FTL_SORT_NAMESPACE::move(projection));
+                          std::move(comparator),
+                          std::move(projection));
 
-    return FTL_SORT_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -687,8 +672,7 @@ inline constexpr stable_sort_fn stable_sort{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_SORT_NAMESPACE
 
 #endif // FTL_SORT_HEADER

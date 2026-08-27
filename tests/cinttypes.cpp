@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <cinttypes>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/cinttypes>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 using narrow_signed_conversion = tested::intmax_t (*)(const char *, char **,
                                                       int);

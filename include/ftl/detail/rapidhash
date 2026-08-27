@@ -6,7 +6,6 @@
 #ifndef FTL_DETAIL_RAPIDHASH_HEADER
 #define FTL_DETAIL_RAPIDHASH_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <bit>
 #include <concepts>
@@ -15,16 +14,6 @@
 #include <cstring>
 #include <type_traits>
 #define FTL_RAPIDHASH_STD std
-#else
-#include <ftl/array>
-#include <ftl/bit>
-#include <ftl/concepts>
-#include <ftl/cstddef>
-#include <ftl/cstdint>
-#include <ftl/cstring>
-#include <ftl/type_traits>
-#define FTL_RAPIDHASH_STD ftl
-#endif
 
 #if defined(_MSC_VER)
 #    if defined(_M_X64) && !defined(_M_ARM64EC)

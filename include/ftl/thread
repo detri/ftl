@@ -3,7 +3,6 @@
 #ifndef FTL_THREAD_HEADER
 #define FTL_THREAD_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <chrono>
 #include <compare>
 #include <detail/thread.hpp>
@@ -17,27 +16,8 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#define FTL_THREAD_BEGIN_NAMESPACE namespace std {
-#define FTL_THREAD_END_NAMESPACE }
-#else
-#include <ftl/chrono>
-#include <ftl/compare>
-#include <ftl/detail/thread.hpp>
-#include <ftl/exception>
-#include <ftl/functional>
-#include <ftl/format>
-#include <ftl/limits>
-#include <ftl/ostream>
-#include <ftl/stop_token>
-#include <ftl/system_error>
-#include <ftl/tuple>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#define FTL_THREAD_BEGIN_NAMESPACE namespace ftl {
-#define FTL_THREAD_END_NAMESPACE }
-#endif
 
-FTL_THREAD_BEGIN_NAMESPACE
+namespace std {
 
 class thread;
 
@@ -443,10 +423,8 @@ template <class Character> struct formatter<thread::id, Character> {
   }
 };
 
-FTL_THREAD_END_NAMESPACE
+}
 
-#undef FTL_THREAD_BEGIN_NAMESPACE
-#undef FTL_THREAD_END_NAMESPACE
 
 #if !defined(__cpp_lib_jthread) || \
     __cpp_lib_jthread < 201911L

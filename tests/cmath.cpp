@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <cfenv>
 #include <cmath>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/cfenv>
-#include <ftl/cmath>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 #if __cpp_lib_constexpr_cmath != 202202L || __cpp_lib_hypot != 201603L ||    \
     __cpp_lib_interpolate != 201902L ||                                      \
@@ -55,6 +48,97 @@ static_assert(tested::is_same_v<decltype(tested::sqrt(extended_float{})),
 static_assert(tested::is_same_v<decltype(tested::beta(extended_float{}, 2)),
                                 extended_float>);
 #endif
+
+template <class T>
+constexpr bool extended_cmath_signatures() {
+#define FTL_CHECK_UNARY(name)                                                \
+  static_assert(tested::is_same_v<decltype(tested::name(T{})), T>)
+#define FTL_CHECK_BINARY(name)                                               \
+  static_assert(tested::is_same_v<decltype(tested::name(T{}, T{})), T>)
+  FTL_CHECK_UNARY(acos); FTL_CHECK_UNARY(acosh); FTL_CHECK_UNARY(asin);
+  FTL_CHECK_UNARY(asinh); FTL_CHECK_UNARY(atan); FTL_CHECK_UNARY(atanh);
+  FTL_CHECK_UNARY(cbrt); FTL_CHECK_UNARY(ceil); FTL_CHECK_UNARY(cos);
+  FTL_CHECK_UNARY(cosh); FTL_CHECK_UNARY(erf); FTL_CHECK_UNARY(erfc);
+  FTL_CHECK_UNARY(exp); FTL_CHECK_UNARY(exp2); FTL_CHECK_UNARY(expm1);
+  FTL_CHECK_UNARY(fabs); FTL_CHECK_UNARY(floor); FTL_CHECK_UNARY(lgamma);
+  FTL_CHECK_UNARY(log); FTL_CHECK_UNARY(log10); FTL_CHECK_UNARY(log1p);
+  FTL_CHECK_UNARY(log2); FTL_CHECK_UNARY(logb); FTL_CHECK_UNARY(nearbyint);
+  FTL_CHECK_UNARY(rint); FTL_CHECK_UNARY(round); FTL_CHECK_UNARY(sin);
+  FTL_CHECK_UNARY(sinh); FTL_CHECK_UNARY(sqrt); FTL_CHECK_UNARY(tan);
+  FTL_CHECK_UNARY(tanh); FTL_CHECK_UNARY(tgamma); FTL_CHECK_UNARY(trunc);
+  FTL_CHECK_BINARY(atan2); FTL_CHECK_BINARY(copysign); FTL_CHECK_BINARY(fdim);
+  FTL_CHECK_BINARY(fmax); FTL_CHECK_BINARY(fmin); FTL_CHECK_BINARY(fmod);
+  FTL_CHECK_BINARY(hypot); FTL_CHECK_BINARY(nextafter); FTL_CHECK_BINARY(pow);
+  FTL_CHECK_BINARY(remainder);
+  static_assert(tested::is_same_v<decltype(tested::abs(T{})), T>);
+  static_assert(tested::is_same_v<decltype(tested::frexp(T{}, (int*)nullptr)), T>);
+  static_assert(tested::is_same_v<decltype(tested::ilogb(T{})), int>);
+  static_assert(tested::is_same_v<decltype(tested::ldexp(T{}, 1)), T>);
+  static_assert(tested::is_same_v<decltype(tested::modf(T{}, (T*)nullptr)), T>);
+  static_assert(tested::is_same_v<decltype(tested::scalbn(T{}, 1)), T>);
+  static_assert(tested::is_same_v<decltype(tested::scalbln(T{}, 1L)), T>);
+  static_assert(tested::is_same_v<decltype(tested::lrint(T{})), long>);
+  static_assert(tested::is_same_v<decltype(tested::llrint(T{})), long long>);
+  static_assert(tested::is_same_v<decltype(tested::lround(T{})), long>);
+  static_assert(tested::is_same_v<decltype(tested::llround(T{})), long long>);
+  static_assert(tested::is_same_v<decltype(tested::remquo(T{}, T{}, (int*)nullptr)), T>);
+  static_assert(tested::is_same_v<decltype(tested::fma(T{}, T{}, T{})), T>);
+  static_assert(tested::is_same_v<decltype(tested::lerp(T{}, T{}, T{})), T>);
+  static_assert(tested::is_same_v<decltype(tested::hypot(T{}, T{}, T{})), T>);
+#undef FTL_CHECK_BINARY
+#undef FTL_CHECK_UNARY
+  return true;
+}
+
+#ifdef __STDCPP_FLOAT16_T__
+static_assert(extended_cmath_signatures<decltype(0.0f16)>());
+#endif
+#ifdef __STDCPP_FLOAT32_T__
+static_assert(extended_cmath_signatures<decltype(0.0f32)>());
+#endif
+#ifdef __STDCPP_FLOAT64_T__
+static_assert(extended_cmath_signatures<decltype(0.0f64)>());
+#endif
+#ifdef __STDCPP_FLOAT128_T__
+static_assert(extended_cmath_signatures<decltype(0.0f128)>());
+#endif
+#ifdef __STDCPP_BFLOAT16_T__
+static_assert(extended_cmath_signatures<decltype(0.0bf16)>());
+#endif
+
+template <class T>
+bool extended_cmath_runtime() {
+  volatile T input = T{1} / T{2};
+  T x = input;
+  int exponent{}, quotient{};
+  T integer{};
+  const T unary = tested::acos(x) + tested::acosh(T{1} + x) +
+      tested::asin(x) + tested::asinh(x) + tested::atan(x) +
+      tested::atanh(x) + tested::cbrt(x) + tested::ceil(x) +
+      tested::cos(x) + tested::cosh(x) + tested::erf(x) +
+      tested::erfc(x) + tested::exp(x) + tested::exp2(x) +
+      tested::expm1(x) + tested::fabs(x) + tested::floor(x) +
+      tested::lgamma(T{1} + x) + tested::log(T{1} + x) +
+      tested::log10(T{1} + x) + tested::log1p(x) + tested::log2(T{1} + x) +
+      tested::logb(x) + tested::nearbyint(x) + tested::rint(x) +
+      tested::round(x) + tested::sin(x) + tested::sinh(x) +
+      tested::sqrt(x) + tested::tan(x) + tested::tanh(x) +
+      tested::tgamma(T{1} + x) + tested::trunc(x);
+  const T binary = tested::atan2(x, T{1}) + tested::copysign(x, T{-1}) +
+      tested::fdim(T{1}, x) + tested::fmax(x, T{1}) + tested::fmin(x, T{1}) +
+      tested::fmod(T{3}, T{2}) + tested::hypot(T{3}, T{4}) +
+      tested::nextafter(x, T{1}) + tested::pow(T{2}, T{3}) +
+      tested::remainder(T{3}, T{2});
+  const T decomposed = tested::frexp(x, &exponent) + tested::modf(x, &integer) +
+      tested::ldexp(x, 2) + tested::scalbn(x, 2) + tested::scalbln(x, 2L) +
+      tested::remquo(T{3}, T{2}, &quotient) + tested::fma(x, T{2}, T{1});
+  return tested::isfinite(unary + binary + decomposed) &&
+         tested::fpclassify(x) == FP_NORMAL && !tested::isinf(x) &&
+         !tested::isnan(x) && tested::isnormal(x) && !tested::signbit(x) &&
+         tested::ilogb(x) == -1 && tested::lrint(x) == 0 &&
+         tested::llrint(x) == 0 && tested::lround(x) == 1 &&
+         tested::llround(x) == 1;
+}
 
 constexpr bool constexpr_cmath() {
   int exponent{}, quotient{};
@@ -138,7 +222,24 @@ bool ftl_test() {
       tested::isunordered(1.0, signaling) &&
       (tested::fetestexcept(FE_INVALID) & FE_INVALID) == 0;
 
-  return nearby_is_quiet && rint_is_inexact &&
+  bool extended_works = true;
+#ifdef __STDCPP_FLOAT16_T__
+  extended_works = extended_works && extended_cmath_runtime<decltype(0.0f16)>();
+#endif
+#ifdef __STDCPP_FLOAT32_T__
+  extended_works = extended_works && extended_cmath_runtime<decltype(0.0f32)>();
+#endif
+#ifdef __STDCPP_FLOAT64_T__
+  extended_works = extended_works && extended_cmath_runtime<decltype(0.0f64)>();
+#endif
+#ifdef __STDCPP_FLOAT128_T__
+  extended_works = extended_works && extended_cmath_runtime<decltype(0.0f128)>();
+#endif
+#ifdef __STDCPP_BFLOAT16_T__
+  extended_works = extended_works && extended_cmath_runtime<decltype(0.0bf16)>();
+#endif
+
+  return extended_works && nearby_is_quiet && rint_is_inexact &&
          tested::sqrt(4.0) == 2.0 && tested::cbrt(8.0) == 2.0 &&
          tested::exp(0.0) == 1.0 && tested::log(1.0) == 0.0 &&
          tested::sin(0.0) == 0.0 && tested::cos(0.0) == 1.0 &&

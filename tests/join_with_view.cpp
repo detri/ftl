@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <iterator>
 #include <ranges>
@@ -6,15 +5,6 @@
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/cstddef>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/span>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 using row_span = tested::span<int>;
 
@@ -252,9 +242,7 @@ constexpr bool join_with_view_works() {
  * Replacement mode provides the required std::construct_at spelling.
  * Normal namespaced mode retains full runtime coverage.
  */
-#ifdef FTL_REPLACE_STL
 static_assert(join_with_view_works());
-#endif
 
 bool ftl_test() {
   return join_with_view_works();

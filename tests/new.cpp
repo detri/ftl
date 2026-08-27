@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <new>
 namespace tested = std;
-#else
-#include <ftl/new>
-namespace tested = ftl;
-#endif
 
 struct alignas(64) over_aligned {};
 

@@ -3,313 +3,512 @@
 #ifndef FTL_CUCHAR_HEADER
 #define FTL_CUCHAR_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__c_wide_types.hpp>
 #include <cerrno>
-#else
-#include <ftl/__c_wide_types.hpp>
-#include <ftl/cerrno>
-#endif
+#include <detail/locale_runtime.hpp>
 
-#ifdef FTL_REPLACE_STL
 namespace std {
-#else
-namespace ftl {
-#endif
 
 using size_t = decltype(sizeof(0));
 
 namespace cuchar_detail {
 
 inline void reset_state(mbstate_t &state) {
-  state.state = 0;
-  state.value = 0;
+  state = mbstate_t{};
 }
 
 inline size_t encoding_error(mbstate_t &state) {
   errno = EILSEQ;
 
   /*
-   * The standard leaves the conversion state unspecified
-   * after an encoding error. Resetting it is a valid,
-   * deterministic FTL choice.
+   * The standard leaves the conversion state unspecified after an
+   * encoding error. Resetting it is FTL's deterministic choice.
    */
   reset_state(state);
-
   return static_cast<size_t>(-1);
 }
 
-template <class Character>
-inline size_t mbrtoc_ascii(Character *destination, const char *source,
-                           size_t length, mbstate_t &state) {
-  if (source == nullptr) {
-    static constexpr char empty[] = "";
-
-    source = empty;
-    length = 1;
-    destination = nullptr;
-  }
-
-  if (length == 0) {
-    return static_cast<size_t>(-2);
-  }
-
-  const auto byte = static_cast<unsigned char>(*source);
-
-  if (byte > 0x7fu) {
-    return encoding_error(state);
-  }
-
-  reset_state(state);
-
-  if (destination != nullptr) {
-    *destination = static_cast<Character>(byte);
-  }
-
-  return byte == 0 ? 0 : 1;
-}
-
-inline size_t write_ascii(char *destination, unsigned long value,
-                          mbstate_t &state) {
-  if (value > 0x7ful) {
-    return encoding_error(state);
-  }
-
-  if (destination != nullptr) {
-    *destination = static_cast<char>(static_cast<unsigned char>(value));
-  }
-
-  reset_state(state);
-  return 1;
-}
-
 /*
- * c8rtomb state encoding:
- *
- * high nibble:
- *   2 = UTF-8 two-byte sequence
- *   3 = UTF-8 three-byte sequence
- *   4 = UTF-8 four-byte sequence
- *
- * low nibble:
- *   number of continuation code units remaining
- *
- * state.value accumulates the Unicode scalar value.
+ * state.state/value are reserved for the UTF-8/UTF-16 code-unit staging
+ * required by the <cuchar> APIs. The native multibyte codec state lives in
+ * pending/native_state/native_active and therefore remains independently
+ * copyable across calls.
  */
-inline unsigned utf8_sequence_class(const mbstate_t &state) {
-  return state.state >> 4u;
+inline constexpr unsigned stage_mask = 0xff000000u;
+inline constexpr unsigned stage_aux_mask = 0x0000ff00u;
+inline constexpr unsigned stage_count_mask = 0x000000ffu;
+
+inline constexpr unsigned stage_mbrtoc8 = 0x01000000u;
+inline constexpr unsigned stage_mbrtoc16 = 0x02000000u;
+inline constexpr unsigned stage_c8rtomb = 0x03000000u;
+inline constexpr unsigned stage_c16rtomb = 0x04000000u;
+
+inline unsigned stage_of(const mbstate_t &state) {
+  return state.state & stage_mask;
 }
 
-inline unsigned utf8_remaining(const mbstate_t &state) {
-  return state.state & 0x0fu;
+inline unsigned stage_count(const mbstate_t &state) {
+  return state.state & stage_count_mask;
 }
 
-inline void set_utf8_state(mbstate_t &state, unsigned sequence_class,
-                           unsigned remaining, unsigned value) {
-  state.state = (sequence_class << 4u) | remaining;
+inline unsigned stage_aux(const mbstate_t &state) {
+  return (state.state & stage_aux_mask) >> 8u;
+}
 
+inline void set_stage(mbstate_t &state, unsigned stage, unsigned count,
+                      unsigned value, unsigned aux = 0) {
+  state.state = stage | ((aux & 0xffu) << 8u) | (count & 0xffu);
   state.value = value;
 }
 
-inline unsigned utf8_minimum(unsigned sequence_class) {
-  switch (sequence_class) {
+inline void clear_stage(mbstate_t &state) {
+  state.state = 0;
+  state.value = 0;
+}
+
+inline bool valid_unicode_scalar(char32_t value) {
+  return ftl_locale_runtime::valid_unicode_scalar(value);
+}
+
+inline unsigned utf8_minimum(unsigned sequence_length) {
+  switch (sequence_length) {
   case 2:
     return 0x80u;
-
   case 3:
     return 0x800u;
-
   case 4:
     return 0x10000u;
-
   default:
     return 0u;
   }
 }
 
-inline bool valid_unicode_scalar(unsigned value) {
-  return value <= 0x10ffffu && !(value >= 0xd800u && value <= 0xdfffu);
+inline unsigned encode_utf8(char32_t scalar, unsigned char (&bytes)[4]) {
+  const unsigned value = static_cast<unsigned>(scalar);
+
+  if (value <= 0x7fu) {
+    bytes[0] = static_cast<unsigned char>(value);
+    return 1;
+  }
+
+  if (value <= 0x7ffu) {
+    bytes[0] = static_cast<unsigned char>(0xc0u | (value >> 6u));
+    bytes[1] = static_cast<unsigned char>(0x80u | (value & 0x3fu));
+    return 2;
+  }
+
+  if (value <= 0xffffu) {
+    bytes[0] = static_cast<unsigned char>(0xe0u | (value >> 12u));
+    bytes[1] =
+        static_cast<unsigned char>(0x80u | ((value >> 6u) & 0x3fu));
+    bytes[2] = static_cast<unsigned char>(0x80u | (value & 0x3fu));
+    return 3;
+  }
+
+  bytes[0] = static_cast<unsigned char>(0xf0u | (value >> 18u));
+  bytes[1] =
+      static_cast<unsigned char>(0x80u | ((value >> 12u) & 0x3fu));
+  bytes[2] =
+      static_cast<unsigned char>(0x80u | ((value >> 6u) & 0x3fu));
+  bytes[3] = static_cast<unsigned char>(0x80u | (value & 0x3fu));
+  return 4;
+}
+
+inline size_t decode_scalar(char32_t &scalar, const char *source,
+                            size_t length, mbstate_t &state) {
+  if (length == 0)
+    return static_cast<size_t>(-2);
+
+  auto locale = ftl_locale_runtime::snapshot_current_ctype();
+
+  if (locale == nullptr)
+    return encoding_error(state);
+
+  const auto decoded =
+      ftl_locale_runtime::decode_scalar_restartable(
+          locale, state, source, source + length);
+
+  ftl_locale_runtime::destroy(locale);
+
+  if (decoded.result ==
+      ftl_locale_runtime::decoded_wide::status::error) {
+    return encoding_error(state);
+  }
+
+  if (decoded.result ==
+      ftl_locale_runtime::decoded_wide::status::partial) {
+    return static_cast<size_t>(-2);
+  }
+
+  scalar = decoded.value;
+  return decoded.value == U'\0' ? 0 : decoded.consumed;
+}
+
+inline size_t encode_scalar(char *destination, char32_t scalar,
+                            mbstate_t &state) {
+  auto locale = ftl_locale_runtime::snapshot_current_ctype();
+
+  if (locale == nullptr)
+    return encoding_error(state);
+
+  const auto encoded =
+      ftl_locale_runtime::encode_scalar_restartable(
+          locale, state, scalar);
+
+  ftl_locale_runtime::destroy(locale);
+
+  if (!encoded.valid || encoded.produced == 0)
+    return encoding_error(state);
+
+  for (size_t index = 0; index < encoded.produced; ++index)
+    destination[index] = encoded.bytes[index];
+
+  if (scalar == U'\0')
+    reset_state(state);
+
+  return encoded.produced;
+}
+
+inline size_t emit_pending_utf8(char8_t *destination, mbstate_t &state) {
+  unsigned remaining = stage_count(state);
+  const unsigned byte = state.value & 0xffu;
+
+  if (destination != nullptr)
+    *destination = static_cast<char8_t>(byte);
+
+  state.value >>= 8u;
+  --remaining;
+
+  if (remaining == 0)
+    clear_stage(state);
+  else
+    set_stage(state, stage_mbrtoc8, remaining, state.value);
+
+  return static_cast<size_t>(-3);
+}
+
+inline size_t emit_pending_utf16(char16_t *destination, mbstate_t &state) {
+  if (destination != nullptr)
+    *destination = static_cast<char16_t>(state.value);
+
+  clear_stage(state);
+  return static_cast<size_t>(-3);
+}
+
+inline size_t mbrtoc8_impl(char8_t *destination, const char *source,
+                           size_t length, mbstate_t &state) {
+  const unsigned stage = stage_of(state);
+
+  if (stage == stage_mbrtoc8)
+    return emit_pending_utf8(destination, state);
+
+  if (stage != 0)
+    return encoding_error(state);
+
+  if (source == nullptr) {
+    static constexpr char empty[] = "";
+    source = empty;
+    length = 1;
+    destination = nullptr;
+  }
+
+  char32_t scalar{};
+  const size_t result =
+      decode_scalar(scalar, source, length, state);
+
+  if (result == static_cast<size_t>(-1) ||
+      result == static_cast<size_t>(-2)) {
+    return result;
+  }
+
+  unsigned char bytes[4]{};
+  const unsigned count = encode_utf8(scalar, bytes);
+
+  if (destination != nullptr)
+    *destination = static_cast<char8_t>(bytes[0]);
+
+  if (scalar == U'\0') {
+    reset_state(state);
+    return 0;
+  }
+
+  if (count > 1) {
+    unsigned packed = 0;
+
+    for (unsigned index = 1; index < count; ++index)
+      packed |= static_cast<unsigned>(bytes[index])
+                << (8u * (index - 1u));
+
+    set_stage(state, stage_mbrtoc8, count - 1u, packed);
+  }
+
+  return result;
+}
+
+inline size_t mbrtoc16_impl(char16_t *destination, const char *source,
+                            size_t length, mbstate_t &state) {
+  const unsigned stage = stage_of(state);
+
+  if (stage == stage_mbrtoc16)
+    return emit_pending_utf16(destination, state);
+
+  if (stage != 0)
+    return encoding_error(state);
+
+  if (source == nullptr) {
+    static constexpr char empty[] = "";
+    source = empty;
+    length = 1;
+    destination = nullptr;
+  }
+
+  char32_t scalar{};
+  const size_t result =
+      decode_scalar(scalar, source, length, state);
+
+  if (result == static_cast<size_t>(-1) ||
+      result == static_cast<size_t>(-2)) {
+    return result;
+  }
+
+  if (scalar == U'\0') {
+    if (destination != nullptr)
+      *destination = u'\0';
+
+    reset_state(state);
+    return 0;
+  }
+
+  const unsigned value = static_cast<unsigned>(scalar);
+
+  if (value <= 0xffffu) {
+    if (destination != nullptr)
+      *destination = static_cast<char16_t>(value);
+
+    return result;
+  }
+
+  const unsigned adjusted = value - 0x10000u;
+  const char16_t high =
+      static_cast<char16_t>(0xd800u + (adjusted >> 10u));
+  const char16_t low =
+      static_cast<char16_t>(0xdc00u + (adjusted & 0x3ffu));
+
+  if (destination != nullptr)
+    *destination = high;
+
+  set_stage(state, stage_mbrtoc16, 0, static_cast<unsigned>(low));
+  return result;
+}
+
+inline size_t mbrtoc32_impl(char32_t *destination, const char *source,
+                            size_t length, mbstate_t &state) {
+  if (stage_of(state) != 0)
+    return encoding_error(state);
+
+  if (source == nullptr) {
+    static constexpr char empty[] = "";
+    source = empty;
+    length = 1;
+    destination = nullptr;
+  }
+
+  char32_t scalar{};
+  const size_t result =
+      decode_scalar(scalar, source, length, state);
+
+  if (result == static_cast<size_t>(-1) ||
+      result == static_cast<size_t>(-2)) {
+    return result;
+  }
+
+  if (destination != nullptr)
+    *destination = scalar;
+
+  if (scalar == U'\0')
+    reset_state(state);
+
+  return result;
 }
 
 inline size_t c8rtomb_impl(char *destination, char8_t character,
                            mbstate_t &state) {
   const unsigned byte = static_cast<unsigned char>(character);
+  const unsigned stage = stage_of(state);
 
-  unsigned remaining = utf8_remaining(state);
+  if (stage != 0 && stage != stage_c8rtomb)
+    return encoding_error(state);
 
-  if (remaining != 0) {
-    if (byte < 0x80u || byte > 0xbfu) {
+  if (stage == stage_c8rtomb) {
+    if (byte < 0x80u || byte > 0xbfu)
       return encoding_error(state);
-    }
 
-    state.value = (state.value << 6u) | (byte & 0x3fu);
+    unsigned remaining = stage_count(state);
+    const unsigned sequence_length = stage_aux(state);
+    unsigned value = (state.value << 6u) | (byte & 0x3fu);
 
     --remaining;
 
     if (remaining != 0) {
-      state.state = (utf8_sequence_class(state) << 4u) | remaining;
-
+      set_stage(state, stage_c8rtomb, remaining, value,
+                sequence_length);
       return 0;
     }
 
-    const unsigned sequence_class = utf8_sequence_class(state);
-
-    const unsigned value = state.value;
-
-    if (value < utf8_minimum(sequence_class) || !valid_unicode_scalar(value)) {
+    if (value < utf8_minimum(sequence_length) ||
+        !valid_unicode_scalar(static_cast<char32_t>(value))) {
       return encoding_error(state);
     }
 
-    /*
-     * Any completed multi-code-unit UTF-8 sequence
-     * represents a code point above ASCII and therefore
-     * has no representation in FTL's current C locale.
-     */
-    return encoding_error(state);
+    clear_stage(state);
+    return encode_scalar(
+        destination, static_cast<char32_t>(value), state);
   }
 
   if (byte <= 0x7fu) {
-    return write_ascii(destination, byte, state);
+    clear_stage(state);
+    return encode_scalar(
+        destination, static_cast<char32_t>(byte), state);
   }
 
   if (byte >= 0xc2u && byte <= 0xdfu) {
-    set_utf8_state(state, 2, 1, byte & 0x1fu);
-
+    set_stage(state, stage_c8rtomb, 1, byte & 0x1fu, 2);
     return 0;
   }
 
   if (byte >= 0xe0u && byte <= 0xefu) {
-    set_utf8_state(state, 3, 2, byte & 0x0fu);
-
+    set_stage(state, stage_c8rtomb, 2, byte & 0x0fu, 3);
     return 0;
   }
 
   if (byte >= 0xf0u && byte <= 0xf4u) {
-    set_utf8_state(state, 4, 3, byte & 0x07u);
-
+    set_stage(state, stage_c8rtomb, 3, byte & 0x07u, 4);
     return 0;
   }
 
   return encoding_error(state);
 }
 
-inline constexpr unsigned pending_utf16_high_surrogate = 1u;
-
 inline size_t c16rtomb_impl(char *destination, char16_t character,
                             mbstate_t &state) {
   const unsigned value = static_cast<unsigned>(character);
+  const unsigned stage = stage_of(state);
 
-  if (state.state == pending_utf16_high_surrogate) {
-    if (value < 0xdc00u || value > 0xdfffu) {
+  if (stage != 0 && stage != stage_c16rtomb)
+    return encoding_error(state);
+
+  if (stage == stage_c16rtomb) {
+    if (value < 0xdc00u || value > 0xdfffu)
       return encoding_error(state);
-    }
 
     const unsigned high = state.value;
+    const char32_t scalar =
+        static_cast<char32_t>(
+            0x10000u +
+            ((high - 0xd800u) << 10u) +
+            (value - 0xdc00u));
 
-    const unsigned code_point =
-        0x10000u + ((high - 0xd800u) << 10u) + (value - 0xdc00u);
-
-    static_cast<void>(code_point);
-
-    /*
-     * A surrogate pair always denotes a non-ASCII scalar,
-     * so it cannot be represented by the current C locale.
-     */
-    return encoding_error(state);
+    clear_stage(state);
+    return encode_scalar(destination, scalar, state);
   }
 
   if (value >= 0xd800u && value <= 0xdbffu) {
-    state.state = pending_utf16_high_surrogate;
-
-    state.value = value;
+    set_stage(state, stage_c16rtomb, 0, value);
     return 0;
   }
 
-  if (value >= 0xdc00u && value <= 0xdfffu) {
+  if (value >= 0xdc00u && value <= 0xdfffu)
     return encoding_error(state);
-  }
 
-  return write_ascii(destination, value, state);
+  clear_stage(state);
+  return encode_scalar(
+      destination, static_cast<char32_t>(value), state);
 }
 
 } // namespace cuchar_detail
 
-inline size_t mbrtoc8(char8_t *pc8, const char *s, size_t n, mbstate_t *ps) {
+inline size_t mbrtoc8(char8_t *pc8, const char *s, size_t n,
+                      mbstate_t *ps) {
   static mbstate_t internal_state{};
 
-  if (ps == nullptr) {
+  if (ps == nullptr)
     ps = &internal_state;
-  }
 
-  return cuchar_detail::mbrtoc_ascii(pc8, s, n, *ps);
+  return cuchar_detail::mbrtoc8_impl(pc8, s, n, *ps);
 }
 
 inline size_t c8rtomb(char *s, char8_t c8, mbstate_t *ps) {
   static mbstate_t internal_state{};
 
-  if (ps == nullptr) {
+  if (ps == nullptr)
     ps = &internal_state;
-  }
+
+  char internal_buffer[16]{};
 
   if (s == nullptr) {
-    char buffer{};
-
-    return cuchar_detail::c8rtomb_impl(&buffer, u8'\0', *ps);
+    s = internal_buffer;
+    c8 = u8'\0';
   }
 
   return cuchar_detail::c8rtomb_impl(s, c8, *ps);
 }
 
-inline size_t mbrtoc16(char16_t *pc16, const char *s, size_t n, mbstate_t *ps) {
+inline size_t mbrtoc16(char16_t *pc16, const char *s, size_t n,
+                       mbstate_t *ps) {
   static mbstate_t internal_state{};
 
-  if (ps == nullptr) {
+  if (ps == nullptr)
     ps = &internal_state;
-  }
 
-  return cuchar_detail::mbrtoc_ascii(pc16, s, n, *ps);
+  return cuchar_detail::mbrtoc16_impl(pc16, s, n, *ps);
 }
 
 inline size_t c16rtomb(char *s, char16_t c16, mbstate_t *ps) {
   static mbstate_t internal_state{};
 
-  if (ps == nullptr) {
+  if (ps == nullptr)
     ps = &internal_state;
-  }
+
+  char internal_buffer[16]{};
 
   if (s == nullptr) {
-    char buffer{};
-
-    return cuchar_detail::c16rtomb_impl(&buffer, u'\0', *ps);
+    s = internal_buffer;
+    c16 = u'\0';
   }
 
   return cuchar_detail::c16rtomb_impl(s, c16, *ps);
 }
 
-inline size_t mbrtoc32(char32_t *pc32, const char *s, size_t n, mbstate_t *ps) {
+inline size_t mbrtoc32(char32_t *pc32, const char *s, size_t n,
+                       mbstate_t *ps) {
   static mbstate_t internal_state{};
 
-  if (ps == nullptr) {
+  if (ps == nullptr)
     ps = &internal_state;
-  }
 
-  return cuchar_detail::mbrtoc_ascii(pc32, s, n, *ps);
+  return cuchar_detail::mbrtoc32_impl(pc32, s, n, *ps);
 }
 
 inline size_t c32rtomb(char *s, char32_t c32, mbstate_t *ps) {
   static mbstate_t internal_state{};
 
-  if (ps == nullptr) {
+  if (ps == nullptr)
     ps = &internal_state;
-  }
+
+  char internal_buffer[16]{};
 
   if (s == nullptr) {
-    char buffer{};
-
-    return cuchar_detail::write_ascii(&buffer, 0, *ps);
+    s = internal_buffer;
+    c32 = U'\0';
   }
 
-  return cuchar_detail::write_ascii(s, static_cast<unsigned long>(c32), *ps);
+  if (cuchar_detail::stage_of(*ps) != 0)
+    return cuchar_detail::encoding_error(*ps);
+
+  if (!cuchar_detail::valid_unicode_scalar(c32))
+    return cuchar_detail::encoding_error(*ps);
+
+  return cuchar_detail::encode_scalar(s, c32, *ps);
 }
 
 } // namespace std or ftl

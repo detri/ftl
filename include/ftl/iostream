@@ -3,21 +3,13 @@
 #ifndef FTL_IOSTREAM_HEADER
 #define FTL_IOSTREAM_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <cstdio>
 #include <cwchar>
 #include <istream>
 #include <mutex>
-#else
-#include <ftl/atomic>
-#include <ftl/cstdio>
-#include <ftl/cwchar>
-#include <ftl/istream>
-#include <ftl/mutex>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 template <class Character, class Traits> class standard_filebuf;
@@ -211,5 +203,5 @@ inline ios_base::Init::~Init() {
 
 inline ios_base::Init __ftl_standard_stream_initializer;
 
-FTL_END_NAMESPACE
+} // namespace std
 #endif

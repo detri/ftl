@@ -3,19 +3,12 @@
 #ifndef FTL_CHARCONV_HEADER
 #define FTL_CHARCONV_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__system_error/errc.hpp>
 #include <detail/floating_conversion>
 #include <limits>
 #include <type_traits>
-#else
-#include <ftl/__system_error/errc.hpp>
-#include <ftl/detail/floating_conversion>
-#include <ftl/limits>
-#include <ftl/type_traits>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 enum class chars_format {
   scientific = 1,
@@ -1174,7 +1167,7 @@ FTL_CHARCONV_EXTENDED_SHORTEST_OVERLOADS(bf16)
 
 #undef FTL_CHARCONV_EXTENDED_SHORTEST_OVERLOADS
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_to_chars) || __cpp_lib_to_chars < 201611L
 #undef __cpp_lib_to_chars

@@ -1,6 +1,6 @@
-function(ftl_replace_stl target)
+function(ftl_enable target)
     if (NOT TARGET "${target}")
-        message(FATAL_ERROR "ftl_replace_stl: '${target}' is not a target")
+        message(FATAL_ERROR "ftl_enable: '${target}' is not a target")
     endif ()
 
     get_target_property(aliased_target "${target}" ALIASED_TARGET)
@@ -10,15 +10,14 @@ function(ftl_replace_stl target)
 
     get_target_property(imported "${target}" IMPORTED)
     if (imported)
-        string(MAKE_C_IDENTIFIER "${target}_ftl" replacement_target)
-        if (NOT TARGET "${replacement_target}")
-            add_library("${replacement_target}" INTERFACE)
-            target_link_libraries("${replacement_target}" INTERFACE "${target}")
+        string(MAKE_C_IDENTIFIER "${target}_ftl" ftl_target)
+        if (NOT TARGET "${ftl_target}")
+            add_library("${ftl_target}" INTERFACE)
+            target_link_libraries("${ftl_target}" INTERFACE "${target}")
         endif ()
-        set(target "${replacement_target}")
+        set(target "${ftl_target}")
         set(scope INTERFACE)
-        message(STATUS
-                "ftl_replace_stl: use '${target}' in place of the imported target")
+        message(STATUS "ftl_enable: use '${target}' in place of the imported target")
     else ()
         get_target_property(type "${target}" TYPE)
         if (type STREQUAL "INTERFACE_LIBRARY")
@@ -30,7 +29,6 @@ function(ftl_replace_stl target)
         endif ()
     endif ()
 
-    target_compile_definitions("${target}" ${scope} FTL_REPLACE_STL)
     target_include_directories(
             "${target}"
             BEFORE ${scope}

@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <exception>
 #include <memory>
 namespace tested = std;
-#else
-#include <ftl/exception>
-#include <ftl/memory>
-namespace tested = ftl;
-#endif
 
 struct error : tested::exception {
   const char *what() const noexcept override { return "error"; }

@@ -1,18 +1,9 @@
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <bit>
 #include <cstdint>
 #include <limits>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/atomic>
-#include <ftl/bit>
-#include <ftl/cstdint>
-#include <ftl/limits>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 struct atomic_pair {
   tested::uint16_t first;

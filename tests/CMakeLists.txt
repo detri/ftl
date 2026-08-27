@@ -1,5 +1,5 @@
 include(FetchContent)
-include(../cmake/ftl_replace_stl.cmake)
+include(../cmake/ftl.cmake)
 
 FetchContent_Declare(
         googletest
@@ -22,91 +22,76 @@ if (FTL_HAS_WNO_CHARACTER_CONVERSION)
 endif ()
 
 function(add_ftl_test header)
-    foreach (mode IN ITEMS normal replace)
-        set(object ftl_${mode}_${header}_object)
+    set(object ftl_${header}_object)
 
-        add_library(${object} OBJECT ${header}.cpp)
-        target_compile_features(${object} PRIVATE cxx_std_23)
-        target_compile_options(
-                ${object}
-                PRIVATE
-                "$<$<CXX_COMPILER_ID:MSVC>:/EHsc>"
-        )
+    add_library(${object} OBJECT ${header}.cpp)
+    target_compile_features(${object} PRIVATE cxx_std_23)
+    target_include_directories(${object} PRIVATE ../include/ftl)
+    target_compile_options(
+            ${object}
+            PRIVATE
+            "$<$<CXX_COMPILER_ID:MSVC>:/EHsc>"
+    )
 
-        if (mode STREQUAL replace)
-            target_compile_definitions(${object} PRIVATE FTL_REPLACE_STL)
-            target_include_directories(${object} PRIVATE ../include/ftl)
+    if (MSVC)
+        target_compile_options(${object} PRIVATE /X)
+    else ()
+        target_compile_options(${object} PRIVATE -nostdinc++)
+    endif ()
 
-            if (MSVC)
-                target_compile_options(${object} PRIVATE /X)
-            else ()
-                target_compile_options(${object} PRIVATE -nostdinc++)
-            endif ()
-        else ()
-            target_link_libraries(${object} PRIVATE ftl)
-        endif ()
+    # Tests for facilities whose std::* symbols may collide with the hosted
+    # standard library must not link GoogleTest. Locale and its facets are
+    # especially sensitive because the hosted C++ runtime exports std::locale,
+    # std::ctype, and stream symbols.
+    set(ftl_standalone FALSE)
 
-        #
-        # Replacement-mode tests for facilities whose std::* symbols may
-        # collide with the hosted standard library must not link GoogleTest.
-        #
-        # locale and its facets are especially sensitive because the hosted
-        # C++ runtime itself exports std::locale / std::ctype and stream
-        # symbols, including those reached through range stream adaptors.
-        #
-        set(ftl_standalone_replace FALSE)
+    if (header MATCHES
+            "^(regex|string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|queue|stack|locale(_.*)?|codecvt|format|chrono|print|exception|system_error|iosfwd|streambuf|ios|istream|istream_view|ostream|complex|random|thread|stacktrace|iostream|fstream|sstream|spanstream|syncstream|iomanip|cstdio|strstream|filesystem|feature_macro_semantics)$")
+        set(ftl_standalone TRUE)
+    endif ()
 
-        if (mode STREQUAL replace AND
-                header MATCHES
-                "^(regex|string|vector|forward_list|list|map|set|unordered_map|unordered_set|flat_map|flat_set|queue|stack|locale(_.*)?|codecvt|format|chrono|print|exception|system_error|iosfwd|streambuf|ios|istream|istream_view|ostream|complex|random|thread|stacktrace|iostream|fstream|sstream|spanstream|syncstream|iomanip|cstdio|strstream|filesystem|feature_macro_semantics)$")
-            set(ftl_standalone_replace TRUE)
-        endif ()
+    set(target ftl_${header})
 
-        set(target ftl_${mode}_${header})
-
-        if (ftl_standalone_replace)
-            add_executable(
-                    ${target}
-                    standalone_driver.cpp
-                    $<TARGET_OBJECTS:${object}>
-            )
-        else ()
-            add_executable(
-                    ${target}
-                    gtest_driver.cpp
-                    $<TARGET_OBJECTS:${object}>
-            )
-
-            target_link_libraries(${target} PRIVATE GTest::gtest_main)
-        endif ()
-
-        target_link_libraries(${target} PRIVATE ftl)
-
-        if (ftl_standalone_replace AND UNIX)
-            # A replacement-mode standalone test must not get std::*
-            # implementations from the host C++ standard library.
-            target_link_options(${target} PRIVATE -nostdlib++)
-
-            if (APPLE)
-                #
-                # Apple's public exception_ptr rethrow entry point lives in
-                # libc++, while object ownership and RTTI live in libc++abi.
-                #
-                target_link_libraries(${target} PRIVATE c++ c++abi)
-            else ()
-                # GCC-family ABI runtime without libstdc++.
-                target_link_libraries(${target} PRIVATE supc++)
-            endif ()
-        endif ()
-
-        target_compile_options(
+    if (ftl_standalone)
+        add_executable(
                 ${target}
-                PRIVATE
-                "$<$<CXX_COMPILER_ID:MSVC>:/EHsc>"
+                standalone_driver.cpp
+                $<TARGET_OBJECTS:${object}>
+        )
+    else ()
+        add_executable(
+                ${target}
+                gtest_driver.cpp
+                $<TARGET_OBJECTS:${object}>
         )
 
-        add_test(NAME "${mode}.${header}" COMMAND ${target})
-    endforeach ()
+        target_link_libraries(${target} PRIVATE GTest::gtest_main)
+    endif ()
+
+    target_link_libraries(${target} PRIVATE ftl)
+
+    if (ftl_standalone AND UNIX)
+        # Standalone tests must not get std::* implementations from the host
+        # C++ standard library.
+        target_link_options(${target} PRIVATE -nostdlib++)
+
+        if (APPLE)
+            # Apple's public exception_ptr rethrow entry point lives in
+            # libc++, while object ownership and RTTI live in libc++abi.
+            target_link_libraries(${target} PRIVATE c++ c++abi)
+        else ()
+            # GCC-family ABI runtime without libstdc++.
+            target_link_libraries(${target} PRIVATE supc++)
+        endif ()
+    endif ()
+
+    target_compile_options(
+            ${target}
+            PRIVATE
+            "$<$<CXX_COMPILER_ID:MSVC>:/EHsc>"
+    )
+
+    add_test(NAME "${header}" COMMAND ${target})
 endfunction()
 
 function(add_ftl_compile_fail_check name source)
@@ -118,7 +103,6 @@ function(add_ftl_compile_fail_check name source)
             CMAKE_FLAGS
             "-DCMAKE_CXX_STANDARD=23"
             "-DINCLUDE_DIRECTORIES=${PROJECT_SOURCE_DIR}/include/ftl"
-            COMPILE_DEFINITIONS FTL_REPLACE_STL
             OUTPUT_VARIABLE output
     )
 
@@ -130,6 +114,12 @@ endfunction()
 function(add_ftl_standalone_check name source)
     add_executable(ftl_check_${name} ${source})
     target_compile_features(ftl_check_${name} PRIVATE cxx_std_23)
+    target_include_directories(ftl_check_${name} PRIVATE ../include/ftl)
+    if (MSVC)
+        target_compile_options(ftl_check_${name} PRIVATE /X)
+    else ()
+        target_compile_options(ftl_check_${name} PRIVATE -nostdinc++)
+    endif ()
     target_link_libraries(ftl_check_${name} PRIVATE ftl)
     add_test(NAME check.${name} COMMAND ftl_check_${name})
 endfunction()
@@ -137,7 +127,6 @@ endfunction()
 function(add_ftl_freestanding_link_check name source)
     add_executable(ftl_check_${name} ${source})
     target_compile_features(ftl_check_${name} PRIVATE cxx_std_23)
-    target_compile_definitions(ftl_check_${name} PRIVATE FTL_REPLACE_STL)
     target_include_directories(ftl_check_${name} PRIVATE ../include/ftl)
     target_link_libraries(ftl_check_${name} PRIVATE ftl_compiler_runtime)
 
@@ -185,13 +174,12 @@ endfunction()
 function(add_ftl_disabled_features_check name source)
     add_ftl_standalone_check(${name} ${source})
     target_compile_definitions(ftl_check_${name} PRIVATE
-            FTL_NO_EXCEPTIONS FTL_NO_RTTI FTL_NO_THREADS FTL_REPLACE_STL)
-    target_include_directories(ftl_check_${name} PRIVATE ../include/ftl)
+            FTL_NO_EXCEPTIONS FTL_NO_RTTI FTL_NO_THREADS)
     if (MSVC)
-        target_compile_options(ftl_check_${name} PRIVATE /EHs-c- /GR- /X)
+        target_compile_options(ftl_check_${name} PRIVATE /EHs-c- /GR-)
     else ()
         target_compile_options(ftl_check_${name} PRIVATE
-                -fno-exceptions -fno-rtti -nostdinc++)
+                -fno-exceptions -fno-rtti)
     endif ()
 endfunction()
 
@@ -290,28 +278,28 @@ add_test(
 )
 add_ftl_standalone_check(no_allocation checks/no_allocation.cpp)
 
-add_executable(ftl_check_replace_stl_link checks/replace_stl_link.cpp)
-ftl_replace_stl(ftl_check_replace_stl_link)
+add_executable(ftl_check_standard_library_link checks/standard_library_link.cpp)
+ftl_enable(ftl_check_standard_library_link)
 
-set(ftl_replace_stl_map
-        "$<TARGET_FILE_DIR:ftl_check_replace_stl_link>/ftl_replace_stl.map")
+set(ftl_standard_library_map
+        "$<TARGET_FILE_DIR:ftl_check_standard_library_link>/ftl_standard_library.map")
 if (MSVC)
-    target_link_options(ftl_check_replace_stl_link PRIVATE
-            "/MAP:${ftl_replace_stl_map}")
+    target_link_options(ftl_check_standard_library_link PRIVATE
+            "/MAP:${ftl_standard_library_map}")
 elseif (APPLE)
-    target_link_options(ftl_check_replace_stl_link PRIVATE
-            "LINKER:-map,${ftl_replace_stl_map}")
+    target_link_options(ftl_check_standard_library_link PRIVATE
+            "LINKER:-map,${ftl_standard_library_map}")
 else ()
-    target_link_options(ftl_check_replace_stl_link PRIVATE
-            "LINKER:-Map,${ftl_replace_stl_map}")
+    target_link_options(ftl_check_standard_library_link PRIVATE
+            "LINKER:-Map,${ftl_standard_library_map}")
 endif ()
 
-add_test(NAME check.replace_stl_link COMMAND ftl_check_replace_stl_link)
+add_test(NAME check.standard_library_link COMMAND ftl_check_standard_library_link)
 add_test(
-        NAME check.replace_stl_link_map
+        NAME check.standard_library_link_map
         COMMAND ${CMAKE_COMMAND}
-        "-DFTL_LINK_MAP=${ftl_replace_stl_map}"
-        -P "${CMAKE_CURRENT_SOURCE_DIR}/checks/replace_stl_link.cmake"
+        "-DFTL_LINK_MAP=${ftl_standard_library_map}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/checks/standard_library_link.cmake"
 )
 
 add_ftl_freestanding_link_check(freestanding_link checks/freestanding_link.cpp)

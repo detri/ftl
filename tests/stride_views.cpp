@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <ranges>
 namespace tested = std;
-#else
-#include <ftl/ranges>
-namespace tested = ftl;
-#endif
 
 constexpr bool stride_works() {
     int values[] = {0, 1, 2, 3, 4, 5, 6};

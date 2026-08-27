@@ -3,15 +3,9 @@
 #ifndef FTL_DETAIL_FLOATING_BITS_HEADER
 #define FTL_DETAIL_FLOATING_BITS_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <bit>
 #include <cstdint>
 #define FTL_FLOATING_BITS_STD std
-#else
-#include <ftl/bit>
-#include <ftl/cstdint>
-#define FTL_FLOATING_BITS_STD ftl
-#endif
 
 #if defined(_MSC_VER) && !defined(__clang__)
 

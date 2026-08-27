@@ -3,13 +3,9 @@
 #ifndef FTL_STREAMBUF_HEADER
 #define FTL_STREAMBUF_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <ios>
-#else
-#include <ftl/ios>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class Character, class Traits> class basic_streambuf {
 public:
@@ -217,12 +213,8 @@ typename Traits::int_type streambuf_sputc(basic_streambuf<C, Traits> *buffer,
 }
 } // namespace detail
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#ifdef FTL_REPLACE_STL
 #include <detail/wbuffer_convert.hpp>
-#else
-#include <ftl/detail/wbuffer_convert.hpp>
-#endif
 
 #endif // FTL_STREAMBUF_HEADER

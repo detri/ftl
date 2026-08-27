@@ -3,17 +3,9 @@
 #ifndef FTL_COMPARE_HEADER
 #define FTL_COMPARE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <concepts>
-#define FTL_COMPARE_BEGIN_NAMESPACE namespace std {
-#define FTL_COMPARE_END_NAMESPACE }
-#else
-#include <ftl/concepts>
-#define FTL_COMPARE_BEGIN_NAMESPACE namespace ftl {
-#define FTL_COMPARE_END_NAMESPACE }
-#endif
 
-FTL_COMPARE_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 struct compare_zero {
@@ -258,28 +250,6 @@ concept builtin_pointer_three_way =
     !compare_has_nonmember_three_way<T, U> &&
     !compare_has_member_three_way<T, U>;
 
-#ifndef FTL_REPLACE_STL
-
-template<class T, class U>
-concept builtin_arithmetic_three_way =
-    is_arithmetic_v<decay_t<T>> &&
-    is_arithmetic_v<decay_t<U>> &&
-    (is_same_v<decay_t<T>, bool> ==
-     is_same_v<decay_t<U>, bool>);
-
-template<class T, class U>
-concept builtin_enum_three_way =
-    is_enum_v<decay_t<T>> &&
-    same_as<decay_t<T>, decay_t<U>>;
-
-template<class T, class U>
-concept normal_compare_three_way =
-    three_way_comparable_with<T, U> ||
-    builtin_arithmetic_three_way<T, U> ||
-    builtin_enum_three_way<T, U> ||
-    builtin_pointer_three_way<T, U>;
-
-#endif
 
 template<class T, class U>
 constexpr strong_ordering pointer_total_order(T&& left, U&& right)
@@ -296,27 +266,9 @@ constexpr strong_ordering pointer_total_order(T&& left, U&& right)
         return strong_ordering::equal;
     }
 
-#ifdef FTL_REPLACE_STL
     if (is_constant_evaluated()) {
         return left_pointer <=> right_pointer;
     }
-#else
-    /*
-     * In normal namespace mode the language's built-in <=> category is
-     * std::strong_ordering, not ftl::strong_ordering. Preserve constexpr
-     * evaluation whenever the language pointer relation itself establishes
-     * an order; otherwise the runtime address-order path below is used.
-     */
-    if (is_constant_evaluated()) {
-        if (left_pointer < right_pointer) {
-            return strong_ordering::less;
-        }
-
-        if (right_pointer < left_pointer) {
-            return strong_ordering::greater;
-        }
-    }
-#endif
 
     using uintptr_like =
         conditional_t<sizeof(void*) == sizeof(unsigned long long),
@@ -345,11 +297,6 @@ template<class T, class U>
 static consteval bool compare_three_way_noexcept() {
     if constexpr (builtin_pointer_three_way<T, U>) {
         return noexcept(pointer_total_order(declval<T>(), declval<U>()));
-#ifndef FTL_REPLACE_STL
-    } else if constexpr (builtin_arithmetic_three_way<T, U> ||
-                         builtin_enum_three_way<T, U>) {
-        return true;
-#endif
     } else {
         return noexcept(declval<T>() <=> declval<U>());
     }
@@ -365,11 +312,7 @@ struct compare_three_way {
     using is_transparent = void;
 
     template<class T, class U>
-#ifdef FTL_REPLACE_STL
         requires three_way_comparable_with<T, U>
-#else
-        requires detail::normal_compare_three_way<T, U>
-#endif
     constexpr auto operator()(T&& left, U&& right) const
         noexcept(detail::compare_three_way_noexcept<T, U>()) {
 
@@ -378,50 +321,6 @@ struct compare_three_way {
                 static_cast<T&&>(left),
                 static_cast<U&&>(right));
 
-#ifndef FTL_REPLACE_STL
-        } else if constexpr (
-            detail::builtin_arithmetic_three_way<T, U>) {
-
-            if constexpr (
-                is_floating_point_v<decay_t<T>> ||
-                is_floating_point_v<decay_t<U>>) {
-
-                using common_type =
-                    common_type_t<decay_t<T>, decay_t<U>>;
-
-                return detail::float_partial_order(
-                    static_cast<common_type>(
-                        static_cast<T&&>(left)),
-                    static_cast<common_type>(
-                        static_cast<U&&>(right)));
-            } else {
-                if (static_cast<T&&>(left) <
-                    static_cast<U&&>(right)) {
-                    return strong_ordering::less;
-                }
-
-                if (static_cast<T&&>(left) >
-                    static_cast<U&&>(right)) {
-                    return strong_ordering::greater;
-                }
-
-                return strong_ordering::equal;
-            }
-        } else if constexpr (
-            detail::builtin_enum_three_way<T, U>) {
-
-            if (static_cast<T&&>(left) <
-                static_cast<U&&>(right)) {
-                return strong_ordering::less;
-            }
-
-            if (static_cast<T&&>(left) >
-                static_cast<U&&>(right)) {
-                return strong_ordering::greater;
-            }
-
-            return strong_ordering::equal;
-#endif
         } else {
             return static_cast<T&&>(left) <=>
                    static_cast<U&&>(right);
@@ -1225,10 +1124,8 @@ inline constexpr detail::strong_fallback_fn compare_strong_order_fallback{};
 inline constexpr detail::weak_fallback_fn compare_weak_order_fallback{};
 inline constexpr detail::partial_fallback_fn compare_partial_order_fallback{};
 
-FTL_COMPARE_END_NAMESPACE
+}
 
-#undef FTL_COMPARE_BEGIN_NAMESPACE
-#undef FTL_COMPARE_END_NAMESPACE
 
 #if !defined(__cpp_lib_three_way_comparison) || \
     __cpp_lib_three_way_comparison < 201907L

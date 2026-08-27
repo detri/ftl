@@ -3,25 +3,13 @@
 #ifndef FTL_STOP_TOKEN_HEADER
 #define FTL_STOP_TOKEN_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <concepts>
 #include <memory>
 #include <type_traits>
 #include <utility>
-#define FTL_STOP_TOKEN_BEGIN_NAMESPACE namespace std {
-#define FTL_STOP_TOKEN_END_NAMESPACE }
-#else
-#include <ftl/atomic>
-#include <ftl/concepts>
-#include <ftl/memory>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#define FTL_STOP_TOKEN_BEGIN_NAMESPACE namespace ftl {
-#define FTL_STOP_TOKEN_END_NAMESPACE }
-#endif
 
-FTL_STOP_TOKEN_BEGIN_NAMESPACE
+namespace std {
 
 class stop_token;
 class stop_source;
@@ -390,10 +378,8 @@ private:
 template <class Callback>
 stop_callback(stop_token, Callback) -> stop_callback<Callback>;
 
-FTL_STOP_TOKEN_END_NAMESPACE
+}
 
-#undef FTL_STOP_TOKEN_BEGIN_NAMESPACE
-#undef FTL_STOP_TOKEN_END_NAMESPACE
 
 #if !defined(__cpp_lib_jthread) || \
     __cpp_lib_jthread < 201911L

@@ -11,10 +11,10 @@ extern "C" void __cdecl __fastfail(unsigned int);
 #define FTL_STRING_TRAP() __builtin_trap()
 #endif
 
-#ifdef FTL_REPLACE_STL
 #include <charconv>
 #include <compare>
 #include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <cwchar>
 #include <detail/rapidhash>
@@ -29,29 +29,8 @@ extern "C" void __cdecl __fastfail(unsigned int);
 #include <string_view>
 #include <type_traits>
 #include <utility>
-#define FTL_STRING_NAMESPACE std
-#else
-#include <ftl/charconv>
-#include <ftl/compare>
-#include <ftl/cerrno>
-#include <ftl/cstdlib>
-#include <ftl/cwchar>
-#include <ftl/detail/rapidhash>
-#include <ftl/initializer_list>
-#include <ftl/iosfwd>
-#include <ftl/iterator>
-#include <ftl/limits>
-#include <ftl/memory>
-#include <ftl/memory_resource>
-#include <ftl/ranges>
-#include <ftl/stdexcept>
-#include <ftl/string_view>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#define FTL_STRING_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class T> struct hash;
 
@@ -113,9 +92,9 @@ public:
   using const_reference = const value_type &;
   using iterator = value_type *;
   using const_iterator = const value_type *;
-  using reverse_iterator = FTL_STRING_NAMESPACE::reverse_iterator<iterator>;
+  using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator =
-      FTL_STRING_NAMESPACE::reverse_iterator<const_iterator>;
+      std::reverse_iterator<const_iterator>;
 
   static constexpr size_type npos = size_type(-1);
 
@@ -734,7 +713,7 @@ public:
       allocator_traits<Allocator>::propagate_on_container_swap::value ||
       allocator_traits<Allocator>::is_always_equal::value) {
     if constexpr (allocator_traits<Allocator>::propagate_on_container_swap::value)
-      FTL_STRING_NAMESPACE::swap(allocator_, other.allocator_);
+      std::swap(allocator_, other.allocator_);
     swap_storage(other);
   }
 
@@ -742,10 +721,10 @@ public:
     return data();
   }
   [[nodiscard]] constexpr const Character *data() const noexcept {
-    return allocated_ ? FTL_STRING_NAMESPACE::to_address(allocation_) : small_;
+    return allocated_ ? std::to_address(allocation_) : small_;
   }
   [[nodiscard]] constexpr Character *data() noexcept {
-    return allocated_ ? FTL_STRING_NAMESPACE::to_address(allocation_) : small_;
+    return allocated_ ? std::to_address(allocation_) : small_;
   }
   [[nodiscard]] constexpr operator basic_string_view<Character, Traits>() const
       noexcept {
@@ -1006,11 +985,11 @@ private:
       return;
     pointer replacement = allocator_traits<Allocator>::allocate(
         allocator_, requested + 1);
-    Character *raw = FTL_STRING_NAMESPACE::to_address(replacement);
-#if !defined(_MSC_VER) && defined(FTL_REPLACE_STL)
+    Character *raw = std::to_address(replacement);
+#if !defined(_MSC_VER)
     if consteval {
       for (size_type index = 0; index <= requested; ++index)
-        FTL_STRING_NAMESPACE::construct_at(raw + index);
+        std::construct_at(raw + index);
     }
 #endif
     const size_type old_size = size_;
@@ -1062,9 +1041,9 @@ private:
   }
   constexpr void swap_storage(basic_string &other) noexcept {
     if (allocated_ && other.allocated_) {
-      FTL_STRING_NAMESPACE::swap(allocation_, other.allocation_);
-      FTL_STRING_NAMESPACE::swap(size_, other.size_);
-      FTL_STRING_NAMESPACE::swap(capacity_, other.capacity_);
+      std::swap(allocation_, other.allocation_);
+      std::swap(size_, other.size_);
+      std::swap(capacity_, other.capacity_);
       return;
     }
     if (!allocated_ && !other.allocated_) {
@@ -1074,7 +1053,7 @@ private:
         small_[index] = other.small_[index];
         other.small_[index] = saved;
       }
-      FTL_STRING_NAMESPACE::swap(size_, other.size_);
+      std::swap(size_, other.size_);
       return;
     }
     if (!allocated_) {
@@ -1372,30 +1351,51 @@ Result string_to_floating(const String &value,
 
 template <class Number>
 string number_to_string(Number value) {
-  constexpr size_t capacity = is_integral_v<Number>
-                                  ? numeric_limits<Number>::digits + 3
-                                  : numeric_limits<Number>::max_exponent10 +
-                                        numeric_limits<Number>::max_digits10 + 16;
-  string result(capacity, '\0');
-  to_chars_result converted;
-  if constexpr (is_integral_v<Number>)
-    converted = to_chars(result.data(), result.data() + result.size(), value);
-  else
-    converted = to_chars(result.data(), result.data() + result.size(), value,
-                         chars_format::fixed, 6);
-  if (converted.ec != errc{})
+  const char *format = [] {
+    if constexpr (is_same_v<Number, int>)
+      return "%d";
+    else if constexpr (is_same_v<Number, unsigned>)
+      return "%u";
+    else if constexpr (is_same_v<Number, long>)
+      return "%ld";
+    else if constexpr (is_same_v<Number, unsigned long>)
+      return "%lu";
+    else if constexpr (is_same_v<Number, long long>)
+      return "%lld";
+    else if constexpr (is_same_v<Number, unsigned long long>)
+      return "%llu";
+    else if constexpr (is_same_v<Number, long double>)
+      return "%Lf";
+    else
+      return "%f";
+  }();
+
+  const int count = snprintf(nullptr, 0, format, value);
+  if (count < 0)
     string_length_failure();
-  result.resize(static_cast<size_t>(converted.ptr - result.data()));
+
+  string result(static_cast<size_t>(count) + 1, '\0');
+  if (snprintf(result.data(), result.size(), format, value) != count)
+    string_length_failure();
+  result.resize(static_cast<size_t>(count));
   return result;
 }
 
 template <class Number>
 wstring number_to_wstring(Number value) {
   const string narrow = number_to_string(value);
-  wstring wide;
-  wide.reserve(narrow.size());
-  for (char character : narrow)
-    wide.push_back(static_cast<wchar_t>(character));
+  const char *source = narrow.c_str();
+  mbstate_t state{};
+  const size_t count = mbsrtowcs(nullptr, &source, 0, &state);
+  if (count == static_cast<size_t>(-1))
+    string_length_failure();
+
+  wstring wide(count + 1, L'\0');
+  source = narrow.c_str();
+  state = mbstate_t{};
+  if (mbsrtowcs(wide.data(), &source, wide.size(), &state) != count)
+    string_length_failure();
+  wide.resize(count);
   return wide;
 }
 
@@ -1459,7 +1459,7 @@ FTL_STRING_TO_STRING(long double)
 
 namespace pmr {
 template <class C, class T = char_traits<C>>
-using basic_string = FTL_STRING_NAMESPACE::basic_string<
+using basic_string = std::basic_string<
     C, T, polymorphic_allocator<C>>;
 using string = basic_string<char>;
 using u8string = basic_string<char8_t>;
@@ -1507,7 +1507,7 @@ inline namespace string_literals {
 } // namespace string_literals
 } // namespace literals
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_constexpr_string) || __cpp_lib_constexpr_string < 201907L
 #undef __cpp_lib_constexpr_string
@@ -1565,6 +1565,5 @@ FTL_END_NAMESPACE
 #define __cpp_lib_string_view 201803L
 #endif
 
-#undef FTL_STRING_NAMESPACE
 #undef FTL_STRING_TRAP
 #endif // FTL_STRING_HEADER

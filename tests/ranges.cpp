@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <initializer_list>
 #include <iterator>
@@ -6,15 +5,6 @@
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/cstddef>
-#include <ftl/initializer_list>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 #ifndef __cpp_lib_ranges_as_rvalue
 #error "__cpp_lib_ranges_as_rvalue is missing"
@@ -407,7 +397,6 @@ constexpr auto rend(range &value) noexcept {
 }
 } // namespace reverse_adl_test
 
-#ifdef FTL_REPLACE_STL
 
 namespace std::ranges {
 template <>
@@ -419,19 +408,6 @@ inline constexpr bool disable_sized_range<::explicitly_unsized_range> = true;
 template <> inline constexpr bool enable_view<::opted_view> = true;
 } // namespace std::ranges
 
-#else
-
-namespace ftl::ranges {
-template <>
-inline constexpr bool enable_borrowed_range<::borrowed_member_range> = true;
-
-template <>
-inline constexpr bool disable_sized_range<::explicitly_unsized_range> = true;
-
-template <> inline constexpr bool enable_view<::opted_view> = true;
-} // namespace ftl::ranges
-
-#endif
 
 template <class T>
 concept can_begin_rvalue = requires { tested::ranges::begin(T{}); };
@@ -1105,7 +1081,6 @@ static_assert(
     tested::is_same_v<
         tested::tuple_element_t<0, tested::ranges::subrange<int *>>, int *>);
 
-#ifdef FTL_REPLACE_STL
 
 constexpr bool subrange_structured_binding_works() {
   int values[] = {1, 2, 3};
@@ -1119,7 +1094,6 @@ constexpr bool subrange_structured_binding_works() {
 
 static_assert(subrange_structured_binding_works());
 
-#endif
 
 // ref_view const behavior
 

@@ -1,18 +1,9 @@
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <format>
 #include <memory>
 #include <stack>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/array>
-#include <ftl/format>
-#include <ftl/memory>
-#include <ftl/stack>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 static_assert(tested::uses_allocator_v<tested::stack<int>, tested::allocator<int>>);
 struct fake_stack_allocator {

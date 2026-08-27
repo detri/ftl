@@ -3,7 +3,6 @@
 #ifndef FTL_PARTIAL_SORT_HEADER
 #define FTL_PARTIAL_SORT_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__algorithms/heap.hpp>
 #include <__algorithms/result.hpp>
 #include <__algorithms/sort.hpp>
@@ -13,25 +12,9 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__algorithms/heap.hpp>
-#include <ftl/__algorithms/result.hpp>
-#include <ftl/__algorithms/sort.hpp>
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_PARTIAL_SORT_NAMESPACE std
-#else
-#define FTL_PARTIAL_SORT_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -82,10 +65,10 @@ partial_sort_copy_loop(InputIterator first, InputSentinel last,
     const auto heap_length = result_end - result_first;
 
     for (; first != last; ++first) {
-      if (FTL_PARTIAL_SORT_NAMESPACE::invoke(
+      if (std::invoke(
               comparator,
-              FTL_PARTIAL_SORT_NAMESPACE::invoke(input_projection, *first),
-              FTL_PARTIAL_SORT_NAMESPACE::invoke(output_projection,
+              std::invoke(input_projection, *first),
+              std::invoke(output_projection,
                                                  *result_first))) {
         *result_first = *first;
 
@@ -103,8 +86,8 @@ partial_sort_copy_loop(InputIterator first, InputSentinel last,
                          output_projection);
 
   return {
-      FTL_PARTIAL_SORT_NAMESPACE::move(first),
-      FTL_PARTIAL_SORT_NAMESPACE::move(result_end),
+      std::move(first),
+      std::move(result_end),
   };
 }
 
@@ -160,14 +143,14 @@ nth_partition_loop(Iterator first, Iterator last, Comparator &comparator,
     *last_element = ranges::iter_move(greater_begin);
   }
 
-  *greater_begin = FTL_PARTIAL_SORT_NAMESPACE::move(pivot);
+  *greater_begin = std::move(pivot);
 
   Iterator equal_end = greater_begin;
   ++equal_end;
 
   return {
-      FTL_PARTIAL_SORT_NAMESPACE::move(less_end),
-      FTL_PARTIAL_SORT_NAMESPACE::move(equal_end),
+      std::move(less_end),
+      std::move(equal_end),
   };
 }
 
@@ -205,9 +188,9 @@ constexpr void partial_sort(RandomAccessIterator first,
   detail::algorithm_less comparator{};
   identity projection{};
 
-  detail::partial_sort_loop(FTL_PARTIAL_SORT_NAMESPACE::move(first),
-                            FTL_PARTIAL_SORT_NAMESPACE::move(middle),
-                            FTL_PARTIAL_SORT_NAMESPACE::move(last), comparator,
+  detail::partial_sort_loop(std::move(first),
+                            std::move(middle),
+                            std::move(last), comparator,
                             projection);
 }
 
@@ -217,9 +200,9 @@ constexpr void partial_sort(RandomAccessIterator first,
                             RandomAccessIterator last, Comparator comparator) {
   identity projection{};
 
-  detail::partial_sort_loop(FTL_PARTIAL_SORT_NAMESPACE::move(first),
-                            FTL_PARTIAL_SORT_NAMESPACE::move(middle),
-                            FTL_PARTIAL_SORT_NAMESPACE::move(last), comparator,
+  detail::partial_sort_loop(std::move(first),
+                            std::move(middle),
+                            std::move(last), comparator,
                             projection);
 }
 
@@ -231,9 +214,9 @@ void partial_sort(ExecutionPolicy &&, RandomAccessIterator first,
     detail::algorithm_less comparator{};
     identity projection{};
 
-    detail::partial_sort_loop(FTL_PARTIAL_SORT_NAMESPACE::move(first),
-                              FTL_PARTIAL_SORT_NAMESPACE::move(middle),
-                              FTL_PARTIAL_SORT_NAMESPACE::move(last),
+    detail::partial_sort_loop(std::move(first),
+                              std::move(middle),
+                              std::move(last),
                               comparator, projection);
   }();
 }
@@ -246,9 +229,9 @@ void partial_sort(ExecutionPolicy &&, RandomAccessIterator first,
   [&]() noexcept {
     identity projection{};
 
-    detail::partial_sort_loop(FTL_PARTIAL_SORT_NAMESPACE::move(first),
-                              FTL_PARTIAL_SORT_NAMESPACE::move(middle),
-                              FTL_PARTIAL_SORT_NAMESPACE::move(last),
+    detail::partial_sort_loop(std::move(first),
+                              std::move(middle),
+                              std::move(last),
                               comparator, projection);
   }();
 }
@@ -263,10 +246,10 @@ partial_sort_copy(InputIterator first, InputIterator last,
   identity output_projection{};
 
   return detail::partial_sort_copy_loop(
-             FTL_PARTIAL_SORT_NAMESPACE::move(first),
-             FTL_PARTIAL_SORT_NAMESPACE::move(last),
-             FTL_PARTIAL_SORT_NAMESPACE::move(result_first),
-             FTL_PARTIAL_SORT_NAMESPACE::move(result_last), comparator,
+             std::move(first),
+             std::move(last),
+             std::move(result_first),
+             std::move(result_last), comparator,
              input_projection, output_projection)
       .out;
 }
@@ -280,10 +263,10 @@ partial_sort_copy(InputIterator first, InputIterator last,
   identity output_projection{};
 
   return detail::partial_sort_copy_loop(
-             FTL_PARTIAL_SORT_NAMESPACE::move(first),
-             FTL_PARTIAL_SORT_NAMESPACE::move(last),
-             FTL_PARTIAL_SORT_NAMESPACE::move(result_first),
-             FTL_PARTIAL_SORT_NAMESPACE::move(result_last), comparator,
+             std::move(first),
+             std::move(last),
+             std::move(result_first),
+             std::move(result_last), comparator,
              input_projection, output_projection)
       .out;
 }
@@ -301,10 +284,10 @@ partial_sort_copy(ExecutionPolicy &&, ForwardIterator first,
     identity output_projection{};
 
     return detail::partial_sort_copy_loop(
-               FTL_PARTIAL_SORT_NAMESPACE::move(first),
-               FTL_PARTIAL_SORT_NAMESPACE::move(last),
-               FTL_PARTIAL_SORT_NAMESPACE::move(result_first),
-               FTL_PARTIAL_SORT_NAMESPACE::move(result_last), comparator,
+               std::move(first),
+               std::move(last),
+               std::move(result_first),
+               std::move(result_last), comparator,
                input_projection, output_projection)
         .out;
   }();
@@ -322,10 +305,10 @@ partial_sort_copy(ExecutionPolicy &&, ForwardIterator first,
     identity output_projection{};
 
     return detail::partial_sort_copy_loop(
-               FTL_PARTIAL_SORT_NAMESPACE::move(first),
-               FTL_PARTIAL_SORT_NAMESPACE::move(last),
-               FTL_PARTIAL_SORT_NAMESPACE::move(result_first),
-               FTL_PARTIAL_SORT_NAMESPACE::move(result_last), comparator,
+               std::move(first),
+               std::move(last),
+               std::move(result_first),
+               std::move(result_last), comparator,
                input_projection, output_projection)
         .out;
   }();
@@ -337,9 +320,9 @@ constexpr void nth_element(RandomAccessIterator first, RandomAccessIterator nth,
   detail::algorithm_less comparator{};
   identity projection{};
 
-  detail::nth_element_loop(FTL_PARTIAL_SORT_NAMESPACE::move(first),
-                           FTL_PARTIAL_SORT_NAMESPACE::move(nth),
-                           FTL_PARTIAL_SORT_NAMESPACE::move(last), comparator,
+  detail::nth_element_loop(std::move(first),
+                           std::move(nth),
+                           std::move(last), comparator,
                            projection);
 }
 
@@ -348,9 +331,9 @@ constexpr void nth_element(RandomAccessIterator first, RandomAccessIterator nth,
                            RandomAccessIterator last, Comparator comparator) {
   identity projection{};
 
-  detail::nth_element_loop(FTL_PARTIAL_SORT_NAMESPACE::move(first),
-                           FTL_PARTIAL_SORT_NAMESPACE::move(nth),
-                           FTL_PARTIAL_SORT_NAMESPACE::move(last), comparator,
+  detail::nth_element_loop(std::move(first),
+                           std::move(nth),
+                           std::move(last), comparator,
                            projection);
 }
 
@@ -362,9 +345,9 @@ void nth_element(ExecutionPolicy &&, RandomAccessIterator first,
     detail::algorithm_less comparator{};
     identity projection{};
 
-    detail::nth_element_loop(FTL_PARTIAL_SORT_NAMESPACE::move(first),
-                             FTL_PARTIAL_SORT_NAMESPACE::move(nth),
-                             FTL_PARTIAL_SORT_NAMESPACE::move(last), comparator,
+    detail::nth_element_loop(std::move(first),
+                             std::move(nth),
+                             std::move(last), comparator,
                              projection);
   }();
 }
@@ -377,9 +360,9 @@ void nth_element(ExecutionPolicy &&, RandomAccessIterator first,
   [&]() noexcept {
     identity projection{};
 
-    detail::nth_element_loop(FTL_PARTIAL_SORT_NAMESPACE::move(first),
-                             FTL_PARTIAL_SORT_NAMESPACE::move(nth),
-                             FTL_PARTIAL_SORT_NAMESPACE::move(last), comparator,
+    detail::nth_element_loop(std::move(first),
+                             std::move(nth),
+                             std::move(last), comparator,
                              projection);
   }();
 }
@@ -399,7 +382,7 @@ struct partial_sort_fn {
     Iterator end = first;
     ranges::advance(end, last);
 
-    FTL_PARTIAL_SORT_NAMESPACE::detail::partial_sort_loop(
+    std::detail::partial_sort_loop(
         first, middle, end, comparator, projection);
 
     return end;
@@ -412,11 +395,11 @@ struct partial_sort_fn {
   operator()(Range &&range, iterator_t<Range> middle,
              Comparator comparator = {}, Projection projection = {}) const {
     auto result = (*this)(
-        ranges::begin(range), FTL_PARTIAL_SORT_NAMESPACE::move(middle),
-        ranges::end(range), FTL_PARTIAL_SORT_NAMESPACE::move(comparator),
-        FTL_PARTIAL_SORT_NAMESPACE::move(projection));
+        ranges::begin(range), std::move(middle),
+        ranges::end(range), std::move(comparator),
+        std::move(projection));
 
-    return FTL_PARTIAL_SORT_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -437,11 +420,11 @@ struct partial_sort_copy_fn {
              OutputIterator result_first, OutputSentinel result_last,
              Comparator comparator = {}, InputProjection input_projection = {},
              OutputProjection output_projection = {}) const {
-    return FTL_PARTIAL_SORT_NAMESPACE::detail::partial_sort_copy_loop(
-        FTL_PARTIAL_SORT_NAMESPACE::move(first),
-        FTL_PARTIAL_SORT_NAMESPACE::move(last),
-        FTL_PARTIAL_SORT_NAMESPACE::move(result_first),
-        FTL_PARTIAL_SORT_NAMESPACE::move(result_last), comparator,
+    return std::detail::partial_sort_copy_loop(
+        std::move(first),
+        std::move(last),
+        std::move(result_first),
+        std::move(result_last), comparator,
         input_projection, output_projection);
   }
 
@@ -462,13 +445,13 @@ struct partial_sort_copy_fn {
     auto converted =
         (*this)(ranges::begin(input_range), ranges::end(input_range),
                 ranges::begin(output_range), ranges::end(output_range),
-                FTL_PARTIAL_SORT_NAMESPACE::move(comparator),
-                FTL_PARTIAL_SORT_NAMESPACE::move(input_projection),
-                FTL_PARTIAL_SORT_NAMESPACE::move(output_projection));
+                std::move(comparator),
+                std::move(input_projection),
+                std::move(output_projection));
 
     return {
-        FTL_PARTIAL_SORT_NAMESPACE::move(converted.in),
-        FTL_PARTIAL_SORT_NAMESPACE::move(converted.out),
+        std::move(converted.in),
+        std::move(converted.out),
     };
   }
 };
@@ -483,7 +466,7 @@ struct nth_element_fn {
     Iterator end = first;
     ranges::advance(end, last);
 
-    FTL_PARTIAL_SORT_NAMESPACE::detail::nth_element_loop(
+    std::detail::nth_element_loop(
         first, nth, end, comparator, projection);
 
     return end;
@@ -496,11 +479,11 @@ struct nth_element_fn {
   operator()(Range &&range, iterator_t<Range> nth, Comparator comparator = {},
              Projection projection = {}) const {
     auto result = (*this)(
-        ranges::begin(range), FTL_PARTIAL_SORT_NAMESPACE::move(nth),
-        ranges::end(range), FTL_PARTIAL_SORT_NAMESPACE::move(comparator),
-        FTL_PARTIAL_SORT_NAMESPACE::move(projection));
+        ranges::begin(range), std::move(nth),
+        ranges::end(range), std::move(comparator),
+        std::move(projection));
 
-    return FTL_PARTIAL_SORT_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -510,8 +493,7 @@ inline constexpr nth_element_fn nth_element{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_PARTIAL_SORT_NAMESPACE
 
 #endif // FTL_PARTIAL_SORT_HEADER

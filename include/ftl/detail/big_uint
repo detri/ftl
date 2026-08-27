@@ -3,15 +3,9 @@
 #ifndef FTL_DETAIL_BIG_UINT_HEADER
 #define FTL_DETAIL_BIG_UINT_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <cstdint>
 #define FTL_BIG_UINT_STD std
-#else
-#include <ftl/cstddef>
-#include <ftl/cstdint>
-#define FTL_BIG_UINT_STD ftl
-#endif
 
 namespace ftl_float_conversion {
 

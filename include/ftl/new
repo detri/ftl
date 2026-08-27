@@ -3,19 +3,8 @@
 #ifndef FTL_NEW_HEADER
 #define FTL_NEW_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <exception>
-#define FTL_NEW_BEGIN_NAMESPACE namespace std {
-#define FTL_NEW_END_NAMESPACE }
-#define FTL_NEW_NAMESPACE std
-#else
-#include <ftl/cstddef>
-#include <ftl/exception>
-#define FTL_NEW_BEGIN_NAMESPACE namespace ftl {
-#define FTL_NEW_END_NAMESPACE }
-#define FTL_NEW_NAMESPACE ftl
-#endif
 
 #if defined(_MSC_VER)
 #define FTL_MSVC_CONSTEXPR [[msvc::constexpr]]
@@ -23,15 +12,8 @@
 #define FTL_MSVC_CONSTEXPR
 #endif
 
-#if !defined(FTL_REPLACE_STL)
-namespace std {
-using new_handler = void(*)();
-new_handler get_new_handler() noexcept;
-new_handler set_new_handler(new_handler) noexcept;
-}
-#endif
 
-FTL_NEW_BEGIN_NAMESPACE
+namespace std {
 
 enum class align_val_t : size_t {};
 
@@ -49,15 +31,8 @@ inline constexpr destroying_delete_t destroying_delete{};
 
 using new_handler = void(*)();
 
-#ifdef FTL_REPLACE_STL
 new_handler get_new_handler() noexcept;
 new_handler set_new_handler(new_handler) noexcept;
-#else
-inline new_handler get_new_handler() noexcept { return ::std::get_new_handler(); }
-inline new_handler set_new_handler(new_handler handler) noexcept {
-    return ::std::set_new_handler(handler);
-}
-#endif
 
 inline constexpr size_t hardware_destructive_interference_size = 64;
 inline constexpr size_t hardware_constructive_interference_size = 64;
@@ -76,7 +51,7 @@ public:
     }
 };
 
-template<class T> requires FTL_NEW_NAMESPACE::is_object_v<T>
+template<class T> requires std::is_object_v<T>
 [[nodiscard]] constexpr T* launder(T* pointer) noexcept {
 #if __has_builtin(__builtin_launder) || defined(_MSC_VER)
     return __builtin_launder(pointer);
@@ -85,7 +60,7 @@ template<class T> requires FTL_NEW_NAMESPACE::is_object_v<T>
 #endif
 }
 
-FTL_NEW_END_NAMESPACE
+}
 
 #if defined(_MSC_VER)
 #define FTL_NEW_ALLOCATOR_ATTRIBUTE __declspec(allocator)
@@ -95,41 +70,41 @@ FTL_NEW_END_NAMESPACE
 [[nodiscard]] FTL_NEW_ALLOCATOR_ATTRIBUTE void* operator new(decltype(sizeof(0)));
 [[nodiscard]] FTL_NEW_ALLOCATOR_ATTRIBUTE void* operator new[](decltype(sizeof(0)));
 [[nodiscard]] void* operator new(decltype(sizeof(0)),
-                                 FTL_NEW_NAMESPACE::align_val_t);
+                                 std::align_val_t);
 [[nodiscard]] void* operator new[](decltype(sizeof(0)),
-                                   FTL_NEW_NAMESPACE::align_val_t);
+                                   std::align_val_t);
 [[nodiscard]] void* operator new(
-    decltype(sizeof(0)), const FTL_NEW_NAMESPACE::nothrow_t&) noexcept;
+    decltype(sizeof(0)), const std::nothrow_t&) noexcept;
 [[nodiscard]] void* operator new[](
-    decltype(sizeof(0)), const FTL_NEW_NAMESPACE::nothrow_t&) noexcept;
+    decltype(sizeof(0)), const std::nothrow_t&) noexcept;
 [[nodiscard]] void* operator new(
-    decltype(sizeof(0)), FTL_NEW_NAMESPACE::align_val_t,
-    const FTL_NEW_NAMESPACE::nothrow_t&) noexcept;
+    decltype(sizeof(0)), std::align_val_t,
+    const std::nothrow_t&) noexcept;
 [[nodiscard]] void* operator new[](
-    decltype(sizeof(0)), FTL_NEW_NAMESPACE::align_val_t,
-    const FTL_NEW_NAMESPACE::nothrow_t&) noexcept;
+    decltype(sizeof(0)), std::align_val_t,
+    const std::nothrow_t&) noexcept;
 void operator delete(void*) noexcept;
 void operator delete[](void*) noexcept;
 void operator delete(void*, decltype(sizeof(0))) noexcept;
 void operator delete[](void*, decltype(sizeof(0))) noexcept;
-void operator delete(void*, FTL_NEW_NAMESPACE::align_val_t) noexcept;
-void operator delete[](void*, FTL_NEW_NAMESPACE::align_val_t) noexcept;
+void operator delete(void*, std::align_val_t) noexcept;
+void operator delete[](void*, std::align_val_t) noexcept;
 void operator delete(void*, decltype(sizeof(0)),
-                     FTL_NEW_NAMESPACE::align_val_t) noexcept;
+                     std::align_val_t) noexcept;
 void operator delete[](void*, decltype(sizeof(0)),
-                       FTL_NEW_NAMESPACE::align_val_t) noexcept;
+                       std::align_val_t) noexcept;
 void operator delete(
-    void*, const FTL_NEW_NAMESPACE::nothrow_t&) noexcept;
+    void*, const std::nothrow_t&) noexcept;
 void operator delete[](
-    void*, const FTL_NEW_NAMESPACE::nothrow_t&) noexcept;
+    void*, const std::nothrow_t&) noexcept;
 void operator delete(
-    void*, FTL_NEW_NAMESPACE::align_val_t,
-    const FTL_NEW_NAMESPACE::nothrow_t&) noexcept;
+    void*, std::align_val_t,
+    const std::nothrow_t&) noexcept;
 
 #undef FTL_NEW_ALLOCATOR_ATTRIBUTE
 void operator delete[](
-    void*, FTL_NEW_NAMESPACE::align_val_t,
-    const FTL_NEW_NAMESPACE::nothrow_t&) noexcept;
+    void*, std::align_val_t,
+    const std::nothrow_t&) noexcept;
 
 #if !defined(_NEW) && !defined(_NEW_) && \
     !defined(_LIBCPP___NEW_PLACEMENT_NEW_DELETE_H) && \
@@ -146,9 +121,6 @@ inline void operator delete(void*, void*) noexcept {}
 inline void operator delete[](void*, void*) noexcept {}
 #endif
 
-#undef FTL_NEW_BEGIN_NAMESPACE
-#undef FTL_NEW_END_NAMESPACE
-#undef FTL_NEW_NAMESPACE
 
 #if !defined(__cpp_lib_hardware_interference_size) || \
     __cpp_lib_hardware_interference_size < 201703L

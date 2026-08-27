@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <regex>
 #include <string>
 #include <vector>
 namespace tested = std;
-#else
-#include <ftl/regex>
-#include <ftl/string>
-#include <ftl/vector>
-namespace tested = ftl;
-#endif
 
 struct immobile_regex_traits : tested::regex_traits<char> {
   immobile_regex_traits() = default;

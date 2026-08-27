@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <cstddef>
 #include <limits>
@@ -7,16 +6,6 @@
 #include <span>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/array>
-#include <ftl/cstddef>
-#include <ftl/limits>
-#include <ftl/mdspan>
-#include <ftl/ranges>
-#include <ftl/span>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 #if __cpp_lib_mdspan != 202207L
 #error <mdspan> must advertise the C++23 mdspan facility

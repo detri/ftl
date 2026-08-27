@@ -3,19 +3,12 @@
 #ifndef FTL_SSTREAM_HEADER
 #define FTL_SSTREAM_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <istream>
 #include <limits>
 #include <string>
 #include <string_view>
-#else
-#include <ftl/istream>
-#include <ftl/limits>
-#include <ftl/string>
-#include <ftl/string_view>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class Character, class Traits, class Allocator>
 class basic_stringbuf : public basic_streambuf<Character, Traits> {
@@ -588,5 +581,5 @@ void swap(basic_stringstream<C, T, A> &l, basic_stringstream<C, T, A> &r) {
   l.swap(r);
 }
 
-FTL_END_NAMESPACE
+} // namespace std
 #endif

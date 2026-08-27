@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <iterator>
 #include <memory>
@@ -6,15 +5,6 @@
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/cstddef>
-#include <ftl/iterator>
-#include <ftl/memory>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 
 // A simple common, sized, random-access view.
@@ -65,7 +55,6 @@ struct pointer_view
 
 // pointer_view's iterators remain valid independently of the view object.
 
-#ifdef FTL_REPLACE_STL
 
 namespace std::ranges
 {
@@ -74,16 +63,6 @@ namespace std::ranges
     enable_borrowed_range<::pointer_view> = true;
 } // namespace std::ranges
 
-#else
-
-namespace ftl::ranges
-{
-    template<>
-    inline constexpr bool
-    enable_borrowed_range<::pointer_view> = true;
-} // namespace ftl::ranges
-
-#endif
 
 
 // A sentinel used to test reverse_view's non-common cached begin path.
@@ -716,12 +695,10 @@ constexpr bool reverse_non_common_cache_works()
     return true;
 }
 
-#if defined(FTL_REPLACE_STL) || defined(_MSC_VER)
 
 static_assert(reverse_non_common_range_works());
 static_assert(reverse_non_common_cache_works());
 
-#endif
 
 struct bidirectional_pointer_iterator
 {
@@ -1954,7 +1931,6 @@ struct simple_pointer_view
     }
 };
 
-#ifdef FTL_REPLACE_STL
 
 namespace std::ranges
 {
@@ -1965,18 +1941,6 @@ namespace std::ranges
     > = true;
 } // namespace std::ranges
 
-#else
-
-namespace ftl::ranges
-{
-    template<>
-    inline constexpr bool
-    disable_sized_range<
-        ::explicitly_unsized_sentinel_view
-    > = true;
-} // namespace ftl::ranges
-
-#endif
 
 using take_pointer_view =
 tested::ranges::take_view<pointer_view>;
@@ -3745,11 +3709,9 @@ constexpr bool drop_sized_non_random_access_works()
     return iterator == dropped.end();
 }
 
-#if defined(FTL_REPLACE_STL) || defined(_MSC_VER)
 static_assert(
     drop_sized_non_random_access_works()
 );
-#endif
 
 constexpr bool drop_forward_cache_works()
 {
@@ -3792,9 +3754,7 @@ constexpr bool drop_forward_cache_works()
     return true;
 }
 
-#if defined(FTL_REPLACE_STL) || defined(_MSC_VER)
 static_assert(drop_forward_cache_works());
-#endif
 
 constexpr bool drop_input_range_works()
 {

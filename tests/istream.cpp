@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <istream>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/istream>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 using test_char_traits = tested::char_traits<char>;
 

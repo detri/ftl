@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <future>
-#else
-#include <ftl/future>
-#endif
 
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <chrono>
 #include <memory>
@@ -12,15 +7,6 @@
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/atomic>
-#include <ftl/chrono>
-#include <ftl/memory>
-#include <ftl/thread>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 struct promise_tls_probe {
   tested::atomic<bool> *destroyed = nullptr;

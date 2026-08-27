@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <concepts>
 #include <format>
@@ -7,16 +6,6 @@
 #include <utility>
 #include <vector>
 namespace tested = std;
-#else
-#include <ftl/array>
-#include <ftl/concepts>
-#include <ftl/format>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#include <ftl/vector>
-namespace tested = ftl;
-#endif
 
 #include "equal_state_allocator.hpp"
 

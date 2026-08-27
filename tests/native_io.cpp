@@ -1,18 +1,9 @@
-#ifdef FTL_REPLACE_STL
 #include <detail/native_io.hpp>
-#else
-#include <ftl/detail/native_io.hpp>
-#endif
 
 bool ftl_test() {
   using namespace ftl::detail;
-#ifdef FTL_REPLACE_STL
-  const char *first_path = "ftl-native-io-replace.tmp";
-  const char *second_path = "ftl-native-io-replace-renamed.tmp";
-#else
-  const char *first_path = "ftl-native-io-normal.tmp";
-  const char *second_path = "ftl-native-io-normal-renamed.tmp";
-#endif
+  const char *first_path = "ftl-native-io.tmp";
+  const char *second_path = "ftl-native-io-renamed.tmp";
   native_open_options options;
   options.access = native_file_access::read_write;
   options.creation = native_file_creation::create_always;
@@ -45,17 +36,9 @@ bool ftl_test() {
     return false;
 #if defined(_WIN32)
   const wchar_t *wide_first_path =
-#ifdef FTL_REPLACE_STL
       L"ftl-native-io-replace-wide.tmp";
-#else
-      L"ftl-native-io-normal-wide.tmp";
-#endif
   const wchar_t *wide_second_path =
-#ifdef FTL_REPLACE_STL
       L"ftl-native-io-replace-wide-renamed.tmp";
-#else
-      L"ftl-native-io-normal-wide-renamed.tmp";
-#endif
   if (!native_open_file(wide_first_path, options, handle, error) ||
       !native_close_file(handle, error) ||
       !native_rename_file(wide_first_path, wide_second_path, error) ||

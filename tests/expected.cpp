@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <expected>
 namespace tested = std;
-#else
-#include <ftl/expected>
-namespace tested = ftl;
-#endif
 
 struct immovable {
     int number;

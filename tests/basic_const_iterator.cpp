@@ -1,16 +1,8 @@
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <iterator>
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/cstddef>
-#include <ftl/iterator>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 using mutable_iterator = tested::basic_const_iterator<int *>;
 

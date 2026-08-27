@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <limits>
 #include <strstream>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/limits>
-#include <ftl/strstream>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 static_assert(tested::is_base_of_v<tested::streambuf, tested::strstreambuf>);
 bool ftl_test() {
   tested::ostrstream out;

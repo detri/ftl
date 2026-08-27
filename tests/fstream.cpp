@@ -1,13 +1,33 @@
-#ifdef FTL_REPLACE_STL
 #include <cstdio>
 #include <fstream>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/cstdio>
-#include <ftl/fstream>
-#include <ftl/type_traits>
-namespace tested = ftl;
+
+#if defined(_WIN32)
+extern "C" __declspec(dllimport) void *__stdcall CreateFileA(
+    const char *, unsigned long, unsigned long, void *, unsigned long,
+    unsigned long, void *);
+extern "C" __declspec(dllimport) int __stdcall DeviceIoControl(
+    void *, unsigned long, void *, unsigned long, void *, unsigned long,
+    unsigned long *, void *);
+extern "C" __declspec(dllimport) int __stdcall CloseHandle(void *);
+
+bool prepare_sparse_file(const char *name) {
+  constexpr unsigned long generic_write = 0x40000000UL;
+  constexpr unsigned long share_all = 0x00000007UL;
+  constexpr unsigned long create_always = 2UL;
+  constexpr unsigned long normal = 0x00000080UL;
+  constexpr unsigned long set_sparse = 0x000900c4UL;
+  void *handle = CreateFileA(name, generic_write, share_all, nullptr,
+                             create_always, normal, nullptr);
+  if (handle == reinterpret_cast<void *>(static_cast<tested::size_t>(-1)))
+    return false;
+  unsigned long ignored = 0;
+  const bool okay =
+      DeviceIoControl(handle, set_sparse, nullptr, 0, nullptr, 0, &ignored,
+                      nullptr) != 0;
+  return CloseHandle(handle) != 0 && okay;
+}
 #endif
 
 class two_byte_wide_codecvt final
@@ -88,11 +108,7 @@ static_assert(tested::is_base_of_v<tested::istream, tested::ifstream>);
 static_assert(tested::is_base_of_v<tested::ostream, tested::ofstream>);
 bool ftl_test() {
   const char *name =
-#ifdef FTL_REPLACE_STL
-      "ftl_fstream_replace.tmp";
-#else
-      "ftl_fstream_normal.tmp";
-#endif
+      "ftl_fstream.tmp";
   {
     tested::ofstream out(name,
                          tested::ios_base::binary | tested::ios_base::trunc);
@@ -129,9 +145,19 @@ bool ftl_test() {
   }
 
   {
-    tested::fstream sparse(name, tested::ios_base::in | tested::ios_base::out |
-                                     tested::ios_base::binary |
-                                     tested::ios_base::trunc);
+#if defined(_WIN32)
+    if (!prepare_sparse_file(name)) {
+      tested::remove(name);
+      return false;
+    }
+    constexpr auto sparse_mode =
+        tested::ios_base::in | tested::ios_base::out | tested::ios_base::binary;
+#else
+    constexpr auto sparse_mode = tested::ios_base::in | tested::ios_base::out |
+                                 tested::ios_base::binary |
+                                 tested::ios_base::trunc;
+#endif
+    tested::fstream sparse(name, sparse_mode);
     constexpr tested::streamoff large_position =
         static_cast<tested::streamoff>(3) * 1024 * 1024 * 1024;
     sparse.seekp(large_position, tested::ios_base::beg);
@@ -143,11 +169,7 @@ bool ftl_test() {
   }
 
   const char *wide_name =
-#ifdef FTL_REPLACE_STL
       "ftl_fstream_wide_replace.tmp";
-#else
-      "ftl_fstream_wide_normal.tmp";
-#endif
   tested::locale wide_locale(tested::locale::classic(),
                              new two_byte_wide_codecvt);
   {

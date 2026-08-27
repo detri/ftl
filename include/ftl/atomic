@@ -3,23 +3,11 @@
 #ifndef FTL_ATOMIC_HEADER
 #define FTL_ATOMIC_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <detail/wait_notify.hpp>
 #include <type_traits>
-#define FTL_ATOMIC_BEGIN_NAMESPACE namespace std {
-#define FTL_ATOMIC_END_NAMESPACE }
-#else
-#include <ftl/bit>
-#include <ftl/cstddef>
-#include <ftl/cstdint>
-#include <ftl/detail/wait_notify.hpp>
-#include <ftl/type_traits>
-#define FTL_ATOMIC_BEGIN_NAMESPACE namespace ftl {
-#define FTL_ATOMIC_END_NAMESPACE }
-#endif
 
 #ifndef ATOMIC_BOOL_LOCK_FREE
 
@@ -65,7 +53,7 @@
 #define ATOMIC_VAR_INIT(value) {value}
 #endif
 
-FTL_ATOMIC_BEGIN_NAMESPACE
+namespace std {
 
 enum class memory_order : unsigned char {
   relaxed,
@@ -2471,10 +2459,8 @@ inline void atomic_flag_notify_all(atomic_flag *object) noexcept {
   object->notify_all();
 }
 
-FTL_ATOMIC_END_NAMESPACE
+}
 
-#undef FTL_ATOMIC_BEGIN_NAMESPACE
-#undef FTL_ATOMIC_END_NAMESPACE
 
 #if !defined(__cpp_lib_atomic_ref) || __cpp_lib_atomic_ref < 201806L
 #undef __cpp_lib_atomic_ref

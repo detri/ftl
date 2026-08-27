@@ -1,18 +1,9 @@
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <mutex>
 #include <thread>
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/atomic>
-#include <ftl/mutex>
-#include <ftl/thread>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 template <class T>
 concept has_mutex_type = requires { typename T::mutex_type; };

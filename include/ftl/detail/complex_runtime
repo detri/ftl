@@ -3,11 +3,7 @@
 #ifndef FTL_DETAIL_COMPLEX_RUNTIME_HEADER
 #define FTL_DETAIL_COMPLEX_RUNTIME_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <detail/complex_abi>
-#else
-#include <ftl/detail/complex_abi>
-#endif
 
 #define FTL_COMPLEX_RUNTIME(type, suffix)                                     \
   ftl_olm_complex<type> ftl_olm_cacos##suffix(ftl_olm_complex<type>);         \

@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <csignal>
 namespace tested = std;
-#else
-#include <ftl/csignal>
-namespace tested = ftl;
-#endif
 
 static_assert(sizeof(tested::sig_atomic_t) >= 1);
 

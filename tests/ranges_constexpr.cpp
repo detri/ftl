@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <iterator>
 #include <ranges>
@@ -7,16 +6,6 @@
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/cstddef>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/span>
-#include <ftl/tuple>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 struct pointer_view : tested::ranges::view_base {
   int *first = nullptr;
@@ -1089,11 +1078,9 @@ static_assert(flattening_views_work());
  * the compiler's constexpr placement-new treatment for std::construct_at.
  * Normal FTL mode still executes the same checks at runtime.
  */
-#ifdef FTL_REPLACE_STL
 
 static_assert(cached_paths_work());
 
-#endif
 
 bool ftl_test() {
   return foundational_views_work() && classic_views_work() &&

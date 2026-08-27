@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <ostream>
 #include <string>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/ostream>
-#include <ftl/string>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 class output_buffer : public tested::streambuf {
 public:

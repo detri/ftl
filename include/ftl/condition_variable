@@ -3,7 +3,6 @@
 #ifndef FTL_CONDITION_VARIABLE_HEADER
 #define FTL_CONDITION_VARIABLE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <chrono>
 #include <detail/condition_variable.hpp>
 #include <detail/thread_exit.hpp>
@@ -12,22 +11,8 @@
 #include <stop_token>
 #include <system_error>
 #include <utility>
-#define FTL_CONDITION_VARIABLE_BEGIN_NAMESPACE namespace std {
-#define FTL_CONDITION_VARIABLE_END_NAMESPACE }
-#else
-#include <ftl/chrono>
-#include <ftl/detail/condition_variable.hpp>
-#include <ftl/detail/thread_exit.hpp>
-#include <ftl/mutex>
-#include <ftl/new>
-#include <ftl/stop_token>
-#include <ftl/system_error>
-#include <ftl/utility>
-#define FTL_CONDITION_VARIABLE_BEGIN_NAMESPACE namespace ftl {
-#define FTL_CONDITION_VARIABLE_END_NAMESPACE }
-#endif
 
-FTL_CONDITION_VARIABLE_BEGIN_NAMESPACE
+namespace std {
 
 enum class cv_status { no_timeout, timeout };
 
@@ -247,9 +232,7 @@ inline void notify_all_at_thread_exit(condition_variable &condition,
   }
 }
 
-FTL_CONDITION_VARIABLE_END_NAMESPACE
+}
 
-#undef FTL_CONDITION_VARIABLE_BEGIN_NAMESPACE
-#undef FTL_CONDITION_VARIABLE_END_NAMESPACE
 
 #endif // FTL_CONDITION_VARIABLE_HEADER

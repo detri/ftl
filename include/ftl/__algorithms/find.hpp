@@ -3,29 +3,15 @@
 #ifndef FTL_FIND_HEADER
 #define FTL_FIND_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__execution/policy_access.hpp>
 #include <functional>
 #include <iterator>
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_FIND_NAMESPACE std
-#else
-#define FTL_FIND_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -63,7 +49,7 @@ template <class Iterator, class Sentinel, class T, class Projection>
 constexpr void ranges_find_loop(Iterator &first, const Sentinel &last,
                                 const T &value, Projection &projection) {
   for (; first != last; ++first) {
-    if (FTL_FIND_NAMESPACE::invoke(projection, *first) == value) {
+    if (std::invoke(projection, *first) == value) {
       return;
     }
   }
@@ -74,8 +60,8 @@ constexpr void ranges_find_if_loop(Iterator &first, const Sentinel &last,
                                    Predicate &predicate,
                                    Projection &projection) {
   for (; first != last; ++first) {
-    if (FTL_FIND_NAMESPACE::invoke(
-            predicate, FTL_FIND_NAMESPACE::invoke(projection, *first))) {
+    if (std::invoke(
+            predicate, std::invoke(projection, *first))) {
       return;
     }
   }
@@ -86,8 +72,8 @@ constexpr void ranges_find_if_not_loop(Iterator &first, const Sentinel &last,
                                        Predicate &predicate,
                                        Projection &projection) {
   for (; first != last; ++first) {
-    if (!FTL_FIND_NAMESPACE::invoke(
-            predicate, FTL_FIND_NAMESPACE::invoke(projection, *first))) {
+    if (!std::invoke(
+            predicate, std::invoke(projection, *first))) {
       return;
     }
   }
@@ -101,7 +87,7 @@ ranges_find_last_loop(Iterator first, Sentinel last, const T &value,
   bool has_found = false;
 
   for (; first != last; ++first) {
-    if (FTL_FIND_NAMESPACE::invoke(projection, *first) == value) {
+    if (std::invoke(projection, *first) == value) {
       found = first;
       has_found = true;
     }
@@ -111,7 +97,7 @@ ranges_find_last_loop(Iterator first, Sentinel last, const T &value,
     found = first;
   }
 
-  return {FTL_FIND_NAMESPACE::move(found), FTL_FIND_NAMESPACE::move(first)};
+  return {std::move(found), std::move(first)};
 }
 
 template <class Iterator, class Sentinel, class Predicate, class Projection>
@@ -122,8 +108,8 @@ ranges_find_last_if_loop(Iterator first, Sentinel last, Predicate &predicate,
   bool has_found = false;
 
   for (; first != last; ++first) {
-    if (FTL_FIND_NAMESPACE::invoke(
-            predicate, FTL_FIND_NAMESPACE::invoke(projection, *first))) {
+    if (std::invoke(
+            predicate, std::invoke(projection, *first))) {
       found = first;
       has_found = true;
     }
@@ -133,7 +119,7 @@ ranges_find_last_if_loop(Iterator first, Sentinel last, Predicate &predicate,
     found = first;
   }
 
-  return {FTL_FIND_NAMESPACE::move(found), FTL_FIND_NAMESPACE::move(first)};
+  return {std::move(found), std::move(first)};
 }
 
 template <class Iterator, class Sentinel, class Predicate, class Projection>
@@ -144,8 +130,8 @@ ranges_find_last_if_not_loop(Iterator first, Sentinel last,
   bool has_found = false;
 
   for (; first != last; ++first) {
-    if (!FTL_FIND_NAMESPACE::invoke(
-            predicate, FTL_FIND_NAMESPACE::invoke(projection, *first))) {
+    if (!std::invoke(
+            predicate, std::invoke(projection, *first))) {
       found = first;
       has_found = true;
     }
@@ -155,7 +141,7 @@ ranges_find_last_if_not_loop(Iterator first, Sentinel last,
     found = first;
   }
 
-  return {FTL_FIND_NAMESPACE::move(found), FTL_FIND_NAMESPACE::move(first)};
+  return {std::move(found), std::move(first)};
 }
 
 } // namespace detail
@@ -220,7 +206,7 @@ struct find_fn {
         ranges::equal_to, projected<Iterator, Projection>, const T *>
   constexpr Iterator operator()(Iterator first, Sentinel last, const T &value,
                                 Projection projection = {}) const {
-    FTL_FIND_NAMESPACE::detail::ranges_find_loop(first, last, value,
+    std::detail::ranges_find_loop(first, last, value,
                                                  projection);
 
     return first;
@@ -232,9 +218,9 @@ struct find_fn {
   constexpr borrowed_iterator_t<Range>
   operator()(Range &&range, const T &value, Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range), value,
-                          FTL_FIND_NAMESPACE::move(projection));
+                          std::move(projection));
 
-    return FTL_FIND_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -245,7 +231,7 @@ struct find_if_fn {
   constexpr Iterator operator()(Iterator first, Sentinel last,
                                 Predicate predicate,
                                 Projection projection = {}) const {
-    FTL_FIND_NAMESPACE::detail::ranges_find_if_loop(first, last, predicate,
+    std::detail::ranges_find_if_loop(first, last, predicate,
                                                     projection);
 
     return first;
@@ -258,10 +244,10 @@ struct find_if_fn {
   operator()(Range &&range, Predicate predicate,
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_FIND_NAMESPACE::move(predicate),
-                          FTL_FIND_NAMESPACE::move(projection));
+                          std::move(predicate),
+                          std::move(projection));
 
-    return FTL_FIND_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -272,7 +258,7 @@ struct find_if_not_fn {
   constexpr Iterator operator()(Iterator first, Sentinel last,
                                 Predicate predicate,
                                 Projection projection = {}) const {
-    FTL_FIND_NAMESPACE::detail::ranges_find_if_not_loop(first, last, predicate,
+    std::detail::ranges_find_if_not_loop(first, last, predicate,
                                                         projection);
 
     return first;
@@ -285,10 +271,10 @@ struct find_if_not_fn {
   operator()(Range &&range, Predicate predicate,
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_FIND_NAMESPACE::move(predicate),
-                          FTL_FIND_NAMESPACE::move(projection));
+                          std::move(predicate),
+                          std::move(projection));
 
-    return FTL_FIND_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -303,8 +289,8 @@ struct contains_fn {
         ranges::equal_to, projected<Iterator, Projection>, const T *>
   constexpr bool operator()(Iterator first, Sentinel last, const T &value,
                             Projection projection = {}) const {
-    return ranges::find(FTL_FIND_NAMESPACE::move(first), last, value,
-                        FTL_FIND_NAMESPACE::move(projection)) != last;
+    return ranges::find(std::move(first), last, value,
+                        std::move(projection)) != last;
   }
 
   template <input_range Range, class T, class Projection = identity>
@@ -313,7 +299,7 @@ struct contains_fn {
   constexpr bool operator()(Range &&range, const T &value,
                             Projection projection = {}) const {
     return (*this)(ranges::begin(range), ranges::end(range), value,
-                   FTL_FIND_NAMESPACE::move(projection));
+                   std::move(projection));
   }
 };
 
@@ -327,8 +313,8 @@ struct find_last_fn {
   constexpr subrange<Iterator> operator()(Iterator first, Sentinel last,
                                           const T &value,
                                           Projection projection = {}) const {
-    return FTL_FIND_NAMESPACE::detail::ranges_find_last_loop(
-        FTL_FIND_NAMESPACE::move(first), FTL_FIND_NAMESPACE::move(last), value,
+    return std::detail::ranges_find_last_loop(
+        std::move(first), std::move(last), value,
         projection);
   }
 
@@ -338,9 +324,9 @@ struct find_last_fn {
   constexpr borrowed_subrange_t<Range>
   operator()(Range &&range, const T &value, Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range), value,
-                          FTL_FIND_NAMESPACE::move(projection));
+                          std::move(projection));
 
-    return FTL_FIND_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -351,8 +337,8 @@ struct find_last_if_fn {
   constexpr subrange<Iterator> operator()(Iterator first, Sentinel last,
                                           Predicate predicate,
                                           Projection projection = {}) const {
-    return FTL_FIND_NAMESPACE::detail::ranges_find_last_if_loop(
-        FTL_FIND_NAMESPACE::move(first), FTL_FIND_NAMESPACE::move(last),
+    return std::detail::ranges_find_last_if_loop(
+        std::move(first), std::move(last),
         predicate, projection);
   }
 
@@ -363,10 +349,10 @@ struct find_last_if_fn {
   operator()(Range &&range, Predicate predicate,
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_FIND_NAMESPACE::move(predicate),
-                          FTL_FIND_NAMESPACE::move(projection));
+                          std::move(predicate),
+                          std::move(projection));
 
-    return FTL_FIND_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -377,8 +363,8 @@ struct find_last_if_not_fn {
   constexpr subrange<Iterator> operator()(Iterator first, Sentinel last,
                                           Predicate predicate,
                                           Projection projection = {}) const {
-    return FTL_FIND_NAMESPACE::detail::ranges_find_last_if_not_loop(
-        FTL_FIND_NAMESPACE::move(first), FTL_FIND_NAMESPACE::move(last),
+    return std::detail::ranges_find_last_if_not_loop(
+        std::move(first), std::move(last),
         predicate, projection);
   }
 
@@ -389,10 +375,10 @@ struct find_last_if_not_fn {
   operator()(Range &&range, Predicate predicate,
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_FIND_NAMESPACE::move(predicate),
-                          FTL_FIND_NAMESPACE::move(projection));
+                          std::move(predicate),
+                          std::move(projection));
 
-    return FTL_FIND_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -402,8 +388,7 @@ inline constexpr find_last_if_not_fn find_last_if_not{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_FIND_NAMESPACE
 
 #endif // FTL_FIND_HEADER

@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <generator>
 #include <ranges>
@@ -7,16 +6,6 @@
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/cstddef>
-#include <ftl/generator>
-#include <ftl/ranges>
-#include <ftl/span>
-#include <ftl/tuple>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 using value_generator = tested::generator<int>;
 
@@ -240,7 +229,6 @@ static_assert(!tested::ranges::borrowed_range<cartesian_pipeline>);
 
 static_assert(!tested::default_initializable<cartesian_iterator>);
 
-#ifdef FTL_REPLACE_STL
 
 tested::generator<int> integration_values() {
   for (int value = 1; value <= 6; ++value) {
@@ -275,10 +263,8 @@ tested::generator<row_span> integration_rows() {
   co_yield second;
 }
 
-#endif
 
 bool ftl_test() {
-#ifdef FTL_REPLACE_STL
   {
     auto sequence = integration_values();
 
@@ -479,7 +465,6 @@ bool ftl_test() {
       return false;
     }
   }
-#endif
 
   return true;
 }

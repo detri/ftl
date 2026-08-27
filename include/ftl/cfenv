@@ -3,13 +3,8 @@
 #ifndef FTL_CFENV_HEADER
 #define FTL_CFENV_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <fenv.h>
 namespace std {
-#else
-#include <ftl/fenv.h>
-namespace ftl {
-#endif
 
 using ::fenv_t;
 using ::fexcept_t;

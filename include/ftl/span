@@ -3,7 +3,6 @@
 #ifndef FTL_SPAN_HEADER
 #define FTL_SPAN_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <cstddef>
 #include <iterator>
@@ -11,23 +10,9 @@
 #include <memory>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/array>
-#include <ftl/cstddef>
-#include <ftl/iterator>
-#include <ftl/limits>
-#include <ftl/memory>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_SPAN_NAMESPACE std
-#else
-#define FTL_SPAN_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 inline constexpr size_t dynamic_extent = numeric_limits<size_t>::max();
 
@@ -129,10 +114,10 @@ public:
   using const_reference = const element_type &;
 
   using iterator = pointer;
-  using const_iterator = FTL_SPAN_NAMESPACE::const_iterator<iterator>;
-  using reverse_iterator = FTL_SPAN_NAMESPACE::reverse_iterator<iterator>;
+  using const_iterator = std::const_iterator<iterator>;
+  using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator =
-      FTL_SPAN_NAMESPACE::const_iterator<reverse_iterator>;
+      std::const_iterator<reverse_iterator>;
 
   static constexpr size_type extent = Extent;
 
@@ -150,7 +135,7 @@ public:
                  remove_reference_t<iter_reference_t<Iterator>>, element_type>)
   constexpr explicit(Extent != dynamic_extent)
       span(Iterator first, size_type count)
-      : storage_(FTL_SPAN_NAMESPACE::to_address(first), count) {}
+      : storage_(std::to_address(first), count) {}
 
   template <class Iterator, class End>
     requires(contiguous_iterator<Iterator> &&
@@ -383,9 +368,8 @@ as_writable_bytes(span<ElementType, Extent> source) noexcept {
                                    source.size_bytes());
 }
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_SPAN_NAMESPACE
 
 #if !defined(__cpp_lib_span) || __cpp_lib_span < 202002L
 #undef __cpp_lib_span

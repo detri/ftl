@@ -3,13 +3,8 @@
 #ifndef FTL_DETAIL_STDIO_RUNTIME_HEADER
 #define FTL_DETAIL_STDIO_RUNTIME_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__c_file_types.hpp>
 #include <detail/native_io.hpp>
-#else
-#include <ftl/__c_file_types.hpp>
-#include <ftl/detail/native_io.hpp>
-#endif
 
 namespace ftl_stdio_runtime {
 using size_type = decltype(sizeof(0));

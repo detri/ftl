@@ -3,19 +3,11 @@
 #ifndef FTL_COROUTINE_HEADER
 #define FTL_COROUTINE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <compare>
 #include <cstddef>
 #include <functional>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/compare>
-#include <ftl/cstddef>
-#include <ftl/functional>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
 #if !defined(__cpp_impl_coroutine) || __cpp_impl_coroutine < 201902L
 #error "FTL <coroutine> requires compiler coroutine support"
@@ -30,7 +22,7 @@
 #  endif
 #endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 template<class T>
@@ -327,7 +319,7 @@ struct suspend_always {
     constexpr void await_resume() const noexcept {}
 };
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_coroutine) || __cpp_lib_coroutine < 201902L
 #undef __cpp_lib_coroutine

@@ -1,18 +1,9 @@
-#ifdef FTL_REPLACE_STL
 #include <concepts>
 #include <cstddef>
 #include <ranges>
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/concepts>
-#include <ftl/cstddef>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 /*
  * Invocation probes.
@@ -633,8 +624,6 @@ constexpr bool range_adaptor_callables_work() {
          chunk_by_reconstructible_predicate_works();
 }
 
-#ifdef FTL_REPLACE_STL
 static_assert(range_adaptor_callables_work());
-#endif
 
 bool ftl_test() { return range_adaptor_callables_work(); }

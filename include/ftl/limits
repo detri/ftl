@@ -3,13 +3,9 @@
 #ifndef FTL_LIMITS_HEADER
 #define FTL_LIMITS_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <type_traits>
-#else
-#include <ftl/type_traits>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 enum float_round_style {
     round_indeterminate = -1,
@@ -275,7 +271,7 @@ template<class T> struct numeric_limits<const T> : numeric_limits<T> {};
 template<class T> struct numeric_limits<volatile T> : numeric_limits<T> {};
 template<class T> struct numeric_limits<const volatile T> : numeric_limits<T> {};
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_char8_t) || __cpp_lib_char8_t < 201907L
 #undef __cpp_lib_char8_t

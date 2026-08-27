@@ -3,19 +3,10 @@
 #ifndef FTL_DETAIL_THREAD_EXIT_HEADER
 #define FTL_DETAIL_THREAD_EXIT_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <cstdint>
-#define FTL_THREAD_EXIT_BEGIN_NAMESPACE namespace std::detail {
-#define FTL_THREAD_EXIT_END_NAMESPACE }
-#else
-#include <ftl/atomic>
-#include <ftl/cstdint>
-#define FTL_THREAD_EXIT_BEGIN_NAMESPACE namespace ftl::detail {
-#define FTL_THREAD_EXIT_END_NAMESPACE }
-#endif
 
-FTL_THREAD_EXIT_BEGIN_NAMESPACE
+namespace std::detail {
 
 struct thread_exit_action {
   using invoke_type = void (*)(thread_exit_action *) noexcept;
@@ -304,9 +295,7 @@ inline bool register_thread_exit_action(thread_exit_action *action) noexcept {
   return true;
 }
 
-FTL_THREAD_EXIT_END_NAMESPACE
+}
 
-#undef FTL_THREAD_EXIT_BEGIN_NAMESPACE
-#undef FTL_THREAD_EXIT_END_NAMESPACE
 
 #endif // FTL_DETAIL_THREAD_EXIT_HEADER

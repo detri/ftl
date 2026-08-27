@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <ranges>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/ranges>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 struct inner_view : tested::ranges::view_base {
     int* first{};

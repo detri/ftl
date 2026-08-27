@@ -11,7 +11,6 @@ extern "C" void __cdecl __fastfail(unsigned int);
 #define FTL_BITSET_TRAP() __builtin_trap()
 #endif
 
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <detail/rapidhash>
 #include <iosfwd>
@@ -20,18 +19,8 @@ extern "C" void __cdecl __fastfail(unsigned int);
 #include <string>
 #include <string_view>
 #include <type_traits>
-#else
-#include <ftl/cstddef>
-#include <ftl/detail/rapidhash>
-#include <ftl/iosfwd>
-#include <ftl/limits>
-#include <ftl/stdexcept>
-#include <ftl/string>
-#include <ftl/string_view>
-#include <ftl/type_traits>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 [[noreturn]] inline void bitset_invalid_argument() {
@@ -479,7 +468,7 @@ template <size_t N> struct hash<bitset<N>> {
   }
 };
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_constexpr_bitset) || __cpp_lib_constexpr_bitset < 202207L
 #undef __cpp_lib_constexpr_bitset

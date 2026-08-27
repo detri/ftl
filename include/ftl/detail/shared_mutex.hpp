@@ -3,25 +3,13 @@
 #ifndef FTL_DETAIL_SHARED_MUTEX_HEADER
 #define FTL_DETAIL_SHARED_MUTEX_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <cstdint>
 #include <detail/mutex.hpp>
 #include <detail/wait_notify.hpp>
 #include <limits>
-#define FTL_SHARED_MUTEX_DETAIL_BEGIN_NAMESPACE namespace std::detail {
-#define FTL_SHARED_MUTEX_DETAIL_END_NAMESPACE }
-#else
-#include <ftl/atomic>
-#include <ftl/cstdint>
-#include <ftl/detail/mutex.hpp>
-#include <ftl/detail/wait_notify.hpp>
-#include <ftl/limits>
-#define FTL_SHARED_MUTEX_DETAIL_BEGIN_NAMESPACE namespace ftl::detail {
-#define FTL_SHARED_MUTEX_DETAIL_END_NAMESPACE }
-#endif
 
-FTL_SHARED_MUTEX_DETAIL_BEGIN_NAMESPACE
+namespace std::detail {
 
 class shared_mutex_state {
 public:
@@ -282,9 +270,7 @@ private:
   bool writer_ = false;
 };
 
-FTL_SHARED_MUTEX_DETAIL_END_NAMESPACE
+}
 
-#undef FTL_SHARED_MUTEX_DETAIL_BEGIN_NAMESPACE
-#undef FTL_SHARED_MUTEX_DETAIL_END_NAMESPACE
 
 #endif // FTL_DETAIL_SHARED_MUTEX_HEADER

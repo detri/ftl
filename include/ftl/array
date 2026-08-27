@@ -19,19 +19,12 @@ extern "C" void __cdecl __fastfail(unsigned int);
   } while (false)
 #endif
 
-#ifdef FTL_REPLACE_STL
 #include <cstddef>
 #include <iterator>
 #include <stdexcept>
 #include <utility>
-#else
-#include <ftl/cstddef>
-#include <ftl/iterator>
-#include <ftl/stdexcept>
-#include <ftl/utility>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 template <class I> using array_reverse_iterator = reverse_iterator<I>;
@@ -256,7 +249,7 @@ constexpr array<remove_cv_t<T>, N> to_array(T (&&value)[N]) {
   }(make_index_sequence<N>{});
 }
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #undef FTL_ARRAY_TRAP
 

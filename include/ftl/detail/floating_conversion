@@ -3,15 +3,9 @@
 #ifndef FTL_DETAIL_FLOATING_CONVERSION_HEADER
 #define FTL_DETAIL_FLOATING_CONVERSION_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <detail/big_uint>
 #include <detail/floating_bits>
 #define FTL_FLOATING_CONVERSION_STD std
-#else
-#include <ftl/detail/big_uint>
-#include <ftl/detail/floating_bits>
-#define FTL_FLOATING_CONVERSION_STD ftl
-#endif
 
 namespace ftl_float_conversion {
 

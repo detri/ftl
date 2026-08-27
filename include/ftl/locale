@@ -5,7 +5,6 @@
 
 extern "C" int snprintf(char *, decltype(sizeof(0)), const char *, ...);
 
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <clocale>
 #include <climits>
@@ -28,37 +27,9 @@ extern "C" int snprintf(char *, decltype(sizeof(0)), const char *, ...);
 #include <typeinfo>
 #include <vector>
 
-#else
-#include <ftl/atomic>
-#include <ftl/clocale>
-#include <ftl/climits>
-#include <ftl/cerrno>
-#include <ftl/cstddef>
-#include <ftl/cstdint>
-#include <ftl/cstdlib>
-#include <ftl/cwchar>
-#include <ftl/cwctype>
-#include <ftl/ctime>
-#include <ftl/detail/locale_runtime.hpp>
-#include <ftl/detail/rapidhash>
-#include <ftl/memory>
-#include <ftl/limits>
-#include <ftl/iosfwd>
-#include <ftl/iterator>
-#include <ftl/stdexcept>
-#include <ftl/string>
-#include <ftl/type_traits>
-#include <ftl/typeinfo>
-#include <ftl/vector>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_LOCALE_NAMESPACE std
-#else
-#define FTL_LOCALE_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 class locale;
 
@@ -2375,12 +2346,6 @@ struct locale_named_codecvt_context {
     if (native == nullptr)
       locale_named_codecvt_failure();
 
-    if (ftl_locale_runtime::multibyte_is_stateful(native)) {
-      ftl_locale_runtime::destroy(native);
-      native = nullptr;
-
-      locale_named_codecvt_failure();
-    }
   }
 
   locale_named_codecvt_context(const locale_named_codecvt_context &) = delete;
@@ -2438,8 +2403,9 @@ protected:
       char *output = to;
 
       while (current != from_end) {
-        const auto encoded =
-            ftl_locale_runtime::encode_wide(context_->native, *current);
+        state_type next_state = state;
+        const auto encoded = ftl_locale_runtime::encode_wide_restartable(
+            context_->native, next_state, *current);
 
         if (!encoded.valid) {
           from_next = current;
@@ -2457,6 +2423,7 @@ protected:
           *output++ = encoded.bytes[index];
         }
 
+        state = next_state;
         ++current;
       }
 
@@ -2477,8 +2444,6 @@ protected:
     if constexpr (is_same_v<intern_type, wchar_t> &&
                   is_same_v<extern_type, char> &&
                   is_same_v<state_type, mbstate_t>) {
-      (void)state;
-
       from_next = from;
       to_next = to;
 
@@ -2492,11 +2457,12 @@ protected:
           return codecvt_base::partial;
         }
 
-        const auto decoded = ftl_locale_runtime::decode_wide(context_->native,
-                                                             current, from_end);
+        const auto decoded = ftl_locale_runtime::decode_wide_restartable(
+            context_->native, state, current, from_end);
 
         if (decoded.result ==
             ftl_locale_runtime::decoded_wide::status::partial) {
+          current += decoded.consumed;
           from_next = current;
           to_next = output;
           return codecvt_base::partial;
@@ -2528,12 +2494,26 @@ protected:
     if constexpr (is_same_v<intern_type, wchar_t> &&
                   is_same_v<extern_type, char> &&
                   is_same_v<state_type, mbstate_t>) {
-      (void)state;
-      (void)to_end;
-
       to_next = to;
 
-      return codecvt_base::noconv;
+      if (state.native_active == 0)
+        return codecvt_base::noconv;
+
+      state_type next_state = state;
+      const auto shifted =
+          ftl_locale_runtime::unshift_wide(context_->native, next_state);
+
+      if (!shifted.valid)
+        return codecvt_base::error;
+
+      if (static_cast<size_t>(to_end - to) < shifted.produced)
+        return codecvt_base::partial;
+
+      for (size_t index = 0; index < shifted.produced; ++index)
+        *to_next++ = shifted.bytes[index];
+
+      state = next_state;
+      return codecvt_base::ok;
     } else {
       return base_type::do_unshift(state, to, to_end, to_next);
     }
@@ -2543,6 +2523,9 @@ protected:
     if constexpr (is_same_v<intern_type, wchar_t> &&
                   is_same_v<extern_type, char> &&
                   is_same_v<state_type, mbstate_t>) {
+      if (ftl_locale_runtime::multibyte_is_stateful(context_->native))
+        return -1;
+
       return ftl_locale_runtime::multibyte_max_length(context_->native) == 1
                  ? 1
                  : 0;
@@ -2560,14 +2543,12 @@ protected:
     if constexpr (is_same_v<intern_type, wchar_t> &&
                   is_same_v<extern_type, char> &&
                   is_same_v<state_type, mbstate_t>) {
-      (void)state;
-
       const char *current = from;
       size_t produced = 0;
 
       while (current != from_end && produced < maximum) {
-        const auto decoded = ftl_locale_runtime::decode_wide(context_->native,
-                                                             current, from_end);
+        const auto decoded = ftl_locale_runtime::decode_wide_restartable(
+            context_->native, state, current, from_end);
 
         if (decoded.result !=
             ftl_locale_runtime::decoded_wide::status::complete) {
@@ -5920,21 +5901,16 @@ template <class Character, class Traits, class Allocator>
 bool locale::operator()(
     const basic_string<Character, Traits, Allocator> &left,
     const basic_string<Character, Traits, Allocator> &right) const {
-  return use_facet<FTL_LOCALE_NAMESPACE::collate<Character>>(*this).compare(
+  return use_facet<std::collate<Character>>(*this).compare(
              left.data(), left.data() + left.size(), right.data(),
              right.data() + right.size()) < 0;
 }
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_LOCALE_NAMESPACE
 
 #if !defined(FTL_STREAMBUF_HEADER) && !defined(FTL_IOS_HEADER)
-#ifdef FTL_REPLACE_STL
 #include <streambuf>
-#else
-#include <ftl/streambuf>
-#endif
 #endif
 
 #if !defined(__cpp_lib_char8_t) || __cpp_lib_char8_t < 201907L

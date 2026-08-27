@@ -3,27 +3,14 @@
 #ifndef FTL_SEMAPHORE_HEADER
 #define FTL_SEMAPHORE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <detail/wait_notify.hpp>
 #include <limits>
-#define FTL_SEMAPHORE_BEGIN_NAMESPACE namespace std {
-#define FTL_SEMAPHORE_END_NAMESPACE }
-#else
-#include <ftl/atomic>
-#include <ftl/chrono>
-#include <ftl/cstddef>
-#include <ftl/cstdint>
-#include <ftl/detail/wait_notify.hpp>
-#include <ftl/limits>
-#define FTL_SEMAPHORE_BEGIN_NAMESPACE namespace ftl {
-#define FTL_SEMAPHORE_END_NAMESPACE }
-#endif
 
-FTL_SEMAPHORE_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -177,10 +164,8 @@ private:
 
 using binary_semaphore = counting_semaphore<1>;
 
-FTL_SEMAPHORE_END_NAMESPACE
+}
 
-#undef FTL_SEMAPHORE_BEGIN_NAMESPACE
-#undef FTL_SEMAPHORE_END_NAMESPACE
 
 #if !defined(__cpp_lib_semaphore) || __cpp_lib_semaphore < 201907L
 #undef __cpp_lib_semaphore

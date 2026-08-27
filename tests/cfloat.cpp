@@ -1,8 +1,4 @@
-#ifdef FTL_REPLACE_STL
 #include <cfloat>
-#else
-#include <ftl/cfloat>
-#endif
 
 static_assert(FLT_RADIX >= 2 && FLT_MANT_DIG >= 6 && DBL_MANT_DIG >= 10);
 static_assert(FLT_MAX > 1.0F && DBL_MAX > 1.0 && LDBL_MAX > 1.0L);

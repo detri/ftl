@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <codecvt>
 namespace tested = std;
-#else
-#include <ftl/codecvt>
-namespace tested = ftl;
-#endif
 
 bool ftl_test() {
   static_assert(tested::little_endian == 1);

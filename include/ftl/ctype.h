@@ -3,11 +3,7 @@
 #ifndef FTL_CTYPE_H_HEADER
 #define FTL_CTYPE_H_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cctype>
-#else
-#include <ftl/cctype>
-#endif
 
 /*
  * <cctype> above deliberately declares the underlying C functions in the

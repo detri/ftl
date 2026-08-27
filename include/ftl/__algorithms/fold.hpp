@@ -3,7 +3,6 @@
 #ifndef FTL_FOLD_HEADER
 #define FTL_FOLD_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__algorithms/result.hpp>
 #include <functional>
 #include <iterator>
@@ -11,23 +10,9 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__algorithms/result.hpp>
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/optional>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_FOLD_NAMESPACE std
-#else
-#define FTL_FOLD_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace ranges {
 namespace detail {
@@ -80,24 +65,24 @@ constexpr auto fold_left_with_iter_loop(Iterator first, Sentinel last, T init,
 
   if (first == last) {
     return {
-        FTL_FOLD_NAMESPACE::move(first),
-        U(FTL_FOLD_NAMESPACE::move(init)),
+        std::move(first),
+        U(std::move(init)),
     };
   }
 
-  U accumulator = FTL_FOLD_NAMESPACE::invoke(
-      function, FTL_FOLD_NAMESPACE::move(init), *first);
+  U accumulator = std::invoke(
+      function, std::move(init), *first);
 
   ++first;
 
   for (; first != last; ++first) {
-    accumulator = FTL_FOLD_NAMESPACE::invoke(
-        function, FTL_FOLD_NAMESPACE::move(accumulator), *first);
+    accumulator = std::invoke(
+        function, std::move(accumulator), *first);
   }
 
   return {
-      FTL_FOLD_NAMESPACE::move(first),
-      FTL_FOLD_NAMESPACE::move(accumulator),
+      std::move(first),
+      std::move(accumulator),
   };
 }
 
@@ -111,7 +96,7 @@ constexpr auto fold_left_first_with_iter_loop(Iterator first, Sentinel last,
 
   if (first == last) {
     return {
-        FTL_FOLD_NAMESPACE::move(first),
+        std::move(first),
         optional<U>{},
     };
   }
@@ -124,13 +109,13 @@ constexpr auto fold_left_first_with_iter_loop(Iterator first, Sentinel last,
   ++first;
 
   for (; first != last; ++first) {
-    *accumulator = FTL_FOLD_NAMESPACE::invoke(
-        function, FTL_FOLD_NAMESPACE::move(*accumulator), *first);
+    *accumulator = std::invoke(
+        function, std::move(*accumulator), *first);
   }
 
   return {
-      FTL_FOLD_NAMESPACE::move(first),
-      FTL_FOLD_NAMESPACE::move(accumulator),
+      std::move(first),
+      std::move(accumulator),
   };
 }
 
@@ -141,7 +126,7 @@ constexpr auto fold_right_loop(Iterator first, Sentinel last, T init,
   using U = fold_right_value_t<Function, T, Iterator>;
 
   if (first == last) {
-    return U(FTL_FOLD_NAMESPACE::move(init));
+    return U(std::move(init));
   }
 
   Iterator tail = first;
@@ -152,14 +137,14 @@ constexpr auto fold_right_loop(Iterator first, Sentinel last, T init,
 
   --tail;
 
-  U accumulator = FTL_FOLD_NAMESPACE::invoke(function, *tail,
-                                             FTL_FOLD_NAMESPACE::move(init));
+  U accumulator = std::invoke(function, *tail,
+                                             std::move(init));
 
   while (first != tail) {
     --tail;
 
-    accumulator = FTL_FOLD_NAMESPACE::invoke(
-        function, *tail, FTL_FOLD_NAMESPACE::move(accumulator));
+    accumulator = std::invoke(
+        function, *tail, std::move(accumulator));
   }
 
   return accumulator;
@@ -188,7 +173,7 @@ constexpr auto fold_right_last_loop(Iterator first, Sentinel last,
 
   return optional<U>{
       in_place,
-      fold_right_loop(first, tail, FTL_FOLD_NAMESPACE::move(init), function),
+      fold_right_loop(first, tail, std::move(init), function),
   };
 }
 
@@ -209,8 +194,8 @@ struct fold_left_with_iter_fn {
       -> fold_left_with_iter_result<
           Iterator, detail::fold_left_value_t<Function, T, Iterator>> {
     return detail::fold_left_with_iter_loop(
-        FTL_FOLD_NAMESPACE::move(first), FTL_FOLD_NAMESPACE::move(last),
-        FTL_FOLD_NAMESPACE::move(init), function);
+        std::move(first), std::move(last),
+        std::move(init), function);
   }
 
   template <input_range Range, class T, class Function>
@@ -221,10 +206,10 @@ struct fold_left_with_iter_fn {
           borrowed_iterator_t<Range>,
           detail::fold_left_value_t<Function, T, iterator_t<Range>>> {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_FOLD_NAMESPACE::move(init),
-                          FTL_FOLD_NAMESPACE::move(function));
+                          std::move(init),
+                          std::move(function));
 
-    return FTL_FOLD_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -236,8 +221,8 @@ struct fold_left_fn {
                             Function function) const
       -> detail::fold_left_value_t<Function, T, Iterator> {
     return detail::fold_left_with_iter_loop(
-               FTL_FOLD_NAMESPACE::move(first), FTL_FOLD_NAMESPACE::move(last),
-               FTL_FOLD_NAMESPACE::move(init), function)
+               std::move(first), std::move(last),
+               std::move(init), function)
         .value;
   }
 
@@ -247,8 +232,8 @@ struct fold_left_fn {
   constexpr auto operator()(Range &&range, T init, Function function) const
       -> detail::fold_left_value_t<Function, T, iterator_t<Range>> {
     return (*this)(ranges::begin(range), ranges::end(range),
-                   FTL_FOLD_NAMESPACE::move(init),
-                   FTL_FOLD_NAMESPACE::move(function));
+                   std::move(init),
+                   std::move(function));
   }
 };
 
@@ -265,7 +250,7 @@ struct fold_left_first_with_iter_fn {
           Iterator, optional<detail::fold_left_value_t<
                         Function, iter_value_t<Iterator>, Iterator>>> {
     return detail::fold_left_first_with_iter_loop(
-        FTL_FOLD_NAMESPACE::move(first), FTL_FOLD_NAMESPACE::move(last),
+        std::move(first), std::move(last),
         function);
   }
 
@@ -279,9 +264,9 @@ struct fold_left_first_with_iter_fn {
           optional<detail::fold_left_value_t<Function, range_value_t<Range>,
                                              iterator_t<Range>>>> {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_FOLD_NAMESPACE::move(function));
+                          std::move(function));
 
-    return FTL_FOLD_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -297,7 +282,7 @@ struct fold_left_first_fn {
       -> optional<detail::fold_left_value_t<Function, iter_value_t<Iterator>,
                                             Iterator>> {
     return detail::fold_left_first_with_iter_loop(
-               FTL_FOLD_NAMESPACE::move(first), FTL_FOLD_NAMESPACE::move(last),
+               std::move(first), std::move(last),
                function)
         .value;
   }
@@ -310,7 +295,7 @@ struct fold_left_first_fn {
       -> optional<detail::fold_left_value_t<Function, range_value_t<Range>,
                                             iterator_t<Range>>> {
     return (*this)(ranges::begin(range), ranges::end(range),
-                   FTL_FOLD_NAMESPACE::move(function));
+                   std::move(function));
   }
 };
 
@@ -321,9 +306,9 @@ struct fold_right_fn {
   constexpr auto operator()(Iterator first, Sentinel last, T init,
                             Function function) const
       -> detail::fold_right_value_t<Function, T, Iterator> {
-    return detail::fold_right_loop(FTL_FOLD_NAMESPACE::move(first),
-                                   FTL_FOLD_NAMESPACE::move(last),
-                                   FTL_FOLD_NAMESPACE::move(init), function);
+    return detail::fold_right_loop(std::move(first),
+                                   std::move(last),
+                                   std::move(init), function);
   }
 
   template <bidirectional_range Range, class T, class Function>
@@ -332,8 +317,8 @@ struct fold_right_fn {
   constexpr auto operator()(Range &&range, T init, Function function) const
       -> detail::fold_right_value_t<Function, T, iterator_t<Range>> {
     return (*this)(ranges::begin(range), ranges::end(range),
-                   FTL_FOLD_NAMESPACE::move(init),
-                   FTL_FOLD_NAMESPACE::move(function));
+                   std::move(init),
+                   std::move(function));
   }
 };
 
@@ -348,8 +333,8 @@ struct fold_right_last_fn {
                             Function function) const
       -> optional<detail::fold_right_value_t<Function, iter_value_t<Iterator>,
                                              Iterator>> {
-    return detail::fold_right_last_loop(FTL_FOLD_NAMESPACE::move(first),
-                                        FTL_FOLD_NAMESPACE::move(last),
+    return detail::fold_right_last_loop(std::move(first),
+                                        std::move(last),
                                         function);
   }
 
@@ -361,7 +346,7 @@ struct fold_right_last_fn {
       -> optional<detail::fold_right_value_t<Function, range_value_t<Range>,
                                              iterator_t<Range>>> {
     return (*this)(ranges::begin(range), ranges::end(range),
-                   FTL_FOLD_NAMESPACE::move(function));
+                   std::move(function));
   }
 };
 
@@ -374,8 +359,7 @@ inline constexpr fold_left_first_with_iter_fn fold_left_first_with_iter{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_FOLD_NAMESPACE
 
 #endif // FTL_FOLD_HEADER

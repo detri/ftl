@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <cstdint>
 #include <detail/big_uint>
 namespace tested = std;
-#else
-#include <ftl/cstdint>
-#include <ftl/detail/big_uint>
-namespace tested = ftl;
-#endif
 
 using ftl_float_conversion::big_uint;
 

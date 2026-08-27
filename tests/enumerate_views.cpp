@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <ranges>
 #include <tuple>
 namespace tested = std;
-#else
-#include <ftl/ranges>
-#include <ftl/tuple>
-namespace tested = ftl;
-#endif
 
 constexpr bool enumerate_works() {
     int values[] = {4, 5, 6};

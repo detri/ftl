@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <any>
 namespace tested = std;
-#else
-#include <ftl/any>
-namespace tested = ftl;
-#endif
 
 struct aggregate {
     int first;

@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <climits>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/climits>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 static_assert(CHAR_BIT >= 8 && SCHAR_MIN < 0 && SCHAR_MAX > 0);
 static_assert(UCHAR_MAX >= SCHAR_MAX && CHAR_MIN <= CHAR_MAX);

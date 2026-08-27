@@ -3,7 +3,6 @@
 #ifndef FTL_CMATH_HEADER
 #define FTL_CMATH_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <bit>
 #include <cfloat>
 #include <limits>
@@ -11,15 +10,6 @@
 #include <detail/math_runtime>
 #define FTL_CMATH_BEGIN namespace std {
 #define FTL_CMATH_END }
-#else
-#include <ftl/bit>
-#include <ftl/cfloat>
-#include <ftl/limits>
-#include <ftl/type_traits>
-#include <ftl/detail/math_runtime>
-#define FTL_CMATH_BEGIN namespace ftl {
-#define FTL_CMATH_END }
-#endif
 
 #define FP_INFINITE 0x01
 #define FP_NAN 0x02
@@ -70,6 +60,72 @@ constexpr bool isinf(long double) noexcept;
 namespace detail {
 template <class T>
 inline constexpr bool math_arithmetic_v = is_arithmetic_v<remove_cv_t<T>>;
+
+template <class T>
+concept extended_math_floating =
+    is_floating_point_v<remove_cv_t<T>> &&
+    !is_same_v<remove_cv_t<T>, float> &&
+    !is_same_v<remove_cv_t<T>, double> &&
+    !is_same_v<remove_cv_t<T>, long double>;
+
+template <extended_math_floating T>
+using math_evaluation_t = conditional_t<
+    numeric_limits<remove_cv_t<T>>::digits <= numeric_limits<float>::digits,
+    float, conditional_t<
+        numeric_limits<remove_cv_t<T>>::digits <= numeric_limits<double>::digits,
+        double, long double>>;
+
+template <class T> requires is_floating_point_v<T>
+inline T sqrt(T value) noexcept {
+#ifdef __STDCPP_FLOAT128_T__
+  if constexpr (is_same_v<remove_cv_t<T>, decltype(0.0f128)>)
+    return __builtin_sqrtf128(value);
+#endif
+  if constexpr (is_same_v<T, float> || is_same_v<T, double> ||
+                is_same_v<T, long double>)
+    return ::std::sqrt(value);
+  else {
+    using evaluation = math_evaluation_t<T>;
+    return static_cast<T>(::std::sqrt(static_cast<evaluation>(value)));
+  }
+}
+template <class T> requires is_floating_point_v<T>
+constexpr T fabs(T value) noexcept {
+  return value < T{} ? -value : value;
+}
+template <class T> requires is_floating_point_v<T>
+inline T atan(T value) noexcept {
+#ifdef __STDCPP_FLOAT128_T__
+  if constexpr (is_same_v<remove_cv_t<T>, decltype(0.0f128)>)
+    return __builtin_atanf128(value);
+#endif
+  if constexpr (is_same_v<T, float> || is_same_v<T, double> ||
+                is_same_v<T, long double>)
+    return ::std::atan(value);
+  else {
+    using evaluation = math_evaluation_t<T>;
+    return static_cast<T>(::std::atan(static_cast<evaluation>(value)));
+  }
+}
+template <class T> requires is_floating_point_v<T>
+inline T atanh(T value) noexcept {
+#ifdef __STDCPP_FLOAT128_T__
+  if constexpr (is_same_v<remove_cv_t<T>, decltype(0.0f128)>)
+    return __builtin_atanhf128(value);
+#endif
+  if constexpr (is_same_v<T, float> || is_same_v<T, double> ||
+                is_same_v<T, long double>)
+    return ::std::atanh(value);
+  else {
+    using evaluation = math_evaluation_t<T>;
+    return static_cast<T>(::std::atanh(static_cast<evaluation>(value)));
+  }
+}
+template <class T> requires is_floating_point_v<T>
+constexpr bool isinf(T value) noexcept {
+  return value == numeric_limits<T>::infinity() ||
+         value == -numeric_limits<T>::infinity();
+}
 
 template <class T>
 inline T math_domain_error() { return sqrt(T{-1}); }
@@ -133,21 +189,22 @@ template <class T> constexpr T const_ceil(T value) {
   return integer < value ? integer + T{1} : integer;
 }
 template <class T> constexpr T const_round(T value) {
-  return value < T{} ? const_ceil(value - T{0.5})
-                     : const_floor(value + T{0.5});
+  const T half = T{1} / T{2};
+  return value < T{} ? const_ceil(value - half)
+                     : const_floor(value + half);
 }
 template <class T> constexpr T const_scalbn(T value, long exponent) {
   if (!const_isfinite(value) || value == T{}) return value;
   while (exponent > 0) { value *= T{2}; --exponent; }
-  while (exponent < 0) { value *= T{0.5}; ++exponent; }
+  while (exponent < 0) { value *= T{1} / T{2}; ++exponent; }
   return value;
 }
 template <class T> constexpr T const_frexp(T value, int *exponent) {
   *exponent = 0;
   if (!const_isfinite(value) || value == T{}) return value;
   T magnitude = const_abs(value);
-  while (magnitude >= T{1}) { magnitude *= T{0.5}; ++*exponent; }
-  while (magnitude < T{0.5}) { magnitude *= T{2}; --*exponent; }
+  while (magnitude >= T{1}) { magnitude *= T{1} / T{2}; ++*exponent; }
+  while (magnitude < T{1} / T{2}) { magnitude *= T{2}; --*exponent; }
   return const_copysign(magnitude, value);
 }
 template <class T> constexpr int const_ilogb(T value) {
@@ -187,7 +244,7 @@ constexpr const_divrem_result<T> const_divrem(T numerator, T denominator) {
     }
     if (shifts == 0)
       break;
-    scaled *= T{0.5};
+    scaled *= T{1} / T{2};
     --shifts;
   }
 
@@ -237,7 +294,8 @@ template <class T, class U> constexpr T const_nextafter(T from, U to) {
     int exponent{};
     const T fraction = const_frexp(magnitude, &exponent);
     ulp = const_scalbn(numeric_limits<T>::epsilon(), exponent - 1);
-    if ((to > from) == (from < T{}) && fraction == T{0.5}) ulp *= T{0.5};
+    if ((to > from) == (from < T{}) && fraction == T{1} / T{2})
+      ulp *= T{1} / T{2};
   }
   return to > from ? from + ulp : from - ulp;
 }
@@ -381,6 +439,18 @@ inline T carlson_rj(T x, T y, T z, T p) {
 }
 } // namespace detail
 
+#ifdef __STDCPP_FLOAT128_T__
+#define FTL_CMATH_EXTENDED_UNARY_BUILTIN(name, value)                        \
+  if constexpr (is_same_v<remove_cv_t<Extended>, decltype(0.0f128)>)         \
+    return __builtin_##name##f128(value)
+#define FTL_CMATH_EXTENDED_BINARY_BUILTIN(name, left, right)                 \
+  if constexpr (is_same_v<remove_cv_t<Extended>, decltype(0.0f128)>)         \
+    return __builtin_##name##f128(left, right)
+#else
+#define FTL_CMATH_EXTENDED_UNARY_BUILTIN(name, value)
+#define FTL_CMATH_EXTENDED_BINARY_BUILTIN(name, left, right)
+#endif
+
 #define FTL_CMATH_UNARY(name)                                                 \
   inline float name(float value) noexcept { return ::ftl_olm_##name##f(value); } \
   inline double name(double value) noexcept { return ::ftl_olm_##name(value); } \
@@ -393,6 +463,12 @@ inline T carlson_rj(T x, T y, T z, T p) {
     requires is_integral_v<Integer>                                           \
   inline double name(Integer value) noexcept {                                \
     return name(static_cast<double>(value));                                  \
+  }                                                                           \
+  template <detail::extended_math_floating Extended>                         \
+  inline Extended name(Extended value) noexcept {                            \
+    FTL_CMATH_EXTENDED_UNARY_BUILTIN(name, value);                           \
+    using evaluation = detail::math_evaluation_t<Extended>;                  \
+    return static_cast<Extended>(name(static_cast<evaluation>(value)));       \
   }
 
 #define FTL_CMATH_BINARY(name)                                                \
@@ -413,11 +489,20 @@ inline T carlson_rj(T x, T y, T z, T p) {
   }                                                                           \
   template <class Left, class Right>                                          \
     requires(detail::math_arithmetic_v<Left> &&                               \
-             detail::math_arithmetic_v<Right>)                                \
+             detail::math_arithmetic_v<Right> &&                              \
+             !(is_same_v<remove_cv_t<Left>, remove_cv_t<Right>> &&            \
+               is_floating_point_v<remove_cv_t<Left>>))                       \
   inline detail::math_common_t<Left, Right> name(Left left, Right right)       \
       noexcept {                                                              \
     using common = detail::math_common_t<Left, Right>;                         \
     return name(static_cast<common>(left), static_cast<common>(right));        \
+  }                                                                           \
+  template <detail::extended_math_floating Extended>                         \
+  inline Extended name(Extended left, Extended right) noexcept {             \
+    FTL_CMATH_EXTENDED_BINARY_BUILTIN(name, left, right);                    \
+    using evaluation = detail::math_evaluation_t<Extended>;                  \
+    return static_cast<Extended>(name(static_cast<evaluation>(left),          \
+                                      static_cast<evaluation>(right)));       \
   }
 
 #define FTL_CMATH_CONSTEXPR_UNARY(name)                                      \
@@ -441,6 +526,13 @@ inline T carlson_rj(T x, T y, T z, T p) {
     requires is_integral_v<Integer>                                           \
   constexpr double name(Integer value) noexcept {                            \
     return name(static_cast<double>(value));                                  \
+  }                                                                           \
+  template <detail::extended_math_floating Extended>                         \
+  constexpr Extended name(Extended value) noexcept {                         \
+    if consteval { return detail::const_##name(value); }                     \
+    FTL_CMATH_EXTENDED_UNARY_BUILTIN(name, value);                           \
+    using evaluation = detail::math_evaluation_t<Extended>;                  \
+    return static_cast<Extended>(name(static_cast<evaluation>(value)));       \
   }
 
 #define FTL_CMATH_CONSTEXPR_BINARY(name)                                     \
@@ -464,11 +556,21 @@ inline T carlson_rj(T x, T y, T z, T p) {
   }                                                                           \
   template <class Left, class Right>                                          \
     requires(detail::math_arithmetic_v<Left> &&                              \
-             detail::math_arithmetic_v<Right>)                               \
+             detail::math_arithmetic_v<Right> &&                             \
+             !(is_same_v<remove_cv_t<Left>, remove_cv_t<Right>> &&           \
+               is_floating_point_v<remove_cv_t<Left>>))                      \
   constexpr detail::math_common_t<Left, Right> name(Left left, Right right)  \
       noexcept {                                                             \
     using common = detail::math_common_t<Left, Right>;                        \
     return name(static_cast<common>(left), static_cast<common>(right));       \
+  }                                                                           \
+  template <detail::extended_math_floating Extended>                         \
+  constexpr Extended name(Extended left, Extended right) noexcept {          \
+    if consteval { return detail::const_##name(left, right); }               \
+    FTL_CMATH_EXTENDED_BINARY_BUILTIN(name, left, right);                    \
+    using evaluation = detail::math_evaluation_t<Extended>;                  \
+    return static_cast<Extended>(name(static_cast<evaluation>(left),          \
+                                      static_cast<evaluation>(right)));       \
   }
 
 FTL_CMATH_UNARY(acos)
@@ -525,10 +627,14 @@ FTL_CMATH_CONSTEXPR_BINARY(remainder)
 #undef FTL_CMATH_BINARY
 #undef FTL_CMATH_CONSTEXPR_UNARY
 #undef FTL_CMATH_CONSTEXPR_BINARY
+#undef FTL_CMATH_EXTENDED_BINARY_BUILTIN
+#undef FTL_CMATH_EXTENDED_UNARY_BUILTIN
 
 constexpr float abs(float value) noexcept { return fabs(value); }
 constexpr double abs(double value) noexcept { return fabs(value); }
 constexpr long double abs(long double value) noexcept { return fabs(value); }
+template <detail::extended_math_floating Extended>
+constexpr Extended abs(Extended value) noexcept { return fabs(value); }
 #ifndef FTL_INTEGER_ABS_DEFINED
 #define FTL_INTEGER_ABS_DEFINED
 constexpr int abs(int value) { return value < 0 ? -value : value; }
@@ -632,13 +738,44 @@ constexpr long double fmal(long double x, long double y,
 }
 template <class X, class Y, class Z>
   requires(detail::math_arithmetic_v<X> && detail::math_arithmetic_v<Y> &&
-           detail::math_arithmetic_v<Z>)
+           detail::math_arithmetic_v<Z> &&
+           !(is_same_v<remove_cv_t<X>, remove_cv_t<Y>> &&
+             is_same_v<remove_cv_t<X>, remove_cv_t<Z>> &&
+             is_floating_point_v<remove_cv_t<X>>))
 constexpr auto fma(X x, Y y, Z z) noexcept {
   using xy = detail::math_common_t<X, Y>;
   using common = detail::math_common_t<xy, Z>;
   return fma(static_cast<common>(x), static_cast<common>(y),
              static_cast<common>(z));
 }
+template <detail::extended_math_floating Extended>
+constexpr Extended fma(Extended x, Extended y, Extended z) noexcept {
+  if consteval { return x * y + z; }
+#ifdef __STDCPP_FLOAT128_T__
+  if constexpr (is_same_v<remove_cv_t<Extended>, decltype(0.0f128)>)
+    return __builtin_fmaf128(x, y, z);
+#endif
+  using evaluation = detail::math_evaluation_t<Extended>;
+  return static_cast<Extended>(fma(static_cast<evaluation>(x),
+                                   static_cast<evaluation>(y),
+                                   static_cast<evaluation>(z)));
+}
+
+#ifdef __STDCPP_FLOAT128_T__
+#define FTL_CMATH_EXTENDED_DECOMPOSE_BUILTIN(name, value, exponent)          \
+  if constexpr (is_same_v<remove_cv_t<Extended>, decltype(0.0f128)>)         \
+    return __builtin_##name##f128(value, exponent)
+#define FTL_CMATH_EXTENDED_SCALE_BUILTIN(name, value, exponent)              \
+  if constexpr (is_same_v<remove_cv_t<Extended>, decltype(0.0f128)>)         \
+    return __builtin_##name##f128(value, exponent)
+#define FTL_CMATH_EXTENDED_INTEGER_BUILTIN(name, value)                      \
+  if constexpr (is_same_v<remove_cv_t<Extended>, decltype(0.0f128)>)         \
+    return __builtin_##name##f128(value)
+#else
+#define FTL_CMATH_EXTENDED_DECOMPOSE_BUILTIN(name, value, exponent)
+#define FTL_CMATH_EXTENDED_SCALE_BUILTIN(name, value, exponent)
+#define FTL_CMATH_EXTENDED_INTEGER_BUILTIN(name, value)
+#endif
 
 #define FTL_CMATH_DECOMPOSE(name)                                             \
   constexpr float name(float value, int *exponent) noexcept {                 \
@@ -663,6 +800,17 @@ constexpr auto fma(X x, Y y, Z z) noexcept {
     requires is_integral_v<Integer>                                           \
   constexpr double name(Integer value, int *exponent) noexcept {              \
     return name(static_cast<double>(value), exponent);                        \
+  }                                                                           \
+  template <detail::extended_math_floating Extended>                         \
+  constexpr Extended name(Extended value, int *exponent) noexcept {          \
+    if consteval { return detail::const_frexp(value, exponent); }            \
+    FTL_CMATH_EXTENDED_DECOMPOSE_BUILTIN(name, value, exponent);             \
+    using evaluation = detail::math_evaluation_t<Extended>;                  \
+    int evaluated_exponent{};                                                 \
+    const auto result = name(static_cast<evaluation>(value),                  \
+                             &evaluated_exponent);                            \
+    *exponent = evaluated_exponent;                                           \
+    return static_cast<Extended>(result);                                     \
   }
 
 FTL_CMATH_DECOMPOSE(frexp)
@@ -679,6 +827,24 @@ constexpr double modf(double value, double *integer) noexcept {
 constexpr long double modf(long double value, long double *integer) noexcept {
   if consteval { *integer = detail::const_trunc(value); return detail::const_isinf(value) ? detail::const_copysign(0.0L, value) : value - *integer; }
   return ::ftl_olm_modfl(value, integer);
+}
+template <detail::extended_math_floating Extended>
+constexpr Extended modf(Extended value, Extended *integer) noexcept {
+  if consteval {
+    *integer = detail::const_trunc(value);
+    return detail::const_isinf(value) ? detail::const_copysign(Extended{}, value)
+                                      : value - *integer;
+  }
+#ifdef __STDCPP_FLOAT128_T__
+  if constexpr (is_same_v<remove_cv_t<Extended>, decltype(0.0f128)>)
+    return __builtin_modff128(value, integer);
+#endif
+  using evaluation = detail::math_evaluation_t<Extended>;
+  evaluation evaluated_integer{};
+  const evaluation result = modf(static_cast<evaluation>(value),
+                                 &evaluated_integer);
+  *integer = static_cast<Extended>(evaluated_integer);
+  return static_cast<Extended>(result);
 }
 constexpr float modff(float value, float *integer) noexcept {
   return modf(value, integer);
@@ -709,6 +875,14 @@ constexpr long double modfl(long double value, long double *integer) noexcept {
     requires is_integral_v<Integer>                                           \
   constexpr double name(Integer value, exponent_type exponent) noexcept {     \
     return name(static_cast<double>(value), exponent);                        \
+  }                                                                           \
+  template <detail::extended_math_floating Extended>                         \
+  constexpr Extended name(Extended value, exponent_type exponent) noexcept { \
+    if consteval { return detail::const_scalbn(value, exponent); }           \
+    FTL_CMATH_EXTENDED_SCALE_BUILTIN(name, value, exponent);                 \
+    using evaluation = detail::math_evaluation_t<Extended>;                  \
+    return static_cast<Extended>(name(static_cast<evaluation>(value),         \
+                                      exponent));                             \
   }
 
 FTL_CMATH_SCALE(ldexp, int)
@@ -735,6 +909,13 @@ FTL_CMATH_SCALE(scalbln, long)
     requires is_integral_v<Integer>                                           \
   constexpr result_type name(Integer value) noexcept {                        \
     return name(static_cast<double>(value));                                  \
+  }                                                                           \
+  template <detail::extended_math_floating Extended>                         \
+  constexpr result_type name(Extended value) noexcept {                      \
+    if consteval { return detail::const_##name(value); }                     \
+    FTL_CMATH_EXTENDED_INTEGER_BUILTIN(name, value);                         \
+    using evaluation = detail::math_evaluation_t<Extended>;                  \
+    return name(static_cast<evaluation>(value));                              \
   }
 
 FTL_CMATH_INTEGER_RESULT(ilogb, int)
@@ -743,6 +924,9 @@ FTL_CMATH_INTEGER_RESULT(llrint, long long)
 FTL_CMATH_INTEGER_RESULT(lround, long)
 FTL_CMATH_INTEGER_RESULT(llround, long long)
 #undef FTL_CMATH_INTEGER_RESULT
+#undef FTL_CMATH_EXTENDED_INTEGER_BUILTIN
+#undef FTL_CMATH_EXTENDED_SCALE_BUILTIN
+#undef FTL_CMATH_EXTENDED_DECOMPOSE_BUILTIN
 
 constexpr double nexttoward(double from, long double to) noexcept {
   if consteval { return detail::const_nextafter(from, to); }
@@ -767,6 +951,8 @@ template <class Integer>
 constexpr double nexttoward(Integer from, long double to) noexcept {
   return nexttoward(static_cast<double>(from), to);
 }
+template <detail::extended_math_floating Extended>
+constexpr Extended nexttoward(Extended, long double) noexcept = delete;
 
 constexpr float remquo(float x, float y, int *quotient) noexcept {
   if consteval { long long q{}; const float r = detail::const_remainder(x, y, &q); *quotient = static_cast<int>(q); return r; }
@@ -780,6 +966,22 @@ constexpr long double remquo(long double x, long double y,
                              int *quotient) noexcept {
   if consteval { long long q{}; const long double r = detail::const_remainder(x, y, &q); *quotient = static_cast<int>(q); return r; }
   return ::ftl_olm_remquol(x, y, quotient);
+}
+template <detail::extended_math_floating Extended>
+constexpr Extended remquo(Extended x, Extended y, int *quotient) noexcept {
+  if consteval {
+    long long result_quotient{};
+    const Extended result = detail::const_remainder(x, y, &result_quotient);
+    *quotient = static_cast<int>(result_quotient);
+    return result;
+  }
+#ifdef __STDCPP_FLOAT128_T__
+  if constexpr (is_same_v<remove_cv_t<Extended>, decltype(0.0f128)>)
+    return __builtin_remquof128(x, y, quotient);
+#endif
+  using evaluation = detail::math_evaluation_t<Extended>;
+  return static_cast<Extended>(remquo(static_cast<evaluation>(x),
+                                      static_cast<evaluation>(y), quotient));
 }
 constexpr float remquof(float x, float y, int *quotient) noexcept {
   return remquo(x, y, quotient);
@@ -811,6 +1013,14 @@ constexpr int fpclassify(long double value) noexcept {
   if consteval { return detail::const_isnan(value) ? FP_NAN : detail::const_isinf(value) ? FP_INFINITE : value == 0 ? FP_ZERO : detail::const_abs(value) < numeric_limits<long double>::min() ? FP_SUBNORMAL : FP_NORMAL; }
   return ::ftl_olm___fpclassifyl(value);
 }
+template <detail::extended_math_floating Extended>
+constexpr int fpclassify(Extended value) noexcept {
+  return detail::const_isnan(value) ? FP_NAN
+       : detail::const_isinf(value) ? FP_INFINITE
+       : value == Extended{} ? FP_ZERO
+       : detail::const_abs(value) < numeric_limits<Extended>::min()
+           ? FP_SUBNORMAL : FP_NORMAL;
+}
 template <class Integer>
   requires is_integral_v<Integer>
 constexpr int fpclassify(Integer value) noexcept {
@@ -834,6 +1044,15 @@ constexpr int fpclassify(Integer value) noexcept {
 FTL_CMATH_PREDICATE(isfinite, ftl_olm___isfinite)
 FTL_CMATH_PREDICATE(isnormal, ftl_olm___isnormal)
 #undef FTL_CMATH_PREDICATE
+
+template <detail::extended_math_floating Extended>
+constexpr bool isfinite(Extended value) noexcept {
+  return detail::const_isfinite(value);
+}
+template <detail::extended_math_floating Extended>
+constexpr bool isnormal(Extended value) noexcept {
+  return detail::const_isnormal(value);
+}
 
 template <class Integer>
   requires is_integral_v<Integer>
@@ -877,6 +1096,18 @@ constexpr bool signbit(double value) noexcept {
 constexpr bool signbit(long double value) noexcept {
   if consteval { return detail::const_signbit(value); }
   return ::ftl_olm___signbitl(value);
+}
+template <detail::extended_math_floating Extended>
+constexpr bool isinf(Extended value) noexcept {
+  return detail::const_isinf(value);
+}
+template <detail::extended_math_floating Extended>
+constexpr bool isnan(Extended value) noexcept {
+  return detail::const_isnan(value);
+}
+template <detail::extended_math_floating Extended>
+constexpr bool signbit(Extended value) noexcept {
+  return detail::const_signbit(value);
 }
 template <class Integer>
   requires is_integral_v<Integer>
@@ -1880,19 +2111,11 @@ inline double sph_neumann(unsigned n, Arithmetic x) {
 
 FTL_CMATH_END
 
-#ifdef FTL_REPLACE_STL
 #define HUGE_VAL (::std::numeric_limits<double>::infinity())
 #define HUGE_VALF (::std::numeric_limits<float>::infinity())
 #define HUGE_VALL (::std::numeric_limits<long double>::infinity())
 #define INFINITY (::std::numeric_limits<float>::infinity())
 #define NAN (::std::numeric_limits<float>::quiet_NaN())
-#else
-#define HUGE_VAL (::ftl::numeric_limits<double>::infinity())
-#define HUGE_VALF (::ftl::numeric_limits<float>::infinity())
-#define HUGE_VALL (::ftl::numeric_limits<long double>::infinity())
-#define INFINITY (::ftl::numeric_limits<float>::infinity())
-#define NAN (::ftl::numeric_limits<float>::quiet_NaN())
-#endif
 
 #undef FTL_CMATH_BEGIN
 #undef FTL_CMATH_END

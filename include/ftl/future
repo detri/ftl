@@ -3,7 +3,6 @@
 #ifndef FTL_FUTURE_HEADER
 #define FTL_FUTURE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <chrono>
 #include <cstdint>
 #include <detail/async_state.hpp>
@@ -15,27 +14,8 @@
 #include <system_error>
 #include <type_traits>
 #include <utility>
-#define FTL_FUTURE_BEGIN_NAMESPACE namespace std {
-#define FTL_FUTURE_END_NAMESPACE }
-#define FTL_FUTURE_NAMESPACE std
-#else
-#include <ftl/chrono>
-#include <ftl/cstdint>
-#include <ftl/detail/async_state.hpp>
-#include <ftl/detail/future_state.hpp>
-#include <ftl/detail/thread_exit.hpp>
-#include <ftl/functional>
-#include <ftl/memory>
-#include <ftl/stdexcept>
-#include <ftl/system_error>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#define FTL_FUTURE_BEGIN_NAMESPACE namespace ftl {
-#define FTL_FUTURE_END_NAMESPACE }
-#define FTL_FUTURE_NAMESPACE ftl
-#endif
 
-FTL_FUTURE_BEGIN_NAMESPACE
+namespace std {
 
 enum class future_errc {
   broken_promise = 1,
@@ -1536,15 +1516,12 @@ template <class F, class... Args>
 [[nodiscard]]
 future<invoke_result_t<decay_t<F>, decay_t<Args>...>>
 async(F &&function, Args &&...arguments) {
-  return FTL_FUTURE_NAMESPACE::async(launch::async | launch::deferred,
+  return std::async(launch::async | launch::deferred,
                                      forward<F>(function),
                                      forward<Args>(arguments)...);
 }
 
-FTL_FUTURE_END_NAMESPACE
+}
 
-#undef FTL_FUTURE_BEGIN_NAMESPACE
-#undef FTL_FUTURE_END_NAMESPACE
-#undef FTL_FUTURE_NAMESPACE
 
 #endif // FTL_FUTURE_HEADER

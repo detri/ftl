@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <iterator>
 namespace tested = std;
-#else
-#include <ftl/iterator>
-namespace tested = ftl;
-#endif
 
 static_assert(tested::contiguous_iterator<int *>);
 static_assert(tested::random_access_iterator<int *>);
@@ -222,11 +217,7 @@ struct fancy_contiguous_iterator {
 using unaddressable_contiguous_iterator = fancy_contiguous_iterator<false>;
 using customized_contiguous_iterator = fancy_contiguous_iterator<true>;
 
-#ifdef FTL_REPLACE_STL
 namespace std {
-#else
-namespace ftl {
-#endif
 template <>
 struct pointer_traits<::customized_contiguous_iterator> {
   static constexpr int *

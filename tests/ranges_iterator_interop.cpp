@@ -1,18 +1,9 @@
-#ifdef FTL_REPLACE_STL
 #include <concepts>
 #include <cstddef>
 #include <ranges>
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/concepts>
-#include <ftl/cstddef>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 /*
  * A random-access iterator whose mutable form converts to its

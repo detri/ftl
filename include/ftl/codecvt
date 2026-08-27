@@ -3,17 +3,9 @@
 #ifndef FTL_CODECVT_HEADER
 #define FTL_CODECVT_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <locale>
-#else
-#include <ftl/locale>
-#endif
 
-#ifdef FTL_REPLACE_STL
 namespace std {
-#else
-namespace ftl {
-#endif
 
 enum codecvt_mode {
   consume_header = 4,
@@ -931,10 +923,6 @@ protected:
   }
 };
 
-#ifdef FTL_REPLACE_STL
 } // namespace std
-#else
-} // namespace ftl
-#endif
 
 #endif // FTL_CODECVT_HEADER

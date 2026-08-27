@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <chrono>
 #include <limits>
@@ -6,15 +5,6 @@
 #include <thread>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/atomic>
-#include <ftl/chrono>
-#include <ftl/limits>
-#include <ftl/memory>
-#include <ftl/thread>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 struct wide_atomic_value {
   tested::uint32_t first;

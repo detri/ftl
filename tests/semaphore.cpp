@@ -1,26 +1,14 @@
-#ifdef FTL_REPLACE_STL
 #include <semaphore>
-#else
-#include <ftl/semaphore>
-#endif
 
 #if __cpp_lib_semaphore < 201907L
 #error <semaphore> must advertise __cpp_lib_semaphore
 #endif
 
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <chrono>
 #include <thread>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/atomic>
-#include <ftl/chrono>
-#include <ftl/thread>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 static_assert(!tested::is_copy_constructible_v<tested::counting_semaphore<4>>);
 

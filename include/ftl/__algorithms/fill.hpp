@@ -3,27 +3,14 @@
 #ifndef FTL_FILL_HEADER
 #define FTL_FILL_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__execution/policy_access.hpp>
 #include <iterator>
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_FILL_NAMESPACE std
-#else
-#define FTL_FILL_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -83,9 +70,9 @@ struct fill_fn {
             sentinel_for<Output> Sentinel>
   constexpr Output operator()(Output first, Sentinel last,
                               const T &value) const {
-    FTL_FILL_NAMESPACE::detail::fill_loop(first, last, value);
+    std::detail::fill_loop(first, last, value);
 
-    return FTL_FILL_NAMESPACE::move(first);
+    return std::move(first);
   }
 
   template <class T, output_range<const T &> Range>
@@ -93,7 +80,7 @@ struct fill_fn {
                                                   const T &value) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range), value);
 
-    return FTL_FILL_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -101,9 +88,9 @@ struct fill_n_fn {
   template <class T, output_iterator<const T &> Output>
   constexpr Output operator()(Output first, iter_difference_t<Output> count,
                               const T &value) const {
-    FTL_FILL_NAMESPACE::detail::fill_n_loop(first, count, value);
+    std::detail::fill_n_loop(first, count, value);
 
-    return FTL_FILL_NAMESPACE::move(first);
+    return std::move(first);
   }
 };
 
@@ -112,8 +99,7 @@ inline constexpr fill_n_fn fill_n{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_FILL_NAMESPACE
 
 #endif // FTL_FILL_HEADER

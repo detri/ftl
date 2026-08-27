@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <ranges>
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 using base_view = tested::ranges::ref_view<int[4]>;
 using stride_type =

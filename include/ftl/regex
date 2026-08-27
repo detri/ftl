@@ -3,7 +3,6 @@
 #ifndef FTL_REGEX_HEADER
 #define FTL_REGEX_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <algorithm>
 #include <compare>
 #include <cstddef>
@@ -19,25 +18,8 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-#else
-#include <ftl/algorithm>
-#include <ftl/compare>
-#include <ftl/cstddef>
-#include <ftl/initializer_list>
-#include <ftl/iosfwd>
-#include <ftl/iterator>
-#include <ftl/limits>
-#include <ftl/locale>
-#include <ftl/memory>
-#include <ftl/memory_resource>
-#include <ftl/stdexcept>
-#include <ftl/string>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#include <ftl/vector>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace regex_constants {
 
@@ -2992,15 +2974,9 @@ using smatch = match_results<string::const_iterator>;
 using wsmatch = match_results<wstring::const_iterator>;
 
 namespace pmr {
-#ifdef FTL_REPLACE_STL
 template <class BI>
 using match_results =
     std::match_results<BI, polymorphic_allocator<std::sub_match<BI>>>;
-#else
-template <class BI>
-using match_results =
-    ftl::match_results<BI, polymorphic_allocator<ftl::sub_match<BI>>>;
-#endif
 
 using cmatch = match_results<const char *>;
 using wcmatch = match_results<const wchar_t *>;
@@ -3627,7 +3603,7 @@ basic_string<C> regex_replace(
   return out;
 }
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_nonmember_container_access) || \
     __cpp_lib_nonmember_container_access < 201411L

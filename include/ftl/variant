@@ -3,7 +3,6 @@
 #ifndef FTL_VARIANT_HEADER
 #define FTL_VARIANT_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <compare>
 #include <exception>
 #include <functional>
@@ -11,17 +10,8 @@
 #include <memory>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/compare>
-#include <ftl/exception>
-#include <ftl/functional>
-#include <ftl/initializer_list>
-#include <ftl/memory>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 inline constexpr size_t variant_npos = size_t(-1);
 
@@ -816,7 +806,7 @@ template<> struct hash<monostate> {
     size_t operator()(monostate) const noexcept { return 0x9e3779b9U; }
 };
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_variant) || __cpp_lib_variant < 202106L
 #undef __cpp_lib_variant

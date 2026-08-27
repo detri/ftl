@@ -3,7 +3,6 @@
 #ifndef FTL_CWCHAR_HEADER
 #define FTL_CWCHAR_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__c_file_types.hpp>
 #include <__c_time_types.hpp>
 #include <__c_wide_types.hpp>
@@ -14,18 +13,7 @@
 #include <cstring>
 #include <limits>
 #include <type_traits>
-#else
-#include <ftl/__c_file_types.hpp>
-#include <ftl/__c_time_types.hpp>
-#include <ftl/__c_wide_types.hpp>
-#include <ftl/cerrno>
-#include <ftl/cstdarg>
-#include <ftl/cstdint>
-#include <ftl/cstdio>
-#include <ftl/cstring>
-#include <ftl/limits>
-#include <ftl/type_traits>
-#endif
+#include <detail/locale_runtime.hpp>
 
 #if defined(_MSC_VER)
 
@@ -64,11 +52,7 @@ int vswscanf(const wchar_t *, const wchar_t *, ftl_cwchar_native_va_list);
 
 #endif
 
-#ifdef FTL_REPLACE_STL
 namespace std {
-#else
-namespace ftl {
-#endif
 
 #ifndef NULL
 #define NULL nullptr
@@ -95,11 +79,7 @@ namespace ftl {
 #endif
 
 #ifndef WEOF
-#ifdef FTL_REPLACE_STL
 #define WEOF static_cast<std::wint_t>(-1)
-#else
-#define WEOF static_cast<ftl::wint_t>(-1)
-#endif
 #endif
 
 using size_t = decltype(sizeof(0));
@@ -1149,6 +1129,18 @@ inline void append_time_format(time_writer &writer, wchar_t conversion,
   }
 }
 
+inline size_t bounded_multibyte_extent(const char *input, size_t limit) {
+  size_t count = 0;
+
+  while (count != limit) {
+    const char value = input[count++];
+    if (value == '\0')
+      break;
+  }
+
+  return count;
+}
+
 } // namespace cwchar_detail
 
 FTL_CWCHAR_NO_BUILTIN
@@ -1193,29 +1185,31 @@ inline unsigned long long wcstoull(const wchar_t *nptr, wchar_t **endptr,
 
 inline wint_t btowc(int c) {
   if (c < 0 || c > 0x7f) {
-    return static_cast<wint_t>(~0u);
+    return cwchar_detail::wide_eof;
   }
 
-  return static_cast<wint_t>(static_cast<unsigned char>(c));
+  return static_cast<wint_t>(
+      static_cast<unsigned char>(c));
 }
 
 inline int wctob(wint_t c) {
   if (c > 0x7fu) {
-    return -1;
+    return EOF;
   }
 
   return static_cast<int>(c);
 }
 
 inline int mbsinit(const mbstate_t *ps) {
-  return ps == nullptr || (ps->state == 0 && ps->value == 0);
+  return ps == nullptr ||
+         (ps->state == 0 && ps->value == 0 && ps->pending_count == 0 &&
+          ps->native_active == 0);
 }
 
 namespace cwchar_detail {
 
 inline void reset_state(mbstate_t &state) {
-  state.state = 0;
-  state.value = 0;
+  state = mbstate_t{};
 }
 
 inline bool valid_multibyte_byte(unsigned char value) { return value <= 0x7f; }
@@ -1226,44 +1220,65 @@ inline bool valid_wide_character(wchar_t value) {
 
 } // namespace cwchar_detail
 
-inline size_t mbrtowc(wchar_t *pwc, const char *s, size_t n, mbstate_t *ps) {
+inline size_t mbrtowc(wchar_t *pwc, const char *s, size_t n,
+                      mbstate_t *ps) {
   static mbstate_t internal_state{};
 
-  if (ps == nullptr) {
+  if (ps == nullptr)
     ps = &internal_state;
-  }
 
   if (s == nullptr) {
     static constexpr char empty[] = "";
-
     s = empty;
     n = 1;
     pwc = nullptr;
   }
 
-  if (n == 0) {
+  if (n == 0)
     return static_cast<size_t>(-2);
-  }
 
-  const auto byte = static_cast<unsigned char>(*s);
+  auto locale = ftl_locale_runtime::snapshot_current_ctype();
 
-  if (!cwchar_detail::valid_multibyte_byte(byte)) {
+  if (locale == nullptr) {
     errno = EILSEQ;
     cwchar_detail::reset_state(*ps);
     return static_cast<size_t>(-1);
   }
 
-  cwchar_detail::reset_state(*ps);
+  const size_t available =
+      cwchar_detail::bounded_multibyte_extent(s, n);
 
-  if (pwc != nullptr) {
-    *pwc = static_cast<wchar_t>(byte);
+  const auto decoded =
+      ftl_locale_runtime::decode_wide_restartable(
+          locale, *ps, s, s + available);
+
+  ftl_locale_runtime::destroy(locale);
+
+  if (decoded.result ==
+      ftl_locale_runtime::decoded_wide::status::error) {
+    errno = EILSEQ;
+
+    /*
+     * The standard leaves the state unspecified after an encoding
+     * error. Resetting it is FTL's deterministic choice.
+     */
+    cwchar_detail::reset_state(*ps);
+
+    return static_cast<size_t>(-1);
   }
 
-  if (byte == 0) {
+  if (decoded.result ==
+      ftl_locale_runtime::decoded_wide::status::partial) {
+    return static_cast<size_t>(-2);
+  }
+
+  if (pwc != nullptr)
+    *pwc = decoded.value;
+
+  if (decoded.value == L'\0')
     return 0;
-  }
 
-  return 1;
+  return decoded.consumed;
 }
 
 inline size_t mbrlen(const char *s, size_t n, mbstate_t *ps) {
@@ -1273,157 +1288,223 @@ inline size_t mbrlen(const char *s, size_t n, mbstate_t *ps) {
 inline size_t wcrtomb(char *s, wchar_t wc, mbstate_t *ps) {
   static mbstate_t internal_state{};
 
-  if (ps == nullptr) {
+  if (ps == nullptr)
     ps = &internal_state;
-  }
 
-  if (s == nullptr) {
+  char internal_buffer[16]{};
+  const bool resetting = s == nullptr;
+
+  if (resetting) {
+    s = internal_buffer;
+    wc = L'\0';
+
+    /*
+     * wcrtomb(nullptr, ...) is equivalent to converting L'\0'
+     * using an initial conversion state.
+     *
+     * FTL also owns staging fields outside the native mbstate_t,
+     * so those must be cleared before performing the reset
+     * conversion.
+     */
     cwchar_detail::reset_state(*ps);
-    return 1;
   }
 
-  if (!cwchar_detail::valid_wide_character(wc)) {
+  auto locale = ftl_locale_runtime::snapshot_current_ctype();
+
+  if (locale == nullptr) {
     errno = EILSEQ;
     cwchar_detail::reset_state(*ps);
     return static_cast<size_t>(-1);
   }
 
-  *s = static_cast<char>(static_cast<unsigned char>(wc));
+  const auto encoded =
+      ftl_locale_runtime::encode_wide_restartable(
+          locale, *ps, wc);
 
-  cwchar_detail::reset_state(*ps);
-  return 1;
+  ftl_locale_runtime::destroy(locale);
+
+  if (!encoded.valid || encoded.produced == 0) {
+    errno = EILSEQ;
+    cwchar_detail::reset_state(*ps);
+    return static_cast<size_t>(-1);
+  }
+
+  for (size_t index = 0; index < encoded.produced; ++index)
+    s[index] = encoded.bytes[index];
+
+  /*
+   * Successful conversion of the null wide character leaves
+   * the conversion state in its initial state.
+   */
+  if (wc == L'\0')
+    cwchar_detail::reset_state(*ps);
+
+  return encoded.produced;
 }
 
 inline size_t mbsrtowcs(wchar_t *destination, const char **source,
                         size_t length, mbstate_t *ps) {
   static mbstate_t internal_state{};
 
-  if (ps == nullptr) {
+  if (ps == nullptr)
     ps = &internal_state;
-  }
 
+  const bool sizing = destination == nullptr;
   const char *current = *source;
+  size_t converted = 0;
 
-  /*
-   * When destination is null, the conversion is a sizing pass.
-   * The source pointer is not modified.
-   */
-  if (destination == nullptr) {
-    size_t count = 0;
+  auto locale = ftl_locale_runtime::snapshot_current_ctype();
 
-    for (;;) {
-      const auto byte = static_cast<unsigned char>(*current);
-
-      if (!cwchar_detail::valid_multibyte_byte(byte)) {
-        errno = EILSEQ;
-        cwchar_detail::reset_state(*ps);
-        return static_cast<size_t>(-1);
-      }
-
-      if (byte == 0) {
-        cwchar_detail::reset_state(*ps);
-        return count;
-      }
-
-      ++count;
-      ++current;
-    }
+  if (locale == nullptr) {
+    errno = EILSEQ;
+    cwchar_detail::reset_state(*ps);
+    return static_cast<size_t>(-1);
   }
 
-  size_t count = 0;
+  int native_maximum =
+      ftl_locale_runtime::multibyte_max_length(locale);
 
-  while (count < length) {
-    const auto byte = static_cast<unsigned char>(*current);
+  if (native_maximum < 1)
+    native_maximum = 1;
 
-    if (!cwchar_detail::valid_multibyte_byte(byte)) {
+  const size_t maximum = static_cast<size_t>(native_maximum);
+
+  for (;;) {
+    if (!sizing && converted == length) {
+      *source = current;
+      ftl_locale_runtime::destroy(locale);
+      return converted;
+    }
+
+    const size_t available =
+        cwchar_detail::bounded_multibyte_extent(current, maximum);
+
+    const auto decoded =
+        ftl_locale_runtime::decode_wide_restartable(
+            locale, *ps, current, current + available);
+
+    if (decoded.result ==
+        ftl_locale_runtime::decoded_wide::status::error) {
+      if (!sizing)
+        *source = current;
+
+      ftl_locale_runtime::destroy(locale);
+
       errno = EILSEQ;
       cwchar_detail::reset_state(*ps);
-      *source = current;
+
       return static_cast<size_t>(-1);
     }
 
-    if (byte == 0) {
-      destination[count] = L'\0';
-      *source = nullptr;
+    /*
+     * mbsrtowcs receives a null-terminated sequence, not an arbitrary
+     * bounded byte range. If we still cannot complete a character after
+     * examining the available bytes of the next multibyte character, the
+     * source contains an invalid/truncated sequence.
+     */
+    if (decoded.result ==
+        ftl_locale_runtime::decoded_wide::status::partial) {
+      if (!sizing)
+        *source = current;
+
+      ftl_locale_runtime::destroy(locale);
+
+      errno = EILSEQ;
       cwchar_detail::reset_state(*ps);
-      return count;
+
+      return static_cast<size_t>(-1);
     }
 
-    destination[count] = static_cast<wchar_t>(byte);
+    if (decoded.value == L'\0') {
+      if (!sizing) {
+        destination[converted] = L'\0';
+        *source = nullptr;
+      }
 
-    ++count;
-    ++current;
+      ftl_locale_runtime::destroy(locale);
+      return converted;
+    }
+
+    if (!sizing)
+      destination[converted] = decoded.value;
+
+    ++converted;
+    current += decoded.consumed;
   }
-
-  *source = current;
-  cwchar_detail::reset_state(*ps);
-  return count;
 }
 
 inline size_t wcsrtombs(char *destination, const wchar_t **source,
                         size_t length, mbstate_t *ps) {
   static mbstate_t internal_state{};
 
-  if (ps == nullptr) {
+  if (ps == nullptr)
     ps = &internal_state;
-  }
 
+  const bool sizing = destination == nullptr;
   const wchar_t *current = *source;
+  size_t converted = 0;
 
-  /*
-   * As with mbsrtowcs, a null destination performs a sizing
-   * conversion without updating the source pointer.
-   */
-  if (destination == nullptr) {
-    size_t count = 0;
+  auto locale = ftl_locale_runtime::snapshot_current_ctype();
 
-    for (;;) {
-      const wchar_t value = *current;
-
-      if (!cwchar_detail::valid_wide_character(value)) {
-        errno = EILSEQ;
-        cwchar_detail::reset_state(*ps);
-        return static_cast<size_t>(-1);
-      }
-
-      if (value == L'\0') {
-        cwchar_detail::reset_state(*ps);
-        return count;
-      }
-
-      ++count;
-      ++current;
-    }
+  if (locale == nullptr) {
+    errno = EILSEQ;
+    cwchar_detail::reset_state(*ps);
+    return static_cast<size_t>(-1);
   }
 
-  size_t count = 0;
+  for (;;) {
+    mbstate_t next_state = *ps;
 
-  while (count < length) {
-    const wchar_t value = *current;
+    const auto encoded =
+        ftl_locale_runtime::encode_wide_restartable(
+            locale, next_state, *current);
 
-    if (!cwchar_detail::valid_wide_character(value)) {
+    if (!encoded.valid || encoded.produced == 0) {
+      if (!sizing)
+        *source = current;
+
+      ftl_locale_runtime::destroy(locale);
+
       errno = EILSEQ;
       cwchar_detail::reset_state(*ps);
-      *source = current;
+
       return static_cast<size_t>(-1);
     }
 
-    if (value == L'\0') {
-      destination[count] = '\0';
-      *source = nullptr;
-      cwchar_detail::reset_state(*ps);
-      return count;
+    if (!sizing &&
+        encoded.produced > length - converted) {
+      *source = current;
+      ftl_locale_runtime::destroy(locale);
+      return converted;
     }
 
-    destination[count] = static_cast<char>(static_cast<unsigned char>(value));
+    if (!sizing) {
+      for (size_t index = 0; index < encoded.produced; ++index)
+        destination[converted + index] = encoded.bytes[index];
+    }
 
-    ++count;
+    if (*current == L'\0') {
+      /*
+       * wcrtomb(L'\0') may emit bytes required to return a stateful
+       * encoding to its initial state before the terminating null.
+       * Those shift bytes count; the final '\0' itself does not.
+       */
+      *ps = next_state;
+
+      const size_t shift_bytes =
+          encoded.produced != 0 ? encoded.produced - 1 : 0;
+
+      if (!sizing)
+        *source = nullptr;
+
+      ftl_locale_runtime::destroy(locale);
+      return converted + shift_bytes;
+    }
+
+    *ps = next_state;
+    converted += encoded.produced;
     ++current;
   }
-
-  *source = current;
-  cwchar_detail::reset_state(*ps);
-  return count;
 }
 
 FTL_CWCHAR_NO_BUILTIN

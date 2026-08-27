@@ -3,21 +3,12 @@
 #ifndef FTL_STRSTREAM_HEADER
 #define FTL_STRSTREAM_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <climits>
 #include <cstdlib>
 #include <cstring>
 #include <istream>
-#define FTL_STRSTREAM_NAMESPACE std
-#else
-#include <ftl/climits>
-#include <ftl/cstdlib>
-#include <ftl/cstring>
-#include <ftl/istream>
-#define FTL_STRSTREAM_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 class strstreambuf : public basic_streambuf<char> {
 public:
   strstreambuf() : strstreambuf(0) {}
@@ -190,13 +181,13 @@ private:
     }
   }
   void *allocate(size_t n) {
-    return allocate_ ? allocate_(n) : FTL_STRSTREAM_NAMESPACE::malloc(n);
+    return allocate_ ? allocate_(n) : std::malloc(n);
   }
   void deallocate(void *p) {
     if (release_)
       release_(p);
     else
-      FTL_STRSTREAM_NAMESPACE::free(p);
+      std::free(p);
   }
   size_t get_offset() const {
     return this->gptr() ? static_cast<size_t>(this->gptr() - this->eback()) : 0;
@@ -295,6 +286,5 @@ public:
 private:
   strstreambuf sb_;
 };
-FTL_END_NAMESPACE
-#undef FTL_STRSTREAM_NAMESPACE
+} // namespace std
 #endif

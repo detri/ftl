@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <cstdlib>
 namespace tested = std;
-#else
-#include <ftl/cstdlib>
-namespace tested = ftl;
-#endif
 
 #if __cpp_lib_constexpr_cmath != 202202L
 #error <cstdlib> must advertise constexpr integer math

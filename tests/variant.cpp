@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <variant>
 namespace tested = std;
-#else
-#include <ftl/variant>
-namespace tested = ftl;
-#endif
 
 struct value {
     int number;

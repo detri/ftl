@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <iosfwd>
 namespace tested = std;
-#else
-#include <ftl/iosfwd>
-namespace tested = ftl;
-#endif
 
 static_assert(tested::is_same_v<tested::streamoff, tested::ptrdiff_t>);
 

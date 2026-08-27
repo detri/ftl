@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <cstdint>
 #include <detail/floating_bits>
 #include <limits>
 namespace tested = std;
-#else
-#include <ftl/cstdint>
-#include <ftl/detail/floating_bits>
-#include <ftl/limits>
-namespace tested = ftl;
-#endif
 
 using ftl_float_conversion::binary_parts;
 using ftl_float_conversion::compose;

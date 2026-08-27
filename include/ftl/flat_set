@@ -1,6 +1,5 @@
 #ifndef FTL_FLAT_SET_HEADER
 #define FTL_FLAT_SET_HEADER
-#ifdef FTL_REPLACE_STL
 #include <algorithm>
 #include <compare>
 #include <functional>
@@ -11,24 +10,9 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-#define FTL_FLAT_NAMESPACE std
 #include <__associative/flat_tags.hpp>
-#else
-#include <ftl/algorithm>
-#include <ftl/compare>
-#include <ftl/functional>
-#include <ftl/initializer_list>
-#include <ftl/iterator>
-#include <ftl/memory>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#include <ftl/vector>
-#define FTL_FLAT_NAMESPACE ftl
-#include <ftl/__associative/flat_tags.hpp>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 namespace detail {
 template <class Compare>
 concept flat_set_transparent_compare =
@@ -330,7 +314,7 @@ public:
   }
   void swap(flat_set_base &other) noexcept {
     container_.swap(other.container_);
-    FTL_FLAT_NAMESPACE::swap(compare_, other.compare_);
+    std::swap(compare_, other.compare_);
   }
   void clear() noexcept { container_.clear(); }
   iterator find(const Key &key) const {
@@ -363,22 +347,22 @@ public:
     return find(key) != end();
   }
   iterator lower_bound(const Key &key) const {
-    return FTL_FLAT_NAMESPACE::lower_bound(begin(), end(), key, compare_);
+    return std::lower_bound(begin(), end(), key, compare_);
   }
   template <class K>
   iterator lower_bound(const K &key) const
     requires flat_set_transparent_compare<Compare>
   {
-    return FTL_FLAT_NAMESPACE::lower_bound(begin(), end(), key, compare_);
+    return std::lower_bound(begin(), end(), key, compare_);
   }
   iterator upper_bound(const Key &key) const {
-    return FTL_FLAT_NAMESPACE::upper_bound(begin(), end(), key, compare_);
+    return std::upper_bound(begin(), end(), key, compare_);
   }
   template <class K>
   iterator upper_bound(const K &key) const
     requires flat_set_transparent_compare<Compare>
   {
-    return FTL_FLAT_NAMESPACE::upper_bound(begin(), end(), key, compare_);
+    return std::upper_bound(begin(), end(), key, compare_);
   }
   pair<iterator, iterator> equal_range(const Key &key) const {
     return {lower_bound(key), upper_bound(key)};
@@ -425,7 +409,7 @@ protected:
     container_.insert(container_.end(), first, last);
     auto middle = container_.begin() + static_cast<difference_type>(old_size);
     if (!incoming_is_sorted)
-      FTL_FLAT_NAMESPACE::sort(middle, container_.end(), compare_);
+      std::sort(middle, container_.end(), compare_);
 
     Container source(move(container_));
     if constexpr (requires { container_.reserve(source.size()); })
@@ -465,12 +449,12 @@ protected:
     return !compare_(left, right) && !compare_(right, left);
   }
   void normalize() {
-    if (!FTL_FLAT_NAMESPACE::is_sorted(container_.begin(), container_.end(),
+    if (!std::is_sorted(container_.begin(), container_.end(),
                                        compare_))
-      FTL_FLAT_NAMESPACE::sort(container_.begin(), container_.end(), compare_);
+      std::sort(container_.begin(), container_.end(), compare_);
     if constexpr (!Multi)
       container_.erase(
-          FTL_FLAT_NAMESPACE::unique(container_.begin(), container_.end(),
+          std::unique(container_.begin(), container_.end(),
                                      [this](const Key &left, const Key &right) {
                                        return equivalent(left, right);
                                      }),
@@ -728,12 +712,11 @@ typename flat_multiset<Key, Compare, Container>::size_type
 erase_if(flat_multiset<Key, Compare, Container> &values, Predicate predicate) {
   return flat_set_erase_if(values, move(predicate));
 }
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_flat_set) || __cpp_lib_flat_set < 202207L
 #undef __cpp_lib_flat_set
 #define __cpp_lib_flat_set 202207L
 #endif
 
-#undef FTL_FLAT_NAMESPACE
 #endif

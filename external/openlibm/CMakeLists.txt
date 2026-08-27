@@ -40,6 +40,11 @@ target_include_directories(ftl_math_runtime PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/bsdsrc"
         "${CMAKE_CURRENT_SOURCE_DIR}/ld80")
 
+# GNU and Clang lower binary128 builtins to the C runtime's *f128 entry points.
+if (UNIX AND NOT APPLE)
+    target_link_libraries(ftl_math_runtime INTERFACE m)
+endif ()
+
 if (MSVC)
     target_compile_options(ftl_math_runtime PRIVATE /fp:strict /GS-)
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")

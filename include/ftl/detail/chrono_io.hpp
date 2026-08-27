@@ -3,7 +3,6 @@
 #ifndef FTL_DETAIL_CHRONO_IO_HPP
 #define FTL_DETAIL_CHRONO_IO_HPP
 
-#ifdef FTL_REPLACE_STL
 #include <charconv>
 #include <istream>
 #include <locale>
@@ -11,17 +10,8 @@
 #include <sstream>
 #include <string>
 #include <type_traits>
-#else
-#include <ftl/charconv>
-#include <ftl/istream>
-#include <ftl/locale>
-#include <ftl/ostream>
-#include <ftl/sstream>
-#include <ftl/string>
-#include <ftl/type_traits>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace chrono {
 
@@ -3142,6 +3132,6 @@ auto parse(const basic_string<Character, FormatTraits, FormatAllocator> &format,
 
 } // namespace chrono
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #endif // FTL_DETAIL_CHRONO_IO_HPP

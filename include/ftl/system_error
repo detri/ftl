@@ -3,7 +3,6 @@
 #ifndef FTL_SYSTEM_ERROR_HEADER
 #define FTL_SYSTEM_ERROR_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <compare>
 #include <cstddef>
 #include <functional>
@@ -13,17 +12,6 @@
 #include <string>
 #include <type_traits>
 #include <__system_error/errc.hpp>
-#else
-#include <ftl/compare>
-#include <ftl/cstddef>
-#include <ftl/functional>
-#include <ftl/iosfwd>
-#include <ftl/cerrno>
-#include <ftl/stdexcept>
-#include <ftl/string>
-#include <ftl/type_traits>
-#include <ftl/__system_error/errc.hpp>
-#endif
 
 extern "C" char *strerror(int);
 #if defined(_WIN32)
@@ -33,7 +21,7 @@ extern "C" __declspec(dllimport) unsigned long __stdcall FormatMessageA(
 extern "C" __declspec(dllimport) void *__stdcall LocalFree(void *);
 #endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 class error_code;
 class error_condition;
@@ -382,6 +370,6 @@ template <> struct hash<error_condition> {
   }
 };
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #endif

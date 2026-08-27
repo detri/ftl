@@ -3,7 +3,6 @@
 #ifndef FTL_SWAP_SHIFT_HEADER
 #define FTL_SWAP_SHIFT_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__algorithms/result.hpp>
 #include <__algorithms/reverse_rotate.hpp>
 #include <__execution/policy_access.hpp>
@@ -11,23 +10,9 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__algorithms/result.hpp>
-#include <ftl/__algorithms/reverse_rotate.hpp>
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_SWAP_SHIFT_NAMESPACE std
-#else
-#define FTL_SWAP_SHIFT_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -51,8 +36,8 @@ shift_left_loop(Iterator first, Sentinel last, Difference count) {
     ranges::advance(end, last);
 
     return {
-        FTL_SWAP_SHIFT_NAMESPACE::move(original_first),
-        FTL_SWAP_SHIFT_NAMESPACE::move(end),
+        std::move(original_first),
+        std::move(end),
     };
   }
 
@@ -66,8 +51,8 @@ shift_left_loop(Iterator first, Sentinel last, Difference count) {
 
   if (source == last) {
     return {
-        FTL_SWAP_SHIFT_NAMESPACE::move(original_first),
-        FTL_SWAP_SHIFT_NAMESPACE::move(first),
+        std::move(original_first),
+        std::move(first),
     };
   }
 
@@ -78,8 +63,8 @@ shift_left_loop(Iterator first, Sentinel last, Difference count) {
   }
 
   return {
-      FTL_SWAP_SHIFT_NAMESPACE::move(original_first),
-      FTL_SWAP_SHIFT_NAMESPACE::move(first),
+      std::move(original_first),
+      std::move(first),
   };
 }
 
@@ -93,8 +78,8 @@ shift_right_loop(Iterator first, Sentinel last, Difference count) {
     ranges::advance(end, last);
 
     return {
-        FTL_SWAP_SHIFT_NAMESPACE::move(original_first),
-        FTL_SWAP_SHIFT_NAMESPACE::move(end),
+        std::move(original_first),
+        std::move(end),
     };
   }
 
@@ -112,8 +97,8 @@ shift_right_loop(Iterator first, Sentinel last, Difference count) {
 
   if (lead == last) {
     return {
-        FTL_SWAP_SHIFT_NAMESPACE::move(lead),
-        FTL_SWAP_SHIFT_NAMESPACE::move(lead),
+        std::move(lead),
+        std::move(lead),
     };
   }
 
@@ -148,13 +133,13 @@ shift_right_loop(Iterator first, Sentinel last, Difference count) {
      * into [first+count, end). The leading elements are
      * permitted to have unspecified values.
      */
-    detail::rotate_loop(FTL_SWAP_SHIFT_NAMESPACE::move(first),
-                        FTL_SWAP_SHIFT_NAMESPACE::move(lag), end);
+    detail::rotate_loop(std::move(first),
+                        std::move(lag), end);
   }
 
   return {
-      FTL_SWAP_SHIFT_NAMESPACE::move(new_first),
-      FTL_SWAP_SHIFT_NAMESPACE::move(end),
+      std::move(new_first),
+      std::move(end),
   };
 }
 
@@ -188,8 +173,8 @@ template <class ForwardIterator>
 constexpr ForwardIterator
 shift_left(ForwardIterator first, ForwardIterator last,
            typename iterator_traits<ForwardIterator>::difference_type count) {
-  return detail::shift_left_loop(FTL_SWAP_SHIFT_NAMESPACE::move(first),
-                                 FTL_SWAP_SHIFT_NAMESPACE::move(last), count)
+  return detail::shift_left_loop(std::move(first),
+                                 std::move(last), count)
       .end();
 }
 
@@ -199,8 +184,8 @@ ForwardIterator
 shift_left(ExecutionPolicy &&, ForwardIterator first, ForwardIterator last,
            typename iterator_traits<ForwardIterator>::difference_type count) {
   return [&]() noexcept {
-    return detail::shift_left_loop(FTL_SWAP_SHIFT_NAMESPACE::move(first),
-                                   FTL_SWAP_SHIFT_NAMESPACE::move(last), count)
+    return detail::shift_left_loop(std::move(first),
+                                   std::move(last), count)
         .end();
   }();
 }
@@ -209,8 +194,8 @@ template <class ForwardIterator>
 constexpr ForwardIterator
 shift_right(ForwardIterator first, ForwardIterator last,
             typename iterator_traits<ForwardIterator>::difference_type count) {
-  return detail::shift_right_loop(FTL_SWAP_SHIFT_NAMESPACE::move(first),
-                                  FTL_SWAP_SHIFT_NAMESPACE::move(last), count)
+  return detail::shift_right_loop(std::move(first),
+                                  std::move(last), count)
       .begin();
 }
 
@@ -220,8 +205,8 @@ ForwardIterator
 shift_right(ExecutionPolicy &&, ForwardIterator first, ForwardIterator last,
             typename iterator_traits<ForwardIterator>::difference_type count) {
   return [&]() noexcept {
-    return detail::shift_right_loop(FTL_SWAP_SHIFT_NAMESPACE::move(first),
-                                    FTL_SWAP_SHIFT_NAMESPACE::move(last), count)
+    return detail::shift_right_loop(std::move(first),
+                                    std::move(last), count)
         .begin();
   }();
 }
@@ -238,12 +223,12 @@ struct swap_ranges_fn {
   constexpr swap_ranges_result<Iterator1, Iterator2>
   operator()(Iterator1 first1, Sentinel1 last1, Iterator2 first2,
              Sentinel2 last2) const {
-    FTL_SWAP_SHIFT_NAMESPACE::detail::swap_ranges_loop(first1, last1, first2,
+    std::detail::swap_ranges_loop(first1, last1, first2,
                                                        last2);
 
     return {
-        FTL_SWAP_SHIFT_NAMESPACE::move(first1),
-        FTL_SWAP_SHIFT_NAMESPACE::move(first2),
+        std::move(first1),
+        std::move(first2),
     };
   }
 
@@ -256,8 +241,8 @@ struct swap_ranges_fn {
                           ranges::begin(range2), ranges::end(range2));
 
     return {
-        FTL_SWAP_SHIFT_NAMESPACE::move(result.in1),
-        FTL_SWAP_SHIFT_NAMESPACE::move(result.in2),
+        std::move(result.in1),
+        std::move(result.in2),
     };
   }
 };
@@ -267,9 +252,9 @@ struct shift_left_fn {
   constexpr subrange<Iterator>
   operator()(Iterator first, Sentinel last,
              iter_difference_t<Iterator> count) const {
-    return FTL_SWAP_SHIFT_NAMESPACE::detail::shift_left_loop(
-        FTL_SWAP_SHIFT_NAMESPACE::move(first),
-        FTL_SWAP_SHIFT_NAMESPACE::move(last), count);
+    return std::detail::shift_left_loop(
+        std::move(first),
+        std::move(last), count);
   }
 
   template <forward_range Range>
@@ -278,7 +263,7 @@ struct shift_left_fn {
   operator()(Range &&range, range_difference_t<Range> count) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range), count);
 
-    return FTL_SWAP_SHIFT_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -287,9 +272,9 @@ struct shift_right_fn {
   constexpr subrange<Iterator>
   operator()(Iterator first, Sentinel last,
              iter_difference_t<Iterator> count) const {
-    return FTL_SWAP_SHIFT_NAMESPACE::detail::shift_right_loop(
-        FTL_SWAP_SHIFT_NAMESPACE::move(first),
-        FTL_SWAP_SHIFT_NAMESPACE::move(last), count);
+    return std::detail::shift_right_loop(
+        std::move(first),
+        std::move(last), count);
   }
 
   template <forward_range Range>
@@ -298,7 +283,7 @@ struct shift_right_fn {
   operator()(Range &&range, range_difference_t<Range> count) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range), count);
 
-    return FTL_SWAP_SHIFT_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -308,8 +293,7 @@ inline constexpr shift_right_fn shift_right{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_SWAP_SHIFT_NAMESPACE
 
 #endif // FTL_SWAP_SHIFT_HEADER

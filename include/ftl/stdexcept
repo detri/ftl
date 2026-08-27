@@ -3,19 +3,12 @@
 #ifndef FTL_STDEXCEPT_HEADER
 #define FTL_STDEXCEPT_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <cstddef>
 #include <exception>
 #include <new>
-#else
-#include <ftl/atomic>
-#include <ftl/cstddef>
-#include <ftl/exception>
-#include <ftl/new>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class Character> struct char_traits;
 template <class T> class allocator;
@@ -204,6 +197,6 @@ public:
   explicit underflow_error(const char *what_arg) : runtime_error(what_arg) {}
 };
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #endif // FTL_STDEXCEPT_HEADER

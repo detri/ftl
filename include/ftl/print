@@ -3,7 +3,6 @@
 #ifndef FTL_PRINT_HEADER
 #define FTL_PRINT_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__c_file_types.hpp>
 #include <cerrno>
 #include <detail/stdio_runtime.hpp>
@@ -11,15 +10,6 @@
 #include <string>
 #include <system_error>
 #include <utility>
-#else
-#include <ftl/__c_file_types.hpp>
-#include <ftl/cerrno>
-#include <ftl/detail/stdio_runtime.hpp>
-#include <ftl/format>
-#include <ftl/string>
-#include <ftl/system_error>
-#include <ftl/utility>
-#endif
 
 #if defined(_MSC_VER) && !defined(__clang__)
 
@@ -70,7 +60,7 @@ inline void *console_handle(file_type *stream) noexcept {
 
 } // namespace ftl_print_runtime
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -265,7 +255,7 @@ void println(format_string<Args...> fmt, Args &&...arguments) {
   println(ftl_print_runtime::stdout_stream(), fmt, forward<Args>(arguments)...);
 }
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_print) || __cpp_lib_print < 202207L
 #undef __cpp_lib_print

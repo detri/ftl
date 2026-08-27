@@ -3,11 +3,7 @@
 #ifndef FTL_STDFLOAT_HEADER
 #define FTL_STDFLOAT_HEADER
 
-#ifdef FTL_REPLACE_STL
 namespace std {
-#else
-namespace ftl {
-#endif
 
 #ifdef __STDCPP_FLOAT16_T__
 using float16_t = decltype(0.0f16);

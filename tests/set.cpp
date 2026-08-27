@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <concepts>
 #include <memory_resource>
@@ -6,15 +5,6 @@
 #include <set>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/array>
-#include <ftl/concepts>
-#include <ftl/memory_resource>
-#include <ftl/ranges>
-#include <ftl/set>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 struct set_probe {};
 struct set_transparent_compare {

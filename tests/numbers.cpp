@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <numbers>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/numbers>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 static_assert(__cpp_lib_math_constants >= 201907L);
 static_assert(tested::is_same_v<decltype(tested::numbers::pi), const double>);

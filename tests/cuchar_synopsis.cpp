@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <cuchar>
 namespace tested = std;
-#else
-#include <ftl/cuchar>
-namespace tested = ftl;
-#endif
 
 using mbrtoc8_type = tested::size_t (*)(char8_t *, const char *, tested::size_t,
                                         tested::mbstate_t *);

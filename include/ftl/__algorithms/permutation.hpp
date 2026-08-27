@@ -3,7 +3,6 @@
 #ifndef FTL_PERMUTATION_HEADER
 #define FTL_PERMUTATION_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__algorithms/result.hpp>
 #include <__execution/policy_access.hpp>
 #include <functional>
@@ -11,23 +10,9 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__algorithms/result.hpp>
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_PERMUTATION_NAMESPACE std
-#else
-#define FTL_PERMUTATION_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -36,10 +21,10 @@ template <class Predicate, class Projection1, class Projection2, class T,
 constexpr bool permutation_equal(Predicate &predicate, Projection1 &projection1,
                                  Projection2 &projection2, T &&left,
                                  U &&right) {
-  return static_cast<bool>(FTL_PERMUTATION_NAMESPACE::invoke(
+  return static_cast<bool>(std::invoke(
       predicate,
-      FTL_PERMUTATION_NAMESPACE::invoke(projection1, static_cast<T &&>(left)),
-      FTL_PERMUTATION_NAMESPACE::invoke(projection2,
+      std::invoke(projection1, static_cast<T &&>(left)),
+      std::invoke(projection2,
                                         static_cast<U &&>(right))));
 }
 
@@ -132,10 +117,10 @@ is_permutation_loop(Iterator1 first1, Sentinel1 last1, Iterator2 first2,
 template <class Comparator, class Projection, class T, class U>
 constexpr bool permutation_before(Comparator &comparator,
                                   Projection &projection, T &&left, U &&right) {
-  return static_cast<bool>(FTL_PERMUTATION_NAMESPACE::invoke(
+  return static_cast<bool>(std::invoke(
       comparator,
-      FTL_PERMUTATION_NAMESPACE::invoke(projection, static_cast<T &&>(left)),
-      FTL_PERMUTATION_NAMESPACE::invoke(projection, static_cast<U &&>(right))));
+      std::invoke(projection, static_cast<T &&>(left)),
+      std::invoke(projection, static_cast<U &&>(right))));
 }
 
 template <class Iterator>
@@ -254,10 +239,10 @@ constexpr bool is_permutation(ForwardIterator1 first1, ForwardIterator1 last1,
     ++last2;
   }
 
-  return detail::is_permutation_loop(FTL_PERMUTATION_NAMESPACE::move(first1),
-                                     FTL_PERMUTATION_NAMESPACE::move(last1),
-                                     FTL_PERMUTATION_NAMESPACE::move(first2),
-                                     FTL_PERMUTATION_NAMESPACE::move(last2),
+  return detail::is_permutation_loop(std::move(first1),
+                                     std::move(last1),
+                                     std::move(first2),
+                                     std::move(last2),
                                      predicate, projection1, projection2);
 }
 
@@ -274,10 +259,10 @@ constexpr bool is_permutation(ForwardIterator1 first1, ForwardIterator1 last1,
     ++last2;
   }
 
-  return detail::is_permutation_loop(FTL_PERMUTATION_NAMESPACE::move(first1),
-                                     FTL_PERMUTATION_NAMESPACE::move(last1),
-                                     FTL_PERMUTATION_NAMESPACE::move(first2),
-                                     FTL_PERMUTATION_NAMESPACE::move(last2),
+  return detail::is_permutation_loop(std::move(first1),
+                                     std::move(last1),
+                                     std::move(first2),
+                                     std::move(last2),
                                      predicate, projection1, projection2);
 }
 
@@ -288,10 +273,10 @@ constexpr bool is_permutation(ForwardIterator1 first1, ForwardIterator1 last1,
   identity projection1{};
   identity projection2{};
 
-  return detail::is_permutation_loop(FTL_PERMUTATION_NAMESPACE::move(first1),
-                                     FTL_PERMUTATION_NAMESPACE::move(last1),
-                                     FTL_PERMUTATION_NAMESPACE::move(first2),
-                                     FTL_PERMUTATION_NAMESPACE::move(last2),
+  return detail::is_permutation_loop(std::move(first1),
+                                     std::move(last1),
+                                     std::move(first2),
+                                     std::move(last2),
                                      predicate, projection1, projection2);
 }
 
@@ -302,10 +287,10 @@ constexpr bool is_permutation(ForwardIterator1 first1, ForwardIterator1 last1,
   identity projection1{};
   identity projection2{};
 
-  return detail::is_permutation_loop(FTL_PERMUTATION_NAMESPACE::move(first1),
-                                     FTL_PERMUTATION_NAMESPACE::move(last1),
-                                     FTL_PERMUTATION_NAMESPACE::move(first2),
-                                     FTL_PERMUTATION_NAMESPACE::move(last2),
+  return detail::is_permutation_loop(std::move(first1),
+                                     std::move(last1),
+                                     std::move(first2),
+                                     std::move(last2),
                                      predicate, projection1, projection2);
 }
 
@@ -314,10 +299,10 @@ template <class ExecutionPolicy, class ForwardIterator1, class ForwardIterator2>
 bool is_permutation(ExecutionPolicy &&, ForwardIterator1 first1,
                     ForwardIterator1 last1, ForwardIterator2 first2) {
   return [&]() noexcept {
-    return FTL_PERMUTATION_NAMESPACE::is_permutation(
-        FTL_PERMUTATION_NAMESPACE::move(first1),
-        FTL_PERMUTATION_NAMESPACE::move(last1),
-        FTL_PERMUTATION_NAMESPACE::move(first2));
+    return std::is_permutation(
+        std::move(first1),
+        std::move(last1),
+        std::move(first2));
   }();
 }
 
@@ -328,11 +313,11 @@ bool is_permutation(ExecutionPolicy &&, ForwardIterator1 first1,
                     ForwardIterator1 last1, ForwardIterator2 first2,
                     BinaryPredicate predicate) {
   return [&]() noexcept {
-    return FTL_PERMUTATION_NAMESPACE::is_permutation(
-        FTL_PERMUTATION_NAMESPACE::move(first1),
-        FTL_PERMUTATION_NAMESPACE::move(last1),
-        FTL_PERMUTATION_NAMESPACE::move(first2),
-        FTL_PERMUTATION_NAMESPACE::move(predicate));
+    return std::is_permutation(
+        std::move(first1),
+        std::move(last1),
+        std::move(first2),
+        std::move(predicate));
   }();
 }
 
@@ -342,11 +327,11 @@ bool is_permutation(ExecutionPolicy &&, ForwardIterator1 first1,
                     ForwardIterator1 last1, ForwardIterator2 first2,
                     ForwardIterator2 last2) {
   return [&]() noexcept {
-    return FTL_PERMUTATION_NAMESPACE::is_permutation(
-        FTL_PERMUTATION_NAMESPACE::move(first1),
-        FTL_PERMUTATION_NAMESPACE::move(last1),
-        FTL_PERMUTATION_NAMESPACE::move(first2),
-        FTL_PERMUTATION_NAMESPACE::move(last2));
+    return std::is_permutation(
+        std::move(first1),
+        std::move(last1),
+        std::move(first2),
+        std::move(last2));
   }();
 }
 
@@ -357,12 +342,12 @@ bool is_permutation(ExecutionPolicy &&, ForwardIterator1 first1,
                     ForwardIterator1 last1, ForwardIterator2 first2,
                     ForwardIterator2 last2, BinaryPredicate predicate) {
   return [&]() noexcept {
-    return FTL_PERMUTATION_NAMESPACE::is_permutation(
-        FTL_PERMUTATION_NAMESPACE::move(first1),
-        FTL_PERMUTATION_NAMESPACE::move(last1),
-        FTL_PERMUTATION_NAMESPACE::move(first2),
-        FTL_PERMUTATION_NAMESPACE::move(last2),
-        FTL_PERMUTATION_NAMESPACE::move(predicate));
+    return std::is_permutation(
+        std::move(first1),
+        std::move(last1),
+        std::move(first2),
+        std::move(last2),
+        std::move(predicate));
   }();
 }
 
@@ -372,8 +357,8 @@ constexpr bool next_permutation(BidirectionalIterator first,
   less<> comparator{};
   identity projection{};
 
-  return detail::next_permutation_loop(FTL_PERMUTATION_NAMESPACE::move(first),
-                                       FTL_PERMUTATION_NAMESPACE::move(last),
+  return detail::next_permutation_loop(std::move(first),
+                                       std::move(last),
                                        comparator, projection);
 }
 
@@ -383,8 +368,8 @@ constexpr bool next_permutation(BidirectionalIterator first,
                                 Comparator comparator) {
   identity projection{};
 
-  return detail::next_permutation_loop(FTL_PERMUTATION_NAMESPACE::move(first),
-                                       FTL_PERMUTATION_NAMESPACE::move(last),
+  return detail::next_permutation_loop(std::move(first),
+                                       std::move(last),
                                        comparator, projection);
 }
 
@@ -393,9 +378,9 @@ template <class ExecutionPolicy, class BidirectionalIterator>
 bool next_permutation(ExecutionPolicy &&, BidirectionalIterator first,
                       BidirectionalIterator last) {
   return [&]() noexcept {
-    return FTL_PERMUTATION_NAMESPACE::next_permutation(
-        FTL_PERMUTATION_NAMESPACE::move(first),
-        FTL_PERMUTATION_NAMESPACE::move(last));
+    return std::next_permutation(
+        std::move(first),
+        std::move(last));
   }();
 }
 
@@ -404,10 +389,10 @@ template <class ExecutionPolicy, class BidirectionalIterator, class Comparator>
 bool next_permutation(ExecutionPolicy &&, BidirectionalIterator first,
                       BidirectionalIterator last, Comparator comparator) {
   return [&]() noexcept {
-    return FTL_PERMUTATION_NAMESPACE::next_permutation(
-        FTL_PERMUTATION_NAMESPACE::move(first),
-        FTL_PERMUTATION_NAMESPACE::move(last),
-        FTL_PERMUTATION_NAMESPACE::move(comparator));
+    return std::next_permutation(
+        std::move(first),
+        std::move(last),
+        std::move(comparator));
   }();
 }
 
@@ -417,8 +402,8 @@ constexpr bool prev_permutation(BidirectionalIterator first,
   less<> comparator{};
   identity projection{};
 
-  return detail::prev_permutation_loop(FTL_PERMUTATION_NAMESPACE::move(first),
-                                       FTL_PERMUTATION_NAMESPACE::move(last),
+  return detail::prev_permutation_loop(std::move(first),
+                                       std::move(last),
                                        comparator, projection);
 }
 
@@ -428,8 +413,8 @@ constexpr bool prev_permutation(BidirectionalIterator first,
                                 Comparator comparator) {
   identity projection{};
 
-  return detail::prev_permutation_loop(FTL_PERMUTATION_NAMESPACE::move(first),
-                                       FTL_PERMUTATION_NAMESPACE::move(last),
+  return detail::prev_permutation_loop(std::move(first),
+                                       std::move(last),
                                        comparator, projection);
 }
 
@@ -438,9 +423,9 @@ template <class ExecutionPolicy, class BidirectionalIterator>
 bool prev_permutation(ExecutionPolicy &&, BidirectionalIterator first,
                       BidirectionalIterator last) {
   return [&]() noexcept {
-    return FTL_PERMUTATION_NAMESPACE::prev_permutation(
-        FTL_PERMUTATION_NAMESPACE::move(first),
-        FTL_PERMUTATION_NAMESPACE::move(last));
+    return std::prev_permutation(
+        std::move(first),
+        std::move(last));
   }();
 }
 
@@ -449,10 +434,10 @@ template <class ExecutionPolicy, class BidirectionalIterator, class Comparator>
 bool prev_permutation(ExecutionPolicy &&, BidirectionalIterator first,
                       BidirectionalIterator last, Comparator comparator) {
   return [&]() noexcept {
-    return FTL_PERMUTATION_NAMESPACE::prev_permutation(
-        FTL_PERMUTATION_NAMESPACE::move(first),
-        FTL_PERMUTATION_NAMESPACE::move(last),
-        FTL_PERMUTATION_NAMESPACE::move(comparator));
+    return std::prev_permutation(
+        std::move(first),
+        std::move(last),
+        std::move(comparator));
   }();
 }
 
@@ -469,11 +454,11 @@ struct is_permutation_fn {
                             Sentinel2 last2, Predicate predicate = {},
                             Projection1 projection1 = {},
                             Projection2 projection2 = {}) const {
-    return FTL_PERMUTATION_NAMESPACE::detail::is_permutation_loop(
-        FTL_PERMUTATION_NAMESPACE::move(first1),
-        FTL_PERMUTATION_NAMESPACE::move(last1),
-        FTL_PERMUTATION_NAMESPACE::move(first2),
-        FTL_PERMUTATION_NAMESPACE::move(last2), predicate, projection1,
+    return std::detail::is_permutation_loop(
+        std::move(first1),
+        std::move(last1),
+        std::move(first2),
+        std::move(last2), predicate, projection1,
         projection2);
   }
 
@@ -488,9 +473,9 @@ struct is_permutation_fn {
              Projection1 projection1 = {}, Projection2 projection2 = {}) const {
     return (*this)(ranges::begin(range1), ranges::end(range1),
                    ranges::begin(range2), ranges::end(range2),
-                   FTL_PERMUTATION_NAMESPACE::move(predicate),
-                   FTL_PERMUTATION_NAMESPACE::move(projection1),
-                   FTL_PERMUTATION_NAMESPACE::move(projection2));
+                   std::move(predicate),
+                   std::move(projection1),
+                   std::move(projection2));
   }
 };
 
@@ -505,13 +490,13 @@ struct next_permutation_fn {
   operator()(Iterator first, Sentinel last, Comparator comparator = {},
              Projection projection = {}) const {
     Iterator end =
-        FTL_PERMUTATION_NAMESPACE::detail::permutation_end(first, last);
+        std::detail::permutation_end(first, last);
 
-    bool found = FTL_PERMUTATION_NAMESPACE::detail::next_permutation_loop(
+    bool found = std::detail::next_permutation_loop(
         first, end, comparator, projection);
 
     return {
-        FTL_PERMUTATION_NAMESPACE::move(end),
+        std::move(end),
         found,
     };
   }
@@ -523,10 +508,10 @@ struct next_permutation_fn {
   operator()(Range &&range, Comparator comparator = {},
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_PERMUTATION_NAMESPACE::move(comparator),
-                          FTL_PERMUTATION_NAMESPACE::move(projection));
+                          std::move(comparator),
+                          std::move(projection));
 
-    return FTL_PERMUTATION_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -541,13 +526,13 @@ struct prev_permutation_fn {
   operator()(Iterator first, Sentinel last, Comparator comparator = {},
              Projection projection = {}) const {
     Iterator end =
-        FTL_PERMUTATION_NAMESPACE::detail::permutation_end(first, last);
+        std::detail::permutation_end(first, last);
 
-    bool found = FTL_PERMUTATION_NAMESPACE::detail::prev_permutation_loop(
+    bool found = std::detail::prev_permutation_loop(
         first, end, comparator, projection);
 
     return {
-        FTL_PERMUTATION_NAMESPACE::move(end),
+        std::move(end),
         found,
     };
   }
@@ -559,10 +544,10 @@ struct prev_permutation_fn {
   operator()(Range &&range, Comparator comparator = {},
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_PERMUTATION_NAMESPACE::move(comparator),
-                          FTL_PERMUTATION_NAMESPACE::move(projection));
+                          std::move(comparator),
+                          std::move(projection));
 
-    return FTL_PERMUTATION_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -572,8 +557,7 @@ inline constexpr prev_permutation_fn prev_permutation{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_PERMUTATION_NAMESPACE
 
 #endif // FTL_PERMUTATION_HEADER

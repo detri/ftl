@@ -9,11 +9,7 @@
 #undef NDEBUG
 #endif
 
-#ifdef FTL_REPLACE_STL
 #include <cassert>
-#else
-#include <ftl/cassert>
-#endif
 
 constexpr bool constexpr_assert_works() {
   assert(true);
@@ -36,11 +32,7 @@ bool enabled_assert_evaluates() {
 
 #define NDEBUG
 
-#ifdef FTL_REPLACE_STL
 #include <cassert>
-#else
-#include <ftl/cassert>
-#endif
 
 bool disabled_assert_does_not_evaluate() {
   int evaluations = 0;
@@ -56,11 +48,7 @@ bool disabled_assert_does_not_evaluate() {
 
 #undef NDEBUG
 
-#ifdef FTL_REPLACE_STL
 #include <cassert>
-#else
-#include <ftl/cassert>
-#endif
 
 bool reenabled_assert_evaluates() {
   int evaluations = 0;

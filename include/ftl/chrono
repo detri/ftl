@@ -3,7 +3,6 @@
 #ifndef FTL_CHRONO_HEADER
 #define FTL_CHRONO_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <compare>
 #include <cstddef>
@@ -23,29 +22,8 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-#else
-#include <ftl/atomic>
-#include <ftl/compare>
-#include <ftl/cstddef>
-#include <ftl/cstdint>
-#include <ftl/ctime>
-#include <ftl/detail/clock_runtime.hpp>
-#include <ftl/detail/current_zone.hpp>
-#include <ftl/detail/time_core.hpp>
-#include <ftl/detail/tzdb_runtime.hpp>
-#include <ftl/iterator>
-#include <ftl/limits>
-#include <ftl/new>
-#include <ftl/ratio>
-#include <ftl/stdexcept>
-#include <ftl/string>
-#include <ftl/string_view>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#include <ftl/vector>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 namespace chrono {
 
 namespace chrono_detail {
@@ -2894,13 +2872,9 @@ struct common_type<chrono::time_point<C, D1>, chrono::time_point<C, D2>> {
   using type = chrono::time_point<C, common_type_t<D1, D2>>;
 };
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#ifdef FTL_REPLACE_STL
 #include <detail/chrono_io.hpp>
-#else
-#include <ftl/detail/chrono_io.hpp>
-#endif
 
 #if !defined(__cpp_lib_chrono) || __cpp_lib_chrono < 201907L
 #undef __cpp_lib_chrono

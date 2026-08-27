@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <generator>
 #include <iterator>
 #include <memory>
@@ -8,17 +7,6 @@
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/generator>
-#include <ftl/iterator>
-#include <ftl/memory>
-#include <ftl/memory_resource>
-#include <ftl/new>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 using value_generator = tested::generator<int>;
 
@@ -167,7 +155,6 @@ static_assert(alignof(over_aligned_byte_allocator) >
 using over_aligned_generator =
     tested::generator<int, void, over_aligned_byte_allocator>;
 
-#ifdef FTL_REPLACE_STL
 
 tested::generator<int> values() {
   /*
@@ -359,7 +346,6 @@ tested::generator<int> propagating_recursive_parent() {
 
 #endif
 
-#endif
 
 static_assert(
     tested::is_same_v<
@@ -407,7 +393,6 @@ bool ftl_test() {
       return generator_test_failure(__LINE__);
     }
   }
-#ifdef FTL_REPLACE_STL
   {
     int expected = 1;
 
@@ -1005,7 +990,6 @@ bool ftl_test() {
       return generator_test_failure(__LINE__);
     }
   }
-#endif
 #endif
 
   return true;

@@ -3,13 +3,9 @@
 #ifndef FTL_NUMBERS_HEADER
 #define FTL_NUMBERS_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <type_traits>
-#else
-#include <ftl/type_traits>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace numbers {
 
@@ -90,5 +86,5 @@ FTL_MATH_CONSTANT(phi, 1.618033988749894848204586834365638118);
 #define __cpp_lib_math_constants 201907L
 #endif
 
-FTL_END_NAMESPACE
+} // namespace std
 #endif

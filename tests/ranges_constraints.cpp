@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <concepts>
 #include <cstddef>
 #include <initializer_list>
@@ -8,17 +7,6 @@
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/concepts>
-#include <ftl/cstddef>
-#include <ftl/initializer_list>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/tuple>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 /*
  * Generic expression probes.
@@ -552,21 +540,12 @@ struct borrowed_pointer_range {
   constexpr const int *end() const noexcept { return last; }
 };
 
-#ifdef FTL_REPLACE_STL
 
 namespace std::ranges {
 template <>
 inline constexpr bool enable_borrowed_range<::borrowed_pointer_range> = true;
 }
 
-#else
-
-namespace ftl::ranges {
-template <>
-inline constexpr bool enable_borrowed_range<::borrowed_pointer_range> = true;
-}
-
-#endif
 
 static_assert(tested::ranges::view<pointer_view<int>>);
 

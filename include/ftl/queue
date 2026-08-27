@@ -1,6 +1,5 @@
 #ifndef FTL_QUEUE_HEADER
 #define FTL_QUEUE_HEADER
-#ifdef FTL_REPLACE_STL
 #include <algorithm>
 #include <compare>
 #include <deque>
@@ -10,21 +9,8 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-#define FTL_ADAPTOR_NAMESPACE std
-#else
-#include <ftl/algorithm>
-#include <ftl/compare>
-#include <ftl/deque>
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#include <ftl/vector>
-#define FTL_ADAPTOR_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 template<class A> concept adaptor_allocator =
@@ -77,7 +63,7 @@ public:
   }
   template<class... Args> decltype(auto) emplace(Args&&... args) { return c.emplace_back(forward<Args>(args)...); }
   void pop() { c.pop_front(); }
-  void swap(queue& other) noexcept(is_nothrow_swappable_v<Container>) { using FTL_ADAPTOR_NAMESPACE::swap; swap(c, other.c); }
+  void swap(queue& other) noexcept(is_nothrow_swappable_v<Container>) { using std::swap; swap(c, other.c); }
   template<class U, class C> friend bool operator==(const queue<U, C>&, const queue<U, C>&);
   template<class U, class C> friend bool operator!=(const queue<U, C>&, const queue<U, C>&);
   template<class U, class C> friend bool operator<(const queue<U, C>&, const queue<U, C>&);
@@ -152,7 +138,7 @@ public:
   }
   template<class... Args> void emplace(Args&&... args) { c.emplace_back(forward<Args>(args)...); push_heap(c.begin(), c.end(), comp); }
   void pop() { pop_heap(c.begin(), c.end(), comp); c.pop_back(); }
-  void swap(priority_queue& other) noexcept(is_nothrow_swappable_v<Container> && is_nothrow_swappable_v<Compare>) { using FTL_ADAPTOR_NAMESPACE::swap; swap(c, other.c); swap(comp, other.comp); }
+  void swap(priority_queue& other) noexcept(is_nothrow_swappable_v<Container> && is_nothrow_swappable_v<Compare>) { using std::swap; swap(c, other.c); swap(comp, other.comp); }
 };
 template<class Compare, class C> requires (!detail::adaptor_allocator<Compare> && !detail::adaptor_allocator<C>) priority_queue(Compare, C) -> priority_queue<typename C::value_type, C, Compare>;
 template<input_iterator I, class Compare = less<typename iterator_traits<I>::value_type>> requires (!detail::adaptor_allocator<Compare>) priority_queue(I, I, Compare = Compare()) -> priority_queue<typename iterator_traits<I>::value_type, vector<typename iterator_traits<I>::value_type>, Compare>;
@@ -167,7 +153,7 @@ template<ranges::input_range R, class Compare, detail::adaptor_allocator A> requ
 template<class T, class C, class Compare, class A> struct uses_allocator<priority_queue<T, C, Compare>, A> : uses_allocator<C, A>::type {};
 template<class T, class C, class Compare> void swap(priority_queue<T, C, Compare>& x, priority_queue<T, C, Compare>& y) noexcept(noexcept(x.swap(y))) { x.swap(y); }
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_adaptor_iterator_pair_constructor) || \
     __cpp_lib_adaptor_iterator_pair_constructor < 202106L
@@ -181,5 +167,4 @@ FTL_END_NAMESPACE
 #define __cpp_lib_containers_ranges 202202L
 #endif
 
-#undef FTL_ADAPTOR_NAMESPACE
 #endif

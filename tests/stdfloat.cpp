@@ -1,14 +1,7 @@
-#ifdef FTL_REPLACE_STL
 #include <stdfloat>
 #include <limits>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/stdfloat>
-#include <ftl/limits>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 template<class T>
 constexpr bool signaling_nan_has_nan_representation() {

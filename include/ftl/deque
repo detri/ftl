@@ -1,7 +1,6 @@
 #ifndef FTL_DEQUE_HEADER
 #define FTL_DEQUE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <algorithm>
 #include <compare>
 #include <initializer_list>
@@ -14,22 +13,6 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-#define FTL_DEQUE_NAMESPACE std
-#else
-#include <ftl/algorithm>
-#include <ftl/compare>
-#include <ftl/initializer_list>
-#include <ftl/iterator>
-#include <ftl/limits>
-#include <ftl/memory>
-#include <ftl/memory_resource>
-#include <ftl/ranges>
-#include <ftl/stdexcept>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#include <ftl/vector>
-#define FTL_DEQUE_NAMESPACE ftl
-#endif
 
 #if defined(_MSC_VER) && !defined(__clang__)
 extern "C" void __cdecl __fastfail(unsigned int);
@@ -39,7 +22,7 @@ extern "C" void __cdecl __fastfail(unsigned int);
 #define FTL_DEQUE_TRAP() __builtin_trap()
 #endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 [[noreturn]] inline void deque_length_failure() {
@@ -138,8 +121,8 @@ public:
 
   using iterator = basic_iterator<false>;
   using const_iterator = basic_iterator<true>;
-  using reverse_iterator = FTL_DEQUE_NAMESPACE::reverse_iterator<iterator>;
-  using const_reverse_iterator = FTL_DEQUE_NAMESPACE::reverse_iterator<const_iterator>;
+  using reverse_iterator = std::reverse_iterator<iterator>;
+  using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
   deque() : deque(Allocator()) {}
   explicit deque(const Allocator& a) : allocator_(a), blocks_(map_allocator(a)) {}
@@ -275,7 +258,7 @@ public:
     swap_storage(replacement); return begin() + static_cast<difference_type>(index);
   }
   void swap(deque& other) noexcept(traits::is_always_equal::value) {
-    if constexpr (traits::propagate_on_container_swap::value) FTL_DEQUE_NAMESPACE::swap(allocator_, other.allocator_);
+    if constexpr (traits::propagate_on_container_swap::value) std::swap(allocator_, other.allocator_);
     swap_storage(other);
   }
   void clear() noexcept { while (size_) pop_back(); }
@@ -340,8 +323,8 @@ private:
     size_ = exchange(other.size_, 0); origin_ = exchange(other.origin_, 0);
   }
   void swap_storage(deque& other) noexcept {
-    blocks_.swap(other.blocks_); FTL_DEQUE_NAMESPACE::swap(front_slot_, other.front_slot_);
-    FTL_DEQUE_NAMESPACE::swap(size_, other.size_); FTL_DEQUE_NAMESPACE::swap(origin_, other.origin_);
+    blocks_.swap(other.blocks_); std::swap(front_slot_, other.front_slot_);
+    std::swap(size_, other.size_); std::swap(origin_, other.origin_);
   }
 
   FTL_NO_UNIQUE_ADDRESS Allocator allocator_;
@@ -364,9 +347,9 @@ template<class T, class A, class U> typename deque<T, A>::size_type erase(deque<
 template<class T, class A, class P> typename deque<T, A>::size_type erase_if(deque<T, A>& c, P pred) {
   auto it = remove_if(c.begin(), c.end(), pred); auto count = static_cast<typename deque<T, A>::size_type>(c.end() - it); c.erase(it, c.end()); return count;
 }
-namespace pmr { template<class T> using deque = FTL_DEQUE_NAMESPACE::deque<T, polymorphic_allocator<T>>; }
+namespace pmr { template<class T> using deque = std::deque<T, polymorphic_allocator<T>>; }
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #if !defined(__cpp_lib_allocator_traits_is_always_equal) || \
     __cpp_lib_allocator_traits_is_always_equal < 201411L
@@ -391,6 +374,5 @@ FTL_END_NAMESPACE
 #define __cpp_lib_nonmember_container_access 201411L
 #endif
 
-#undef FTL_DEQUE_NAMESPACE
 #undef FTL_DEQUE_TRAP
 #endif

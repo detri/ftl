@@ -1,26 +1,14 @@
-#ifdef FTL_REPLACE_STL
 #include <chrono>
 #include <detail/tzdb_runtime.hpp>
 #include <format>
 #include <sstream>
 namespace tested = std;
-#else
-#include <ftl/chrono>
-#include <ftl/detail/tzdb_runtime.hpp>
-#include <ftl/format>
-#include <ftl/sstream>
-namespace tested = ftl;
-#endif
 
 struct incompatible_zone_pointer {
   incompatible_zone_pointer(int) {}
 };
 
-#ifdef FTL_REPLACE_STL
 namespace std::chrono {
-#else
-namespace ftl::chrono {
-#endif
 template <> struct zoned_traits<::incompatible_zone_pointer> {
   static int locate_zone(string_view);
 };
@@ -33,8 +21,19 @@ class marker_time_put final : public tested::time_put<char> {
 protected:
   iter_type do_put(iter_type output, tested::ios_base &, char,
                    const tested::tm *, char format,
-                   char) const override {
-    const char *text = format == 'p' ? "period" : "clock";
+                   char modifier) const override {
+    const char *text = nullptr;
+    switch (format) {
+    case 'p': text = "period"; break;
+    case 'r': text = "clock"; break;
+    case 'A': text = "weekday"; break;
+    case 'B': text = "month"; break;
+    case 'c': text = modifier == 'E' ? "alternate-date-time" : "date-time"; break;
+    case 'x': text = "date"; break;
+    case 'X': text = modifier == 'E' ? "alternate-time" : "time"; break;
+    case 'Y': text = modifier == 'E' ? "era-year" : "year"; break;
+    default: text = "localized"; break;
+    }
     while (*text)
       *output++ = *text++;
     return output;
@@ -396,6 +395,13 @@ bool chrono_calendar_formatting_works() {
     return false;
   }
 
+  tested::locale marked(tested::locale::classic(), new marker_time_put);
+  const auto localized =
+      tested::format(marked, "{:L%A|%B|%x|%EY}", date);
+  if (!equal_text(localized.c_str(), "weekday|month|date|era-year")) {
+    return false;
+  }
+
   const auto day_of_year = tested::format("{:%j}", date);
 
   if (!equal_text(day_of_year.c_str(), "074")) {
@@ -461,6 +467,12 @@ bool chrono_calendar_formatting_works() {
 
 bool chrono_clock_formatting_works() {
   const sys_seconds epoch{seconds{0}};
+
+  tested::locale marked(tested::locale::classic(), new marker_time_put);
+  const auto localized = tested::format(marked, "{:L%c|%EX}", epoch);
+  if (!equal_text(localized.c_str(), "date-time|alternate-time")) {
+    return false;
+  }
 
   const auto system_default = tested::format("{}", epoch);
 

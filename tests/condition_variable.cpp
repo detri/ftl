@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -8,17 +7,6 @@
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/atomic>
-#include <ftl/chrono>
-#include <ftl/condition_variable>
-#include <ftl/mutex>
-#include <ftl/stop_token>
-#include <ftl/thread>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 static_assert(tested::is_standard_layout_v<tested::condition_variable>);
 

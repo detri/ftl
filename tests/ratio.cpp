@@ -1,10 +1,5 @@
-#ifdef FTL_REPLACE_STL
 #include <ratio>
 namespace tested = std;
-#else
-#include <ftl/ratio>
-namespace tested = ftl;
-#endif
 
 static_assert(tested::ratio<2, -4>::num == -1);
 static_assert(tested::ratio<2, -4>::den == 2);

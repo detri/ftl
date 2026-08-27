@@ -3,7 +3,6 @@
 #ifndef FTL_ITERATOR_HEADER
 #define FTL_ITERATOR_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <compare>
 #include <concepts>
 #include <cstdint>
@@ -11,23 +10,10 @@
 #include <iosfwd>
 #include <new>
 #include <utility>
-#else
-#include <ftl/compare>
-#include <ftl/concepts>
-#include <ftl/cstdint>
-#include <ftl/initializer_list>
-#include <ftl/iosfwd>
-#include <ftl/new>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
 #define FTL_ITER_NS std
-#else
-#define FTL_ITER_NS ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 struct input_iterator_tag {};
 
@@ -1581,9 +1567,6 @@ constexpr operator CI() && {
       detail::different_from<I, basic_const_iterator> &&
       random_access_iterator<Iterator> &&
       totally_ordered_with<Iterator, I>
-#ifndef FTL_REPLACE_STL
-      && !detail::is_basic_const_iterator<remove_cvref_t<I>>::value
-#endif
       )
   constexpr bool operator<(const I &right) const {
     return current < right;
@@ -1594,9 +1577,6 @@ constexpr operator CI() && {
       detail::different_from<I, basic_const_iterator> &&
       random_access_iterator<Iterator> &&
       totally_ordered_with<Iterator, I>
-#ifndef FTL_REPLACE_STL
-      && !detail::is_basic_const_iterator<remove_cvref_t<I>>::value
-#endif
       )
   constexpr bool operator>(const I &right) const {
     return current > right;
@@ -1607,9 +1587,6 @@ constexpr operator CI() && {
       detail::different_from<I, basic_const_iterator> &&
       random_access_iterator<Iterator> &&
       totally_ordered_with<Iterator, I>
-#ifndef FTL_REPLACE_STL
-      && !detail::is_basic_const_iterator<remove_cvref_t<I>>::value
-#endif
       )
   constexpr bool operator<=(const I &right) const {
     return current <= right;
@@ -1620,9 +1597,6 @@ constexpr operator CI() && {
       detail::different_from<I, basic_const_iterator> &&
       random_access_iterator<Iterator> &&
       totally_ordered_with<Iterator, I>
-#ifndef FTL_REPLACE_STL
-      && !detail::is_basic_const_iterator<remove_cvref_t<I>>::value
-#endif
       )
   constexpr bool operator>=(const I &right) const {
     return current >= right;
@@ -1728,49 +1702,6 @@ constexpr operator CI() && {
   }
 };
 
-#ifndef FTL_REPLACE_STL
-/*
- * Built-in comparison rewriting cannot use FTL's ordering category types in a
- * non-std namespace when comparing two specializations.
- * These overloads provide the same specified comparisons without depending on
- * that rewrite.
- */
-template <input_iterator I, input_iterator J>
-  requires(random_access_iterator<I> && random_access_iterator<J> &&
-           totally_ordered_with<I, J>)
-constexpr bool operator<(
-    const basic_const_iterator<I> &left,
-    const basic_const_iterator<J> &right) {
-  return left.base() < right.base();
-}
-
-template <input_iterator I, input_iterator J>
-  requires(random_access_iterator<I> && random_access_iterator<J> &&
-           totally_ordered_with<I, J>)
-constexpr bool operator>(
-    const basic_const_iterator<I> &left,
-    const basic_const_iterator<J> &right) {
-  return left.base() > right.base();
-}
-
-template <input_iterator I, input_iterator J>
-  requires(random_access_iterator<I> && random_access_iterator<J> &&
-           totally_ordered_with<I, J>)
-constexpr bool operator<=(
-    const basic_const_iterator<I> &left,
-    const basic_const_iterator<J> &right) {
-  return left.base() <= right.base();
-}
-
-template <input_iterator I, input_iterator J>
-  requires(random_access_iterator<I> && random_access_iterator<J> &&
-           totally_ordered_with<I, J>)
-constexpr bool operator>=(
-    const basic_const_iterator<I> &left,
-    const basic_const_iterator<J> &right) {
-  return left.base() >= right.base();
-}
-#endif
 
 template <input_iterator Iterator>
 using const_iterator = conditional_t<constant_iterator<Iterator>, Iterator,
@@ -1822,16 +1753,11 @@ struct common_type<basic_const_iterator<T>, basic_const_iterator<U>> {
  * Shared ranges access CPOs require reverse_iterator, const_iterator,
  * iterator concepts, and iter_reference machinery to already exist.
  */
-FTL_END_NAMESPACE
+} // namespace std
 
-#ifdef FTL_REPLACE_STL
 #include <detail/range_access>
-#else
 
-#include <ftl/detail/range_access>
-#endif
-
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace ranges {
 struct advance_fn {
@@ -2209,15 +2135,9 @@ public:
   template <class U>
   friend constexpr auto operator<=>(const move_iterator &a,
                                     const move_iterator<U> &b)
-#ifdef FTL_REPLACE_STL
     requires three_way_comparable_with<I, U>
-#endif
   {
-#ifdef FTL_REPLACE_STL
     return a.current <=> b.base();
-#else
-    return compare_three_way{}(a.current, b.base());
-#endif
   }
 
   friend constexpr move_iterator operator+(move_iterator x, difference_type n)
@@ -2969,7 +2889,7 @@ template <class E> constexpr const E *data(initializer_list<E> x) noexcept {
 #define __cpp_lib_ranges 202302L
 #endif
 
-FTL_END_NAMESPACE
+} // namespace std
 
 #undef FTL_ITER_NS
 

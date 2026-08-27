@@ -3,21 +3,12 @@
 #ifndef FTL_COMPLEX_HEADER
 #define FTL_COMPLEX_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cmath>
 #include <iosfwd>
 #include <type_traits>
 #include <detail/complex_runtime>
 #define FTL_COMPLEX_BEGIN namespace std {
 #define FTL_COMPLEX_END }
-#else
-#include <ftl/cmath>
-#include <ftl/iosfwd>
-#include <ftl/type_traits>
-#include <ftl/detail/complex_runtime>
-#define FTL_COMPLEX_BEGIN namespace ftl {
-#define FTL_COMPLEX_END }
-#endif
 
 FTL_COMPLEX_BEGIN
 
@@ -284,6 +275,89 @@ FTL_COMPLEX_RUNTIME_UNARY(proj)
 
 #undef FTL_COMPLEX_RUNTIME_UNARY
 
+template <detail::extended_math_floating T>
+inline complex<T> exp(const complex<T> &value) {
+  const T magnitude = std::exp(value.real());
+  return {magnitude * std::cos(value.imag()),
+          magnitude * std::sin(value.imag())};
+}
+template <detail::extended_math_floating T>
+inline complex<T> log(const complex<T> &value) {
+  return {std::log(std::hypot(value.real(), value.imag())),
+          std::atan2(value.imag(), value.real())};
+}
+template <detail::extended_math_floating T>
+inline complex<T> sqrt(const complex<T> &value) {
+  if (value.real() == T{} && value.imag() == T{})
+    return {T{}, value.imag()};
+  const T magnitude = std::hypot(value.real(), value.imag());
+  const T real = std::sqrt((magnitude + value.real()) / T{2});
+  const T imaginary = std::copysign(
+      std::sqrt((magnitude - value.real()) / T{2}), value.imag());
+  return {real, imaginary};
+}
+template <detail::extended_math_floating T>
+inline complex<T> sin(const complex<T> &value) {
+  return {std::sin(value.real()) * std::cosh(value.imag()),
+          std::cos(value.real()) * std::sinh(value.imag())};
+}
+template <detail::extended_math_floating T>
+inline complex<T> cos(const complex<T> &value) {
+  return {std::cos(value.real()) * std::cosh(value.imag()),
+          -std::sin(value.real()) * std::sinh(value.imag())};
+}
+template <detail::extended_math_floating T>
+inline complex<T> sinh(const complex<T> &value) {
+  return {std::sinh(value.real()) * std::cos(value.imag()),
+          std::cosh(value.real()) * std::sin(value.imag())};
+}
+template <detail::extended_math_floating T>
+inline complex<T> cosh(const complex<T> &value) {
+  return {std::cosh(value.real()) * std::cos(value.imag()),
+          std::sinh(value.real()) * std::sin(value.imag())};
+}
+template <detail::extended_math_floating T>
+inline complex<T> tan(const complex<T> &value) { return sin(value) / cos(value); }
+template <detail::extended_math_floating T>
+inline complex<T> tanh(const complex<T> &value) { return sinh(value) / cosh(value); }
+template <detail::extended_math_floating T>
+inline complex<T> asinh(const complex<T> &value) {
+  return log(value + sqrt(value * value + T{1}));
+}
+template <detail::extended_math_floating T>
+inline complex<T> acosh(const complex<T> &value) {
+  return log(value + sqrt(value + T{1}) * sqrt(value - T{1}));
+}
+template <detail::extended_math_floating T>
+inline complex<T> atanh(const complex<T> &value) {
+  return (log(T{1} + value) - log(T{1} - value)) / T{2};
+}
+template <detail::extended_math_floating T>
+inline complex<T> asin(const complex<T> &value) {
+  const complex<T> i{T{}, T{1}};
+  const complex<T> result = log(i * value + sqrt(T{1} - value * value));
+  return {result.imag(), -result.real()};
+}
+template <detail::extended_math_floating T>
+inline complex<T> acos(const complex<T> &value) {
+  const complex<T> result = asin(value);
+  return {T(1.570796326794896619231321691639751442L) - result.real(),
+          -result.imag()};
+}
+template <detail::extended_math_floating T>
+inline complex<T> atan(const complex<T> &value) {
+  const complex<T> i{T{}, T{1}};
+  const complex<T> difference = log(T{1} - i * value) -
+                                log(T{1} + i * value);
+  return {-difference.imag() / T{2}, difference.real() / T{2}};
+}
+template <detail::extended_math_floating T>
+inline complex<T> proj(const complex<T> &value) {
+  if (std::isinf(value.real()) || std::isinf(value.imag()))
+    return {numeric_limits<T>::infinity(), std::copysign(T{}, value.imag())};
+  return value;
+}
+
 template <class Arithmetic>
   requires is_arithmetic_v<Arithmetic>
 inline auto proj(Arithmetic value) {
@@ -300,6 +374,10 @@ inline double abs(const complex<double> &value) {
 inline long double abs(const complex<long double> &value) {
   return ::ftl_olm_cabsl(detail::complex_to_abi(value));
 }
+template <detail::extended_math_floating T>
+inline T abs(const complex<T> &value) {
+  return std::hypot(value.real(), value.imag());
+}
 inline float arg(const complex<float> &value) {
   return ::ftl_olm_cargf(detail::complex_to_abi(value));
 }
@@ -308,6 +386,10 @@ inline double arg(const complex<double> &value) {
 }
 inline long double arg(const complex<long double> &value) {
   return ::ftl_olm_cargl(detail::complex_to_abi(value));
+}
+template <detail::extended_math_floating T>
+inline T arg(const complex<T> &value) {
+  return std::atan2(value.imag(), value.real());
 }
 
 template <class T> inline complex<T> polar(const T &magnitude,
@@ -329,6 +411,10 @@ inline complex<long double> pow(const complex<long double> &left,
                                 const complex<long double> &right) {
   return detail::complex_from_abi(::ftl_olm_cpowl(
       detail::complex_to_abi(left), detail::complex_to_abi(right)));
+}
+template <detail::extended_math_floating T>
+inline complex<T> pow(const complex<T> &left, const complex<T> &right) {
+  return exp(right * log(left));
 }
 template <class T1, class T2>
 inline complex<common_type_t<T1, T2>> pow(const complex<T1> &left,
@@ -359,6 +445,10 @@ inline complex<double> log10(const complex<double> &value) {
 }
 inline complex<long double> log10(const complex<long double> &value) {
   return log(value) / log(10.0L);
+}
+template <detail::extended_math_floating T>
+inline complex<T> log10(const complex<T> &value) {
+  return log(value) / std::log(T{10});
 }
 
 template <class Character, class Traits, class Value>

@@ -3,7 +3,6 @@
 #ifndef FTL_MERGE_HEADER
 #define FTL_MERGE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__algorithms/result.hpp>
 #include <__algorithms/reverse_rotate.hpp>
 #include <__execution/policy_access.hpp>
@@ -12,28 +11,13 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__algorithms/result.hpp>
-#include <ftl/__algorithms/reverse_rotate.hpp>
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_MERGE_NAMESPACE std
-#else
-#define FTL_MERGE_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
-using merge_less = FTL_MERGE_NAMESPACE::less<>;
+using merge_less = std::less<>;
 
 template <class Iterator1, class Sentinel1, class Iterator2, class Sentinel2,
           class Output, class Comparator, class Projection1, class Projection2>
@@ -42,9 +26,9 @@ constexpr void merge_loop(Iterator1 &first1, const Sentinel1 &last1,
                           Output &result, Comparator &comparator,
                           Projection1 &projection1, Projection2 &projection2) {
   while (first1 != last1 && first2 != last2) {
-    if (FTL_MERGE_NAMESPACE::invoke(
-            comparator, FTL_MERGE_NAMESPACE::invoke(projection2, *first2),
-            FTL_MERGE_NAMESPACE::invoke(projection1, *first1))) {
+    if (std::invoke(
+            comparator, std::invoke(projection2, *first2),
+            std::invoke(projection1, *first1))) {
       *result = *first2;
       ++first2;
     } else {
@@ -83,9 +67,9 @@ constexpr Iterator merge_lower_bound(Iterator first,
     Iterator middle = first;
     ranges::advance(middle, half);
 
-    if (FTL_MERGE_NAMESPACE::invoke(
-            comparator, FTL_MERGE_NAMESPACE::invoke(projection, *middle),
-            FTL_MERGE_NAMESPACE::invoke(projection, *value))) {
+    if (std::invoke(
+            comparator, std::invoke(projection, *middle),
+            std::invoke(projection, *value))) {
       first = middle;
       ++first;
 
@@ -109,9 +93,9 @@ constexpr Iterator merge_upper_bound(Iterator first,
     Iterator middle = first;
     ranges::advance(middle, half);
 
-    if (!FTL_MERGE_NAMESPACE::invoke(
-            comparator, FTL_MERGE_NAMESPACE::invoke(projection, *value),
-            FTL_MERGE_NAMESPACE::invoke(projection, *middle))) {
+    if (!std::invoke(
+            comparator, std::invoke(projection, *value),
+            std::invoke(projection, *middle))) {
       first = middle;
       ++first;
 
@@ -142,9 +126,9 @@ inplace_merge_recursive(Iterator first, Iterator middle, Iterator last,
   }
 
   if (left_length + right_length == 2) {
-    if (FTL_MERGE_NAMESPACE::invoke(
-            comparator, FTL_MERGE_NAMESPACE::invoke(projection, *middle),
-            FTL_MERGE_NAMESPACE::invoke(projection, *first))) {
+    if (std::invoke(
+            comparator, std::invoke(projection, *middle),
+            std::invoke(projection, *first))) {
       ranges::iter_swap(first, middle);
     }
 
@@ -282,8 +266,8 @@ void inplace_merge(BidirectionalIterator first, BidirectionalIterator middle,
   identity projection{};
 
   detail::inplace_merge_loop(
-      FTL_MERGE_NAMESPACE::move(first), FTL_MERGE_NAMESPACE::move(middle),
-      FTL_MERGE_NAMESPACE::move(last), comparator, projection);
+      std::move(first), std::move(middle),
+      std::move(last), comparator, projection);
 }
 
 template <class ExecutionPolicy, class BidirectionalIterator>
@@ -295,8 +279,8 @@ void inplace_merge(ExecutionPolicy &&, BidirectionalIterator first,
     identity projection{};
 
     detail::inplace_merge_loop(
-        FTL_MERGE_NAMESPACE::move(first), FTL_MERGE_NAMESPACE::move(middle),
-        FTL_MERGE_NAMESPACE::move(last), comparator, projection);
+        std::move(first), std::move(middle),
+        std::move(last), comparator, projection);
   }();
 }
 
@@ -306,8 +290,8 @@ void inplace_merge(BidirectionalIterator first, BidirectionalIterator middle,
   identity projection{};
 
   detail::inplace_merge_loop(
-      FTL_MERGE_NAMESPACE::move(first), FTL_MERGE_NAMESPACE::move(middle),
-      FTL_MERGE_NAMESPACE::move(last), comparator, projection);
+      std::move(first), std::move(middle),
+      std::move(last), comparator, projection);
 }
 
 template <class ExecutionPolicy, class BidirectionalIterator, class Comparator>
@@ -319,8 +303,8 @@ void inplace_merge(ExecutionPolicy &&, BidirectionalIterator first,
     identity projection{};
 
     detail::inplace_merge_loop(
-        FTL_MERGE_NAMESPACE::move(first), FTL_MERGE_NAMESPACE::move(middle),
-        FTL_MERGE_NAMESPACE::move(last), comparator, projection);
+        std::move(first), std::move(middle),
+        std::move(last), comparator, projection);
   }();
 }
 
@@ -340,14 +324,14 @@ struct merge_fn {
   operator()(Iterator1 first1, Sentinel1 last1, Iterator2 first2,
              Sentinel2 last2, Output result, Comparator comparator = {},
              Projection1 projection1 = {}, Projection2 projection2 = {}) const {
-    FTL_MERGE_NAMESPACE::detail::merge_loop(first1, last1, first2, last2,
+    std::detail::merge_loop(first1, last1, first2, last2,
                                             result, comparator, projection1,
                                             projection2);
 
     return {
-        FTL_MERGE_NAMESPACE::move(first1),
-        FTL_MERGE_NAMESPACE::move(first2),
-        FTL_MERGE_NAMESPACE::move(result),
+        std::move(first1),
+        std::move(first2),
+        std::move(result),
     };
   }
 
@@ -363,15 +347,15 @@ struct merge_fn {
              Projection2 projection2 = {}) const {
     auto converted = (*this)(ranges::begin(range1), ranges::end(range1),
                              ranges::begin(range2), ranges::end(range2),
-                             FTL_MERGE_NAMESPACE::move(result),
-                             FTL_MERGE_NAMESPACE::move(comparator),
-                             FTL_MERGE_NAMESPACE::move(projection1),
-                             FTL_MERGE_NAMESPACE::move(projection2));
+                             std::move(result),
+                             std::move(comparator),
+                             std::move(projection1),
+                             std::move(projection2));
 
     return {
-        FTL_MERGE_NAMESPACE::move(converted.in1),
-        FTL_MERGE_NAMESPACE::move(converted.in2),
-        FTL_MERGE_NAMESPACE::move(converted.out),
+        std::move(converted.in1),
+        std::move(converted.in2),
+        std::move(converted.out),
     };
   }
 };
@@ -383,9 +367,9 @@ struct inplace_merge_fn {
   Iterator operator()(Iterator first, Iterator middle, Sentinel last,
                       Comparator comparator = {},
                       Projection projection = {}) const {
-    return FTL_MERGE_NAMESPACE::detail::inplace_merge_loop(
-        FTL_MERGE_NAMESPACE::move(first), FTL_MERGE_NAMESPACE::move(middle),
-        FTL_MERGE_NAMESPACE::move(last), comparator, projection);
+    return std::detail::inplace_merge_loop(
+        std::move(first), std::move(middle),
+        std::move(last), comparator, projection);
   }
 
   template <bidirectional_range Range, class Comparator = ranges::less,
@@ -395,11 +379,11 @@ struct inplace_merge_fn {
                                         Comparator comparator = {},
                                         Projection projection = {}) const {
     auto result =
-        (*this)(ranges::begin(range), FTL_MERGE_NAMESPACE::move(middle),
-                ranges::end(range), FTL_MERGE_NAMESPACE::move(comparator),
-                FTL_MERGE_NAMESPACE::move(projection));
+        (*this)(ranges::begin(range), std::move(middle),
+                ranges::end(range), std::move(comparator),
+                std::move(projection));
 
-    return FTL_MERGE_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -408,8 +392,7 @@ inline constexpr inplace_merge_fn inplace_merge{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_MERGE_NAMESPACE
 
 #endif // FTL_MERGE_HEADER

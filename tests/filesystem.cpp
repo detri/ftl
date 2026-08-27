@@ -1,22 +1,25 @@
-#ifdef FTL_REPLACE_STL
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 namespace tested = std;
-#else
-#include <ftl/filesystem>
-#include <ftl/fstream>
-#include <ftl/sstream>
-namespace tested = ftl;
-#endif
 
 struct invalid_path_source {
   const int *data() const;
   tested::size_t size() const;
 };
 
+#if defined(_WIN32)
+static_assert(tested::filesystem::path::preferred_separator == L'\\');
+static_assert(
+    tested::is_same_v<tested::filesystem::path::value_type, wchar_t>);
+static_assert(tested::is_same_v<tested::filesystem::path::string_type,
+                                tested::wstring>);
+#else
 static_assert(tested::filesystem::path::preferred_separator == '/');
 static_assert(tested::is_same_v<tested::filesystem::path::value_type, char>);
+static_assert(tested::is_same_v<tested::filesystem::path::string_type,
+                                tested::string>);
+#endif
 static_assert(!tested::is_constructible_v<tested::filesystem::path,
                                           invalid_path_source>);
 static_assert(!tested::is_constructible_v<tested::filesystem::path,
@@ -64,7 +67,11 @@ bool ftl_test() {
       windows.parent_path() != fs::path("C:/users/aaron") ||
       windows.stem() != fs::path("file") || windows.extension() != ".txt")
     return false;
+#if defined(_WIN32)
+  if (fs::path("a\\b").filename() != fs::path("b"))
+#else
   if (fs::path("a\\b").filename() != fs::path("a\\b"))
+#endif
     return false;
   if (fs::path("/").parent_path() != fs::path("/") ||
       fs::path("/").root_path() != fs::path("/") ||
@@ -82,6 +89,10 @@ bool ftl_test() {
   fs::path utf8_path(L"caf\u00e9");
   if (utf8_path.u8string() != tested::u8string(u8"caf\u00e9"))
     return false;
+#if defined(_WIN32)
+  if (utf8_path.native() != tested::wstring(L"caf\u00e9"))
+    return false;
+#endif
   if (fs::u8path(tested::u8string(u8"caf\u00e9")) != utf8_path)
     return false;
   tested::stringstream quoted;
@@ -93,11 +104,7 @@ bool ftl_test() {
       tested::hash<fs::path>{}(quoted_path) != fs::hash_value(quoted_path))
     return false;
 
-#ifdef FTL_REPLACE_STL
-  fs::path root = fs::path("ftl_filesystem_test_replace");
-#else
-  fs::path root = fs::path("ftl_filesystem_test_normal");
-#endif
+  fs::path root = fs::path("ftl_filesystem_test");
   tested::error_code ec;
   fs::remove_all(root, ec);
   if (!fs::create_directories(root / "a/b", ec) || ec)
@@ -108,6 +115,17 @@ bool ftl_test() {
   }
   if (!fs::is_regular_file(root / "a/file.txt", ec) || ec ||
       fs::file_size(root / "a/file.txt", ec) != 17 || ec)
+    return false;
+  const fs::path unicode_file =
+      root / fs::u8path(tested::u8string(u8"caf\u00e9-\U0001f600.txt"));
+  {
+    tested::ofstream out(unicode_file);
+    out << "wide native path";
+  }
+  if (!fs::is_regular_file(unicode_file, ec) || ec ||
+      unicode_file.filename().u8string() !=
+          tested::u8string(u8"caf\u00e9-\U0001f600.txt") ||
+      !fs::remove(unicode_file, ec) || ec)
     return false;
   if (!fs::copy_file(root / "a/file.txt", root / "a/copy.txt", ec) || ec)
     return false;

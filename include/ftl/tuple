@@ -3,13 +3,9 @@
 #ifndef FTL_TUPLE_HEADER
 #define FTL_TUPLE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <utility>
-#else
-#include <ftl/utility>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 template <class> struct is_tuple : false_type {};
@@ -191,14 +187,16 @@ public:
   constexpr explicit(!(is_convertible_v<U, Types> && ...)) tuple(U &&...values)
     requires(elementwise_constructor_is_disambiguated<U...>() &&
              (is_constructible_v<Types, U> && ...) &&
-             !(detail::pair_dangles_v<Types, U &&> || ...))
+             !((is_lvalue_reference_v<Types> &&
+                detail::pair_dangles_v<Types, U>) || ...))
       : base(forward<U>(values)...) {}
 
   template <class... U>
   constexpr tuple(U &&...)
     requires(elementwise_constructor_is_disambiguated<U...>() &&
              (is_constructible_v<Types, U> && ...) &&
-             (detail::pair_dangles_v<Types, U &&> || ...))
+             ((is_lvalue_reference_v<Types> &&
+               detail::pair_dangles_v<Types, U>) || ...))
   = delete;
 
   constexpr tuple(const tuple &) = default;
@@ -912,7 +910,7 @@ constexpr auto tuple_cat(First &&first, Second &&second, Rest &&...rest) {
                                forward<Rest>(rest)...);
 }
 
-FTL_END_NAMESPACE
+} // namespace std
 #undef FTL_TUPLE_NO_UNIQUE_ADDRESS
 
 #if !defined(__cpp_lib_constexpr_tuple) || \

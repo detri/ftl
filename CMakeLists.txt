@@ -45,6 +45,7 @@ target_include_directories(
         ftl_chrono_runtime
         PRIVATE
         include
+        include/ftl
 )
 
 target_compile_features(
@@ -93,7 +94,7 @@ endif ()
 
 add_library(ftl_io_runtime STATIC runtime/native_io.cpp runtime/native_filesystem.cpp runtime/stdio.cpp
                                   runtime/stdio_format.cpp)
-target_include_directories(ftl_io_runtime PRIVATE include)
+target_include_directories(ftl_io_runtime PRIVATE include include/ftl)
 target_compile_features(ftl_io_runtime PRIVATE cxx_std_23)
 target_link_libraries(ftl_io_runtime PRIVATE ftl_math_runtime)
 if (MSVC)
@@ -101,6 +102,8 @@ if (MSVC)
 else ()
     target_compile_options(ftl_io_runtime PRIVATE -fno-exceptions -fno-rtti)
 endif ()
+
+target_link_libraries(ftl_chrono_runtime PUBLIC ftl_io_runtime)
 
 # Dependencies
 
@@ -148,6 +151,6 @@ if (BUILD_TESTING)
     add_subdirectory(tests)
 endif ()
 
-# STL replacement
+# Standard-library integration
 
-include(cmake/ftl_replace_stl.cmake)
+include(cmake/ftl.cmake)

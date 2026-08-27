@@ -1,12 +1,6 @@
-#ifdef FTL_REPLACE_STL
 #include <stdexcept>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/stdexcept>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 static_assert(tested::is_base_of_v<tested::exception, tested::logic_error>);
 

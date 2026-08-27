@@ -1,4 +1,3 @@
-#define FTL_REPLACE_STL
 #include <string_view>
 
 int main() {

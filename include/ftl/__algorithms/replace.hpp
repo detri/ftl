@@ -3,7 +3,6 @@
 #ifndef FTL_REPLACE_HEADER
 #define FTL_REPLACE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__algorithms/result.hpp>
 #include <__execution/policy_access.hpp>
 #include <functional>
@@ -11,23 +10,9 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__algorithms/result.hpp>
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_REPLACE_NAMESPACE std
-#else
-#define FTL_REPLACE_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
@@ -58,8 +43,8 @@ constexpr void ranges_replace_loop(Iterator &first, const Sentinel &last,
   ranges::equal_to equal{};
 
   for (; first != last; ++first) {
-    if (FTL_REPLACE_NAMESPACE::invoke(
-            equal, FTL_REPLACE_NAMESPACE::invoke(projection, *first),
+    if (std::invoke(
+            equal, std::invoke(projection, *first),
             old_value)) {
       *first = new_value;
     }
@@ -72,8 +57,8 @@ constexpr void ranges_replace_if_loop(Iterator &first, const Sentinel &last,
                                       Predicate &predicate, const T &new_value,
                                       Projection &projection) {
   for (; first != last; ++first) {
-    if (FTL_REPLACE_NAMESPACE::invoke(
-            predicate, FTL_REPLACE_NAMESPACE::invoke(projection, *first))) {
+    if (std::invoke(
+            predicate, std::invoke(projection, *first))) {
       *first = new_value;
     }
   }
@@ -115,8 +100,8 @@ constexpr void ranges_replace_copy_loop(Iterator &first, const Sentinel &last,
   ranges::equal_to equal{};
 
   for (; first != last; ++first, ++result) {
-    if (FTL_REPLACE_NAMESPACE::invoke(
-            equal, FTL_REPLACE_NAMESPACE::invoke(projection, *first),
+    if (std::invoke(
+            equal, std::invoke(projection, *first),
             old_value)) {
       *result = new_value;
     } else {
@@ -132,8 +117,8 @@ ranges_replace_copy_if_loop(Iterator &first, const Sentinel &last,
                             Output &result, Predicate &predicate,
                             const T &new_value, Projection &projection) {
   for (; first != last; ++first, ++result) {
-    if (FTL_REPLACE_NAMESPACE::invoke(
-            predicate, FTL_REPLACE_NAMESPACE::invoke(projection, *first))) {
+    if (std::invoke(
+            predicate, std::invoke(projection, *first))) {
       *result = new_value;
     } else {
       *result = *first;
@@ -233,10 +218,10 @@ struct replace_fn {
   constexpr Iterator operator()(Iterator first, Sentinel last,
                                 const T1 &old_value, const T2 &new_value,
                                 Projection projection = {}) const {
-    FTL_REPLACE_NAMESPACE::detail::ranges_replace_loop(first, last, old_value,
+    std::detail::ranges_replace_loop(first, last, old_value,
                                                        new_value, projection);
 
-    return FTL_REPLACE_NAMESPACE::move(first);
+    return std::move(first);
   }
 
   template <input_range Range, class T1, class T2, class Projection = identity>
@@ -248,9 +233,9 @@ struct replace_fn {
   operator()(Range &&range, const T1 &old_value, const T2 &new_value,
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range), old_value,
-                          new_value, FTL_REPLACE_NAMESPACE::move(projection));
+                          new_value, std::move(projection));
 
-    return FTL_REPLACE_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -262,10 +247,10 @@ struct replace_if_fn {
   constexpr Iterator operator()(Iterator first, Sentinel last,
                                 Predicate predicate, const T &new_value,
                                 Projection projection = {}) const {
-    FTL_REPLACE_NAMESPACE::detail::ranges_replace_if_loop(
+    std::detail::ranges_replace_if_loop(
         first, last, predicate, new_value, projection);
 
-    return FTL_REPLACE_NAMESPACE::move(first);
+    return std::move(first);
   }
 
   template <input_range Range, class T, class Projection = identity,
@@ -276,10 +261,10 @@ struct replace_if_fn {
   operator()(Range &&range, Predicate predicate, const T &new_value,
              Projection projection = {}) const {
     auto result = (*this)(ranges::begin(range), ranges::end(range),
-                          FTL_REPLACE_NAMESPACE::move(predicate), new_value,
-                          FTL_REPLACE_NAMESPACE::move(projection));
+                          std::move(predicate), new_value,
+                          std::move(projection));
 
-    return FTL_REPLACE_NAMESPACE::move(result);
+    return std::move(result);
   }
 };
 
@@ -293,12 +278,12 @@ struct replace_copy_fn {
   constexpr replace_copy_result<Iterator, Output>
   operator()(Iterator first, Sentinel last, Output result, const T1 &old_value,
              const T2 &new_value, Projection projection = {}) const {
-    FTL_REPLACE_NAMESPACE::detail::ranges_replace_copy_loop(
+    std::detail::ranges_replace_copy_loop(
         first, last, result, old_value, new_value, projection);
 
     return {
-        FTL_REPLACE_NAMESPACE::move(first),
-        FTL_REPLACE_NAMESPACE::move(result),
+        std::move(first),
+        std::move(result),
     };
   }
 
@@ -313,12 +298,12 @@ struct replace_copy_fn {
              const T2 &new_value, Projection projection = {}) const {
     auto converted =
         (*this)(ranges::begin(range), ranges::end(range),
-                FTL_REPLACE_NAMESPACE::move(result), old_value, new_value,
-                FTL_REPLACE_NAMESPACE::move(projection));
+                std::move(result), old_value, new_value,
+                std::move(projection));
 
     return {
-        FTL_REPLACE_NAMESPACE::move(converted.in),
-        FTL_REPLACE_NAMESPACE::move(converted.out),
+        std::move(converted.in),
+        std::move(converted.out),
     };
   }
 };
@@ -331,12 +316,12 @@ struct replace_copy_if_fn {
   constexpr replace_copy_if_result<Iterator, Output>
   operator()(Iterator first, Sentinel last, Output result, Predicate predicate,
              const T &new_value, Projection projection = {}) const {
-    FTL_REPLACE_NAMESPACE::detail::ranges_replace_copy_if_loop(
+    std::detail::ranges_replace_copy_if_loop(
         first, last, result, predicate, new_value, projection);
 
     return {
-        FTL_REPLACE_NAMESPACE::move(first),
-        FTL_REPLACE_NAMESPACE::move(result),
+        std::move(first),
+        std::move(result),
     };
   }
 
@@ -349,13 +334,13 @@ struct replace_copy_if_fn {
   operator()(Range &&range, Output result, Predicate predicate,
              const T &new_value, Projection projection = {}) const {
     auto converted = (*this)(ranges::begin(range), ranges::end(range),
-                             FTL_REPLACE_NAMESPACE::move(result),
-                             FTL_REPLACE_NAMESPACE::move(predicate), new_value,
-                             FTL_REPLACE_NAMESPACE::move(projection));
+                             std::move(result),
+                             std::move(predicate), new_value,
+                             std::move(projection));
 
     return {
-        FTL_REPLACE_NAMESPACE::move(converted.in),
-        FTL_REPLACE_NAMESPACE::move(converted.out),
+        std::move(converted.in),
+        std::move(converted.out),
     };
   }
 };
@@ -367,8 +352,7 @@ inline constexpr replace_copy_if_fn replace_copy_if{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_REPLACE_NAMESPACE
 
 #endif // FTL_REPLACE_HEADER

@@ -3,17 +3,10 @@
 #ifndef FTL_MEMORY_RESOURCE_HEADER
 #define FTL_MEMORY_RESOURCE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <memory>
 #include <cstdint>
-#define FTL_MEMORY_RESOURCE_NAMESPACE std
-#else
-#include <ftl/memory>
-#include <ftl/cstdint>
-#define FTL_MEMORY_RESOURCE_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 namespace pmr {
 
 class memory_resource {
@@ -714,7 +707,7 @@ private:
     size_t space = available_;
 
     if (candidate &&
-        FTL_MEMORY_RESOURCE_NAMESPACE::align(alignment, bytes, candidate,
+        std::align(alignment, bytes, candidate,
                                              space)) {
       auto *result = static_cast<unsigned char *>(candidate);
       const size_t consumed =
@@ -730,7 +723,7 @@ private:
     candidate = current_;
     space = available_;
 
-    if (!FTL_MEMORY_RESOURCE_NAMESPACE::align(alignment, bytes, candidate,
+    if (!std::align(alignment, bytes, candidate,
                                               space))
       terminate();
 
@@ -761,9 +754,8 @@ private:
 };
 
 } // namespace pmr
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_MEMORY_RESOURCE_NAMESPACE
 
 #if !defined(__cpp_lib_memory_resource) || \
     __cpp_lib_memory_resource < 201603L

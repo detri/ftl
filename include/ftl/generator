@@ -3,7 +3,6 @@
 #ifndef FTL_GENERATOR_HEADER
 #define FTL_GENERATOR_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <concepts>
 #include <coroutine>
 #include <cstddef>
@@ -14,26 +13,9 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/concepts>
-#include <ftl/coroutine>
-#include <ftl/cstddef>
-#include <ftl/exception>
-#include <ftl/iterator>
-#include <ftl/memory>
-#include <ftl/memory_resource>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_GENERATOR_NAMESPACE std
-#else
-#define FTL_GENERATOR_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 template <class Yielded> struct generator_active_node {
@@ -62,13 +44,13 @@ template <class Yielded> struct generator_access {
 
     promise.node_.previous = active->top;
 
-    active->top = FTL_GENERATOR_NAMESPACE::addressof(promise.node_);
+    active->top = std::addressof(promise.node_);
   }
 
   template <class Promise> static void rethrow_exception(Promise &promise) {
 #if FTL_HAS_EXCEPTIONS
     if (promise.exception_) {
-      FTL_GENERATOR_NAMESPACE::rethrow_exception(promise.exception_);
+      std::rethrow_exception(promise.exception_);
     }
 #else
     (void)promise;
@@ -164,7 +146,7 @@ public:
     template <class NestedGenerator> class recursive_yield_awaiter {
     public:
       explicit recursive_yield_awaiter(NestedGenerator &&nested) noexcept
-          : nested_(FTL_GENERATOR_NAMESPACE::move(nested)) {}
+          : nested_(std::move(nested)) {}
 
       [[nodiscard]]
       constexpr bool await_ready() const noexcept {
@@ -312,7 +294,7 @@ static void *allocate_frame(size_t frame_size,
   size_t allocator_space = allocator_storage_size;
 
   void *aligned_allocator_storage =
-      FTL_GENERATOR_NAMESPACE::align(
+      std::align(
           alignof(rebound_allocator),
           sizeof(rebound_allocator),
           allocator_storage,
@@ -368,7 +350,7 @@ static void *allocate_frame(size_t frame_size,
     template <class Stored> class copied_yield_awaiter {
     public:
       copied_yield_awaiter(promise_type &promise, const Stored &value)
-          : promise_(FTL_GENERATOR_NAMESPACE::addressof(promise)),
+          : promise_(std::addressof(promise)),
             value_(value) {}
 
       [[nodiscard]]
@@ -377,7 +359,7 @@ static void *allocate_frame(size_t frame_size,
       }
 
       void await_suspend(coroutine_handle<>) noexcept {
-        promise_->value_ = FTL_GENERATOR_NAMESPACE::addressof(value_);
+        promise_->value_ = std::addressof(value_);
       }
 
       constexpr void await_resume() const noexcept {}
@@ -393,7 +375,7 @@ static void *allocate_frame(size_t frame_size,
       auto coroutine = coroutine_handle<promise_type>::from_promise(*this);
 
       node_.coroutine = coroutine;
-      node_.value = FTL_GENERATOR_NAMESPACE::addressof(value_);
+      node_.value = std::addressof(value_);
 
       return generator{coroutine};
     }
@@ -410,7 +392,7 @@ static void *allocate_frame(size_t frame_size,
 
     [[nodiscard]]
     suspend_always yield_value(yielded value) noexcept {
-      value_ = FTL_GENERATOR_NAMESPACE::addressof(value);
+      value_ = std::addressof(value);
 
       return {};
     }
@@ -434,14 +416,13 @@ static void *allocate_frame(size_t frame_size,
       using nested_generator = generator<R2, V2, Alloc2>;
 
       return recursive_yield_awaiter<nested_generator>{
-          FTL_GENERATOR_NAMESPACE::move(elements.range)};
+          std::move(elements.range)};
     }
 
     template <ranges::input_range R, class Alloc>
       requires convertible_to<ranges::range_reference_t<R>, yielded>
     [[nodiscard]]
     auto yield_value(ranges::elements_of<R, Alloc> elements) noexcept
-#ifdef FTL_REPLACE_STL
     {
       auto nested = [](allocator_arg_t, Alloc allocator,
                        ranges::iterator_t<R> current,
@@ -462,9 +443,6 @@ static void *allocate_frame(size_t frame_size,
           nested(allocator_arg, elements.allocator,
                  ranges::begin(elements.range), ranges::end(elements.range))));
     }
-#else
-        ;
-#endif
 
     void await_transform() = delete;
 
@@ -473,14 +451,14 @@ static void *allocate_frame(size_t frame_size,
     void unhandled_exception() {
 #if FTL_HAS_EXCEPTIONS
       if (active_ != nullptr &&
-          active_->top == FTL_GENERATOR_NAMESPACE::addressof(node_) &&
+          active_->top == std::addressof(node_) &&
           node_.previous == nullptr) {
         throw;
       }
 
-      exception_ = FTL_GENERATOR_NAMESPACE::current_exception();
+      exception_ = std::current_exception();
 #else
-      FTL_GENERATOR_NAMESPACE::terminate();
+      std::terminate();
 #endif
     }
 
@@ -540,7 +518,7 @@ static void *allocate_frame(size_t frame_size,
     void rethrow_if_exception() {
 #if FTL_HAS_EXCEPTIONS
       if (exception_) {
-        FTL_GENERATOR_NAMESPACE::rethrow_exception(exception_);
+        std::rethrow_exception(exception_);
       }
 #endif
     }
@@ -556,7 +534,7 @@ static void *allocate_frame(size_t frame_size,
      * are redirected to the root's state by recursive_yield_awaiter.
      */
     active_state_type state_{};
-    active_state_type *active_ = FTL_GENERATOR_NAMESPACE::addressof(state_);
+    active_state_type *active_ = std::addressof(state_);
 
     active_node_type node_{};
   };
@@ -569,10 +547,10 @@ private:
 
     iterator(iterator &&other) noexcept
         : coroutine_(
-              FTL_GENERATOR_NAMESPACE::exchange(other.coroutine_, nullptr)) {}
+              std::exchange(other.coroutine_, nullptr)) {}
 
     iterator &operator=(iterator &&other) noexcept {
-      coroutine_ = FTL_GENERATOR_NAMESPACE::exchange(other.coroutine_, nullptr);
+      coroutine_ = std::exchange(other.coroutine_, nullptr);
 
       return *this;
     }
@@ -631,7 +609,7 @@ public:
 
   generator(generator &&other) noexcept
       : coroutine_(
-            FTL_GENERATOR_NAMESPACE::exchange(other.coroutine_, nullptr)) {}
+            std::exchange(other.coroutine_, nullptr)) {}
 
   ~generator() {
     if (coroutine_) {
@@ -641,9 +619,9 @@ public:
 
   generator &operator=(generator other) noexcept {
     auto incoming =
-        FTL_GENERATOR_NAMESPACE::exchange(other.coroutine_, nullptr);
+        std::exchange(other.coroutine_, nullptr);
 
-    auto outgoing = FTL_GENERATOR_NAMESPACE::exchange(coroutine_, incoming);
+    auto outgoing = std::exchange(coroutine_, incoming);
 
     if (outgoing) {
       destroy_coroutine(outgoing);
@@ -656,10 +634,10 @@ public:
   iterator begin() {
     promise_type &promise = coroutine_.promise();
 
-    promise.active_ = FTL_GENERATOR_NAMESPACE::addressof(promise.state_);
+    promise.active_ = std::addressof(promise.state_);
 
     promise.node_.previous = nullptr;
-    promise.active_->top = FTL_GENERATOR_NAMESPACE::addressof(promise.node_);
+    promise.active_->top = std::addressof(promise.node_);
 
     coroutine_.resume();
 
@@ -689,12 +667,11 @@ private:
 namespace pmr {
 template <class R, class V = void>
 using generator =
-    FTL_GENERATOR_NAMESPACE::generator<R, V, polymorphic_allocator<>>;
+    std::generator<R, V, polymorphic_allocator<>>;
 } // namespace pmr
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_GENERATOR_NAMESPACE
 
 #if !defined(__cpp_lib_generator) || __cpp_lib_generator < 202207L
 #undef __cpp_lib_generator

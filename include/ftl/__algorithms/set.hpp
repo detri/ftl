@@ -3,7 +3,6 @@
 #ifndef FTL_SET_OPERATIONS_HEADER
 #define FTL_SET_OPERATIONS_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <__algorithms/result.hpp>
 #include <__execution/policy_access.hpp>
 #include <functional>
@@ -11,27 +10,13 @@
 #include <ranges>
 #include <type_traits>
 #include <utility>
-#else
-#include <ftl/__algorithms/result.hpp>
-#include <ftl/__execution/policy_access.hpp>
-#include <ftl/functional>
-#include <ftl/iterator>
-#include <ftl/ranges>
-#include <ftl/type_traits>
-#include <ftl/utility>
-#endif
 
-#ifdef FTL_REPLACE_STL
-#define FTL_SET_OPERATIONS_NAMESPACE std
-#else
-#define FTL_SET_OPERATIONS_NAMESPACE ftl
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 namespace detail {
 
-using set_operations_less = FTL_SET_OPERATIONS_NAMESPACE::less<>;
+using set_operations_less = std::less<>;
 
 template <class Iterator1, class Sentinel1, class Iterator2, class Sentinel2,
           class Comparator, class Projection1, class Projection2>
@@ -44,17 +29,17 @@ constexpr bool includes_loop(Iterator1 first1, const Sentinel1 &last1,
       return false;
     }
 
-    if (FTL_SET_OPERATIONS_NAMESPACE::invoke(
+    if (std::invoke(
             comparator,
-            FTL_SET_OPERATIONS_NAMESPACE::invoke(projection2, *first2),
-            FTL_SET_OPERATIONS_NAMESPACE::invoke(projection1, *first1))) {
+            std::invoke(projection2, *first2),
+            std::invoke(projection1, *first1))) {
       return false;
     }
 
-    if (!FTL_SET_OPERATIONS_NAMESPACE::invoke(
+    if (!std::invoke(
             comparator,
-            FTL_SET_OPERATIONS_NAMESPACE::invoke(projection1, *first1),
-            FTL_SET_OPERATIONS_NAMESPACE::invoke(projection2, *first2))) {
+            std::invoke(projection1, *first1),
+            std::invoke(projection2, *first2))) {
       ++first2;
     }
 
@@ -71,16 +56,16 @@ set_union_loop(Iterator1 &first1, const Sentinel1 &last1, Iterator2 &first2,
                const Sentinel2 &last2, Output &result, Comparator &comparator,
                Projection1 &projection1, Projection2 &projection2) {
   while (first1 != last1 && first2 != last2) {
-    if (FTL_SET_OPERATIONS_NAMESPACE::invoke(
+    if (std::invoke(
             comparator,
-            FTL_SET_OPERATIONS_NAMESPACE::invoke(projection1, *first1),
-            FTL_SET_OPERATIONS_NAMESPACE::invoke(projection2, *first2))) {
+            std::invoke(projection1, *first1),
+            std::invoke(projection2, *first2))) {
       *result = *first1;
       ++first1;
-    } else if (FTL_SET_OPERATIONS_NAMESPACE::invoke(
+    } else if (std::invoke(
                    comparator,
-                   FTL_SET_OPERATIONS_NAMESPACE::invoke(projection2, *first2),
-                   FTL_SET_OPERATIONS_NAMESPACE::invoke(projection1,
+                   std::invoke(projection2, *first2),
+                   std::invoke(projection1,
                                                         *first1))) {
       *result = *first2;
       ++first2;
@@ -118,15 +103,15 @@ constexpr void set_intersection_loop(Iterator1 &first1, const Sentinel1 &last1,
                                      Projection1 &projection1,
                                      Projection2 &projection2) {
   while (first1 != last1 && first2 != last2) {
-    if (FTL_SET_OPERATIONS_NAMESPACE::invoke(
+    if (std::invoke(
             comparator,
-            FTL_SET_OPERATIONS_NAMESPACE::invoke(projection1, *first1),
-            FTL_SET_OPERATIONS_NAMESPACE::invoke(projection2, *first2))) {
+            std::invoke(projection1, *first1),
+            std::invoke(projection2, *first2))) {
       ++first1;
-    } else if (FTL_SET_OPERATIONS_NAMESPACE::invoke(
+    } else if (std::invoke(
                    comparator,
-                   FTL_SET_OPERATIONS_NAMESPACE::invoke(projection2, *first2),
-                   FTL_SET_OPERATIONS_NAMESPACE::invoke(projection1,
+                   std::invoke(projection2, *first2),
+                   std::invoke(projection1,
                                                         *first1))) {
       ++first2;
     } else {
@@ -160,17 +145,17 @@ constexpr void set_difference_loop(Iterator1 &first1, const Sentinel1 &last1,
                                    Projection1 &projection1,
                                    Projection2 &projection2) {
   while (first1 != last1 && first2 != last2) {
-    if (FTL_SET_OPERATIONS_NAMESPACE::invoke(
+    if (std::invoke(
             comparator,
-            FTL_SET_OPERATIONS_NAMESPACE::invoke(projection1, *first1),
-            FTL_SET_OPERATIONS_NAMESPACE::invoke(projection2, *first2))) {
+            std::invoke(projection1, *first1),
+            std::invoke(projection2, *first2))) {
       *result = *first1;
       ++first1;
       ++result;
-    } else if (FTL_SET_OPERATIONS_NAMESPACE::invoke(
+    } else if (std::invoke(
                    comparator,
-                   FTL_SET_OPERATIONS_NAMESPACE::invoke(projection2, *first2),
-                   FTL_SET_OPERATIONS_NAMESPACE::invoke(projection1,
+                   std::invoke(projection2, *first2),
+                   std::invoke(projection1,
                                                         *first1))) {
       ++first2;
     } else {
@@ -193,17 +178,17 @@ constexpr void set_symmetric_difference_loop(
     const Sentinel2 &last2, Output &result, Comparator &comparator,
     Projection1 &projection1, Projection2 &projection2) {
   while (first1 != last1 && first2 != last2) {
-    if (FTL_SET_OPERATIONS_NAMESPACE::invoke(
+    if (std::invoke(
             comparator,
-            FTL_SET_OPERATIONS_NAMESPACE::invoke(projection1, *first1),
-            FTL_SET_OPERATIONS_NAMESPACE::invoke(projection2, *first2))) {
+            std::invoke(projection1, *first1),
+            std::invoke(projection2, *first2))) {
       *result = *first1;
       ++first1;
       ++result;
-    } else if (FTL_SET_OPERATIONS_NAMESPACE::invoke(
+    } else if (std::invoke(
                    comparator,
-                   FTL_SET_OPERATIONS_NAMESPACE::invoke(projection2, *first2),
-                   FTL_SET_OPERATIONS_NAMESPACE::invoke(projection1,
+                   std::invoke(projection2, *first2),
+                   std::invoke(projection1,
                                                         *first1))) {
       *result = *first2;
       ++first2;
@@ -236,10 +221,10 @@ constexpr bool includes(InputIterator1 first1, InputIterator1 last1,
   identity projection1{};
   identity projection2{};
 
-  return detail::includes_loop(FTL_SET_OPERATIONS_NAMESPACE::move(first1),
-                               FTL_SET_OPERATIONS_NAMESPACE::move(last1),
-                               FTL_SET_OPERATIONS_NAMESPACE::move(first2),
-                               FTL_SET_OPERATIONS_NAMESPACE::move(last2),
+  return detail::includes_loop(std::move(first1),
+                               std::move(last1),
+                               std::move(first2),
+                               std::move(last2),
                                comparator, projection1, projection2);
 }
 
@@ -250,10 +235,10 @@ constexpr bool includes(InputIterator1 first1, InputIterator1 last1,
   identity projection1{};
   identity projection2{};
 
-  return detail::includes_loop(FTL_SET_OPERATIONS_NAMESPACE::move(first1),
-                               FTL_SET_OPERATIONS_NAMESPACE::move(last1),
-                               FTL_SET_OPERATIONS_NAMESPACE::move(first2),
-                               FTL_SET_OPERATIONS_NAMESPACE::move(last2),
+  return detail::includes_loop(std::move(first1),
+                               std::move(last1),
+                               std::move(first2),
+                               std::move(last2),
                                comparator, projection1, projection2);
 }
 
@@ -263,7 +248,7 @@ bool includes(ExecutionPolicy &&, ForwardIterator1 first1,
               ForwardIterator1 last1, ForwardIterator2 first2,
               ForwardIterator2 last2) {
   return [&]() noexcept {
-    return FTL_SET_OPERATIONS_NAMESPACE::includes(first1, last1, first2, last2);
+    return std::includes(first1, last1, first2, last2);
   }();
 }
 
@@ -274,7 +259,7 @@ bool includes(ExecutionPolicy &&, ForwardIterator1 first1,
               ForwardIterator1 last1, ForwardIterator2 first2,
               ForwardIterator2 last2, Comparator comparator) {
   return [&]() noexcept {
-    return FTL_SET_OPERATIONS_NAMESPACE::includes(first1, last1, first2, last2,
+    return std::includes(first1, last1, first2, last2,
                                                   comparator);
   }();
 }
@@ -314,7 +299,7 @@ ForwardIterator set_union(ExecutionPolicy &&, ForwardIterator1 first1,
                           ForwardIterator1 last1, ForwardIterator2 first2,
                           ForwardIterator2 last2, ForwardIterator result) {
   return [&]() noexcept {
-    return FTL_SET_OPERATIONS_NAMESPACE::set_union(first1, last1, first2, last2,
+    return std::set_union(first1, last1, first2, last2,
                                                    result);
   }();
 }
@@ -327,7 +312,7 @@ ForwardIterator set_union(ExecutionPolicy &&, ForwardIterator1 first1,
                           ForwardIterator2 last2, ForwardIterator result,
                           Comparator comparator) {
   return [&]() noexcept {
-    return FTL_SET_OPERATIONS_NAMESPACE::set_union(first1, last1, first2, last2,
+    return std::set_union(first1, last1, first2, last2,
                                                    result, comparator);
   }();
 }
@@ -370,7 +355,7 @@ set_intersection(ExecutionPolicy &&, ForwardIterator1 first1,
                  ForwardIterator1 last1, ForwardIterator2 first2,
                  ForwardIterator2 last2, ForwardIterator result) {
   return [&]() noexcept {
-    return FTL_SET_OPERATIONS_NAMESPACE::set_intersection(first1, last1, first2,
+    return std::set_intersection(first1, last1, first2,
                                                           last2, result);
   }();
 }
@@ -384,7 +369,7 @@ ForwardIterator set_intersection(ExecutionPolicy &&, ForwardIterator1 first1,
                                  ForwardIterator2 last2, ForwardIterator result,
                                  Comparator comparator) {
   return [&]() noexcept {
-    return FTL_SET_OPERATIONS_NAMESPACE::set_intersection(
+    return std::set_intersection(
         first1, last1, first2, last2, result, comparator);
   }();
 }
@@ -426,7 +411,7 @@ ForwardIterator set_difference(ExecutionPolicy &&, ForwardIterator1 first1,
                                ForwardIterator1 last1, ForwardIterator2 first2,
                                ForwardIterator2 last2, ForwardIterator result) {
   return [&]() noexcept {
-    return FTL_SET_OPERATIONS_NAMESPACE::set_difference(first1, last1, first2,
+    return std::set_difference(first1, last1, first2,
                                                         last2, result);
   }();
 }
@@ -439,7 +424,7 @@ ForwardIterator set_difference(ExecutionPolicy &&, ForwardIterator1 first1,
                                ForwardIterator2 last2, ForwardIterator result,
                                Comparator comparator) {
   return [&]() noexcept {
-    return FTL_SET_OPERATIONS_NAMESPACE::set_difference(
+    return std::set_difference(
         first1, last1, first2, last2, result, comparator);
   }();
 }
@@ -482,7 +467,7 @@ set_symmetric_difference(ExecutionPolicy &&, ForwardIterator1 first1,
                          ForwardIterator1 last1, ForwardIterator2 first2,
                          ForwardIterator2 last2, ForwardIterator result) {
   return [&]() noexcept {
-    return FTL_SET_OPERATIONS_NAMESPACE::set_symmetric_difference(
+    return std::set_symmetric_difference(
         first1, last1, first2, last2, result);
   }();
 }
@@ -496,7 +481,7 @@ set_symmetric_difference(ExecutionPolicy &&, ForwardIterator1 first1,
                          ForwardIterator2 last2, ForwardIterator result,
                          Comparator comparator) {
   return [&]() noexcept {
-    return FTL_SET_OPERATIONS_NAMESPACE::set_symmetric_difference(
+    return std::set_symmetric_difference(
         first1, last1, first2, last2, result, comparator);
   }();
 }
@@ -527,11 +512,11 @@ struct includes_fn {
                             Sentinel2 last2, Comparator comparator = {},
                             Projection1 projection1 = {},
                             Projection2 projection2 = {}) const {
-    return FTL_SET_OPERATIONS_NAMESPACE::detail::includes_loop(
-        FTL_SET_OPERATIONS_NAMESPACE::move(first1),
-        FTL_SET_OPERATIONS_NAMESPACE::move(last1),
-        FTL_SET_OPERATIONS_NAMESPACE::move(first2),
-        FTL_SET_OPERATIONS_NAMESPACE::move(last2), comparator, projection1,
+    return std::detail::includes_loop(
+        std::move(first1),
+        std::move(last1),
+        std::move(first2),
+        std::move(last2), comparator, projection1,
         projection2);
   }
 
@@ -546,9 +531,9 @@ struct includes_fn {
              Projection1 projection1 = {}, Projection2 projection2 = {}) const {
     return (*this)(ranges::begin(range1), ranges::end(range1),
                    ranges::begin(range2), ranges::end(range2),
-                   FTL_SET_OPERATIONS_NAMESPACE::move(comparator),
-                   FTL_SET_OPERATIONS_NAMESPACE::move(projection1),
-                   FTL_SET_OPERATIONS_NAMESPACE::move(projection2));
+                   std::move(comparator),
+                   std::move(projection1),
+                   std::move(projection2));
   }
 };
 
@@ -563,14 +548,14 @@ struct set_union_fn {
   operator()(Iterator1 first1, Sentinel1 last1, Iterator2 first2,
              Sentinel2 last2, Output result, Comparator comparator = {},
              Projection1 projection1 = {}, Projection2 projection2 = {}) const {
-    FTL_SET_OPERATIONS_NAMESPACE::detail::set_union_loop(
+    std::detail::set_union_loop(
         first1, last1, first2, last2, result, comparator, projection1,
         projection2);
 
     return {
-        FTL_SET_OPERATIONS_NAMESPACE::move(first1),
-        FTL_SET_OPERATIONS_NAMESPACE::move(first2),
-        FTL_SET_OPERATIONS_NAMESPACE::move(result),
+        std::move(first1),
+        std::move(first2),
+        std::move(result),
     };
   }
 
@@ -586,15 +571,15 @@ struct set_union_fn {
              Projection2 projection2 = {}) const {
     auto converted = (*this)(ranges::begin(range1), ranges::end(range1),
                              ranges::begin(range2), ranges::end(range2),
-                             FTL_SET_OPERATIONS_NAMESPACE::move(result),
-                             FTL_SET_OPERATIONS_NAMESPACE::move(comparator),
-                             FTL_SET_OPERATIONS_NAMESPACE::move(projection1),
-                             FTL_SET_OPERATIONS_NAMESPACE::move(projection2));
+                             std::move(result),
+                             std::move(comparator),
+                             std::move(projection1),
+                             std::move(projection2));
 
     return {
-        FTL_SET_OPERATIONS_NAMESPACE::move(converted.in1),
-        FTL_SET_OPERATIONS_NAMESPACE::move(converted.in2),
-        FTL_SET_OPERATIONS_NAMESPACE::move(converted.out),
+        std::move(converted.in1),
+        std::move(converted.in2),
+        std::move(converted.out),
     };
   }
 };
@@ -610,14 +595,14 @@ struct set_intersection_fn {
   operator()(Iterator1 first1, Sentinel1 last1, Iterator2 first2,
              Sentinel2 last2, Output result, Comparator comparator = {},
              Projection1 projection1 = {}, Projection2 projection2 = {}) const {
-    FTL_SET_OPERATIONS_NAMESPACE::detail::set_intersection_loop(
+    std::detail::set_intersection_loop(
         first1, last1, first2, last2, result, comparator, projection1,
         projection2);
 
     return {
-        FTL_SET_OPERATIONS_NAMESPACE::move(first1),
-        FTL_SET_OPERATIONS_NAMESPACE::move(first2),
-        FTL_SET_OPERATIONS_NAMESPACE::move(result),
+        std::move(first1),
+        std::move(first2),
+        std::move(result),
     };
   }
 
@@ -633,15 +618,15 @@ struct set_intersection_fn {
              Projection2 projection2 = {}) const {
     auto converted = (*this)(ranges::begin(range1), ranges::end(range1),
                              ranges::begin(range2), ranges::end(range2),
-                             FTL_SET_OPERATIONS_NAMESPACE::move(result),
-                             FTL_SET_OPERATIONS_NAMESPACE::move(comparator),
-                             FTL_SET_OPERATIONS_NAMESPACE::move(projection1),
-                             FTL_SET_OPERATIONS_NAMESPACE::move(projection2));
+                             std::move(result),
+                             std::move(comparator),
+                             std::move(projection1),
+                             std::move(projection2));
 
     return {
-        FTL_SET_OPERATIONS_NAMESPACE::move(converted.in1),
-        FTL_SET_OPERATIONS_NAMESPACE::move(converted.in2),
-        FTL_SET_OPERATIONS_NAMESPACE::move(converted.out),
+        std::move(converted.in1),
+        std::move(converted.in2),
+        std::move(converted.out),
     };
   }
 };
@@ -657,13 +642,13 @@ struct set_difference_fn {
   operator()(Iterator1 first1, Sentinel1 last1, Iterator2 first2,
              Sentinel2 last2, Output result, Comparator comparator = {},
              Projection1 projection1 = {}, Projection2 projection2 = {}) const {
-    FTL_SET_OPERATIONS_NAMESPACE::detail::set_difference_loop(
+    std::detail::set_difference_loop(
         first1, last1, first2, last2, result, comparator, projection1,
         projection2);
 
     return {
-        FTL_SET_OPERATIONS_NAMESPACE::move(first1),
-        FTL_SET_OPERATIONS_NAMESPACE::move(result),
+        std::move(first1),
+        std::move(result),
     };
   }
 
@@ -678,14 +663,14 @@ struct set_difference_fn {
              Projection2 projection2 = {}) const {
     auto converted = (*this)(ranges::begin(range1), ranges::end(range1),
                              ranges::begin(range2), ranges::end(range2),
-                             FTL_SET_OPERATIONS_NAMESPACE::move(result),
-                             FTL_SET_OPERATIONS_NAMESPACE::move(comparator),
-                             FTL_SET_OPERATIONS_NAMESPACE::move(projection1),
-                             FTL_SET_OPERATIONS_NAMESPACE::move(projection2));
+                             std::move(result),
+                             std::move(comparator),
+                             std::move(projection1),
+                             std::move(projection2));
 
     return {
-        FTL_SET_OPERATIONS_NAMESPACE::move(converted.in),
-        FTL_SET_OPERATIONS_NAMESPACE::move(converted.out),
+        std::move(converted.in),
+        std::move(converted.out),
     };
   }
 };
@@ -701,14 +686,14 @@ struct set_symmetric_difference_fn {
   operator()(Iterator1 first1, Sentinel1 last1, Iterator2 first2,
              Sentinel2 last2, Output result, Comparator comparator = {},
              Projection1 projection1 = {}, Projection2 projection2 = {}) const {
-    FTL_SET_OPERATIONS_NAMESPACE::detail::set_symmetric_difference_loop(
+    std::detail::set_symmetric_difference_loop(
         first1, last1, first2, last2, result, comparator, projection1,
         projection2);
 
     return {
-        FTL_SET_OPERATIONS_NAMESPACE::move(first1),
-        FTL_SET_OPERATIONS_NAMESPACE::move(first2),
-        FTL_SET_OPERATIONS_NAMESPACE::move(result),
+        std::move(first1),
+        std::move(first2),
+        std::move(result),
     };
   }
 
@@ -724,15 +709,15 @@ struct set_symmetric_difference_fn {
              Projection2 projection2 = {}) const {
     auto converted = (*this)(ranges::begin(range1), ranges::end(range1),
                              ranges::begin(range2), ranges::end(range2),
-                             FTL_SET_OPERATIONS_NAMESPACE::move(result),
-                             FTL_SET_OPERATIONS_NAMESPACE::move(comparator),
-                             FTL_SET_OPERATIONS_NAMESPACE::move(projection1),
-                             FTL_SET_OPERATIONS_NAMESPACE::move(projection2));
+                             std::move(result),
+                             std::move(comparator),
+                             std::move(projection1),
+                             std::move(projection2));
 
     return {
-        FTL_SET_OPERATIONS_NAMESPACE::move(converted.in1),
-        FTL_SET_OPERATIONS_NAMESPACE::move(converted.in2),
-        FTL_SET_OPERATIONS_NAMESPACE::move(converted.out),
+        std::move(converted.in1),
+        std::move(converted.in2),
+        std::move(converted.out),
     };
   }
 };
@@ -745,8 +730,7 @@ inline constexpr set_symmetric_difference_fn set_symmetric_difference{};
 
 } // namespace ranges
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#undef FTL_SET_OPERATIONS_NAMESPACE
 
 #endif // FTL_SET_OPERATIONS_HEADER

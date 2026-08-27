@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <bitset>
 #include <functional>
 #include <iosfwd>
@@ -8,17 +7,6 @@
 #include <type_traits>
 #include <utility>
 namespace tested = std;
-#else
-#include <ftl/bitset>
-#include <ftl/functional>
-#include <ftl/iosfwd>
-#include <ftl/limits>
-#include <ftl/string>
-#include <ftl/string_view>
-#include <ftl/type_traits>
-#include <ftl/utility>
-namespace tested = ftl;
-#endif
 
 static_assert(__cpp_lib_constexpr_bitset >= 202207L);
 static_assert(noexcept(tested::bitset<65>{}));

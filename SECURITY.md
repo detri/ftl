@@ -31,7 +31,7 @@ A useful report should include:
 
 - the affected FTL revision or version
 - compiler, compiler version, operating system, and architecture
-- whether normal mode or `FTL_REPLACE_STL` is affected
+- whether FTL or an external runtime boundary is affected
 - the affected header or facility
 - a minimal reproducer when practical
 - the expected and observed behavior

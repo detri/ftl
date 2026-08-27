@@ -1,4 +1,3 @@
-#ifdef FTL_REPLACE_STL
 #include <array>
 #include <compare>
 #include <memory>
@@ -7,16 +6,6 @@
 #include <string_view>
 #include <type_traits>
 namespace tested = std;
-#else
-#include <ftl/array>
-#include <ftl/compare>
-#include <ftl/memory>
-#include <ftl/ranges>
-#include <ftl/string>
-#include <ftl/string_view>
-#include <ftl/type_traits>
-namespace tested = ftl;
-#endif
 
 using namespace tested::literals::string_literals;
 
@@ -61,13 +50,11 @@ constexpr bool construction_and_sso() {
   if (moved_short.data() == short_storage)
     return false; // inline storage belongs to the destination object
 
-#if !defined(_MSC_VER) || defined(FTL_REPLACE_STL)
   tested::string long_value("abcdefghijklmnopqrstuvwxyz0123456789");
   const char *long_storage = long_value.data();
   tested::string moved_long(tested::move(long_value));
   if (moved_long.data() != long_storage || !long_value.empty())
     return false;
-#endif
 
   tested::string counted("a\0b", 3);
   if (counted.size() != 3 || counted[1] != '\0' || counted[2] != 'b')
@@ -91,13 +78,9 @@ static_assert(construction_and_sso());
 constexpr bool capacity_and_access() {
   tested::string value = "abc";
   const auto old_capacity = value.capacity();
-#if !defined(_MSC_VER) || defined(FTL_REPLACE_STL)
   value.reserve(old_capacity + 10);
   if (value != "abc" || value.capacity() < old_capacity + 10)
     return false;
-#else
-  value.reserve(old_capacity);
-#endif
   value.resize(6, 'x');
   if (value != "abcxxx" || value.front() != 'a' || value.back() != 'x')
     return false;
@@ -315,7 +298,13 @@ bool ftl_test() {
     return false;
   if (tested::to_string(42) != "42" || tested::to_string(1.5) != "1.500000")
     return false;
-  if (tested::to_wstring(-7) != L"-7")
+  if (tested::to_string(42u) != "42" ||
+      tested::to_string(-7l) != "-7" ||
+      tested::to_string(9ull) != "9" ||
+      tested::to_string(1.25L) != "1.250000")
+    return false;
+  if (tested::to_wstring(-7) != L"-7" ||
+      tested::to_wstring(1.25) != L"1.250000")
     return false;
   if (tested::hash<tested::string>{}("hash") !=
       tested::hash<tested::string>{}(tested::string("hash")))

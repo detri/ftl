@@ -7,6 +7,8 @@
 
 #if defined(_WIN32)
 
+extern "C" int __cdecl _wcsicmp(const wchar_t *, const wchar_t *);
+
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -21,6 +23,10 @@
 
 #include <unistd.h>
 
+#endif
+
+#if !defined(_WIN32)
+extern "C" char *realpath(const char *, char *);
 #endif
 
 namespace ftl_current_zone_runtime {
@@ -298,7 +304,7 @@ result current_zone_name(char *buffer, size_type capacity) noexcept {
     };
   }
 
-  const char *iana_name = ftl::detail::tzdb_runtime::windows_zone_target(
+  const char *iana_name = std::detail::tzdb_runtime::windows_zone_target(
       windows_name, static_cast<size_type>(converted - 1));
 
   /*

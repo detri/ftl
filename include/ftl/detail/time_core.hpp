@@ -3,15 +3,10 @@
 #ifndef FTL_DETAIL_TIME_CORE_HEADER
 #define FTL_DETAIL_TIME_CORE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cstdint>
 #include <type_traits>
-#else
-#include <ftl/cstdint>
-#include <ftl/type_traits>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 namespace detail {
 
 struct civil_date {
@@ -59,5 +54,5 @@ constexpr long long floor_div(long long value, long long divisor) noexcept {
 }
 
 } // namespace detail
-FTL_END_NAMESPACE
+} // namespace std
 #endif

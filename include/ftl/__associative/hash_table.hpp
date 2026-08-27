@@ -1,7 +1,7 @@
 #ifndef FTL_ASSOCIATIVE_HASH_TABLE_HPP
 #define FTL_ASSOCIATIVE_HASH_TABLE_HPP
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 namespace detail {
 
 template <class Value> struct hash_table_node {
@@ -59,9 +59,9 @@ public:
   void swap(hash_node_handle &other) noexcept(
       value_traits::propagate_on_container_swap::value ||
       value_traits::is_always_equal::value) {
-    FTL_ASSOCIATIVE_NAMESPACE::swap(value_, other.value_);
+    std::swap(value_, other.value_);
     if constexpr (value_traits::propagate_on_container_swap::value)
-      FTL_ASSOCIATIVE_NAMESPACE::swap(allocator_, other.allocator_);
+      std::swap(allocator_, other.allocator_);
   }
 private:
   void reset() noexcept {
@@ -378,14 +378,14 @@ public:
       value_traits::is_always_equal::value && is_nothrow_swappable_v<Hash> &&
       is_nothrow_swappable_v<Equal>) {
     if constexpr (value_traits::propagate_on_container_swap::value)
-      FTL_ASSOCIATIVE_NAMESPACE::swap(allocator_, other.allocator_);
+      std::swap(allocator_, other.allocator_);
     buckets_.swap(other.buckets_);
-    FTL_ASSOCIATIVE_NAMESPACE::swap(first_, other.first_);
-    FTL_ASSOCIATIVE_NAMESPACE::swap(last_, other.last_);
-    FTL_ASSOCIATIVE_NAMESPACE::swap(size_, other.size_);
-    FTL_ASSOCIATIVE_NAMESPACE::swap(max_load_, other.max_load_);
-    FTL_ASSOCIATIVE_NAMESPACE::swap(hash_, other.hash_);
-    FTL_ASSOCIATIVE_NAMESPACE::swap(equal_, other.equal_);
+    std::swap(first_, other.first_);
+    std::swap(last_, other.last_);
+    std::swap(size_, other.size_);
+    std::swap(max_load_, other.max_load_);
+    std::swap(hash_, other.hash_);
+    std::swap(equal_, other.equal_);
   }
   node_type extract(const_iterator position) {
     return node_type(detach(position.current_), allocator_);
@@ -680,5 +680,5 @@ private:
 };
 
 } // namespace detail
-FTL_END_NAMESPACE
+} // namespace std
 #endif

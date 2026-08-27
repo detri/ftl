@@ -3,25 +3,13 @@
 #ifndef FTL_DETAIL_CONDITION_VARIABLE_HEADER
 #define FTL_DETAIL_CONDITION_VARIABLE_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <atomic>
 #include <cstdint>
 #include <detail/mutex.hpp>
 #include <detail/wait_notify.hpp>
 #include <exception>
-#define FTL_CONDITION_VARIABLE_DETAIL_BEGIN_NAMESPACE namespace std::detail {
-#define FTL_CONDITION_VARIABLE_DETAIL_END_NAMESPACE }
-#else
-#include <ftl/atomic>
-#include <ftl/cstdint>
-#include <ftl/detail/mutex.hpp>
-#include <ftl/detail/wait_notify.hpp>
-#include <ftl/exception>
-#define FTL_CONDITION_VARIABLE_DETAIL_BEGIN_NAMESPACE namespace ftl::detail {
-#define FTL_CONDITION_VARIABLE_DETAIL_END_NAMESPACE }
-#endif
 
-FTL_CONDITION_VARIABLE_DETAIL_BEGIN_NAMESPACE
+namespace std::detail {
 
 class condition_variable_state {
 public:
@@ -171,9 +159,7 @@ struct condition_stop_notifier {
   void operator()() const noexcept { state->notify_all(); }
 };
 
-FTL_CONDITION_VARIABLE_DETAIL_END_NAMESPACE
+}
 
-#undef FTL_CONDITION_VARIABLE_DETAIL_BEGIN_NAMESPACE
-#undef FTL_CONDITION_VARIABLE_DETAIL_END_NAMESPACE
 
 #endif // FTL_DETAIL_CONDITION_VARIABLE_HEADER

@@ -3,21 +3,14 @@
 #ifndef FTL_FSTREAM_HEADER
 #define FTL_FSTREAM_HEADER
 
-#ifdef FTL_REPLACE_STL
 #include <cstdio>
 #include <istream>
 #include <string>
 #include <type_traits>
 #include <vector>
-#else
-#include <ftl/cstdio>
-#include <ftl/istream>
-#include <ftl/string>
-#include <ftl/type_traits>
-#include <ftl/vector>
-#endif
 
-FTL_BEGIN_NAMESPACE
+
+namespace std {
 
 namespace filesystem {
 class path;
@@ -157,6 +150,27 @@ public:
     }
     return this;
   }
+#if defined(_WIN32)
+  basic_filebuf *open(const wchar_t *name, ios_base::openmode mode) {
+    if (file_)
+      return nullptr;
+    char text[5];
+    const char *selected =
+        std::detail::file_open_mode(mode, text);
+    if (!selected)
+      return nullptr;
+    file_ = ::ftl_cstdio_runtime::fopen(name, selected);
+    if (!file_)
+      return nullptr;
+    mode_ = mode;
+    if (mode & ios_base::ate &&
+        ::ftl_cstdio_runtime::fseek(file_, 0, SEEK_END) != 0) {
+      this->close();
+      return nullptr;
+    }
+    return this;
+  }
+#endif
   basic_filebuf *open(const basic_string<char> &name, ios_base::openmode mode) {
     return open(name.c_str(), mode);
   }
@@ -172,8 +186,8 @@ public:
         char bytes[64];
         char *next = bytes;
         const auto &conversion =
-            use_facet<codecvt<Character, char, typename Traits::state_type>>(
-                this->getloc());
+            std::use_facet<std::codecvt<
+                Character, char, typename Traits::state_type>>(this->getloc());
         auto result = conversion.unshift(state_, bytes, bytes + 64, next);
         if (result == codecvt_base::error ||
             ::ftl_cstdio_runtime::fwrite(
@@ -231,8 +245,8 @@ protected:
       size_t count = 0;
       auto initial = state_;
       const auto &conversion =
-          use_facet<codecvt<Character, char, typename Traits::state_type>>(
-              this->getloc());
+          std::use_facet<std::codecvt<
+              Character, char, typename Traits::state_type>>(this->getloc());
       for (;;) {
         int value = ::ftl_cstdio_runtime::fgetc(file_);
         if (value == EOF)
@@ -302,8 +316,8 @@ protected:
       char bytes[64];
       char *to_next = bytes;
       const auto &conversion =
-          use_facet<codecvt<Character, char, typename Traits::state_type>>(
-              this->getloc());
+          std::use_facet<std::codecvt<
+              Character, char, typename Traits::state_type>>(this->getloc());
       auto result = conversion.out(state_, &input, &input + 1, from_next, bytes,
                                    bytes + 64, to_next);
       okay = result != codecvt_base::error && from_next == &input + 1 &&
@@ -628,15 +642,11 @@ void swap(basic_fstream<C, T> &l, basic_fstream<C, T> &r) {
   l.swap(r);
 }
 
-FTL_END_NAMESPACE
+} // namespace std
 
-#ifdef FTL_REPLACE_STL
 #include <filesystem>
-#else
-#include <ftl/filesystem>
-#endif
 
-FTL_BEGIN_NAMESPACE
+namespace std {
 
 template <class Character, class Traits>
 basic_filebuf<Character, Traits> *
@@ -672,5 +682,6 @@ void basic_fstream<Character, Traits>::open(const filesystem::path &name,
     this->clear();
 }
 
-FTL_END_NAMESPACE
+} // namespace std
+
 #endif
